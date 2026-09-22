@@ -1,0 +1,2 @@
+#include "video_sampling.h"
+namespace msf { SamplePlan make_sample_plan(double d){SamplePlan p;if(d<=0)return p;if(d<=10)p.intervalSec=1;else if(d<=60)p.intervalSec=2;else if(d<=300)p.intervalSec=5;else if(d<=1800)p.intervalSec=10;else if(d<=3600)p.intervalSec=15;else p.intervalSec=30;for(double t=0;t<d;t+=p.intervalSec)p.timestamps.push_back(t);if(p.timestamps.empty()||p.timestamps.back()<d-.001)p.timestamps.push_back(d);return p;} }

@@ -1,0 +1,28 @@
+#include "scanner.h"
+#include "path_utils.h"
+#include <filesystem>
+#include <fstream>
+#include <chrono>
+#include <cctype>
+namespace fs=std::filesystem;
+namespace msf {
+static bool media(const fs::path&p){auto e=p.extension().string();for(auto&c:e)c=char(std::tolower((unsigned char)c));return e==".jpg"||e==".jpeg"||e==".png"||e==".bmp"||e==".webp"||e==".gif"||e==".tif"||e==".tiff"||e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv";}
+static std::int64_t stamp(const fs::path&p){return std::chrono::duration_cast<std::chrono::milliseconds>(fs::last_write_time(p).time_since_epoch()).count();}
+static std::string quick(const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)return{};std::vector<unsigned char>b(65536);f.read((char*)b.data(),b.size());auto n=(size_t)f.gcount();std::uint64_t h=1469598103934665603ULL;for(size_t i=0;i<n;i++){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
+std::vector<FileState> Scanner::scan(const std::string& root, const std::string& excludedDirectory) const{
+ std::vector<FileState>o; std::error_code ec;
+ const fs::path excluded=excludedDirectory.empty()?fs::path{}:fs::weakly_canonical(path_from_utf8(excludedDirectory),ec); ec.clear();
+ fs::recursive_directory_iterator it(path_from_utf8(root),fs::directory_options::skip_permission_denied,ec),end;
+ for(;it!=end;it.increment(ec)){
+  if(ec){ec.clear();continue;}
+  std::error_code e;
+  if(!excluded.empty() && it->is_directory(e)){
+   const auto p=fs::weakly_canonical(it->path(),e);
+   if(!e && p==excluded){it.disable_recursion_pending();continue;}
+  }
+  if(!it->is_regular_file(e)||!media(it->path()))continue;
+  FileState s;s.path=path_to_utf8(fs::absolute(it->path(),ec).lexically_normal());s.size=it->file_size(e);s.modified=stamp(it->path());s.quickHash=quick(it->path());o.push_back(std::move(s));
+ }
+ return o;
+}
+}

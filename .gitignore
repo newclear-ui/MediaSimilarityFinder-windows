@@ -1,0 +1,22 @@
+# Build outputs (rooted: must not match docs/build-history/)
+/build-*/
+/build/
+/out/
+/.vs/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+
+# vcpkg project-local tree (regenerable via scripts/build_windows_*.ps1)
+/vcpkg_installed/
+
+# Portable packaging outputs (regenerable via scripts/package_portable.ps1)
+/portable-release/
+MediaSimilarityFinder-v*-Portable-*.zip
+
+# Runtime index/cache (program-owned, machine-local)
+/Index/
+/Cache/
+*.sqlite-journal

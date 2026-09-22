@@ -1,0 +1,71 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "cpu-linux",
+      "displayName": "CPU Core (Linux)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-cpu",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MSF_ENABLE_CUDA": "OFF",
+        "MSF_ENABLE_FFMPEG": "ON",
+        "MSF_BUILD_GUI": "OFF",
+        "MSF_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-cuda",
+      "displayName": "Windows x64 NVIDIA CUDA Build",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build-windows-cuda",
+      "cacheVariables": {
+        "MSF_ENABLE_CUDA": "ON",
+        "MSF_CUDA_ARCHITECTURES": "75;86;89",
+        "MSF_ENABLE_FFMPEG": "ON",
+        "MSF_BUILD_GUI": "ON",
+        "MSF_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-cpu",
+      "displayName": "Windows x64 CPU Initial Build",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build-windows-cpu",
+      "cacheVariables": {
+        "MSF_ENABLE_CUDA": "OFF",
+        "MSF_ENABLE_FFMPEG": "ON",
+        "MSF_BUILD_GUI": "ON",
+        "MSF_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-cuda-release",
+      "configurePreset": "windows-cuda",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-cpu-release",
+      "configurePreset": "windows-cpu",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-cuda-release",
+      "configurePreset": "windows-cuda",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-cpu-release",
+      "configurePreset": "windows-cpu",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

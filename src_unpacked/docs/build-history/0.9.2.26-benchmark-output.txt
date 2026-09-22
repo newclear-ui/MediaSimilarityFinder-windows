@@ -1,0 +1,5 @@
+N=6000 index_build_ms=1.0261 indexed_query_ms=64.4522 linear_query_ms=103.612 speedup=1.60759x hits=6000 nodes=6000 edges=54000 max_depth=1
+N=25000 index_build_ms=3.05811 indexed_query_ms=1092.83 hits=25000 nodes=25000 edges=225000 max_depth=1
+N=50000 index_build_ms=7.07358 indexed_query_ms=4617.82 hits=50000 nodes=50000 edges=450000 max_depth=1
+N=100000 index_build_ms=10.922 indexed_query_ms=19609.3 hits=100006 nodes=100000 edges=900000 max_depth=1
+candidate_index_benchmark=ok
