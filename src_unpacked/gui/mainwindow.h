@@ -41,7 +41,8 @@ private:
  QLineEdit* folder_=nullptr; QTreeWidget* groups_=nullptr; QListWidget* list_=nullptr;
  QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,*resume_=nullptr,*cancel_=nullptr;
  QProgressBar* progress_=nullptr; QLabel* status_=nullptr; QComboBox* preset_=nullptr;
- QSpinBox *cpu_=nullptr,*gpu_=nullptr; QSlider *threshold_=nullptr; QToolButton *details_=nullptr;
+  QSpinBox *cpu_=nullptr,*gpu_=nullptr; QSlider *threshold_=nullptr; QToolButton *details_=nullptr;
+  QCheckBox* gpuEnabled_=nullptr;
  QThread* thread_=nullptr; ScanWorker* worker_=nullptr; msf::ResourcePolicy policy_;
  QStringList allPaths_; QStringList matchRows_; QSet<QString> activeGroup_; bool tileView_=true;
  std::unique_ptr<msf::MediaMonitor> monitor_; QSystemTrayIcon* tray_=nullptr; QTimer* monitorTimer_=nullptr; bool monitorEnabled_=false; bool monitorPaused_=false;

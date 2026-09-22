@@ -5,11 +5,17 @@ namespace msf {
 static sqlite3* D(void* p){return reinterpret_cast<sqlite3*>(p);}
 static sqlite3_stmt* S(void* p){return reinterpret_cast<sqlite3_stmt*>(p);}
 
-Database::~Database(){ finalizeStatements(); if(db_) sqlite3_close(D(db_)); }
+Database::~Database(){ close(); }
 
-bool Database::open(const std::string& p){
+// Windows cannot delete a file that is still open (unlike POSIX), so callers
+// must close the database before removing its files.
+void Database::close(){
     finalizeStatements();
     if(db_){ sqlite3_close(D(db_)); db_=nullptr; }
+}
+
+bool Database::open(const std::string& p){
+    close();
     path_=p;
     const int rc=sqlite3_open(path_.c_str(),reinterpret_cast<sqlite3**>(&db_));
     if(rc!=SQLITE_OK){ if(db_){sqlite3_close(D(db_));db_=nullptr;} return false; }

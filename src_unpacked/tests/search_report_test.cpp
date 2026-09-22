@@ -26,5 +26,5 @@ int main(){
  if(r3.matches.size()>1) return 6;
  if(all!=r3.candidates && all>0) return 7;
  std::cout<<"search_report=ok\nstreamed="<<streamed<<"\ncompact="<<compact<<"\nall_matches="<<all<<"\n";
- std::filesystem::remove_all(d); return 0;
+ e.close(); std::filesystem::remove_all(d); return 0;
 }

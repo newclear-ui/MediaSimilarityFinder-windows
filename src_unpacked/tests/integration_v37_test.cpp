@@ -22,5 +22,5 @@ int main(){
  if(db.all().size()!=3||!db.containsUnchanged(cur[0]))return 4;
  auto old=db.all(); auto modified=cur; modified[0].size++; auto changes=msf::IncrementalScanner().classify(modified,old); if(changes.modified.size()!=1||changes.unchanged.size()!=2)return 5;
  msf::ImageDecoder dec;msf::GrayImage g; if(!dec.decode((d/"a.jpg").string(),64,64,g)){std::cerr<<"portable image decoder unavailable\n";return 6;} msf::MediaPipeline pipe;std::uint64_t ha=0,hb=0;if(!pipe.image((d/"a.jpg").string(),ha)||!pipe.image((d/"sub"/"b.jpg").string(),hb))return 7;if(msf::hash_similarity(ha,hb)<99.9)return 8;
- std::cout<<"v3.7_integration=ok\nfiles=3\nsqlite=ok\nimage_exact_duplicate=100%\n";fs::remove_all(d);return 0;
+ std::cout<<"v3.7_integration=ok\nfiles=3\nsqlite=ok\nimage_exact_duplicate=100%\n";db.close();fs::remove_all(d);return 0;
 }

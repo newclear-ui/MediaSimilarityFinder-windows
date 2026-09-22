@@ -16,6 +16,7 @@ static MediaKind kindOf(const std::string&p){auto e=path_from_utf8(p).extension(
 static bool stopped(ScanControl* c){ if(!c) return false; while(c->pause.load()&&!c->cancel.load())std::this_thread::sleep_for(std::chrono::milliseconds(80)); return c->cancel.load(); }
 struct AnalysisJob { FileState state; bool ok=false; bool changed=false; };
 bool MediaSearchEngine::openIndex(const std::string& p){ managedIndexActive_=false; if(!db_.open(p)||!db_.initialize()) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return videoEngine_.openPersistentCache(p+".video_cache.sqlite"); }
+void MediaSearchEngine::close(){ videoEngine_.closePersistentCache(); db_.close(); managedIndexActive_=false; }
 bool MediaSearchEngine::openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory){
  IndexPaths paths; if(!IndexManager::resolve(path_from_utf8(applicationDirectory),path_from_utf8(rootPath),paths)) return false;
  if(!db_.open(paths.database.string())||!db_.initialize()) return false;

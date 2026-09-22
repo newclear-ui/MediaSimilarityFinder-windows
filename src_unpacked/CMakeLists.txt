@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.2.34 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.2.35 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available" ON)
@@ -203,12 +203,16 @@ if(MSF_ENABLE_FFMPEG)
     endif()
   endif()
   if(FFMPEG_FOUND)
-    target_compile_definitions(msf_core PRIVATE MSF_HAS_FFMPEG=1)
-    target_include_directories(msf_core PRIVATE ${FFMPEG_INCLUDE_DIRS})
+    # PUBLIC: msf_core is a static library, so consumers (tests, GUI) must inherit
+    # the FFmpeg include/link paths and libraries at their own link step.
+    # MSF_HAS_FFMPEG is PUBLIC as well so video_decoder.h exposes the same
+    # interface to consumers as the one msf_core was compiled with.
+    target_compile_definitions(msf_core PUBLIC MSF_HAS_FFMPEG=1)
+    target_include_directories(msf_core PUBLIC ${FFMPEG_INCLUDE_DIRS})
     if(FFMPEG_LIBRARY_DIRS)
-      target_link_directories(msf_core PRIVATE ${FFMPEG_LIBRARY_DIRS})
+      target_link_directories(msf_core PUBLIC ${FFMPEG_LIBRARY_DIRS})
     endif()
-    target_link_libraries(msf_core PRIVATE ${FFMPEG_LIBRARIES})
+    target_link_libraries(msf_core PUBLIC ${FFMPEG_LIBRARIES})
   else()
     message(STATUS "FFmpeg not found; video decoding falls back to ffmpeg/ffprobe command line")
   endif()

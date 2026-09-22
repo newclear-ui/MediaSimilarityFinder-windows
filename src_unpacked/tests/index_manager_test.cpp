@@ -20,7 +20,10 @@ int main(){
     if(!msf::IndexManager::resolve(app,root1,b) || a.directory!=b.directory) return 5;
     if(!msf::IndexManager::resolve(app,root2,c) || a.directory==c.directory) return 6;
 
-    std::ifstream meta(a.metadata); std::string text((std::istreambuf_iterator<char>(meta)),{});
+    // NOTE: the reader must not stay open: Windows cannot replace/remove a
+    // file while a handle to it is held (updateLastScan renames over it).
+    std::string text;
+    { std::ifstream meta(a.metadata); text.assign((std::istreambuf_iterator<char>(meta)),{}); }
     if(text.find("rootPath") == std::string::npos || text.find("lastScan") == std::string::npos || text.find("schemaVersion") == std::string::npos) return 7;
 
     // A real scan must only populate the application-owned Index directory.
@@ -41,6 +44,7 @@ int main(){
     std::cout << "index_manager=ok\n"
               << "central_index=ok\n"
               << "target_folder_untouched=ok\n";
+    engine.close(); parentEngine.close(); // Windows cannot remove open database files.
     fs::remove_all(base);
     return 0;
 }

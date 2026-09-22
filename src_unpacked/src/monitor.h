@@ -93,7 +93,9 @@ public:
     MonitorStatus status() const;
 private:
     void loop();
-    void emit(MonitorEvent e);
+    // Named emitEvent (not emit): Qt defines `emit` as an empty macro, so a
+    // member named `emit` breaks any translation unit that includes Qt headers.
+    void emitEvent(MonitorEvent e);
     void enqueuePath(const std::string& path, bool notify=true);
     void enqueueRemoval(const std::string& path, bool notify=false);
 #ifdef _WIN32

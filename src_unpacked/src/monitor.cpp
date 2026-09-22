@@ -163,7 +163,7 @@ void MediaMonitor::stop(){
     for(auto& t:watcherThreads_) if(t.joinable()) t.join(); watcherThreads_.clear();
 #endif
 }
-void MediaMonitor::emit(MonitorEvent e){Callback cb;{std::lock_guard<std::mutex> g(mutex_);cb=callback_;}if(cb)cb(e);}
+void MediaMonitor::emitEvent(MonitorEvent e){Callback cb;{std::lock_guard<std::mutex> g(mutex_);cb=callback_;}if(cb)cb(e);}
 
 #ifdef _WIN32
 void MediaMonitor::stopWindowsWatchers(){
@@ -228,7 +228,7 @@ void MediaMonitor::loop(){
 #ifdef _WIN32
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
 #endif
-    MonitorEvent started; started.type=MonitorEvent::Type::Started; started.detail="Real-time monitor started"; emit(started);
+    MonitorEvent started; started.type=MonitorEvent::Type::Started; started.detail="Real-time monitor started"; emitEvent(started);
 #ifndef _WIN32
     // Non-Windows fallback: seed the queue through polling.
     auto lastPoll=std::chrono::steady_clock::now()-std::chrono::seconds(config_.pollSeconds);
@@ -281,7 +281,7 @@ void MediaMonitor::loop(){
             const unsigned retry=++retryCounts_[path];
             if(config_.maxRetries>0 && retry>config_.maxRetries){
                 { std::lock_guard<std::mutex> g(mutex_); ++status_.errors; status_.lastErrorPath=path; status_.lastError=detail; }
-                MonitorEvent e;e.type=MonitorEvent::Type::Error;e.path=path;e.detail="Retry limit reached: "+detail;emit(e);
+                MonitorEvent e;e.type=MonitorEvent::Type::Error;e.path=path;e.detail="Retry limit reached: "+detail;emitEvent(e);
                 retryCounts_.erase(path);
                 return;
             }
@@ -294,14 +294,14 @@ void MediaMonitor::loop(){
               if(inserted) pending_.push({path,it->second.notify,false,std::chrono::steady_clock::now()+std::chrono::milliseconds(delay),retry});
               ++status_.deferred;
               queueCv_.notify_one(); }
-            MonitorEvent e;e.type=MonitorEvent::Type::Deferred;e.path=path;e.detail=detail;emit(e);
+            MonitorEvent e;e.type=MonitorEvent::Type::Deferred;e.path=path;e.detail=detail;emitEvent(e);
         };
         if(!stable_.isStable(path,config_.stableSeconds)){defer("Waiting for file copy/write activity to settle",250); continue;}
         auto load=load_.sample(); { std::lock_guard<std::mutex> g(mutex_); status_.loadState=load.state; status_.cpuPercent=load.cpuPercent; status_.memoryPercent=load.memoryPercent; status_.gpuPercent=load.gpuPercent; } if(!load_.allowAnalysis(policy_,load)){defer("Analysis paused to protect foreground workload",500);continue;}
         auto ext=path_from_utf8(path).extension().string();std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return(char)std::tolower(c);});
         const bool image=ext==".jpg"||ext==".jpeg"||ext==".png"||ext==".bmp"||ext==".gif"||ext==".webp"||ext==".tif"||ext==".tiff";
         std::uint64_t fp=0, mirrorFp=0; CropFingerprints crops{}; bool ok=false;if(image){ok=imagePipeline_.image(path,fp,&mirrorFp); ImageDecoder d; GrayImage original; if(ok&&d.decodePreserveAspect(path,128,original)) crops=cropFingerprints(original);}else{VideoFingerprint vf;if(videoEngine_.build(path,vf)){for(auto h:vf.hashes)fp^=h;for(auto h:vf.mirrorHashes)mirrorFp^=h;crops.a4x3=vf.crop4x3;crops.a1x1=vf.crop1x1;crops.a9x16=vf.crop9x16;crops.mirrorA4x3=vf.mirrorCrop4x3;crops.mirrorA1x1=vf.mirrorCrop1x1;crops.mirrorA9x16=vf.mirrorCrop9x16;ok=fp!=0;}}
-        if(!ok){ { std::lock_guard<std::mutex> g(mutex_); ++status_.errors; status_.lastErrorPath=path; status_.lastError="Media fingerprinting failed"; } MonitorEvent e;e.type=MonitorEvent::Type::Error;e.path=path;e.detail="Media fingerprinting failed";emit(e);continue;}
+        if(!ok){ { std::lock_guard<std::mutex> g(mutex_); ++status_.errors; status_.lastErrorPath=path; status_.lastError="Media fingerprinting failed"; } MonitorEvent e;e.type=MonitorEvent::Type::Error;e.path=path;e.detail="Media fingerprinting failed";emitEvent(e);continue;}
         const int kind=image?1:2;
         const double analysisMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-analysisStarted).count();
         { std::lock_guard<std::mutex> g(mutex_); ++status_.analyzed; status_.lastAnalysisMs=analysisMs; status_.averageAnalysisMs = status_.analyzed==1 ? analysisMs : (status_.averageAnalysisMs*double(status_.analyzed-1)+analysisMs)/double(status_.analyzed); status_.lastAnalysisKind=image?"image":"video"; }
@@ -313,9 +313,9 @@ void MediaMonitor::loop(){
         MonitorEvent e;e.path=path;if(matches.empty()){e.type=MonitorEvent::Type::Detected;e.detail="No existing match above threshold";}else{e.type=MonitorEvent::Type::Match;e.detail="Existing similar media found";e.matches=std::move(matches);}
         seen_[path]=fileKey(path);
         retryCounts_.erase(path);
-        emit(e);
+        emitEvent(e);
     }
     { std::lock_guard<std::mutex> g(mutex_); status_.running=false; status_.pending=0; }
-    MonitorEvent stopped;stopped.type=MonitorEvent::Type::Stopped;stopped.detail="Real-time monitor stopped";emit(stopped);
+    MonitorEvent stopped;stopped.type=MonitorEvent::Type::Stopped;stopped.detail="Real-time monitor stopped";emitEvent(stopped);
 }
 }

@@ -35,8 +35,11 @@ struct ScanControl {
 };
 class MediaSearchEngine {
 public:
- bool openIndex(const std::string& dbPath);
- bool openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory);
+  bool openIndex(const std::string& dbPath);
+  bool openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory);
+  // Releases the index database so its files can be moved or removed.
+  // Required on Windows, where open files cannot be deleted.
+  void close();
  void setResourcePolicy(const ResourcePolicy& policy){ policy_=policy; }
  void setExpensiveStageGuard(std::function<bool()> guard){ expensiveStageGuard_=std::move(guard); }
  ResourcePolicy resourcePolicy() const { return policy_; }

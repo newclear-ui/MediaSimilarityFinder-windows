@@ -30,4 +30,4 @@ auto vf1=(d/"v1.mp4").string(); auto vf2=(d/"v2.mp4").string();
 if(!e.upsertFingerprint(vf1,0x1111000011110000ULL,(int)msf::MediaKind::Video,10,5,0,0xABCDEF01ULL,0,0,0x10ULL,0,0)) return 14;
 if(!e.upsertFingerprint(vf2,0x2222000022220000ULL,(int)msf::MediaKind::Video,10,6,0,0xABCDEF01ULL,0,0,0x20ULL,0,0)) return 15;
 auto vm=e.compareFingerprint(0x9999000099990000ULL,(int)msf::MediaKind::Video,100.0,"",0,0xABCDEF01ULL); if(vm.empty()||vm[0].rightPath!=vf1) return 16;
-std::cout<<"search_engine=ok\nfirst_analyzed="<<a.analyzed<<"\nincremental_analyzed="<<b.analyzed<<"\nremoved="<<c.removed<<"\nmirror_query=ok\n";std::filesystem::remove_all(d);return 0;}
+std::cout<<"search_engine=ok\nfirst_analyzed="<<a.analyzed<<"\nincremental_analyzed="<<b.analyzed<<"\nremoved="<<c.removed<<"\nmirror_query=ok\n";e.close();std::filesystem::remove_all(d);return 0;}

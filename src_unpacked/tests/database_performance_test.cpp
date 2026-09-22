@@ -29,6 +29,7 @@ int main(){
     // Regression guard: this is intentionally generous across CI/slow disks.
     if(ms>15000.0) return 6;
     std::cout<<"database_upserts="<<N<<"\ntransaction_ms="<<ms<<"\nprepared_statement_reuse=ok\n";
+    db.close(); // Windows cannot remove an open database file; close first.
     fs::remove(p); fs::remove(p.string()+"-wal"); fs::remove(p.string()+"-shm");
     return 0;
 }

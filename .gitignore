@@ -3,6 +3,11 @@
 /build/
 /out/
 /.vs/
+# Same for the unpacked source tree
+/src_unpacked/build-*/
+/src_unpacked/build/
+/src_unpacked/out/
+/src_unpacked/.vs/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -11,12 +16,16 @@ Testing/
 
 # vcpkg project-local tree (regenerable via scripts/build_windows_*.ps1)
 /vcpkg_installed/
+/src_unpacked/vcpkg_installed/
 
 # Portable packaging outputs (regenerable via scripts/package_portable.ps1)
 /portable-release/
+/src_unpacked/portable-release/
 MediaSimilarityFinder-v*-Portable-*.zip
 
 # Runtime index/cache (program-owned, machine-local)
 /Index/
 /Cache/
+/src_unpacked/Index/
+/src_unpacked/Cache/
 *.sqlite-journal

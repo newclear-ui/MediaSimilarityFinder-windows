@@ -38,6 +38,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.2.32 | Compact index 기반 대용량 Match streaming callback |
 | 0.9.2.33-test | Windows CPU 테스트 중간판 (기준선 아님, 0.9.2.34에 통합) |
 | 0.9.2.34 | Windows 공통 호환성 반영판 (VS18 2026 기준 통일, CUDA 불변) |
+| 0.9.2.35 | Windows CPU 빌드/테스트 하드닝 (36/36 PASS, GUI 런타임 검증) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

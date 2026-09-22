@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -76,7 +77,7 @@ MainWindow::MainWindow(QWidget* p):QMainWindow(p){buildUi(); monitor_=std::make_
 MainWindow::~MainWindow(){if(worker_){worker_->cancel();thread_->quit();thread_->wait();} if(monitor_) monitor_->stop();}
 
 void MainWindow::buildUi(){
- setWindowTitle("Media Similarity Finder 0.9.2.34 (CUDA/CPU Windows)"); resize(1440,850);
+  setWindowTitle("Media Similarity Finder 0.9.2.35 (CUDA/CPU Windows)"); resize(1440,850);
  auto *central=new QWidget(this); auto *root=new QVBoxLayout(central); root->setContentsMargins(8,8,8,8);
  auto *bar=new QHBoxLayout;
  folder_=new QLineEdit; folder_->setPlaceholderText("Search folder…"); browse_=new QPushButton("Browse…");
