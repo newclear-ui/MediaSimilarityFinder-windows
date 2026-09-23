@@ -13,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileIconProvider>
 #include <QFileInfo>
@@ -44,6 +45,7 @@
 #include <QStyle>
 #include <QSystemTrayIcon>
 #include <QTabWidget>
+#include <QTextStream>
 #include <QThread>
 #include <QTimer>
 #include <QToolBar>
@@ -192,7 +194,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.44\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.44\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.45\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.45\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -285,9 +287,12 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   monitorTimer_->start();
   uiTimer_ = new QTimer(this); uiTimer_->setInterval(600);
   connect(uiTimer_, &QTimer::timeout, this, [this] {
-    if (!groupsDirty_) { if (scanning_) updateStatusCounts(); return; }
-    groupsDirty_ = false;
-    rebuildGroups(); refreshGroupList(); refreshFileViews(); updateStatusCounts();
+    if (!groupsDirty_) { if (scanning_) updateStatusCounts(); }
+    else {
+      groupsDirty_ = false;
+      rebuildGroups(); refreshGroupList(); refreshFileViews(); updateStatusCounts();
+    }
+    if (scanning_) scanHeartbeat();
   });
   tray_ = new QSystemTrayIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon), this);
   auto* tm = new QMenu(this);
@@ -311,7 +316,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.44"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.45"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -564,7 +569,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.44"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.45"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -660,6 +665,7 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::finished, thread_, &QThread::quit);
   connect(worker_, &ScanWorker::failed, thread_, &QThread::quit);
   scanStartMs_ = QDateTime::currentMSecsSinceEpoch();
+  scanLog(QString("start folder=%1").arg(folder_->text()));
   setRunning(true);
   statusMsg_->setText(trStr(lang(), "scanning"));
   statusProg_->setValue(0);
@@ -692,6 +698,7 @@ void MainWindow::onListingProgress(std::size_t n) {
 }
 void MainWindow::scanFinished(QString msg) {
   drainMatches();
+  scanLog(QString("finish %1").arg(msg));
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail();
   if (msg == QStringLiteral("CANCELLED")) {
     statusMsg_->setText(trStr(lang(), "scanCancel"));
@@ -714,6 +721,7 @@ void MainWindow::scanFinished(QString msg) {
   statusProg_->setValue(100);
 }
 void MainWindow::scanFailed(QString msg) {
+  scanLog(QString("failed %1").arg(msg));
   QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
   statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
   setRunning(false);
@@ -1430,6 +1438,23 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
   sumValDup_->setText(QString::number(dupFiles));
   sumValTime_->setText(fmtElapsed(repElapsedMs_));
   sumValGpu_->setText(gpuEnabled_->isChecked() ? "GPU" : "CPU");
+}
+void MainWindow::scanHeartbeat() {
+  static qint64 lastBeat = 0;
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  if (now - lastBeat < 10000) return;
+  lastBeat = now;
+  scanLog(QString("alive elapsed=%1 lastPct=%2 lastPath=%3 groups=%4 marked=%5")
+              .arg(fmtElapsed(now - scanStartMs_)).arg(lastPct_).arg(lastPath_)
+              .arg(groups_.size()).arg(marked_.size()));
+}
+void MainWindow::scanLog(const QString& line) {
+  const QString p = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                    + QStringLiteral("/msf_scan.log");
+  QFile f(p);
+  if (!f.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) return;
+  QTextStream out(&f);
+  out << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") << " " << line << "\n";
 }
 void MainWindow::updateStatusCounts() {
   qulonglong files = 0;

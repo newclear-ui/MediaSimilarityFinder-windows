@@ -106,6 +106,8 @@ private:
   void refreshDetail();          // tabs for current file
   void refreshSummary(const msf::SearchReport* r=nullptr);
   void updateStatusCounts();
+  void scanHeartbeat();
+  static void scanLog(const QString& line);
   QString fmtSize(qulonglong) const;
   QString fileResolution(const QString&) const; // cached QImageReader::size
   QIcon fileThumb(const QString&, const QSize&) const;
