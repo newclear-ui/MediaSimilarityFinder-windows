@@ -196,7 +196,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.47\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.47\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.48\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.48\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -318,17 +318,19 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.47"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.48"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
   buildToolbar();
   split_ = new QSplitter(Qt::Horizontal, central);
-  split_->setCollapsible(0, true); split_->setCollapsible(1, true); split_->setCollapsible(2, false);
   split_->setOpaqueResize(true);
   auto* leftW = new QWidget(split_); auto* midW = new QWidget(split_); auto* rightW = new QWidget(split_);
   buildLeft(leftW); buildMiddle(midW); buildRight(rightW);
   split_->addWidget(leftW); split_->addWidget(midW); split_->addWidget(rightW);
+  // NOTE: setCollapsible must come after the widgets exist; calling it on an
+  // empty splitter prints "QSplitter::setCollapsible: Index out of range".
+  split_->setCollapsible(0, true); split_->setCollapsible(1, true); split_->setCollapsible(2, false);
   split_->setStretchFactor(0, 0); split_->setStretchFactor(1, 0); split_->setStretchFactor(2, 1);
   const auto saved = QSettings().value("ui/splitter").toByteArray();
   if (!saved.isEmpty() && split_->restoreState(saved)) { /* restored */ }
@@ -571,7 +573,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.47"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.48"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1472,9 +1474,9 @@ void MainWindow::updateStatusCounts() {
                             .arg(trStr(lang(), "marked")).arg(marked_.size()));
   if (scanning_) sumValTime_->setText(fmtElapsed(QDateTime::currentMSecsSinceEpoch() - scanStartMs_));
 }
-void MainWindow::showHelp() {
-  QMessageBox::about(this, trStr(lang(), "help"), trStr(lang(), "about"));
-}
+  void MainWindow::showHelp() {
+    QMessageBox::about(this, trStr(lang(), "help"), trStr(lang(), "about"));
+  }
 
 // ------------------------------------------------------------ monitor (kept behavior)
 void MainWindow::configureMonitor() {

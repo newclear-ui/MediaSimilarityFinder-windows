@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.2.47 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.2.48 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available" ON)
@@ -234,6 +234,9 @@ if(MSF_BUILD_GUI)
     qt_standard_project_setup()
     qt_add_executable(MediaSimilarityFinder
       gui/main.cpp gui/mainwindow.cpp gui/mainwindow.h)
+    # GUI subsystem: no console window on double-click. The --version/--help/
+    # --smoke flags attach to the parent console explicitly (see main.cpp).
+    set_target_properties(MediaSimilarityFinder PROPERTIES WIN32_EXECUTABLE TRUE)
     target_link_libraries(MediaSimilarityFinder PRIVATE msf_core Qt6::Widgets)
     target_include_directories(MediaSimilarityFinder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   else()

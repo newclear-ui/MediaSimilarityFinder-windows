@@ -51,6 +51,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.45 | Scan activity log (0% CPU triage) |
 | 0.9.2.46 | Scan pipelining (walk ‖ analyze) |
 | 0.9.2.47 | Checkpointed scans (interruption keeps progress) |
+| 0.9.2.48 | No console window + splitter warning fix |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
