@@ -46,56 +46,78 @@ bool VideoFingerprintEngine::openPersistentCache(const std::string& path) const{
  if(!hasVersion){
    if(sqlite3_exec(db,"ALTER TABLE video_fingerprint_cache ADD COLUMN cache_version INTEGER NOT NULL DEFAULT 0;",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
  }
- if(sqlite3_exec(db,"DELETE FROM video_fingerprint_cache WHERE cache_version != 3;",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
+ if(sqlite3_exec(db,"DELETE FROM video_fingerprint_cache WHERE cache_version != 4;",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
  return preparePersistentStatements();
 }
 void VideoFingerprintEngine::closePersistentCache() const{
  std::lock_guard<std::mutex> lock(dbMutex_); finalizePersistentStatements(); if(cacheDb_){sqlite3_close(VDB(cacheDb_));cacheDb_=nullptr;}
 }
 bool VideoFingerprintEngine::loadPersistent(const std::string&p,std::uint64_t sz,std::uint64_t mt,VideoFingerprint&o) const{
- std::lock_guard<std::mutex> lock(dbMutex_); if(!cacheDb_)return false;
- sqlite3_stmt* s=reinterpret_cast<sqlite3_stmt*>(loadStmt_); if(!s)return false;
- sqlite3_reset(s); sqlite3_clear_bindings(s);
- sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_int(s,4,kCacheFormatVersion);
- bool ok=false;
- if(sqlite3_step(s)==SQLITE_ROW){
-  o.duration=sqlite3_column_double(s,0);const auto*n=(const unsigned char*)sqlite3_column_blob(s,1);int bytes=sqlite3_column_bytes(s,1);
-  if(n&&bytes>=sizeof(std::uint32_t)){const char*cur=(const char*)n;std::uint32_t count=0;std::memcpy(&count,cur,sizeof(count));cur+=sizeof(count);std::size_t frameBytes=sizeof(count)+count*(sizeof(double)+2*sizeof(std::uint64_t));std::size_t need=frameBytes+6*sizeof(std::uint64_t);
-   if(need==(std::size_t)bytes){o.timestamps.resize(count);o.hashes.resize(count);o.mirrorHashes.resize(count);for(std::uint32_t i=0;i<count;++i){std::memcpy(&o.timestamps[i],cur,sizeof(double));cur+=sizeof(double);std::memcpy(&o.hashes[i],cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.mirrorHashes[i],cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);}std::memcpy(&o.crop4x3,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.crop1x1,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.crop9x16,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.mirrorCrop4x3,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.mirrorCrop1x1,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.mirrorCrop9x16,cur,sizeof(std::uint64_t));ok=!o.hashes.empty();}
+  std::lock_guard<std::mutex> lock(dbMutex_); if(!cacheDb_)return false;
+  sqlite3_stmt* s=reinterpret_cast<sqlite3_stmt*>(loadStmt_); if(!s)return false;
+  sqlite3_reset(s); sqlite3_clear_bindings(s);
+  sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_int(s,4,kCacheFormatVersion);
+  bool ok=false;
+  if(sqlite3_step(s)==SQLITE_ROW){
+   o.duration=sqlite3_column_double(s,0);const auto*n=(const unsigned char*)sqlite3_column_blob(s,1);int bytes=sqlite3_column_bytes(s,1);
+   if(n&&bytes>=sizeof(std::uint32_t)){const char*cur=(const char*)n;
+    std::uint32_t count=0;std::memcpy(&count,cur,sizeof(count));cur+=sizeof(count);
+    const std::size_t frameBytes=sizeof(count)+count*(sizeof(double)+2*sizeof(std::uint64_t));
+    // v4 layout: frames(hashes+mirror), 6 crops, sceneCount, scene timestamps.
+    const std::size_t headNeed=frameBytes+6*sizeof(std::uint64_t)+sizeof(std::uint32_t);
+    if(headNeed<=(std::size_t)bytes){
+     o.timestamps.resize(count);o.hashes.resize(count);o.mirrorHashes.resize(count);
+     for(std::uint32_t i=0;i<count;++i){std::memcpy(&o.timestamps[i],cur,sizeof(double));cur+=sizeof(double);std::memcpy(&o.hashes[i],cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.mirrorHashes[i],cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);}
+     std::memcpy(&o.crop4x3,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.crop1x1,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.crop9x16,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);
+     std::memcpy(&o.mirrorCrop4x3,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.mirrorCrop1x1,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);std::memcpy(&o.mirrorCrop9x16,cur,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);
+     std::uint32_t sceneCount=0;std::memcpy(&sceneCount,cur,sizeof(std::uint32_t));cur+=sizeof(std::uint32_t);
+     if(sceneCount<=count&&(std::size_t)bytes>=headNeed+sceneCount*sizeof(double)){o.sceneChanges.resize(sceneCount);for(std::uint32_t i=0;i<sceneCount;++i){std::memcpy(&o.sceneChanges[i],cur,sizeof(double));cur+=sizeof(double);}}
+     ok=!o.hashes.empty();
+    }
+   }
   }
- }
- sqlite3_reset(s);sqlite3_clear_bindings(s);return ok;
+sqlite3_reset(s);sqlite3_clear_bindings(s);return ok;
 }
 void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz,std::uint64_t mt,const VideoFingerprint&f) const{
- std::lock_guard<std::mutex> lock(dbMutex_);if(!cacheDb_||f.hashes.empty()||f.timestamps.size()!=f.hashes.size())return;
- const std::uint32_t count=(std::uint32_t)f.hashes.size();std::vector<unsigned char> blob(sizeof(count)+count*(sizeof(double)+2*sizeof(std::uint64_t))+6*sizeof(std::uint64_t));char*cur=(char*)blob.data();std::memcpy(cur,&count,sizeof(count));cur+=sizeof(count);for(std::uint32_t i=0;i<count;++i){std::memcpy(cur,&f.timestamps[i],sizeof(double));cur+=sizeof(double);std::memcpy(cur,&f.hashes[i],sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);const auto mh=(i<f.mirrorHashes.size()?f.mirrorHashes[i]:0);std::memcpy(cur,&mh,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);}const std::uint64_t crops[]={f.crop4x3,f.crop1x1,f.crop9x16,f.mirrorCrop4x3,f.mirrorCrop1x1,f.mirrorCrop9x16};for(auto h:crops){std::memcpy(cur,&h,sizeof(h));cur+=sizeof(h);}
- sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_double(s,4,f.duration);sqlite3_bind_int(s,5,(int)count);sqlite3_bind_int(s,6,kCacheFormatVersion);sqlite3_bind_blob(s,7,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
+  std::lock_guard<std::mutex> lock(dbMutex_);if(!cacheDb_||f.hashes.empty()||f.timestamps.size()!=f.hashes.size())return;
+  const std::uint32_t count=(std::uint32_t)f.hashes.size();const std::uint32_t sceneCount=(std::uint32_t)f.sceneChanges.size();
+  std::vector<unsigned char> blob(sizeof(count)+count*(sizeof(double)+2*sizeof(std::uint64_t))+6*sizeof(std::uint64_t)+sizeof(sceneCount)+sceneCount*sizeof(double));
+  char*cur=(char*)blob.data();std::memcpy(cur,&count,sizeof(count));cur+=sizeof(count);for(std::uint32_t i=0;i<count;++i){std::memcpy(cur,&f.timestamps[i],sizeof(double));cur+=sizeof(double);std::memcpy(cur,&f.hashes[i],sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);const auto mh=(i<f.mirrorHashes.size()?f.mirrorHashes[i]:0);std::memcpy(cur,&mh,sizeof(std::uint64_t));cur+=sizeof(std::uint64_t);}const std::uint64_t crops[]={f.crop4x3,f.crop1x1,f.crop9x16,f.mirrorCrop4x3,f.mirrorCrop1x1,f.mirrorCrop9x16};for(auto h:crops){std::memcpy(cur,&h,sizeof(h));cur+=sizeof(h);}std::memcpy(cur,&sceneCount,sizeof(sceneCount));cur+=sizeof(sceneCount);for(std::uint32_t i=0;i<sceneCount;++i){std::memcpy(cur,&f.sceneChanges[i],sizeof(double));cur+=sizeof(double);}
+  sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_double(s,4,f.duration);sqlite3_bind_int(s,5,(int)count);sqlite3_bind_int(s,6,kCacheFormatVersion);sqlite3_bind_blob(s,7,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
 }
 VideoFingerprintEngine::~VideoFingerprintEngine(){closePersistentCache();}
 bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o)const{
- // NOTE: p is UTF-8. Build the path with path_from_utf8 first: constructing
- // fs::path from a narrow string throws on Windows when the name holds
- // characters outside the ANSI code page (observed terminate() on Korean
- // filenames), even when an error_code is supplied.
- std::error_code ec; const fs::path fp=path_from_utf8(p);
- if(!std::filesystem::exists(fp,ec))return false; const auto sz=std::filesystem::file_size(fp,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();if(ec)return false;
- {std::lock_guard<std::mutex>lock(cacheMutex_);auto it=cache_.find(p);if(it!=cache_.end()&&it->second.size==sz&&it->second.modified==mt){o=it->second.fingerprint;return !o.hashes.empty();}}
- if(loadPersistent(p,sz,mt,o)){std::lock_guard<std::mutex>lock(cacheMutex_);cache_[p]={sz,mt,o};return true;}
- VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
- VideoFingerprint built; built.duration=i.duration; auto plan=make_sample_plan(i.duration);
- std::vector<VideoFrame> frames32, frames96;
- if(!d.framesAt(plan.timestamps,32,32,frames32)){d.close();return false;}
- // The crop pass uses the same timestamp list but a larger decode. This remains a
- // second resolution pass; each pass itself is a single sequential decode rather than
- // one seek per timestamp.
- d.framesAt(plan.timestamps,96,96,frames96);
- built.timestamps.reserve(frames32.size()); built.hashes.reserve(frames32.size()); built.mirrorHashes.reserve(frames32.size());
- for(std::size_t iFrame=0;iFrame<frames32.size();++iFrame){
-   const auto& f=frames32[iFrame]; built.timestamps.push_back(f.timestamp); built.hashes.push_back(perceptual_hash(f.gray,f.width,f.height)); built.mirrorHashes.push_back(perceptual_hash_mirrored(f.gray,f.width,f.height));
- }
- for(const auto& cf:frames96){GrayImage g;g.width=cf.width;g.height=cf.height;g.pixels=cf.gray;auto c=cropFingerprints(g);built.crop4x3^=c.a4x3;built.crop1x1^=c.a1x1;built.crop9x16^=c.a9x16;built.mirrorCrop4x3^=c.mirrorA4x3;built.mirrorCrop1x1^=c.mirrorA1x1;built.mirrorCrop9x16^=c.mirrorA9x16;}
- d.close();if(built.hashes.empty())return false;
- {std::lock_guard<std::mutex>lock(cacheMutex_);cache_[p]={sz,mt,built};}savePersistent(p,sz,mt,built);o=std::move(built);return true;
+  // NOTE: p is UTF-8. Build the path with path_from_utf8 first: constructing
+  // fs::path from a narrow string throws on Windows when the name holds
+  // characters outside the ANSI code page (observed terminate() on Korean
+  // filenames), even when an error_code is supplied.
+  std::error_code ec; const fs::path fp=path_from_utf8(p);
+  if(!std::filesystem::exists(fp,ec))return false; const auto sz=std::filesystem::file_size(fp,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();if(ec)return false;
+  {std::lock_guard<std::mutex>lock(cacheMutex_);auto it=cache_.find(p);if(it!=cache_.end()&&it->second.size==sz&&it->second.modified==mt){o=it->second.fingerprint;return !o.hashes.empty();}}
+  if(loadPersistent(p,sz,mt,o)){std::lock_guard<std::mutex>lock(cacheMutex_);cache_[p]={sz,mt,o};return true;}
+  VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
+  VideoFingerprint built; built.duration=i.duration; auto plan=make_sample_plan(i.duration);
+  std::vector<VideoFrame> frames32, frames96;
+  if(!d.framesAt(plan.timestamps,32,32,frames32)){d.close();return false;}
+  // The crop pass uses the same timestamp list but a larger decode. This remains a
+  // second resolution pass; each pass itself is a single sequential decode rather than
+  // one seek per timestamp.
+  d.framesAt(plan.timestamps,96,96,frames96);
+  // Perceptual robustness: drop near-flat frames (solid titles/logos/fades) whose
+  // hash is content noise against re-encodes. Two-pass average+sigma over the gray
+  // frame. A purely static video (talking head) keeps everything by the 30% floor.
+  constexpr double kMinVariance=6.0; constexpr std::size_t kFloorRatio=30;
+  std::vector<char> keep(frames32.size(),1);
+  std::size_t nVar=0;for(const auto&f:frames32){double s=0;for(unsigned char v:f.gray)s+=v;const double m=s/(f.gray.empty()?1:(double)f.gray.size());double sq=0;for(unsigned char v:f.gray){double dv=(double)v-m;sq+=dv*dv;}const double sd=f.gray.empty()?0.0:std::sqrt(sq/f.gray.size());if(sd<kMinVariance)keep[nVar]=0;++nVar;}
+  std::size_t kept=0;for(char k:keep)if(k)++kept;
+  if(frames32.size()&&kept*100/frames32.size()<kFloorRatio) keep.assign(frames32.size(),1);
+  std::vector<double> ts; std::vector<std::uint64_t> hs, mhs;
+  for(std::size_t i=0;i<frames32.size();++i){if(!keep[i])continue;const auto&f=frames32[i];ts.push_back(f.timestamp);hs.push_back(perceptual_hash(f.gray,f.width,f.height));mhs.push_back(perceptual_hash_mirrored(f.gray,f.width,f.height));}
+  for(std::size_t i=1;i<ts.size();++i){double sim=hash_similarity(hs[i-1],hs[i]);if(sim<25.0)built.sceneChanges.push_back(ts[i]);}
+  built.timestamps=std::move(ts); built.hashes=std::move(hs); built.mirrorHashes=std::move(mhs);
+  for(std::size_t i=0;i<frames96.size();++i){if(!keep[i])continue;const auto&cf=frames96[i];GrayImage g;g.width=cf.width;g.height=cf.height;g.pixels=cf.gray;auto c=cropFingerprints(g);built.crop4x3^=c.a4x3;built.crop1x1^=c.a1x1;built.crop9x16^=c.a9x16;built.mirrorCrop4x3^=c.mirrorA4x3;built.mirrorCrop1x1^=c.mirrorA1x1;built.mirrorCrop9x16^=c.mirrorA9x16;}
+  d.close();if(built.hashes.empty())return false;
+  {std::lock_guard<std::mutex>lock(cacheMutex_);cache_[p]={sz,mt,built};}savePersistent(p,sz,mt,built);o=std::move(built);return true;
 }
 bool VideoFingerprintEngine::buildCropAware(const std::string&p, const VideoFingerprint& base, VideoCropFingerprint& out, int decodeSize) const{
  if(base.hashes.empty() || base.timestamps.size()!=base.hashes.size()) return false;
@@ -111,24 +133,34 @@ bool VideoFingerprintEngine::buildCropAware(const std::string&p, const VideoFing
 
 void VideoFingerprintEngine::clearCache()const{std::lock_guard<std::mutex>lock(cacheMutex_);cache_.clear();}
 std::size_t VideoFingerprintEngine::memoryCacheSize()const{std::lock_guard<std::mutex>lock(cacheMutex_);return cache_.size();}
+// Scene boundaries act as stable DTW anchors: both sides being at a cut gets a
+// small similarity bonus (scene cuts survive re-encodes even when frames shift).
+// sceneBonus==0 keeps the legacy scoring bit-identical.
+static std::vector<char> sceneFlags(const VideoFingerprint& v){
+ std::vector<char> f(v.timestamps.size(),0); if(v.sceneChanges.empty()) return f;
+ for(std::size_t i=0;i<v.timestamps.size();++i) for(double scc:v.sceneChanges) if(std::abs(v.timestamps[i]-scc)<1e-6){f[i]=1;break;}
+ return f;
+}
 double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const VideoSimilarityOptions& options){
- if(a.hashes.empty()||b.hashes.empty())return 0;const double threshold=std::clamp(options.thresholdPercent,0.0,100.0),gap=std::max(0.0,options.gapPenalty),tol=std::max(0.0,options.timeToleranceSeconds);
+ if(a.hashes.empty()||b.hashes.empty())return 0;const double threshold=std::clamp(options.thresholdPercent,0.0,100.0),gap=std::max(0.0,options.gapPenalty),tol=std::max(0.0,options.timeToleranceSeconds),bonus=std::max(0.0,options.sceneBonus);
  const auto&x=(a.hashes.size()<=b.hashes.size()?a:b);const auto&y=(a.hashes.size()<=b.hashes.size()?b:a);const std::size_t n=x.hashes.size(),m=y.hashes.size();std::vector<double>prev(m+1),cur(m+1);double best=0;
+ const std::vector<char> xa=sceneFlags(x), yb=sceneFlags(y);
  for(std::size_t i=1;i<=n;++i){cur[0]=0;for(std::size_t j=1;j<=m;++j){double sim=hash_similarity(x.hashes[i-1],y.hashes[j-1]);
  std::uint64_t xm=(i-1<x.mirrorHashes.size()?x.mirrorHashes[i-1]:0), ym=(j-1<y.mirrorHashes.size()?y.mirrorHashes[j-1]:0);
  if(xm) sim=std::max(sim,hash_similarity(xm,y.hashes[j-1]));
  if(ym) sim=std::max(sim,hash_similarity(x.hashes[i-1],ym));
- if(xm&&ym) sim=std::max(sim,hash_similarity(xm,ym));double timePenalty=0;if(i-1<x.timestamps.size()&&j-1<y.timestamps.size()&&tol>0){if(i>1&&j>1){double dx=x.timestamps[i-1]-x.timestamps[i-2];double dy=y.timestamps[j-1]-y.timestamps[j-2];double dt=std::abs(dx-dy);timePenalty=std::min(20.0,20.0*dt/tol);}}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);}std::swap(prev,cur);}
+ if(xm&&ym) sim=std::max(sim,hash_similarity(xm,ym));double timePenalty=0;if(i-1<x.timestamps.size()&&j-1<y.timestamps.size()&&tol>0){if(i>1&&j>1){double dx=x.timestamps[i-1]-x.timestamps[i-2];double dy=y.timestamps[j-1]-y.timestamps[j-2];double dt=std::abs(dx-dy);timePenalty=std::min(20.0,20.0*dt/tol);}}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;if(bonus>0&&xa[i-1]&&yb[j-1])match+=bonus;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);}std::swap(prev,cur);}
  return std::clamp(100.0*best/(100.0*n),0.0,100.0);
 }
 
 static double crop_temporal_score(const VideoFingerprint& baseA, const VideoCropFingerprint& cropA,
                                   const VideoFingerprint& baseB, const VideoCropFingerprint& cropB,
                                   const VideoSimilarityOptions& options){
- const double threshold=std::clamp(options.thresholdPercent,0.0,100.0), gap=std::max(0.0,options.gapPenalty), tol=std::max(0.0,options.timeToleranceSeconds);
+ const double threshold=std::clamp(options.thresholdPercent,0.0,100.0), gap=std::max(0.0,options.gapPenalty), tol=std::max(0.0,options.timeToleranceSeconds), bonus=std::max(0.0,options.sceneBonus);
  const std::size_t n=std::min(cropA.timestamps.size(),baseA.hashes.size());
  const std::size_t m=std::min(cropB.timestamps.size(),baseB.hashes.size());
  if(!n||!m) return 0;
+ const std::vector<char> xa=sceneFlags(baseA), yb=sceneFlags(baseB);
  const std::uint64_t* ax[6]={cropA.a4x3.data(),cropA.a1x1.data(),cropA.a9x16.data(),cropA.mirrorA4x3.data(),cropA.mirrorA1x1.data(),cropA.mirrorA9x16.data()};
  const std::uint64_t* bx[6]={cropB.a4x3.data(),cropB.a1x1.data(),cropB.a9x16.data(),cropB.mirrorA4x3.data(),cropB.mirrorA1x1.data(),cropB.mirrorA9x16.data()};
  const int ratioOf[6]={0,1,2,0,1,2}; double globalBest=0;
@@ -143,7 +175,7 @@ static double crop_temporal_score(const VideoFingerprint& baseA, const VideoCrop
        // Crop-to-full is part of the second-stage check and is orientation aware.
        for(int u: {ai0,ai1}){if(ax[u]){sim=std::max(sim,hash_similarity(ax[u][i-1],baseB.hashes[j-1])); if(j-1<baseB.mirrorHashes.size())sim=std::max(sim,hash_similarity(ax[u][i-1],baseB.mirrorHashes[j-1]));}}
        for(int v: {bj0,bj1}){if(bx[v]){sim=std::max(sim,hash_similarity(baseA.hashes[i-1],bx[v][j-1])); if(i-1<baseA.mirrorHashes.size())sim=std::max(sim,hash_similarity(baseA.mirrorHashes[i-1],bx[v][j-1]));}}
-       double timePenalty=0;if(tol>0&&i>1&&j>1){double dx=cropA.timestamps[i-1]-cropA.timestamps[i-2],dy=cropB.timestamps[j-1]-cropB.timestamps[j-2];timePenalty=std::min(20.0,20.0*std::abs(dx-dy)/tol);}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);
+       double timePenalty=0;if(tol>0&&i>1&&j>1){double dx=cropA.timestamps[i-1]-cropA.timestamps[i-2],dy=cropB.timestamps[j-1]-cropB.timestamps[j-2];timePenalty=std::min(20.0,20.0*std::abs(dx-dy)/tol);}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;if(bonus>0&&i-1<xa.size()&&j-1<yb.size()&&xa[i-1]&&yb[j-1])match+=bonus;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);
      } std::swap(prev,cur);
    }
    globalBest=std::max(globalBest,100.0*best/(100.0*n));

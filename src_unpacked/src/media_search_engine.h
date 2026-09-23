@@ -66,9 +66,15 @@ public:
  bool removePath(const std::string& path);
  void rebuildCandidateIndexes();
  std::vector<SearchMatch> compareFingerprint(std::uint64_t fingerprint, int kind, double thresholdPercent, const std::string& excludePath = {}, std::uint64_t mirrorFingerprint = 0, std::uint64_t crop4x3 = 0, std::uint64_t crop1x1 = 0, std::uint64_t crop9x16 = 0, std::uint64_t mirrorCrop4x3 = 0, std::uint64_t mirrorCrop1x1 = 0, std::uint64_t mirrorCrop9x16 = 0) const;
- const std::vector<MediaFile>& files() const { return files_; }
+const std::vector<MediaFile>& files() const { return files_; }
+  // Live GPU-accelerated image counter. Images hashed on the CUDA backend
+  // increment this during scan(); the GUI reads it for the status bar instead
+  // of polling nvidia-smi, whose polling window cannot see sub-millisecond
+  // batches. Reset to 0 at the start of every scan().
+  std::uint64_t gpuImagesProcessed() const { return gpuImagesProcessed_.load(); }
 private:
- Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
+  Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
+  std::atomic<std::uint64_t> gpuImagesProcessed_{0};
  std::vector<FileState> candidateStates_;
  CandidateIndex imageCandidates_;
  CandidateIndex videoCandidates_;

@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "video_decoder.h"
 #include "../src/image_decoder.h"
+#include "../src/gpu_backend.h"
 #include <QAbstractItemView>
 #include <QActionGroup>
 #include <QApplication>
@@ -65,6 +66,13 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#include <shlobj.h>
+#include <thumbcache.h>
+#include <winerror.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
+#endif
 #endif
 
 // ------------------------------------------------------------ language table
@@ -100,6 +108,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"elapsed")) return S("검색 시간","Elapsed");
   if (!std::strcmp(key,"updated")) return S("마지막 업데이트","Last update");
   if (!std::strcmp(key,"gpu")) return S("GPU 가속","GPU accel.");
+  if (!std::strcmp(key,"gpuOn")) return S("GPU 가동","GPU on");
+  if (!std::strcmp(key,"gpuOff")) return S("GPU 꺼짐","GPU off");
+  if (!std::strcmp(key,"gpuLive")) return S("GPU 처리 %1","GPU processing %1");
   if (!std::strcmp(key,"cpu")) return S("CPU 사용","CPU usage");
   if (!std::strcmp(key,"ram")) return S("RAM 사용","RAM usage");
   if (!std::strcmp(key,"monitor")) return S("모니터","Monitor");
@@ -201,7 +212,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.50\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.50\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.51\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.51\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -225,6 +236,7 @@ ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int 
   : root_(std::move(root)), appDir_(std::move(appDir)), distance_(distance),
     cpu_(cpu), gpu_(gpu), gpuEnabled_(gpuEnabled), scanImages_(scanImages), scanVideos_(scanVideos) {
   qRegisterMetaType<QVector<GuiFile>>();
+  gpuAvail_ = msf::GpuBackend().available();
 }
 
 void ScanWorker::run() {
@@ -252,6 +264,7 @@ void ScanWorker::run() {
     control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
       emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(path));
       emit progressCount((qulonglong)done, (qulonglong)total);
+      gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
     };
     control_.listing = [this](std::size_t n) { emit listingProgress(n); };
     control_.onMatch = [this](const msf::SearchMatch& m) {
@@ -268,6 +281,7 @@ void ScanWorker::run() {
     // groups incrementally from onMatch and needs no retained vector.
     control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
+    gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
     // Persist the accumulated match set (loaded + new). Wholesale replacement
     // keeps deleted files out of stored results; partial sets on cancel keep
     // the last completed checkpoint, matching the scan-side semantics.
@@ -335,6 +349,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
                               .arg(QFileInfo(lastPath_).fileName()).arg(fmtElapsed(el)));
       scanHeartbeat();
     }
+    updateGpuLabel();
   });
   tray_ = new QSystemTrayIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon), this);
   auto* tm = new QMenu(this);
@@ -358,7 +373,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.50"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.51"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -379,7 +394,9 @@ void MainWindow::buildUi() {
   statusBar_ = statusBar();
   statusMsg_ = new QLabel(this); statusCount_ = new QLabel(this); statusProg_ = new QProgressBar(this);
   statusProg_->setRange(0, 100); statusProg_->setValue(0); statusProg_->setFixedWidth(220);
+  gpuLbl_ = new QLabel(this);
   statusBar_->addWidget(statusMsg_, 1); statusBar_->addWidget(statusCount_); statusBar_->addWidget(statusProg_);
+  statusBar_->addPermanentWidget(gpuLbl_);
   new QShortcut(QKeySequence(Qt::Key_Space), this, SLOT(toggleMarkSelected()));
   new QShortcut(QKeySequence::Delete, this, SLOT(deleteSelected()));
 }
@@ -629,7 +646,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.50"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.51"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -702,6 +719,7 @@ void MainWindow::setRunning(bool v) {
   if (!v) scan_->setFocus(); // return the highlight to Start, as at launch
   statusProg_->setRange(0, 100); statusProg_->setValue(0);
   if (v) uiTimer_->start(); else uiTimer_->stop();
+  updateGpuLabel();
 }
 void MainWindow::startScan() {
   if (scanning_) return;
@@ -1173,10 +1191,75 @@ QString MainWindow::fileResolution(const QString& path) const {
   resCache_[path] = r;
   return r;
 }
+#ifdef _WIN32
+// Best-effort shell thumbnail from the persistent IThumbnailCache. Returns a
+// null image on any failure (no cached entry, thumbnail service missing, ...);
+// callers then fall through to their normal decode path.
+// CLSID_ThumbnailCache is only declared when INITGUID is defined; spell the
+// well-known GUID out to keep this TU header-local.
+static const GUID kThumbnailCacheClsid = {0xc8199035, 0xdb49, 0x4e95, {0x91, 0xb7, 0x7e, 0x86, 0x2f, 0x12, 0x04, 0x59}};
+static QImage shellThumbnailImage(const QString& path) {
+  QImage out;
+  const std::wstring wpath = path.toStdWString();
+  IShellItem* item = nullptr;
+  if (FAILED(SHCreateItemFromParsingName(wpath.c_str(), nullptr, IID_PPV_ARGS(&item)))) return out;
+  IThumbnailCache* cache = nullptr;
+  if (FAILED(CoCreateInstance(kThumbnailCacheClsid, nullptr, CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&cache)))) { item->Release(); return out; }
+  ISharedBitmap* sb = nullptr;
+  const HRESULT hr = cache->GetThumbnail(item, 256, WTS_INCACHEONLY | WTS_SCALETOREQUESTEDSIZE,
+                                         &sb, nullptr, nullptr);
+  if (SUCCEEDED(hr) && sb) {
+    HBITMAP hb = nullptr;
+    if (SUCCEEDED(sb->GetSharedBitmap(&hb)) && hb) {
+      BITMAP bm{};
+      if (::GetObject(hb, sizeof(bm), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
+        BITMAPINFO bi{};
+        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = bm.bmWidth;
+        bi.bmiHeader.biHeight = -bm.bmHeight; // top-down, matches QImage scanlines
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+        const int nPix = bm.bmWidth * bm.bmHeight;
+        std::vector<unsigned char> buf((std::size_t)nPix * 4);
+        const HDC dc = ::GetDC(nullptr);
+        if (dc && ::GetDIBits(dc, hb, 0, (UINT)bm.bmHeight, buf.data(), &bi, DIB_RGB_COLORS) == bm.bmHeight) {
+          // Alpha from the DIB is 0; RGB32 requires 0xff in the MSB so the
+          // preview does not render as transparent black.
+          for (int i = 3; i < nPix * 4; i += 4) buf[i] = 0xff;
+          QImage img(buf.data(), bm.bmWidth, bm.bmHeight, bm.bmWidth * 4, QImage::Format_RGB32);
+          out = img.copy();
+        }
+        if (dc) ::ReleaseDC(nullptr, dc);
+      }
+      // The HBITMAP is owned by the shared bitmap; do not DeleteObject it here.
+    }
+    sb->Release();
+  }
+  cache->Release();
+  item->Release();
+  return out;
+}
+#else
+static QImage shellThumbnailImage(const QString&) { return QImage(); }
+#endif
 QIcon MainWindow::fileThumb(const QString& path, const QSize& size) const {
   auto tc = thumbCache_.find(path);
   if (tc != thumbCache_.cend()) return tc.value();
   QIcon ic;
+  // Shell thumbnail cache is the fast lane: Explorer already stored a rendered
+  // thumb for most media (video frames, Office documents, HEIC/WebP). Using it
+  // first sidesteps a full engine decode for the preview pane and, unlike WIC,
+  // works for container/sidecar files that ship no decodable pixel stream.
+  // WTS_INCACHEONLY keeps this read-only: a missing entry falls through to the
+  // normal decoders instead of writing the cache back from this thread.
+  const QImage shell = shellThumbnailImage(path);
+  if (!shell.isNull()) {
+    ic = QIcon(QPixmap::fromImage(shell.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+    thumbCache_[path] = ic;
+    return ic;
+  }
   if (isVideoExt(path)) {
     msf::VideoDecoder dec;
     if (dec.open(path.toStdString())) {
@@ -1571,6 +1654,22 @@ void MainWindow::updateStatusCounts() {
                             .arg(trStr(lang(), "files")).arg(files)
                             .arg(trStr(lang(), "marked")).arg(marked_.size()));
   if (scanning_) sumValTime_->setText(fmtElapsed(QDateTime::currentMSecsSinceEpoch() - scanStartMs_));
+  updateGpuLabel();
+}
+// Live GPU status for the status bar. During a scan this shows how many images
+// the CUDA backend already hashed; at rest it reports whether the backend is on.
+void MainWindow::updateGpuLabel() {
+  if (!gpuLbl_) return;
+  const UiLang l = lang();
+  const bool avail = worker_ ? worker_->gpuAvailable() : false;
+  const qulonglong n = worker_ ? worker_->gpuDone() : 0;
+  QString txt;
+  if (scanning_ && n > 0) txt = trStr(l, "gpuLive").arg(n);
+  else if (gpuEnabled_ && gpuEnabled_->isChecked() && avail) txt = trStr(l, "gpuOn");
+  else txt = trStr(l, "gpuOff");
+  gpuLbl_->setText("⚡ " + txt);
+  gpuLbl_->setStyleSheet(gpuEnabled_ && gpuEnabled_->isChecked() && avail
+                             ? QStringLiteral("color:#2e7d32;") : QStringLiteral("color:#999;"));
 }
   void MainWindow::showHelp() {
     QMessageBox::about(this, trStr(lang(), "help"), trStr(lang(), "about"));

@@ -10,13 +10,17 @@ namespace msf {
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;
  std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0;
- std::uint64_t mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0;};
+ std::uint64_t mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0;
+ // Scene-change boundaries detected at the sampling cadence. Timestamps align
+ // with entries in timestamps; video_similarity() uses them as stable DTW
+ // anchors (scene cuts survive re-encodes even when frames shift).
+ std::vector<double> sceneChanges;};
 struct VideoCropFingerprint {
  std::vector<std::uint64_t> a4x3, a1x1, a9x16;
  std::vector<std::uint64_t> mirrorA4x3, mirrorA1x1, mirrorA9x16;
  std::vector<double> timestamps;
 };
-struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; };
+struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; double sceneBonus=0; };
 class VideoFingerprintEngine{
 public:
  ~VideoFingerprintEngine();
@@ -34,7 +38,7 @@ private:
  mutable void* loadStmt_=nullptr;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
- static constexpr int kCacheFormatVersion=3;
+ static constexpr int kCacheFormatVersion=4;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
  bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&) const;

@@ -12,7 +12,19 @@ void ScanPipeline::clear(){
  imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
 }
 static double thresholdFor(unsigned maxDistance){
- return 100.0-100.0*std::min<unsigned>(64,maxDistance)/64.0;
+  return 100.0-100.0*std::min<unsigned>(64,maxDistance)/64.0;
+}
+// Duration prefilter (viddup L2-style). Applied before the expensive temporal
+// decode+DTW stage: full-length duplicates share roughly the same duration, so
+// massively different lengths mean the temporal pass would only find a sparse
+// sub-sequence and is skipped. Sub-clips shorter than the floor (and "unknown"
+// durations) bypass the gate entirely.
+constexpr double kMinDurationSeconds=1.0, kMaxDurationRatio=4.0;
+static bool durationGate(const MediaFile&a,const MediaFile&b){
+  if(a.duration<=0||b.duration<=0) return true;
+  const double lo=std::min(a.duration,b.duration), hi=std::max(a.duration,b.duration);
+  if(lo<kMinDurationSeconds) return true;
+  return hi/lo<=kMaxDurationRatio;
 }
 // Full pairwise verdict: normal/mirror Hamming plus same-ratio crop aware
 // comparison. Shared verbatim by batch analyze() and incremental addAndMatch()
@@ -96,12 +108,12 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
    if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind)return;
    double sim=best(files_[i],files_[j]);
    if(sim>=threshold){MediaMatch match{i,j,sim}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;return;}
-   if(files_[i].kind==MediaKind::Video){
-     const double trigger=std::max(0.0,threshold-12.0);if(sim>=trigger){
-       VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
-       if(temporal(files_[i],ai,ac)&&temporal(files_[j],bi,bc)){double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2});if(ts>=threshold){MediaMatch match{i,j,ts}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}}
-     }
-   }
+if(files_[i].kind==MediaKind::Video){
+      const double trigger=std::max(0.0,threshold-12.0);if(sim>=trigger&&durationGate(files_[i],files_[j])){
+        VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
+        if(temporal(files_[i],ai,ac)&&temporal(files_[j],bi,bc)){double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2,2.0});if(ts>=threshold){MediaMatch match{i,j,ts}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}}
+      }
+    }
  };
  const auto consume=[&](const CandidateIndex& idx){idx.forEachCandidatePair(maxDistance,process);};
  // Full indexes are authoritative first. If they already cover every possible pair

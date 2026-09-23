@@ -44,6 +44,8 @@ public slots:
   void run(); void pause(); void resume(); void cancel();
   void setIgnored(const QSet<QString>& s);
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
+  qulonglong gpuDone() const { return gpuDone_.load(); }
+  bool gpuAvailable() const { return gpuAvail_; }
 signals:
   void progress(int,QString);
   void progressCount(qulonglong,qulonglong);
@@ -60,6 +62,8 @@ private:
   QMutex pendingMutex_; QVector<LiveMatch> pending_;
   QVector<LiveMatch> allMatches_;   // worker-thread only; persisted at the end
   qint64 lastEmitMs_=0;
+  std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
+  bool gpuAvail_=false;                // CUDA backend present at construction
 };
 
 // A duplicate group built incrementally from streamed matches.
@@ -112,6 +116,7 @@ private:
   void refreshFileViews();       // right grid+list from selected group
   void refreshDetail();          // tabs for current file
   void refreshSummary(const msf::SearchReport* r=nullptr);
+  void updateGpuLabel();
   void updateStatusCounts();
   void scanHeartbeat();
   static void scanLog(const QString& line);
@@ -184,6 +189,7 @@ private:
   QToolBar* fileBar_=nullptr;
   // status
   QStatusBar* statusBar_=nullptr; QLabel* statusMsg_=nullptr; QLabel* statusCount_=nullptr;
+  QLabel* gpuLbl_=nullptr;
   QProgressBar* statusProg_=nullptr;
   // monitor
   std::unique_ptr<msf::MediaMonitor> monitor_; QSystemTrayIcon* tray_=nullptr; QTimer* monitorTimer_=nullptr;
