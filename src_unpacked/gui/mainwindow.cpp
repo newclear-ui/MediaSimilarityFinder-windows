@@ -163,6 +163,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"upToDate")) return S("이미 최신 상태입니다 — 변경된 파일이 없습니다.","Already up to date — no changed files.");
   if (!std::strcmp(key,"scanDone")) return S("검색 및 업데이트가 완료되었습니다.","Scan and update completed.");
   if (!std::strcmp(key,"scanCancel")) return S("검색이 중지되었습니다.","Scan cancelled.");
+  if (!std::strcmp(key,"scanPartial")) return S("부분 저장됨 (중단 시점까지 유지)","Partially saved (kept up to interruption)");
+  if (!std::strcmp(key,"analyzed")) return S("분석됨","analyzed");
   if (!std::strcmp(key,"scanErr")) return S("검색 오류","Scan error");
   if (!std::strcmp(key,"ready")) return S("준비","Ready");
   if (!std::strcmp(key,"listing")) return S("파일 목록 작성 중…","Listing files…");
@@ -194,7 +196,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.46\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.46\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.47\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.47\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -242,7 +244,7 @@ void ScanWorker::run() {
     control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
-    if (control_.cancel.load()) { emit finished(QStringLiteral("CANCELLED")); return; }
+    if (control_.cancel.load()) { emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
     const auto& fs = engine_.files();
     QVector<GuiFile> files; files.reserve((int)fs.size());
     for (const auto& f : fs) {
@@ -316,7 +318,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.46"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.47"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -569,7 +571,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.46"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.47"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -700,8 +702,13 @@ void MainWindow::scanFinished(QString msg) {
   drainMatches();
   scanLog(QString("finish %1").arg(msg));
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail();
-  if (msg == QStringLiteral("CANCELLED")) {
-    statusMsg_->setText(trStr(lang(), "scanCancel"));
+  if (msg.startsWith(QStringLiteral("CANCELLED"))) {
+    // Partial progress is kept by design (checkpoints): report what survived.
+    const QStringList st = msg.split('|');
+    const QString detail = st.size() > 2
+        ? QString(" (%1 %2, %3 %4)").arg(st[1]).arg(trStr(lang(), "scanned")).arg(st[2]).arg(trStr(lang(), "analyzed"))
+        : QString();
+    statusMsg_->setText(trStr(lang(), "scanPartial") + detail);
   } else {
     const QStringList st = msg.split('|');
     // st[0]=text st[1]=scanned st[2]=analyzed st[3]=unchanged st[4]=groups st[5]=candidates

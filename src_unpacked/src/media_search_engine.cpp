@@ -103,7 +103,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  std::size_t videoBase=0;
  std::mutex queueMutex; std::condition_variable queueCv;
  std::queue<FileState> queue; std::atomic_bool walkDone{false};
- bool failed=false, cancelled=false;
+ bool failed=false, cancelled=false, walkCompleted=false;
+ std::size_t lastCommitDone=0, lastCommitScanned=0;
+ // Checkpoints persist completed work so interruption (cancel/crash) never
+ // loses the file list: commit every 500 analyzed files, and the walk
+ // skeleton rows are covered by the scanned-based trigger in processOne.
+ auto checkpoint=[&]()->bool{
+  if(!db_.commitTransaction()){ db_.rollbackTransaction(); return false; }
+  if(!db_.beginTransaction()) return false;
+  lastCommitDone=done; lastCommitScanned=scanned;
+  return true;
+ };
  // Images are the CUDA-accelerated path. Decode on CPU, pack normalized 32x32
  // grayscale frames, then hash them in bounded GPU batches. If CUDA is absent,
  // MediaPipeline transparently executes the same CPU pHash reference path.
@@ -116,6 +126,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(!db_.upsert(x)){ return false; } ++r.analyzed; files_.push_back({x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0});}
    ++done; if(control&&control->progress)control->progress(done,scanned,x.path);
   }
+  if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
   return true;
  };
  // Videos retain the bounded asynchronous CPU/FFmpeg analysis path. This keeps
@@ -131,30 +142,37 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    }));
   }
   for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;files_.push_back({j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration});} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+  if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
   return true;
  };
  auto processOne=[&](FileState&& x){
   if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
   ++scanned;
-  auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified);
+  auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.fingerprint==0);
   if(!changed){ ++nUnchanged; seen.insert(x.path); return; }
   if(it==oldByPath.end()) ++nAdded; else ++nModified;
   // Remove the previous record before re-analysis. If decoding/analysis fails,
   // the stale fingerprint must not silently survive this successful scan.
   if(it!=oldByPath.end() && !db_.remove(x.path)){ failed=true; return; }
+  // Skeleton row first: the file list survives interruption (cancel/crash)
+  // even before this file is analyzed. Unanalyzed rows carry fingerprint 0,
+  // are invisible to matching, and are picked up by the fp==0 rule above.
+  { FileState sk=x; sk.kind=(int)kindOf(x.path); sk.fingerprint=0; sk.mirrorFingerprint=0; sk.crop4x3=sk.crop1x1=sk.crop9x16=0; sk.mirrorCrop4x3=sk.mirrorCrop1x1=sk.mirrorCrop9x16=0; sk.duration=0;
+    if(!db_.upsert(sk)){ failed=true; return; } }
   seen.insert(x.path);
   currentByPath.emplace(x.path,x);
   if(kindOf(x.path)==MediaKind::Image){
    imageBatch.push_back(x.path);
    if(imageBatch.size()>=gpuBatch){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
-  } else {
-   FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(std::move(v));
-   while(!failed && changedVideos.size()-videoBase>=static_cast<std::size_t>(workers)){
-    if(!processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers))) failed=true;
-    else videoBase+=static_cast<std::size_t>(workers);
+   } else {
+    FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(std::move(v));
+    while(!failed && changedVideos.size()-videoBase>=static_cast<std::size_t>(workers)){
+     if(!processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers))) failed=true;
+     else videoBase+=static_cast<std::size_t>(workers);
+    }
    }
-  }
- };
+   if(!failed && scanned-lastCommitScanned>=1000){ if(!checkpoint()) failed=true; }
+  };
  // The walker streams walked files while this thread analyzes them, so CPU/GPU
  // work overlaps the directory walk instead of waiting for it.
  std::thread walker([&]{
@@ -174,7 +192,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(!queue.empty()){ x=std::move(queue.front()); queue.pop(); have=true; } }
   if(have) processOne(std::move(x));
   if(stopped(control)) cancelled=true;
-  else if(walkDone.load() && queue.empty()) break;
+  else if(walkDone.load() && queue.empty()){ walkCompleted=true; break; }
  }
  if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
  while(!failed && !cancelled && videoBase<changedVideos.size()){
@@ -183,14 +201,23 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(!processVideoRange(videoBase,videoBase+n)) failed=true; else videoBase+=n;
  }
  walker.join();
- if(failed){ if(tx) db_.rollbackTransaction(); return r; }
- if(cancelled||(control&&control->cancel.load())){ if(tx) db_.rollbackTransaction(); return r; }
+ if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return r; }
+ // Deleted detection needs the complete seen set: only on fully walked scans.
+ // Previously indexed files that no longer exist are removed then. Ignored rows
+ // are retained in the database (they reappear only when unignored and rescanned).
+ if(walkCompleted){
+  for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ failed=true; break; } ++nRemoved; }
+ }
+ if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return r; }
+ // Persist everything done so far, including on cancel: partial progress is
+ // kept by design (checkpoints), so interruption never loses the file list.
+ if(!checkpoint()){ r.completed=false; return r; }
  r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged;
- // Previously indexed files that no longer exist are removed. Ignored rows are
- // retained in the database (they reappear only when unignored and rescanned).
- for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ if(tx)db_.rollbackTransaction(); return r; } ++nRemoved; }
  r.removed=nRemoved;
- if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); return r; }
+ if(cancelled||(control&&control->cancel.load())) r.completed=false;
+ // Final commit also closes the trailing transaction checkpoint() reopened:
+ // leaving it open would make the *next* scan's BEGIN fail and return empty.
+ if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); r.completed=false; return r; }
  candidateStates_=db_.all(); rebuildCandidateIndexes();
  // Unchanged files must participate in every incremental search.
  files_.clear();

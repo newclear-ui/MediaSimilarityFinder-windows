@@ -50,6 +50,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.44 | Large-scan live verification + streaming switch |
 | 0.9.2.45 | Scan activity log (0% CPU triage) |
 | 0.9.2.46 | Scan pipelining (walk ‖ analyze) |
+| 0.9.2.47 | Checkpointed scans (interruption keeps progress) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
