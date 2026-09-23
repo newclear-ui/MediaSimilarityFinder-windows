@@ -75,7 +75,10 @@ bool SystemLoadMonitor::allowAnalysis(const ResourcePolicy& p,const SystemLoad& 
 }
 
 bool StableFileDetector::isStable(const std::string& path,int stableSeconds){
-    std::error_code ec; fs::path p(path); if(!fs::is_regular_file(p,ec)) return false; auto sz=fs::file_size(p,ec); if(ec)return false; auto mt=fs::last_write_time(p,ec);if(ec)return false;
+    // path is UTF-8: convert explicitly. fs::path from a narrow string throws
+    // on Windows for names outside the ANSI code page (even with error_code,
+    // which only covers the query itself, not the conversion).
+    std::error_code ec; const fs::path p=path_from_utf8(path); if(!fs::is_regular_file(p,ec)) return false; auto sz=fs::file_size(p,ec); if(ec)return false; auto mt=fs::last_write_time(p,ec);if(ec)return false;
     auto now=std::chrono::steady_clock::now(); std::lock_guard<std::mutex> g(mutex_); auto it=states_.find(path);
     if(it==states_.end()){states_[path]={sz,mt,now};return false;}
     if(it->second.size!=sz || it->second.modified!=mt){it->second={sz,mt,now};return false;}
@@ -97,7 +100,7 @@ void MediaMonitor::setPaused(bool paused){
 bool MediaMonitor::paused() const { return paused_.load(); }
 MonitorStatus MediaMonitor::status() const { std::lock_guard<std::mutex> g(mutex_); auto s=status_; s.running=running_.load(); s.pending=pending_.size(); s.paused=paused_.load(); return s; }
 void MediaMonitor::enqueuePath(const std::string& path, bool notify){
-    std::error_code ec; if(!fs::is_regular_file(path,ec)) return;
+    std::error_code ec; if(!fs::is_regular_file(path_from_utf8(path),ec)) return;
     auto ext=path_from_utf8(path).extension().string(); std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return(char)std::tolower(c);});
     static const char* exts[]={".jpg",".jpeg",".png",".bmp",".gif",".webp",".tif",".tiff",".mp4",".mkv",".avi",".mov",".webm",".m4v",".wmv"};
     if(std::find(std::begin(exts),std::end(exts),ext)==std::end(exts)) return;
@@ -221,7 +224,7 @@ void MediaMonitor::windowsWatchLoop(const std::string& root, bool notify){
 #endif
 
 static bool isWithinRoot(const std::string& path,const std::string& root){ std::error_code ec1,ec2; auto p=fs::weakly_canonical(path_from_utf8(path),ec1); auto r=fs::weakly_canonical(path_from_utf8(root),ec2); if(ec1||ec2) return false; auto rel=fs::relative(p,r,ec1); if(ec1) return false; return rel.empty() || (rel!=fs::path("..") && *rel.begin()!=fs::path("..")); }
-static std::uint64_t fileKey(const fs::path&p){std::error_code ec;auto sz=fs::file_size(p,ec);auto mt=fs::last_write_time(p,ec);if(ec)return 0;return (std::uint64_t)sz ^ (std::uint64_t)mt.time_since_epoch().count();}
+static std::uint64_t fileKey(const std::string& p){std::error_code ec;const fs::path fp=path_from_utf8(p);auto sz=fs::file_size(fp,ec);auto mt=fs::last_write_time(fp,ec);if(ec)return 0;return (std::uint64_t)sz ^ (std::uint64_t)mt.time_since_epoch().count();}
 static bool mediaFile(const fs::path&p){auto e=p.extension().string();std::transform(e.begin(),e.end(),e.begin(),[](unsigned char c){return(char)std::tolower(c);});return e==".jpg"||e==".jpeg"||e==".png"||e==".bmp"||e==".gif"||e==".webp"||e==".tif"||e==".tiff"||e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv";}
 
 void MediaMonitor::loop(){
@@ -237,8 +240,8 @@ void MediaMonitor::loop(){
 #ifndef _WIN32
         auto now=std::chrono::steady_clock::now();
         if(now-lastPoll>=std::chrono::seconds(std::max(1,config_.pollSeconds))){
-            for(const auto& root:config_.watchRoots){std::error_code ec;if(!fs::exists(path_from_utf8(root),ec))continue;fs::recursive_directory_iterator it(path_from_utf8(root),fs::directory_options::skip_permission_denied,ec),end;for(;it!=end&&!ec;it.increment(ec))if(it->is_regular_file(ec)&&mediaFile(it->path())){auto p=path_to_utf8(it->path());auto k=fileKey(it->path());auto s=seen_.find(p);if(s==seen_.end()||s->second!=k)enqueuePath(p,true);}}
-            for(const auto& root:config_.compareRoots){if(std::find(config_.watchRoots.begin(),config_.watchRoots.end(),root)!=config_.watchRoots.end())continue;std::error_code ec;if(!fs::exists(path_from_utf8(root),ec))continue;fs::recursive_directory_iterator it(path_from_utf8(root),fs::directory_options::skip_permission_denied,ec),end;for(;it!=end&&!ec;it.increment(ec))if(it->is_regular_file(ec)&&mediaFile(it->path())){auto p=path_to_utf8(it->path());auto k=fileKey(it->path());auto s=seen_.find(p);if(s==seen_.end()||s->second!=k)enqueuePath(p,false);}}
+            for(const auto& root:config_.watchRoots){std::error_code ec;if(!fs::exists(path_from_utf8(root),ec))continue;fs::recursive_directory_iterator it(path_from_utf8(root),fs::directory_options::skip_permission_denied,ec),end;for(;it!=end&&!ec;it.increment(ec))if(it->is_regular_file(ec)&&mediaFile(it->path())){auto p=path_to_utf8(it->path());auto k=fileKey(p);auto s=seen_.find(p);if(s==seen_.end()||s->second!=k)enqueuePath(p,true);}}
+            for(const auto& root:config_.compareRoots){if(std::find(config_.watchRoots.begin(),config_.watchRoots.end(),root)!=config_.watchRoots.end())continue;std::error_code ec;if(!fs::exists(path_from_utf8(root),ec))continue;fs::recursive_directory_iterator it(path_from_utf8(root),fs::directory_options::skip_permission_denied,ec),end;for(;it!=end&&!ec;it.increment(ec))if(it->is_regular_file(ec)&&mediaFile(it->path())){auto p=path_to_utf8(it->path());auto k=fileKey(p);auto s=seen_.find(p);if(s==seen_.end()||s->second!=k)enqueuePath(p,false);}}
             lastPoll=now;
         }
 #endif
@@ -305,7 +308,7 @@ void MediaMonitor::loop(){
         const int kind=image?1:2;
         const double analysisMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-analysisStarted).count();
         { std::lock_guard<std::mutex> g(mutex_); ++status_.analyzed; status_.lastAnalysisMs=analysisMs; status_.averageAnalysisMs = status_.analyzed==1 ? analysisMs : (status_.averageAnalysisMs*double(status_.analyzed-1)+analysisMs)/double(status_.analyzed); status_.lastAnalysisKind=image?"image":"video"; }
-        if(!item.notify){ std::error_code ec; auto sz=fs::file_size(path,ec); auto mt=fs::last_write_time(path,ec); auto mtv=ec?0LL:(std::int64_t)mt.time_since_epoch().count(); for(auto& ce:compareEngines_) if(isWithinRoot(path,ce.root)) ce.engine->upsertFingerprint(path,fp,kind,ec?0:(std::uint64_t)sz,mtv,mirrorFp,crops.a4x3,crops.a1x1,crops.a9x16,crops.mirrorA4x3,crops.mirrorA1x1,crops.mirrorA9x16); seen_[path]=fileKey(path); retryCounts_.erase(path); continue; }
+        if(!item.notify){ std::error_code ec; const fs::path fp_=path_from_utf8(path); auto sz=fs::file_size(fp_,ec); auto mt=fs::last_write_time(fp_,ec); auto mtv=ec?0LL:(std::int64_t)mt.time_since_epoch().count(); for(auto& ce:compareEngines_) if(isWithinRoot(path,ce.root)) ce.engine->upsertFingerprint(path,fp,kind,ec?0:(std::uint64_t)sz,mtv,mirrorFp,crops.a4x3,crops.a1x1,crops.a9x16,crops.mirrorA4x3,crops.mirrorA1x1,crops.mirrorA9x16); seen_[path]=fileKey(path); retryCounts_.erase(path); continue; }
         std::vector<MonitorMatch> matches;
         for(auto& ce:compareEngines_){auto ms=ce.engine->compareFingerprint(fp,kind,config_.thresholdPercent,path,mirrorFp,crops.a4x3,crops.a1x1,crops.a9x16,crops.mirrorA4x3,crops.mirrorA1x1,crops.mirrorA9x16);for(const auto&m:ms)matches.push_back({path,m.rightPath,m.percent});}
         std::sort(matches.begin(),matches.end(),[](const MonitorMatch&a,const MonitorMatch&b){return a.percent>b.percent;});

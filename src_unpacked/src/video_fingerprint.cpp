@@ -2,6 +2,7 @@
 #include "video_sampling.h"
 #include "fingerprint.h"
 #include "similarity.h"
+#include "path_utils.h"
 #include <sqlite3.h>
 #include <cstring>
 #include <algorithm>
@@ -72,7 +73,12 @@ void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz
 }
 VideoFingerprintEngine::~VideoFingerprintEngine(){closePersistentCache();}
 bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o)const{
- std::error_code ec; if(!std::filesystem::exists(p,ec))return false; const auto sz=std::filesystem::file_size(p,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(p,ec).time_since_epoch().count();if(ec)return false;
+ // NOTE: p is UTF-8. Build the path with path_from_utf8 first: constructing
+ // fs::path from a narrow string throws on Windows when the name holds
+ // characters outside the ANSI code page (observed terminate() on Korean
+ // filenames), even when an error_code is supplied.
+ std::error_code ec; const fs::path fp=path_from_utf8(p);
+ if(!std::filesystem::exists(fp,ec))return false; const auto sz=std::filesystem::file_size(fp,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();if(ec)return false;
  {std::lock_guard<std::mutex>lock(cacheMutex_);auto it=cache_.find(p);if(it!=cache_.end()&&it->second.size==sz&&it->second.modified==mt){o=it->second.fingerprint;return !o.hashes.empty();}}
  if(loadPersistent(p,sz,mt,o)){std::lock_guard<std::mutex>lock(cacheMutex_);cache_[p]={sz,mt,o};return true;}
  VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
@@ -93,7 +99,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o)const{
 }
 bool VideoFingerprintEngine::buildCropAware(const std::string&p, const VideoFingerprint& base, VideoCropFingerprint& out, int decodeSize) const{
  if(base.hashes.empty() || base.timestamps.size()!=base.hashes.size()) return false;
- std::error_code ec; if(!std::filesystem::exists(p,ec)) return false;
+ std::error_code ec; if(!std::filesystem::exists(path_from_utf8(p),ec)) return false;
  VideoDecoder d; if(!d.open(p)) return false;
  out={}; const int size=std::max(32,std::min(192,decodeSize)); std::vector<VideoFrame> frames;
  if(!d.framesAt(base.timestamps,size,size,frames)){d.close();return false;}

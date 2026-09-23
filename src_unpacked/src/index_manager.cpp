@@ -10,7 +10,7 @@
 
 namespace msf {
 namespace fs = std::filesystem;
-static constexpr const char* kApplicationVersion = "0.9.2.40";
+static constexpr const char* kApplicationVersion = "0.9.2.41";
 
 static std::uint64_t fnv1a64(const std::string& s, std::uint64_t seed) {
     std::uint64_t h = 14695981039346656037ull ^ seed;
@@ -171,7 +171,7 @@ bool IndexManager::resolve(const fs::path& applicationDirectory,
 
     if (!fs::exists(out.metadata)) {
         const auto now = nowUtc();
-        const fs::path tmp = out.metadata.string() + ".tmp";
+        fs::path tmp = out.metadata; tmp += ".tmp";
         {
             std::ofstream meta(tmp, std::ios::binary | std::ios::trunc);
             if (!meta) return false;
@@ -210,7 +210,7 @@ bool IndexManager::updateLastScan(const IndexPaths& paths) {
         const auto q2 = old.find('\"', q1 + 1);
         if (q1 != std::string::npos && q2 != std::string::npos) created = old.substr(q1 + 1, q2 - q1 - 1);
     }
-    const fs::path tmp = paths.metadata.string() + ".tmp";
+    fs::path tmp = paths.metadata; tmp += ".tmp";
     {
         std::ofstream meta(tmp, std::ios::binary | std::ios::trunc);
         if (!meta) return false;

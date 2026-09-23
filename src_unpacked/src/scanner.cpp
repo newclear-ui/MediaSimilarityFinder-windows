@@ -7,7 +7,7 @@
 namespace fs=std::filesystem;
 namespace msf {
 static bool media(const fs::path&p){auto e=p.extension().string();for(auto&c:e)c=char(std::tolower((unsigned char)c));return e==".jpg"||e==".jpeg"||e==".png"||e==".bmp"||e==".webp"||e==".gif"||e==".tif"||e==".tiff"||e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv";}
-static std::int64_t stamp(const fs::path&p){return std::chrono::duration_cast<std::chrono::milliseconds>(fs::last_write_time(p).time_since_epoch()).count();}
+static std::int64_t stamp(const fs::path&p){std::error_code ec;auto t=fs::last_write_time(p,ec);if(ec)return 0;return std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch()).count();}
 static std::string quick(const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)return{};std::vector<unsigned char>b(65536);f.read((char*)b.data(),b.size());auto n=(size_t)f.gcount();std::uint64_t h=1469598103934665603ULL;for(size_t i=0;i<n;i++){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
 std::vector<FileState> Scanner::scan(const std::string& root, const std::string& excludedDirectory) const{
  std::vector<FileState>o; std::error_code ec;

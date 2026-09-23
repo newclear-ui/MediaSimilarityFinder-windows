@@ -1,5 +1,6 @@
 #include <cmath>
 #include "image_decoder.h"
+#include "path_utils.h"
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
@@ -22,7 +23,9 @@ namespace {
 // fallback for formats WIC cannot decode (e.g. PGM test fixtures); on other
 // platforms it is the primary reader.
 bool readPgmFile(const std::string& path,std::vector<unsigned char>& src,int& sw,int& sh){
-    std::ifstream f(path,std::ios::binary); if(!f) return false;
+    // Open via the wide path: a narrow UTF-8 name outside the ANSI code page
+    // would otherwise fail (or throw at path construction) on Windows.
+    std::ifstream f(path_from_utf8(path),std::ios::binary); if(!f) return false;
     std::string magic; int maxv=0; f>>magic; if(magic!="P5") return false;
     f>>sw>>sh>>maxv; f.get(); if(sw<=0||sh<=0||maxv<=0) return false;
     src.resize((size_t)sw*sh); f.read((char*)src.data(),src.size());

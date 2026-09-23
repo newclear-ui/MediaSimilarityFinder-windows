@@ -19,8 +19,8 @@ bool MediaSearchEngine::openIndex(const std::string& p){ managedIndexActive_=fal
 void MediaSearchEngine::close(){ videoEngine_.closePersistentCache(); db_.close(); managedIndexActive_=false; }
 bool MediaSearchEngine::openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory){
  IndexPaths paths; if(!IndexManager::resolve(path_from_utf8(applicationDirectory),path_from_utf8(rootPath),paths)) return false;
- if(!db_.open(paths.database.string())||!db_.initialize()) return false;
- if(!videoEngine_.openPersistentCache(paths.videoCache.string())) return false;
+ if(!db_.open(path_to_utf8(paths.database))||!db_.initialize()) return false;
+ if(!videoEngine_.openPersistentCache(path_to_utf8(paths.videoCache))) return false;
  managedIndex_=paths; managedIndexActive_=true; candidateStates_=db_.all(); rebuildCandidateIndexes(); return true;
 }
 bool MediaSearchEngine::upsertFingerprint(const std::string& path, std::uint64_t fingerprint, int kind, std::uint64_t size, std::int64_t modified, std::uint64_t mirrorFingerprint, std::uint64_t crop4x3, std::uint64_t crop1x1, std::uint64_t crop9x16, std::uint64_t mirrorCrop4x3, std::uint64_t mirrorCrop1x1, std::uint64_t mirrorCrop9x16) {
@@ -82,7 +82,7 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
  std::sort(out.begin(),out.end(),[](const SearchMatch&a,const SearchMatch&b){return a.percent>b.percent;}); return out;
 }
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){
- SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r; Scanner s; auto cur=s.scan(root,managedIndexActive_ ? managedIndex_.directory.parent_path().string() : std::string{});
+ SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r; Scanner s; auto cur=s.scan(root,managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{});
  const bool hasIgnored=control && !control->ignoredPaths.empty();
  if(hasIgnored){ const auto& ig=control->ignoredPaths; cur.erase(std::remove_if(cur.begin(),cur.end(),[&](const FileState& x){return ig.find(x.path)!=ig.end();}),cur.end()); }
  r.scanned=cur.size(); auto old=db_.all(); IncrementalScanner inc; auto ch=inc.classify(cur,old);

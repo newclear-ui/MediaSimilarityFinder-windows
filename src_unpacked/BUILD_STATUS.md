@@ -1,11 +1,12 @@
 # Build Status
 
-- Current development version: **0.9.2.40**
+- Current development version: **0.9.2.41**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
-- Current: 0.9.2.40 — CUDA first-hardware validation (RTX 3080 Ti, Toolkit 13.4)
+- CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
+- Current: 0.9.2.41 — Non-ASCII filename crash fix (UTF-8 path boundaries)
 - Core Release build: PASS
-- CTest: **38/38 PASS** (CUDA build incl. `cuda_backend_test` on RTX 3080 Ti)
+- CTest: **39/39 PASS** (CUDA build incl. `cuda_backend_test` on RTX 3080 Ti, `unicode_path_test`)
 - candidatePairs exhaustive correctness regression: PASS
 - candidatePairs benchmark: PASS (environment-dependent timing; see build history)
 - Bucket-heavy benchmark: PASS — 5k / 12,497,500 pairs; streaming ScanPipeline path avoids materializing candidate-pair vectors
