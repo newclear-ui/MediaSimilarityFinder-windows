@@ -215,7 +215,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.55\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.55\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.56\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.56\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -241,6 +241,12 @@ ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int 
   qRegisterMetaType<QVector<GuiFile>>();
   gpuAvail_ = msf::GpuBackend().available();
 }
+
+// Fresh thumbnail decodes allowed per 600ms UI tick (see fileThumb below).
+// Cache hits are free; the rest show file-type icons until a later tick.
+// Keeps pause/cancel/close responsive even when thousands of new groups
+// stream in during a scan.
+constexpr int kThumbBudgetPerTick = 4;
 
 void ScanWorker::run() {
   try {
@@ -394,6 +400,10 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   monitorTimer_->start();
   uiTimer_ = new QTimer(this); uiTimer_->setInterval(600);
   connect(uiTimer_, &QTimer::timeout, this, [this] {
+    // Fresh decode budget every tick: list refreshes below may request
+    // hundreds of uncached thumbs; only the first few decode now, the rest
+    // show file-type icons until a later tick. Cache hits are always free.
+    thumbBudget_ = kThumbBudgetPerTick;
     if (!groupsDirty_) { if (scanning_) updateStatusCounts(); }
     else {
       groupsDirty_ = false;
@@ -454,7 +464,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.55"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.56"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -792,7 +802,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.55"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.56"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1267,8 +1277,12 @@ void MainWindow::refreshGroupList() {
   midTabs_->setTabText(1, QString("%1 (%2)").arg(trStr(lang(), "tabVideos")).arg(nv));
   midTabs_->setTabText(2, QString("%1 (%2)").arg(trStr(lang(), "tabIgnore")).arg(ignored_.size()));
   const int tab = midTabs_->currentIndex();
-  fillPair(imgTree_, imgGrid_, 1, tab == 0);
-  fillPair(vidTree_, vidGrid_, 2, tab == 1);
+  // Fill only the visible tab: building thousands of widget items (plus their
+  // thumbnail decodes) for a hidden tab every 600ms is pure GUI-thread waste.
+  // Switching tabs calls refreshGroupList() via activateTab(), so the hidden
+  // side is always filled lazily on show.
+  if (tab == 0) fillPair(imgTree_, imgGrid_, 1, true);
+  else if (tab == 1) fillPair(vidTree_, vidGrid_, 2, true);
   groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ >= 0 ? QString::number(currentGroup_ + 1) : "-"));
   updateIgnoreTab();
 }
@@ -1399,9 +1413,17 @@ static QImage shellThumbnailImage(const QString& path) {
 #else
 static QImage shellThumbnailImage(const QString&) { return QImage(); }
 #endif
-QIcon MainWindow::fileThumb(const QString& path, const QSize& size) const {
-  auto tc = thumbCache_.find(path);
+QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassBudget) const {  auto tc = thumbCache_.find(path);
   if (tc != thumbCache_.cend()) return tc.value();
+  // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
+  // block the GUI thread for milliseconds-to-seconds. Over budget, return a
+  // cheap file-type icon WITHOUT caching it, so the real thumb is retried on
+  // a later tick. The explicitly selected file (detail pane) bypasses.
+  if (!bypassBudget) {
+    if (thumbBudget_ <= 0)
+      return QFileIconProvider().icon(QFileInfo(path));
+    --thumbBudget_;
+  }
   QIcon ic;
   // Shell thumbnail cache is the fast lane: Explorer already stored a rendered
   // thumb for most media (video frames, Office documents, HEIC/WebP). Using it
@@ -1449,8 +1471,13 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size) const {
     ic = QIcon(QPixmap::fromImage(im.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
   if (ic.isNull()) ic = QFileIconProvider().icon(QFileInfo(path));
   // Bound the cache: group-list refreshes re-request the same representatives,
-  // but an unbounded cache over a 100k+ scan would cost gigabytes.
-  if (thumbCache_.size() > 3000) thumbCache_.clear();
+  // but an unbounded cache over a 100k+ scan would cost gigabytes. Evict a
+  // chunk, never all: a full clear on huge scans caused a perpetual re-decode
+  // storm (every refresh re-decoded thousands of thumbs, freezing the UI).
+  if (thumbCache_.size() > 3000) {
+    auto it = thumbCache_.begin();
+    for (int n = 0; n < 750 && it != thumbCache_.end(); ++n) it = thumbCache_.erase(it);
+  }
   thumbCache_[path] = ic;
   return ic;
 }
@@ -1522,7 +1549,7 @@ void MainWindow::refreshDetail() {
   exifLabel_->clear(); simLabel_->clear(); simBar_->setValue(0); hashLabel_->clear();
   if (currentFile_.isEmpty()) { preview_->setText("—"); return; }
   QFileInfo fi(currentFile_);
-  preview_->setPixmap(fileThumb(currentFile_, QSize(220, 190)).pixmap(220, 190));
+  preview_->setPixmap(fileThumb(currentFile_, QSize(220, 190), true).pixmap(220, 190));
   const bool ref = (currentGroup_ >= 0 && !groups_[currentGroup_].paths.isEmpty()
                     && groups_[currentGroup_].paths[0] == currentFile_);
   const double pct = ref ? 100.0 : pathBest(currentFile_);
