@@ -123,6 +123,7 @@ private:
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
   void rebuildGroups();          // union-find over accumulated matches
+  void refreshStreaming();       // throttled rebuild+fill for live scans
   void refreshGroupList();       // middle pane from groups_
   void refreshFileViews();       // right grid+list from selected group
   void refreshDetail();          // tabs for current file
@@ -154,6 +155,14 @@ private:
   qulonglong lastDoneN_=0, lastTotalN_=0;
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
+  // Live-refresh streaming state: full list rebuilds cost up to ~1s at 11k
+  // groups, so they are throttled adaptively (see refreshStreaming) instead of
+  // every 600ms tick — otherwise timer timeouts backlog behind each slow tick
+  // and paint events (plus pause/cancel clicks) starve forever.
+  qulonglong matchSeq_=0;      // bumped per accepted match in addMatch
+  qulonglong lastFillSig_=0;   // matchSeq_ at the last full list fill
+  qint64 lastFillMs_=0;        // when the last full fill ran
+  qint64 lastFillCostMs_=0;    // measured cost of the last full fill
   QStringList lastStats_; // scanned|analyzed|unchanged|groups|candidates from finished()
   qint64 repElapsedMs_=0;
   QHash<QString,double> bestPct_; QSet<QString> marked_;

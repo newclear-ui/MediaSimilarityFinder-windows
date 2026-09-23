@@ -62,6 +62,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.56 | Scan-time UI freeze fix (thumbnail decode budget) |
 | 0.9.2.57 | Unstoppable final-analyze fix + recent-folders favorites |
 | 0.9.2.58 | Blank group pane fix (placeholder icon storm) |
+| 0.9.2.59 | Blank pane recurrence fix (list-rebuild livelock) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

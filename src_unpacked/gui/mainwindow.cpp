@@ -14,6 +14,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFile>
 #include <QFileDialog>
@@ -215,7 +216,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.58\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.58\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.59\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.59\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -425,7 +426,10 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
     if (!groupsDirty_) { if (scanning_) updateStatusCounts(); }
     else {
       groupsDirty_ = false;
-      rebuildGroups(); refreshGroupList(); refreshFileViews(); updateStatusCounts();
+      drainMatches(); // matches streamed since the last tick (also covers pause:
+                      // the worker emits nothing while paused, so without this
+                      // the final pre-pause matches would sit undrained)
+      refreshStreaming();
     }
     if (scanning_) {
       // Recompose with live elapsed so a long single file (e.g. a big video)
@@ -482,7 +486,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.58"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.59"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -820,7 +824,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.58"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.59"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -948,6 +952,11 @@ void MainWindow::togglePauseScan() {
   pause_->setChecked(scanPaused_);
   pause_->setText(scanPaused_ ? trStr(lang(), "resume") : QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   statusMsg_->setText(trStr(lang(), scanPaused_ ? "paused" : "scanning"));
+  // Freezing the frame immediately: drain everything streamed so far so the
+  // paused view is complete within one tick instead of whenever the worker
+  // happens to emit next (it emits nothing while paused).
+  drainMatches();
+  groupsDirty_ = true;
 }
 void MainWindow::cancelScan() {
   if (!scanning_ || !worker_) return;
@@ -1124,6 +1133,7 @@ QString MainWindow::findRoot(const QString& p) {
 }
 void MainWindow::addMatch(const QString& l, const QString& r, double pct, int kind) {
   if (l.isEmpty() || r.isEmpty() || l == r) return;
+  ++matchSeq_;
   if (!pathParent_.contains(l)) pathParent_[l] = l;
   if (!pathParent_.contains(r)) pathParent_[r] = r;
   const QString rl = findRoot(l), rr = findRoot(r);
@@ -1139,6 +1149,22 @@ void MainWindow::drainMatches() {
   if (v.isEmpty()) return;
   for (const auto& m : v) addMatch(m.left, m.right, m.percent, m.kind);
   groupsDirty_ = true;
+}
+void MainWindow::refreshStreaming() {
+  rebuildGroups();
+  // Full list rebuilds (widget churn for every group) are the most expensive
+  // GUI work during a scan. Throttle them adaptively so paint events and
+  // pause/cancel clicks always get through: at most one full fill per
+  // 3x measured cost (600ms..3s). Status counts stay live every tick.
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  const qint64 interval = std::clamp(lastFillCostMs_ * 3, (qint64)600, (qint64)3000);
+  if (matchSeq_ != lastFillSig_ && now - lastFillMs_ >= interval) {
+    lastFillSig_ = matchSeq_; lastFillMs_ = now;
+    QElapsedTimer t; t.start();
+    refreshGroupList(); refreshFileViews();
+    lastFillCostMs_ = t.elapsed();
+  }
+  updateStatusCounts();
 }
 void MainWindow::rebuildGroups() {
   QHash<QString, QStringList> buckets;
