@@ -64,6 +64,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.58 | Blank group pane fix (placeholder icon storm) |
 | 0.9.2.59 | Blank pane recurrence fix (list-rebuild livelock) |
 | 0.9.2.60 | Icon/list view restore + favorites dedup + color previews |
+| 0.9.2.61 | Uniform preview sizes + wider shell lane |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

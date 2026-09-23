@@ -216,7 +216,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.60\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.60\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.61\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.61\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -248,6 +248,7 @@ ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int 
 // Keeps pause/cancel/close responsive even when thousands of new groups
 // stream in during a scan.
 constexpr int kThumbBudgetPerTick = 4;
+constexpr int kShellBudgetPerTick = 24;
 // One shared provider: constructing QFileIconProvider per call plus a
 // per-file SHGetFileInfo costs milliseconds each — times 11k groups per
 // 600ms tick it blocked the GUI thread for tens of seconds (blank pane,
@@ -423,6 +424,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
     // hundreds of uncached thumbs; only the first few decode now, the rest
     // show file-type icons until a later tick. Cache hits are always free.
     thumbBudget_ = kThumbBudgetPerTick;
+    shellBudget_ = kShellBudgetPerTick;
     if (!groupsDirty_) { if (scanning_) updateStatusCounts(); }
     else {
       groupsDirty_ = false;
@@ -486,7 +488,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.60"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.61"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -826,7 +828,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.60"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.61"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1333,7 +1335,9 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     it->setData(0, Qt::UserRole, i);
     if (syncSel && i == currentGroup_) tree->setCurrentItem(it);
     const QString rep = g.paths.isEmpty() ? QString() : g.paths[0];
-    auto* li = new QListWidgetItem(fileThumb(rep, QSize(64, 64)),
+    // Request the view's own icon size so cells stay uniform; fileThumb
+    // normalizes every icon to that exact square (see squareFittedPixmap).
+    auto* li = new QListWidgetItem(fileThumb(rep, grid->iconSize()),
                                    QString("%1 %2\n%3 %4 · %5%\n%6")
                                        .arg(trStr(lang(), "group")).arg(i + 1)
                                        .arg(g.paths.size()).arg(trStr(lang(), "files")).arg(g.best, 0, 'f', 1)
@@ -1492,65 +1496,97 @@ static QImage shellThumbnailImage(const QString& path) {
 #else
 static QImage shellThumbnailImage(const QString&) { return QImage(); }
 #endif
-QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassBudget) const {  auto tc = thumbCache_.find(path);
+QPixmap squareFittedPixmap(const QPixmap& src, const QSize& size) {
+  QPixmap canvas(size);
+  canvas.fill(Qt::transparent);
+  if (src.isNull() || size.width() <= 0 || size.height() <= 0) return canvas;
+  QPainter pr(&canvas);
+  const QSize fit = src.size().scaled(size, Qt::KeepAspectRatio);
+  pr.drawPixmap(QRect(QPoint((size.width() - fit.width()) / 2, (size.height() - fit.height()) / 2), fit),
+                src, QRect(QPoint(0, 0), src.size()));
+  return canvas;
+}
+void MainWindow::dropThumbCache(const QString& path) {
+  thumbCache_.remove(path);
+  // Sized variants are keyed "path|WxH"; drop those too.
+  for (auto it = thumbCache_.begin(); it != thumbCache_.end();) {
+    const QString& k = it.key();
+    if (k.size() > path.size() && k.startsWith(path) && k[path.size()] == '|') it = thumbCache_.erase(it);
+    else ++it;
+  }
+}
+QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassBudget) const {
+  // Cache key carries the requested size: cells follow the delivered pixmap
+  // size (probed 90x91..262x283 for one view), so sharing one pixmap across
+  // sizes would keep cells uneven.
+  const QString key = path + '|' + QString::number(size.width()) + 'x' + QString::number(size.height());
+  auto tc = thumbCache_.find(key);
   if (tc != thumbCache_.cend()) return tc.value();
   // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
   // block the GUI thread for milliseconds-to-seconds. Over budget, return a
   // cheap file-type icon WITHOUT caching it, so the real thumb is retried on
   // a later tick. The explicitly selected file (detail pane) bypasses.
+  // Shell thumbnails (cheap COM) get a wider lane than heavy decodes so
+  // Explorer-cached thumbs fill ~10x faster.
   if (!bypassBudget) {
     if (thumbBudget_ <= 0)
       return placeholderIcon(path);
     --thumbBudget_;
   }
-  QIcon ic;
+  QPixmap pm;
   // Shell thumbnail cache is the fast lane: Explorer already stored a rendered
   // thumb for most media (video frames, Office documents, HEIC/WebP). Using it
   // first sidesteps a full engine decode for the preview pane and, unlike WIC,
   // works for container/sidecar files that ship no decodable pixel stream.
   // WTS_INCACHEONLY keeps this read-only: a missing entry falls through to the
   // normal decoders instead of writing the cache back from this thread.
-  const QImage shell = shellThumbnailImage(path);
-  if (!shell.isNull()) {
-    ic = QIcon(QPixmap::fromImage(shell.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
-    thumbCache_[path] = ic;
-    return ic;
+  if (bypassBudget || shellBudget_ > 0) {
+    if (!bypassBudget) --shellBudget_;
+    const QImage shell = shellThumbnailImage(path);
+    if (!shell.isNull()) pm = QPixmap::fromImage(shell);
   }
-  if (isVideoExt(path)) {
-    msf::VideoDecoder dec;
-    if (dec.open(path.toStdString())) {
-      msf::ColorFrame cf;
-      if (dec.frameAtColor(0.5, 160, 160, cf) && cf.rgb.size() == (size_t)cf.width * cf.height * 3 && cf.width > 0 && cf.height > 0) {
-        QImage im(cf.rgb.data(), cf.width, cf.height, cf.width * 3, QImage::Format_RGB888);
-        ic = QIcon(QPixmap::fromImage(im.copy()).scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  if (pm.isNull()) {
+    if (isVideoExt(path)) {
+      msf::VideoDecoder dec;
+      if (dec.open(path.toStdString())) {
+        msf::ColorFrame cf;
+        const int dim = std::max(size.width(), size.height());
+        if (dec.frameAtColor(0.5, dim, dim, cf) && cf.rgb.size() == (size_t)cf.width * cf.height * 3 && cf.width > 0 && cf.height > 0) {
+          QImage im(cf.rgb.data(), cf.width, cf.height, cf.width * 3, QImage::Format_RGB888);
+          pm = QPixmap::fromImage(im.copy());
+        }
+        dec.close();
       }
-      dec.close();
-    }
-    if (ic.isNull()) ic = placeholderIcon(path);
-    thumbCache_[path] = ic;
-    return ic;
-  }
-  QImageReader rd(path);
-  QImage im;
-  if (rd.canRead()) {
-    rd.setAutoTransform(true);
-    im = rd.read();
-  }
-  if (im.isNull()) {
-    // Qt image-format plugins (e.g. qpng) may be absent from a portable
-    // deployment while WIC is always present. Decode color through WIC so
-    // previews stay color like the search relies on (the gray engine decode
-    // is fingerprint-only and must not leak into display).
-    msf::ImageDecoder dec;
-    msf::ColorImage c;
-    if (dec.decodeColorAspect(path.toStdString(), 256, c) && c.width > 0 && c.height > 0 &&
-        c.bgra.size() == (size_t)c.width * c.height * 4) {
-      im = QImage(c.bgra.data(), c.width, c.height, c.width * 4, QImage::Format_ARGB32).copy();
+    } else {
+      QImageReader rd(path);
+      QImage im;
+      if (rd.canRead()) {
+        rd.setAutoTransform(true);
+        im = rd.read();
+      }
+      if (im.isNull()) {
+        // Qt image-format plugins (e.g. qpng) may be absent from a portable
+        // deployment while WIC is always present. Decode color through WIC so
+        // previews stay color (the gray engine decode is fingerprint-only and
+        // must not leak into display).
+        msf::ImageDecoder dec;
+        msf::ColorImage c;
+        if (dec.decodeColorAspect(path.toStdString(), 256, c) && c.width > 0 && c.height > 0 &&
+            c.bgra.size() == (size_t)c.width * c.height * 4) {
+          im = QImage(c.bgra.data(), c.width, c.height, c.width * 4, QImage::Format_ARGB32).copy();
+        }
+      }
+      if (!im.isNull()) pm = QPixmap::fromImage(im);
     }
   }
-  if (!im.isNull())
-    ic = QIcon(QPixmap::fromImage(im.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
-  if (ic.isNull()) ic = placeholderIcon(path);
+  QIcon ic;
+  if (!pm.isNull()) {
+    // Normalize to the exact requested rect: identical cells regardless of
+    // source aspect/size (Explorer-like uniform grid), never distorted.
+    ic = QIcon(squareFittedPixmap(pm, size));
+  } else {
+    ic = placeholderIcon(path);
+  }
   // Bound the cache: group-list refreshes re-request the same representatives,
   // but an unbounded cache over a 100k+ scan would cost gigabytes. Evict a
   // chunk, never all: a full clear on huge scans caused a perpetual re-decode
@@ -1559,7 +1595,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     auto it = thumbCache_.begin();
     for (int n = 0; n < 750 && it != thumbCache_.end(); ++n) it = thumbCache_.erase(it);
   }
-  thumbCache_[path] = ic;
+  thumbCache_[key] = ic;
   return ic;
 }
 void MainWindow::setViewMode(int i) {
@@ -1858,7 +1894,7 @@ void MainWindow::moveSelected() {
 void MainWindow::prunePaths(const QSet<QString>& gone) {
   for (const auto& p : gone) {
     marked_.remove(p); resCache_.remove(p); fileSize_.remove(p); fileFp_.remove(p);
-    fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p); thumbCache_.remove(p);
+    fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p); dropThumbCache(p);
     pathParent_.remove(p);
     if (currentFile_ == p) currentFile_.clear();
   }

@@ -28,6 +28,10 @@ class QStyledItemDelegate;
 // ---------------------------------------------------------------- language
 enum class UiLang { Ko, En };
 QString trStr(UiLang lang, const char* key); // KO/EN string table (see .cpp)
+// Letterbox-fit helper: every display icon entering a grid is normalized to
+// the exact requested rect, so cells stay uniform (Explorer-like) regardless
+// of source aspect/size. Transparent padding, never distorted.
+QPixmap squareFittedPixmap(const QPixmap& src, const QSize& size);
 // One-time QSettings bootstrap (org/app names + INI location). Call once in
 // main() before any default-constructed QSettings is used.
 void initAppSettings(const QString& portableDir);
@@ -138,6 +142,7 @@ private:
   QString fileResolution(const QString&) const; // cached QImageReader::size
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
+  void dropThumbCache(const QString& path); // exact + sized variants
   double pathBest(const QString&) const;
   void addMatch(const QString&, const QString&, double, int kind);
   QString findRoot(const QString&); // union-find over pathParent_
@@ -171,7 +176,9 @@ private:
   mutable QHash<QString,QIcon> phCache_; // placeholder icons by lowercase suffix
   // Per-tick fresh-decode budget (see fileThumb): bounds GUI-thread blockage
   // so pause/cancel/close stay responsive during huge scans. Reset each tick.
+  // Shell thumbnails (cheap COM) get their own wider lane.
   mutable int thumbBudget_ = 0;
+  mutable int shellBudget_ = 0;
   QSet<QString> ignored_;
   std::size_t lastDone_=0, lastTotal_=0;
   msf::SearchReport lastReport_; bool hasReport_=false;
