@@ -38,13 +38,15 @@ Q_DECLARE_METATYPE(GuiFile)
 class ScanWorker : public QObject {
   Q_OBJECT
 public:
-  ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled);
+  ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled,
+             bool scanImages=true, bool scanVideos=true);
 public slots:
   void run(); void pause(); void resume(); void cancel();
   void setIgnored(const QSet<QString>& s);
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
 signals:
   void progress(int,QString);
+  void progressCount(qulonglong,qulonglong);
   void listingProgress(std::size_t);
   void matchesArrived();            // throttled; call takePending()
   void results(QVector<GuiFile> files, QStringList matchRows);
@@ -52,6 +54,7 @@ signals:
   void failed(QString);
 private:
   QString root_, appDir_; int distance_, cpu_, gpu_; bool gpuEnabled_;
+  bool scanImages_, scanVideos_;
   msf::ScanControl control_; msf::MediaSearchEngine engine_;
   QMutex pendingMutex_; QVector<LiveMatch> pending_;
   qint64 lastEmitMs_=0;
@@ -73,13 +76,14 @@ private slots:
   // scan
   void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
   void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
+  void onScanCounts(qulonglong,qulonglong);
   void onListingProgress(std::size_t);
   void onResults(QVector<GuiFile> files, QStringList matchRows);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
-  void groupViewChanged(int);
+  void groupViewChanged(int); void updateKindBtn();
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
   void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
@@ -124,7 +128,8 @@ private:
   QHash<QString,QString> fileSize_; QHash<QString,QString> fileFp_;
   mutable QHash<QString,QString> resCache_;
   QString currentFile_; int currentGroup_=-1;
-  int lastPct_=0; QString lastPath_;
+  int lastPct_=0; QString lastPath_; int maxPctShown_=0;
+  qulonglong lastDoneN_=0, lastTotalN_=0;
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
   QStringList lastStats_; // scanned|analyzed|unchanged|groups|candidates from finished()
@@ -151,6 +156,7 @@ private:
   QTreeWidget *imgTree_=nullptr, *vidTree_=nullptr;
   QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;
   QToolButton* viewBtn_=nullptr; QMenu* viewMenu_=nullptr; QVector<QAction*> viewActs_;
+  QToolButton* kindBtn_=nullptr; QMenu* kindMenu_=nullptr; QAction *kindImgAct_=nullptr, *kindVidAct_=nullptr;
   QListWidget* ignoreList_=nullptr; QPushButton *unignoreBtn_=nullptr, *clearIgnoreBtn_=nullptr;
   QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
   QSplitter* split_=nullptr;

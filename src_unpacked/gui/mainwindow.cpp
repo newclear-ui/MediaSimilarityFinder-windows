@@ -123,6 +123,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"viewList")) return S("리스트","List");
   if (!std::strcmp(key,"viewDetails")) return S("자세히","Details");
   if (!std::strcmp(key,"viewPreview")) return S("미리보기 창으로 보기","Show preview pane");
+  if (!std::strcmp(key,"kindMenu")) return S("검색 대상","Scan target");
+  if (!std::strcmp(key,"kindImages")) return S("이미지","Images");
+  if (!std::strcmp(key,"kindVideos")) return S("비디오","Videos");
   if (!std::strcmp(key,"sortSim")) return S("유사도 내림차순","Similarity");
   if (!std::strcmp(key,"sortName")) return S("이름 오름차순","Name");
   if (!std::strcmp(key,"searchGroups")) return S("그룹 검색","Search groups");
@@ -196,7 +199,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.48\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.48\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.49\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.49\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -215,9 +218,10 @@ static bool isVideoExt(const QString& path) {
   const QString e = QFileInfo(path).suffix().toLower();
   return e == "mp4" || e == "mkv" || e == "avi" || e == "mov" || e == "webm" || e == "m4v" || e == "wmv";
 }
-ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled)
+ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled,
+                     bool scanImages, bool scanVideos)
   : root_(std::move(root)), appDir_(std::move(appDir)), distance_(distance),
-    cpu_(cpu), gpu_(gpu), gpuEnabled_(gpuEnabled) {
+    cpu_(cpu), gpu_(gpu), gpuEnabled_(gpuEnabled), scanImages_(scanImages), scanVideos_(scanVideos) {
   qRegisterMetaType<QVector<GuiFile>>();
 }
 
@@ -225,10 +229,12 @@ void ScanWorker::run() {
   try {
     engine_.setResourcePolicy(msf::make_policy(msf::ResourceMode::Custom, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
+    control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
     control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
       emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(path));
+      emit progressCount((qulonglong)done, (qulonglong)total);
     };
     control_.listing = [this](std::size_t n) { emit listingProgress(n); };
     control_.onMatch = [this](const msf::SearchMatch& m) {
@@ -294,7 +300,14 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
       groupsDirty_ = false;
       rebuildGroups(); refreshGroupList(); refreshFileViews(); updateStatusCounts();
     }
-    if (scanning_) scanHeartbeat();
+    if (scanning_) {
+      // Recompose with live elapsed so a long single file (e.g. a big video)
+      // shows activity instead of a frozen message.
+      const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
+      statusMsg_->setText(QString("%1 / %2 (%3%) — %4 — %5").arg(lastDoneN_).arg(lastTotalN_).arg(maxPctShown_)
+                              .arg(QFileInfo(lastPath_).fileName()).arg(fmtElapsed(el)));
+      scanHeartbeat();
+    }
   });
   tray_ = new QSystemTrayIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon), this);
   auto* tm = new QMenu(this);
@@ -318,7 +331,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.48"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.49"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -374,6 +387,21 @@ void MainWindow::buildToolbar() {
   connect(cpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   connect(gpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
+  kindBtn_ = new QToolButton(toolBar_);
+  kindBtn_->setText(trStr(lang(), "kindMenu") + QStringLiteral(" ▾"));
+  kindBtn_->setPopupMode(QToolButton::InstantPopup);
+  kindMenu_ = new QMenu(kindBtn_);
+  kindImgAct_ = kindMenu_->addAction(trStr(lang(), "kindImages"));
+  kindVidAct_ = kindMenu_->addAction(trStr(lang(), "kindVideos"));
+  for (auto* a : {kindImgAct_, kindVidAct_}) {
+    a->setCheckable(true); a->setChecked(true);
+    connect(a, &QAction::toggled, this, [this] { updateKindBtn(); });
+  }
+  kindBtn_->setMenu(kindMenu_);
+  {
+    const int km = QSettings().value("ui/kindMask", 3).toInt();
+    kindImgAct_->setChecked(km & 1); kindVidAct_->setChecked(km & 2);
+  }
   monBtn_ = new QPushButton(toolBar_); monBtn_->setCheckable(true);
   connect(monBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitor);
   monPauseBtn_ = new QPushButton(QStringLiteral("⏸"), toolBar_);
@@ -391,6 +419,7 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(scan_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
   toolBar_->addWidget(gpuEnabled_);
+  toolBar_->addWidget(kindBtn_);
   toolBar_->addWidget(settingsBtn); toolBar_->addWidget(helpBtn);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(monPauseBtn_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -573,7 +602,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.48"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.49"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -600,6 +629,10 @@ void MainWindow::applyStaticTexts() {
     const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewPreview"};
     for (int i = 0; i < viewActs_.size() && i < 7; ++i) viewActs_[i]->setText(trStr(l, vkeys[i]));
   }
+  kindBtn_->setText(trStr(l, "kindMenu") + QStringLiteral(" ▾"));
+  kindImgAct_->setText(trStr(l, "kindImages"));
+  kindVidAct_->setText(trStr(l, "kindVideos"));
+  updateKindBtn();
   midTabs_->setTabText(0, trStr(l, "tabImages"));
   midTabs_->setTabText(1, trStr(l, "tabVideos"));
   updateIgnoreTab();
@@ -635,7 +668,7 @@ void MainWindow::chooseFolder() {
 }
 void MainWindow::setRunning(bool v) {
   scanning_ = v;
-  scanPaused_ = false;
+  scanPaused_ = false; maxPctShown_ = 0; lastDoneN_ = 0; lastTotalN_ = 0;
   scan_->setEnabled(!v); browse_->setEnabled(!v); refresh_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
@@ -656,11 +689,13 @@ void MainWindow::startScan() {
   QString appDir = QApplication::applicationDirPath();
   thread_ = new QThread(this);
   const int dist = 8;
-  worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), gpu_->value(), gpuEnabled_->isChecked());
+  worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), gpu_->value(), gpuEnabled_->isChecked(),
+                          kindImgAct_->isChecked(), kindVidAct_->isChecked());
   worker_->setIgnored(ignored_);
   worker_->moveToThread(thread_);
   connect(thread_, &QThread::started, worker_, &ScanWorker::run);
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);
+  connect(worker_, &ScanWorker::progressCount, this, &MainWindow::onScanCounts);
   connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
   connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
   connect(worker_, &ScanWorker::results, this, &MainWindow::onResults);
@@ -688,12 +723,19 @@ void MainWindow::cancelScan() {
   QMetaObject::invokeMethod(worker_, "cancel", Qt::QueuedConnection);
   statusMsg_->setText(trStr(lang(), "scanCancel"));
 }
+void MainWindow::onScanCounts(qulonglong done, qulonglong total) {
+  lastDoneN_ = (std::size_t)done; lastTotalN_ = (std::size_t)total;
+}
 void MainWindow::scanProgress(int p, QString path) {
   lastPct_ = p; lastPath_ = path;
   statusProg_->setRange(0, 100);
-  statusProg_->setValue(p);
+  // Streaming totals grow as the walk continues, so raw percent can dip.
+  // The bar never moves backwards; exact counts stay in the message.
+  if (p > maxPctShown_) maxPctShown_ = p;
+  statusProg_->setValue(maxPctShown_);
   const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
-  statusMsg_->setText(QString("%1% — %2 — %3").arg(p).arg(QFileInfo(path).fileName()).arg(fmtElapsed(el)));
+  statusMsg_->setText(QString("%1 / %2 (%3%) — %4 — %5").arg(lastDoneN_).arg(lastTotalN_).arg(maxPctShown_)
+                          .arg(QFileInfo(path).fileName()).arg(fmtElapsed(el)));
   updateStatusCounts();
 }
 void MainWindow::onListingProgress(std::size_t n) {
@@ -903,6 +945,19 @@ void MainWindow::gridSelected(QListWidgetItem* cur, QListWidgetItem*) {
 void MainWindow::gridCheckChanged(QListWidgetItem* it) {
   if (!it) return;
   setGroupMarked(it->data(Qt::UserRole).toInt(), it->checkState() == Qt::Checked);
+}
+void MainWindow::updateKindBtn() {
+  int m = (kindImgAct_->isChecked() ? 1 : 0) | (kindVidAct_->isChecked() ? 2 : 0);
+  if (!m) { // never allow an empty selection
+    kindImgAct_->blockSignals(true); kindVidAct_->blockSignals(true);
+    kindImgAct_->setChecked(true); kindVidAct_->setChecked(true);
+    kindImgAct_->blockSignals(false); kindVidAct_->blockSignals(false);
+    m = 3;
+  }
+  QSettings().setValue("ui/kindMask", m);
+  kindBtn_->setToolTip(trStr(lang(), "kindMenu") + ": "
+                         + (m == 3 ? trStr(lang(), "kindImages") + "+" + trStr(lang(), "kindVideos")
+                                   : (m == 1 ? trStr(lang(), "kindImages") : trStr(lang(), "kindVideos"))));
 }
 void MainWindow::groupViewChanged(int idx) {
   if (idx < 0) idx = 1;

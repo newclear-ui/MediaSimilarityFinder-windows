@@ -98,6 +98,15 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
  std::unordered_map<std::string,FileState> currentByPath;
  MediaPipeline imagePipeline;
+ ScanPipeline livePipe;
+ auto liveEmit=[&](const MediaMatch& m){
+  if(!control || !control->onMatch) return;
+  const auto& lf=livePipe.files();
+  if(m.left>=lf.size()||m.right>=lf.size()) return;
+  SearchMatch sm{lf[m.left].path,lf[m.right].path,m.percent};
+  control->onMatch(sm);
+ };
+ const bool liveMatch = control && (bool)control->onMatch;
  std::vector<FileState> changedVideos;
  std::vector<std::string> imageBatch; imageBatch.reserve(gpuBatch);
  std::size_t videoBase=0;
@@ -123,7 +132,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   for(const auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
    if(it==currentByPath.end()) continue;
-   x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(!db_.upsert(x)){ return false; } ++r.analyzed; files_.push_back({x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0});}
+   x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(!db_.upsert(x)){ return false; } ++r.analyzed; MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);}
    ++done; if(control&&control->progress)control->progress(done,scanned,x.path);
   }
   if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
@@ -141,12 +150,14 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     return j;
    }));
   }
-  for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;files_.push_back({j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration});} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+  for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;MediaFile mf{j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
   if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
   return true;
  };
  auto processOne=[&](FileState&& x){
   if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
+  const bool isVid=(kindOf(x.path)==MediaKind::Video);
+  if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
   ++scanned;
   auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.fingerprint==0);
   if(!changed){ ++nUnchanged; seen.insert(x.path); return; }

@@ -7,28 +7,76 @@
 #include <unordered_map>
 namespace msf {
 void ScanPipeline::add(const MediaFile& f){files_.push_back(f);}
+void ScanPipeline::clear(){
+ files_.clear(); imageMap_.clear(); videoMap_.clear();
+ imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
+}
+static double thresholdFor(unsigned maxDistance){
+ return 100.0-100.0*std::min<unsigned>(64,maxDistance)/64.0;
+}
+// Full pairwise verdict: normal/mirror Hamming plus same-ratio crop aware
+// comparison. Shared verbatim by batch analyze() and incremental addAndMatch()
+// so live matches carry identical similarity values.
+static double bestMatch(const MediaFile&a,const MediaFile&b){
+ double z=0; const std::uint64_t xFull[]={a.fingerprint,a.mirrorFingerprint}; const std::uint64_t yFull[]={b.fingerprint,b.mirrorFingerprint};
+ for(auto u:xFull) if(u) for(auto v:yFull) if(v) z=std::max(z,hash_similarity(u,v));
+ if(a.kind==MediaKind::Image || a.kind==MediaKind::Video){
+  const std::uint64_t xCrop[][2]={{a.crop4x3,a.mirrorCrop4x3},{a.crop1x1,a.mirrorCrop1x1},{a.crop9x16,a.mirrorCrop9x16}};
+  const std::uint64_t yCrop[][2]={{b.crop4x3,b.mirrorCrop4x3},{b.crop1x1,b.mirrorCrop1x1},{b.crop9x16,b.mirrorCrop9x16}};
+  for(int r=0;r<3;++r){for(auto u:xCrop[r])if(u)for(auto v:yFull)if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xFull)if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xCrop[r])if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));}
+ } return z;
+}
+static void indexFile(CandidateIndex& full,CandidateIndex& c4,CandidateIndex& c1,CandidateIndex& c916,std::size_t idx,const MediaFile& f){
+ full.add(idx,f.fingerprint); if(f.mirrorFingerprint)full.add(idx,f.mirrorFingerprint);
+ if(f.crop4x3)c4.add(idx,f.crop4x3); if(f.crop1x1)c1.add(idx,f.crop1x1); if(f.crop9x16)c916.add(idx,f.crop9x16);
+}
+void ScanPipeline::addAndMatch(const MediaFile& f,unsigned maxDistance,const MatchCallback& onMatch){
+ if(!onMatch){add(f);return;}
+ const std::size_t idx=files_.size();
+ if(f.fingerprint){
+  const double threshold=thresholdFor(maxDistance);
+  std::unordered_set<std::size_t> seenPartners;
+  auto consider=[&](const CandidateIndex& ix,std::uint64_t h){
+   if(!h) return;
+   for(const auto& c:ix.query(h,maxDistance)){
+    if(c.index>=idx) continue;
+    if(!seenPartners.insert(c.index).second) continue;
+    const MediaFile& o=files_[c.index];
+    if(!o.fingerprint||o.kind!=f.kind) continue;
+    const double sim=bestMatch(f,o);
+    if(sim>=threshold) onMatch(MediaMatch{c.index,idx,sim});
+   }
+  };
+  if(f.kind==MediaKind::Image){
+   consider(imageIdx_,f.fingerprint); consider(imageIdx_,f.mirrorFingerprint);
+   consider(c4_,f.crop4x3); consider(c4_,f.mirrorCrop4x3);
+   consider(c1_,f.crop1x1); consider(c1_,f.mirrorCrop1x1);
+   consider(c916_,f.crop9x16); consider(c916_,f.mirrorCrop9x16);
+  }else if(f.kind==MediaKind::Video){
+   consider(videoIdx_,f.fingerprint); consider(videoIdx_,f.mirrorFingerprint);
+   consider(vc4_,f.crop4x3); consider(vc4_,f.mirrorCrop4x3);
+   consider(vc1_,f.crop1x1); consider(vc1_,f.mirrorCrop1x1);
+   consider(vc916_,f.crop9x16); consider(vc916_,f.mirrorCrop9x16);
+  }
+ }
+ files_.push_back(f);
+ if(!f.fingerprint) return;
+ if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,idx,f);imageMap_.push_back(idx);}
+ else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,idx,f);videoMap_.push_back(idx);}
+}
 ScanStats ScanPipeline::analyze(unsigned maxDistance){
  return analyze(maxDistance, {});
 }
 ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch){
- ScanStats s; s.files=files_.size(); CandidateIndex imageIdx,videoIdx,vc4,vc1,vc916,c4,c1,c916; std::vector<std::size_t> imageMap,videoMap; imageMap.reserve(files_.size());videoMap.reserve(files_.size());
- for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.kind==MediaKind::Image){imageIdx.add(i,f.fingerprint);if(f.mirrorFingerprint)imageIdx.add(i,f.mirrorFingerprint);if(f.crop4x3)c4.add(i,f.crop4x3);if(f.crop1x1)c1.add(i,f.crop1x1);if(f.crop9x16)c916.add(i,f.crop9x16);imageMap.push_back(i);}else if(f.kind==MediaKind::Video){videoIdx.add(i,f.fingerprint);if(f.mirrorFingerprint)videoIdx.add(i,f.mirrorFingerprint);if(f.crop4x3)vc4.add(i,f.crop4x3);if(f.crop1x1)vc1.add(i,f.crop1x1);if(f.crop9x16)vc916.add(i,f.crop9x16);videoMap.push_back(i);}++s.indexed;}
- const auto possible=[](std::size_t n){return n>1?n*(n-1)/2:0;};s.possiblePairs=possible(imageMap.size())+possible(videoMap.size());
+ ScanStats s; s.files=files_.size();
+ imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
+ imageMap_.clear(); videoMap_.clear(); imageMap_.reserve(files_.size()); videoMap_.reserve(files_.size());
+ for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,i,f);imageMap_.push_back(i);}else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,i,f);videoMap_.push_back(i);}++s.indexed;}
+ const auto possible=[](std::size_t n){return n>1?n*(n-1)/2:0;};s.possiblePairs=possible(imageMap_.size())+possible(videoMap_.size());
  // Stream candidate pairs instead of materializing the output of all eight indexes.
  // This is important for bucket-heavy datasets where the pair count can be millions.
- const double threshold=100.0-100.0*std::min<unsigned>(64,maxDistance)/64.0;
- auto best=[&](const MediaFile&a,const MediaFile&b){
-  double z=0; const std::uint64_t xFull[]={a.fingerprint,a.mirrorFingerprint}; const std::uint64_t yFull[]={b.fingerprint,b.mirrorFingerprint};
-  for(auto u:xFull) if(u) for(auto v:yFull) if(v) z=std::max(z,hash_similarity(u,v));
-  if(a.kind==MediaKind::Image){
-   const std::uint64_t xCrop[][2]={{a.crop4x3,a.mirrorCrop4x3},{a.crop1x1,a.mirrorCrop1x1},{a.crop9x16,a.mirrorCrop9x16}};
-   const std::uint64_t yCrop[][2]={{b.crop4x3,b.mirrorCrop4x3},{b.crop1x1,b.mirrorCrop1x1},{b.crop9x16,b.mirrorCrop9x16}};
-   for(int r=0;r<3;++r){for(auto u:xCrop[r])if(u)for(auto v:yFull)if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xFull)if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xCrop[r])if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));}
-  } else if(a.kind==MediaKind::Video){
-   const std::uint64_t xCrop[][2]={{a.crop4x3,a.mirrorCrop4x3},{a.crop1x1,a.mirrorCrop1x1},{a.crop9x16,a.mirrorCrop9x16}};
-   const std::uint64_t yCrop[][2]={{b.crop4x3,b.mirrorCrop4x3},{b.crop1x1,b.mirrorCrop1x1},{b.crop9x16,b.mirrorCrop9x16}};
-   for(int r=0;r<3;++r){for(auto u:xCrop[r])if(u)for(auto v:yFull)if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xFull)if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xCrop[r])if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));}
-  } return z; };
+ const double threshold=thresholdFor(maxDistance);
+ auto best=[&](const MediaFile&a,const MediaFile&b){ return bestMatch(a,b); };
  VideoFingerprintEngine temporalEngine;
  std::unordered_map<std::string,VideoFingerprint> baseCache; std::unordered_map<std::string,VideoCropFingerprint> cropCache;
  auto temporal=[&](const MediaFile& f, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
@@ -58,9 +106,9 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
  const auto consume=[&](const CandidateIndex& idx){idx.forEachCandidatePair(maxDistance,process);};
  // Full indexes are authoritative first. If they already cover every possible pair
  // of a media kind, crop indexes cannot add anything and are skipped entirely.
- const auto imageBefore=s.candidates; consume(imageIdx); imageFullCandidates=s.candidates-imageBefore;
- const auto videoBefore=s.candidates; consume(videoIdx); videoFullCandidates=s.candidates-videoBefore;
- const std::size_t imagePossible=possible(imageMap.size()), videoPossible=possible(videoMap.size());
+ const auto imageBefore=s.candidates; consume(imageIdx_); imageFullCandidates=s.candidates-imageBefore;
+ const auto videoBefore=s.candidates; consume(videoIdx_); videoFullCandidates=s.candidates-videoBefore;
+ const std::size_t imagePossible=possible(imageMap_.size()), videoPossible=possible(videoMap_.size());
  const bool imageComplete=(imageFullCandidates>=imagePossible), videoComplete=(videoFullCandidates>=videoPossible);
  if(!imageComplete || !videoComplete){
    dedupCrop=true;
@@ -68,10 +116,10 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
    seen.reserve(reserveHint);
    // Seed only the pairs from incomplete full indexes. Complete kinds are skipped,
    // so their potentially enormous pair set never needs to be retained for dedup.
-   if(!imageComplete) imageIdx.forEachCandidatePair(maxDistance,[&](std::size_t i,const Candidate& c){auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));});
-   if(!videoComplete) videoIdx.forEachCandidatePair(maxDistance,[&](std::size_t i,const Candidate& c){auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));});
-   if(!imageComplete){consume(c4);consume(c1);consume(c916);}
-   if(!videoComplete){consume(vc4);consume(vc1);consume(vc916);}
+   if(!imageComplete) imageIdx_.forEachCandidatePair(maxDistance,[&](std::size_t i,const Candidate& c){auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));});
+   if(!videoComplete) videoIdx_.forEachCandidatePair(maxDistance,[&](std::size_t i,const Candidate& c){auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));});
+   if(!imageComplete){consume(c4_);consume(c1_);consume(c916_);}
+   if(!videoComplete){consume(vc4_);consume(vc1_);consume(vc916_);}
  }
  if(s.possiblePairs)s.candidateReductionPercent=100.0*(1.0-(double)s.candidates/s.possiblePairs);
  return s;

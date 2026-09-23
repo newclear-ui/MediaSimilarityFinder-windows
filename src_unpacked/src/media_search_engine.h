@@ -40,6 +40,8 @@ struct ScanControl {
   // Paths excluded from analysis and results (e.g. GUI ignore list).
   // Compared against the canonical UTF-8 paths produced by the scanner.
   std::unordered_set<std::string> ignoredPaths;
+  // Kind selection: set false to skip images or videos entirely (GUI option).
+  bool scanImages=true, scanVideos=true;
 };
 class MediaSearchEngine {
 public:
