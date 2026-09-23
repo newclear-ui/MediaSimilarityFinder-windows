@@ -139,6 +139,7 @@ private:
   void restoreUiState();           // counterpart applied after buildUi()
   static void scanLog(const QString& line);
   QString fmtSize(qulonglong) const;
+  QString scanStatusText(qulonglong done, qulonglong total, int pct, const QString& path, qint64 elapsedMs) const;
   QString fileResolution(const QString&) const; // cached QImageReader::size
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
@@ -174,6 +175,7 @@ private:
   QHash<QString,int> pathKind_; QHash<QString,double> fileDur_;
   mutable QHash<QString,QIcon> thumbCache_;
   mutable QHash<QString,QIcon> phCache_; // placeholder icons by lowercase suffix
+  mutable QSet<QString> thumbFail_; // paths whose heavy decode already failed (skip-list)
   // Per-tick fresh-decode budget (see fileThumb): bounds GUI-thread blockage
   // so pause/cancel/close stay responsive during huge scans. Reset each tick.
   // Shell thumbnails (cheap COM) get their own wider lane.

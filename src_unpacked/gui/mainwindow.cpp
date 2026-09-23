@@ -148,6 +148,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"exportCsv")) return S("그룹 내보내기 (CSV)","Export groups (CSV)");
   if (!std::strcmp(key,"group")) return S("그룹","Group");
   if (!std::strcmp(key,"files")) return S("파일","files");
+  if (!std::strcmp(key,"pairs")) return S("쌍","Pairs");
+  if (!std::strcmp(key,"remain")) return S("남음","Left");
   if (!std::strcmp(key,"similarity")) return S("유사도","Similarity");
   if (!std::strcmp(key,"reference")) return S("기준 파일","reference");
   if (!std::strcmp(key,"tabDetail")) return S("상세 정보","Details");
@@ -216,7 +218,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.61\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.61\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.62\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.62\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -437,8 +439,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
       // Recompose with live elapsed so a long single file (e.g. a big video)
       // shows activity instead of a frozen message.
       const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
-      statusMsg_->setText(QString("%1 / %2 (%3%) — %4 — %5").arg(lastDoneN_).arg(lastTotalN_).arg(maxPctShown_)
-                              .arg(QFileInfo(lastPath_).fileName()).arg(fmtElapsed(el)));
+      statusMsg_->setText(scanStatusText(lastDoneN_, lastTotalN_, maxPctShown_, lastPath_, el));
       scanHeartbeat();
     }
     updateGpuLabel();
@@ -488,7 +489,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.61"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.62"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -710,7 +711,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   // ---- results tabs (image / video share the view-mode logic via active pair)
   auto* imgTab = new QWidget(midTabs_);
   auto* imgLay = new QVBoxLayout(imgTab); imgLay->setContentsMargins(0, 0, 0, 0);
-  imgTree_ = new QTreeWidget(imgTab); imgTree_->setColumnCount(4); imgTree_->setRootIsDecorated(false);
+  imgTree_ = new QTreeWidget(imgTab); imgTree_->setColumnCount(5); imgTree_->setRootIsDecorated(false);
   imgGrid_ = new QListWidget(imgTab);
   imgGrid_->setViewMode(QListView::IconMode); imgGrid_->setResizeMode(QListView::Adjust);
   imgGrid_->setMovement(QListView::Static); imgGrid_->setSpacing(8);
@@ -718,7 +719,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   midTabs_->addTab(imgTab, QString());
   auto* vidTab = new QWidget(midTabs_);
   auto* vidLay = new QVBoxLayout(vidTab); vidLay->setContentsMargins(0, 0, 0, 0);
-  vidTree_ = new QTreeWidget(vidTab); vidTree_->setColumnCount(4); vidTree_->setRootIsDecorated(false);
+  vidTree_ = new QTreeWidget(vidTab); vidTree_->setColumnCount(5); vidTree_->setRootIsDecorated(false);
   vidGrid_ = new QListWidget(vidTab);
   vidGrid_->setViewMode(QListView::IconMode); vidGrid_->setResizeMode(QListView::Adjust);
   vidGrid_->setMovement(QListView::Static); vidGrid_->setSpacing(8);
@@ -828,7 +829,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.61"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.62"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -862,8 +863,8 @@ void MainWindow::applyStaticTexts() {
   midTabs_->setTabText(0, trStr(l, "tabImages"));
   midTabs_->setTabText(1, trStr(l, "tabVideos"));
   updateIgnoreTab();
-  imgTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "similarity"), trStr(l, "fileSize")});
-  vidTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "similarity"), trStr(l, "fileSize")});
+  imgTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "pairs"), trStr(l, "similarity"), trStr(l, "fileSize")});
+  vidTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "pairs"), trStr(l, "similarity"), trStr(l, "fileSize")});
   unignoreBtn_->setText(trStr(l, "unignore"));
   clearIgnoreBtn_->setText(trStr(l, "clearIgnored"));
   viewGrid_->setToolTip(trStr(l, "viewGrid")); viewList_->setToolTip(trStr(l, "viewList"));
@@ -919,7 +920,7 @@ void MainWindow::startScan() {
   }
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; thread_ = nullptr; worker_ = nullptr; }
   matches_.clear(); groups_.clear(); pathGroup_.clear(); pathParent_.clear();
-  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
+  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear(); thumbFail_.clear();
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
   lastDone_ = 0; lastTotal_ = 0;
@@ -978,8 +979,7 @@ void MainWindow::scanProgress(int p, QString path) {
   if (p > maxPctShown_) maxPctShown_ = p;
   statusProg_->setValue(maxPctShown_);
   const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
-  statusMsg_->setText(QString("%1 / %2 (%3%) — %4 — %5").arg(lastDoneN_).arg(lastTotalN_).arg(maxPctShown_)
-                          .arg(QFileInfo(path).fileName()).arg(fmtElapsed(el)));
+  statusMsg_->setText(scanStatusText(lastDoneN_, lastTotalN_, maxPctShown_, path, el));
   updateStatusCounts();
 }
 void MainWindow::onListingProgress(std::size_t n) {
@@ -1330,17 +1330,20 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     it->setCheckState(0, marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
     it->setText(0, QString("%1 %2").arg(trStr(lang(), "group")).arg(i + 1));
     it->setText(1, QString("%1 %2").arg(g.paths.size()).arg(trStr(lang(), "files")));
-    it->setText(2, QString("%1%").arg(g.best, 0, 'f', 1));
-    it->setText(3, fmtSize(bytes));
+    const qulonglong pairs = (qulonglong)g.paths.size() * ((qulonglong)g.paths.size() - 1) / 2;
+    it->setText(2, QString("%1 %2").arg(pairs).arg(trStr(lang(), "pairs")));
+    it->setText(3, QString("%1%").arg(g.best, 0, 'f', 1));
+    it->setText(4, fmtSize(bytes));
     it->setData(0, Qt::UserRole, i);
     if (syncSel && i == currentGroup_) tree->setCurrentItem(it);
     const QString rep = g.paths.isEmpty() ? QString() : g.paths[0];
     // Request the view's own icon size so cells stay uniform; fileThumb
     // normalizes every icon to that exact square (see squareFittedPixmap).
     auto* li = new QListWidgetItem(fileThumb(rep, grid->iconSize()),
-                                   QString("%1 %2\n%3 %4 · %5%\n%6")
+                                   QString("%1 %2\n%3 %4 · %5 %6 · %7%\n%8")
                                        .arg(trStr(lang(), "group")).arg(i + 1)
-                                       .arg(g.paths.size()).arg(trStr(lang(), "files")).arg(g.best, 0, 'f', 1)
+                                       .arg(g.paths.size()).arg(trStr(lang(), "files"))
+                                       .arg(pairs).arg(trStr(lang(), "pairs")).arg(g.best, 0, 'f', 1)
                                        .arg(fmtSize(bytes)));
     li->setFlags(li->flags() | Qt::ItemIsUserCheckable);
     li->setCheckState(marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
@@ -1522,6 +1525,10 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   const QString key = path + '|' + QString::number(size.width()) + 'x' + QString::number(size.height());
   auto tc = thumbCache_.find(key);
   if (tc != thumbCache_.cend()) return tc.value();
+  // Skip-list (Similarity-inspired): a path whose heavy decode already failed
+  // returns the cheap file-type icon immediately without spending the shared
+  // per-tick budget, so corrupt/undecodable files cannot starve live thumbs.
+  if (thumbFail_.contains(path)) return placeholderIcon(path);
   // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
   // block the GUI thread for milliseconds-to-seconds. Over budget, return a
   // cheap file-type icon WITHOUT caching it, so the real thumb is retried on
@@ -1586,6 +1593,11 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     ic = QIcon(squareFittedPixmap(pm, size));
   } else {
     ic = placeholderIcon(path);
+    if (thumbFail_.size() > 2000) {
+      auto it = thumbFail_.begin();
+      for (int n = 0; n < 500 && it != thumbFail_.end(); ++n) it = thumbFail_.erase(it);
+    }
+    thumbFail_.insert(path);
   }
   // Bound the cache: group-list refreshes re-request the same representatives,
   // but an unbounded cache over a 100k+ scan would cost gigabytes. Evict a
@@ -1895,6 +1907,7 @@ void MainWindow::prunePaths(const QSet<QString>& gone) {
   for (const auto& p : gone) {
     marked_.remove(p); resCache_.remove(p); fileSize_.remove(p); fileFp_.remove(p);
     fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p); dropThumbCache(p);
+    thumbFail_.remove(p);
     pathParent_.remove(p);
     if (currentFile_ == p) currentFile_.clear();
   }
@@ -1909,6 +1922,16 @@ void MainWindow::refreshAfterFileOperation(const QString&) {
 static QString fmtElapsed(qint64 ms) {
   const qint64 s = ms / 1000;
   return QString("%1:%2:%3").arg(s / 3600, 2, 10, QChar('0')).arg((s / 60) % 60, 2, 10, QChar('0')).arg(s % 60, 2, 10, QChar('0'));
+}
+// Similarity-inspired ETR: linear extrapolation from the observed analyze
+// rate. Totals grow while walking, so this is an estimate, never a promise.
+QString MainWindow::scanStatusText(qulonglong done, qulonglong total, int pct,
+                                   const QString& path, qint64 elapsedMs) const {
+  const QString base = QString("%1 / %2 (%3%) — %4 — %5").arg(done).arg(total).arg(pct)
+                           .arg(QFileInfo(path).fileName()).arg(fmtElapsed(elapsedMs));
+  if (elapsedMs < 1000 || done == 0 || total <= done) return base;
+  const qint64 remainMs = elapsedMs * (qint64)(total - done) / (qint64)done;
+  return base + QString(" — %1 %2").arg(trStr(lang(), "remain")).arg(fmtElapsed(remainMs));
 }
 void MainWindow::refreshSummary(const msf::SearchReport*) {
   const UiLang l = lang();
