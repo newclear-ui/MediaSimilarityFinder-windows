@@ -94,6 +94,17 @@ bool decodeWicFileAspect(const wchar_t* wpath,int maxDimension,GrayImage& out){
     ComPtr<IWICFormatConverter> conv; hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat8bppGray,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom); if(FAILED(hr))return false;
     out.width=(int)w;out.height=(int)h;out.pixels.resize((size_t)w*h); hr=conv->CopyPixels(nullptr,w,out.pixels.size(),out.pixels.data()); return SUCCEEDED(hr);
 }
+bool decodeWicFileAspectColor(const wchar_t* wpath,int maxDimension,msf::ColorImage& out){
+    ComPtr<IWICImagingFactory> factory;
+    HRESULT hr=CoCreateInstance(CLSID_WICImagingFactory2,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)); if(FAILED(hr)) hr=CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory));
+    if(FAILED(hr))return false; ComPtr<IWICBitmapDecoder> dec; hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&dec); if(FAILED(hr))return false;
+    ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false; UINT sw=0,sh=0; frame->GetSize(&sw,&sh); if(!sw||!sh)return false;
+    UINT w=sw,h=sh; if(sw>sh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)sh*maxDimension/sw));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)sw*maxDimension/sh));}
+    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(frame.Get(),w,h,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
+    // BGRA bytes land in QImage::Format_ARGB32 order on little-endian.
+    ComPtr<IWICFormatConverter> conv; hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat32bppBGRA,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom); if(FAILED(hr))return false;
+    out.width=(int)w;out.height=(int)h;out.bgra.resize((size_t)w*h*4); hr=conv->CopyPixels(nullptr,w*4,out.bgra.size(),out.bgra.data()); return SUCCEEDED(hr);
+}
 } // namespace
 bool ImageDecoder::decode(const std::string& path,int w,int h,GrayImage& out) const {
     if(w<=0||h<=0) return false;
@@ -117,6 +128,14 @@ bool ImageDecoder::decodePreserveAspect(const std::string& path,int maxDimension
     if(!ok) ok=decodePgmAspect(path,maxDimension,out); // e.g. PGM fixtures WIC cannot parse
     if(uninit)CoUninitialize(); return ok;
 }
+bool ImageDecoder::decodeColorAspect(const std::string& path,int maxDimension,ColorImage& out) const {
+    if(maxDimension<=0) return false;
+    int need=MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,nullptr,0); if(!need) return false;
+    std::wstring wp(need,L'\0'); MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,wp.data(),need);
+    HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED); bool uninit=SUCCEEDED(hr);
+    bool ok=decodeWicFileAspectColor(wp.c_str(),maxDimension,out);
+    if(uninit)CoUninitialize(); return ok;
+}
 #else
 bool ImageDecoder::decode(const std::string& path,int w,int h,GrayImage& out) const {
   return decodePgm(path,w,h,out);
@@ -124,6 +143,9 @@ bool ImageDecoder::decode(const std::string& path,int w,int h,GrayImage& out) co
 bool ImageDecoder::decodePreserveAspect(const std::string& path,int maxDimension,GrayImage& out) const {
   if(maxDimension<=0) return false;
   return decodePgmAspect(path,maxDimension,out);
+}
+bool ImageDecoder::decodeColorAspect(const std::string&,int,ColorImage&) const {
+  return false; // no color WIC outside Windows; callers fall back to file icons
 }
 #endif
 

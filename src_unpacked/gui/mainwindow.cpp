@@ -216,7 +216,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.59\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.59\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.60\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.60\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -486,7 +486,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.59"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.60"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -725,6 +725,8 @@ void MainWindow::buildMiddle(QWidget* w) {
   connectResView(imgTree_, imgGrid_);
   connectResView(vidTree_, vidGrid_);
   tileDelegate_ = new TileDelegate(this); // shared Tiles renderer for both grids
+  defaultDelegate_ = new QStyledItemDelegate(this); // explicit default: restoring
+  // via setItemDelegate(nullptr) leaves items with null visuals (probed).
   // ---- ignore tab
   auto* igTab = new QWidget(midTabs_);
   auto* iglay = new QVBoxLayout(igTab);
@@ -824,7 +826,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.59"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.60"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1073,11 +1075,21 @@ void MainWindow::refreshFolders() {
   favPath("videos", QStandardPaths::writableLocation(QStandardPaths::MoviesLocation));
   favPath("music", QStandardPaths::writableLocation(QStandardPaths::MusicLocation));
   // Most-recently scanned folders (max 2): the most useful jump targets for
-  // resuming unfinished work on previous results.
+  // resuming unfinished work on previous results. Skip paths already listed
+  // above (e.g. scanning Downloads would otherwise duplicate the entry).
   {
+    const auto norm = [](const QString& p) {
+      return QDir::cleanPath(p).toLower();
+    };
+    QSet<QString> listed;
+    for (auto loc : {QStandardPaths::DesktopLocation, QStandardPaths::DownloadLocation,
+                     QStandardPaths::DocumentsLocation, QStandardPaths::PicturesLocation,
+                     QStandardPaths::MoviesLocation, QStandardPaths::MusicLocation})
+      listed.insert(norm(QStandardPaths::writableLocation(loc)));
     const QStringList recent = QSettings().value("ui/recentFolders").toStringList();
     for (const auto& rp : recent) {
       if (rp.isEmpty() || !QFileInfo(rp).isDir()) continue;
+      if (listed.contains(norm(rp))) continue;
       auto* it = new QTreeWidgetItem(fav, QStringList(QDir::toNativeSeparators(rp)));
       it->setData(0, Qt::UserRole, rp);
       it->setIcon(0, icons.icon(QFileIconProvider::Folder));
@@ -1246,7 +1258,7 @@ void MainWindow::groupViewChanged(int idx) {
     // toggle) now lands on tiles instead of crashing.
     tree->setVisible(false); grid->setVisible(true);
     const bool tiles = (idx == 6);
-    grid->setItemDelegate(tiles ? tileDelegate_ : nullptr);
+    grid->setItemDelegate(tiles ? tileDelegate_ : defaultDelegate_);
     if (tiles) {
       grid->setViewMode(QListView::IconMode);
       grid->setIconSize(QSize(TileDelegate::kIconSide, TileDelegate::kIconSide));
@@ -1260,7 +1272,7 @@ void MainWindow::groupViewChanged(int idx) {
     for (int r = 0; r < grid->count(); ++r)
       if (grid->item(r)->data(Qt::UserRole).toInt() == currentGroup_) { grid->setCurrentRow(r); break; }
   } else {
-    grid->setItemDelegate(nullptr);
+    grid->setItemDelegate(defaultDelegate_);
     grid->setVisible(false); tree->setVisible(true);
     for (int r = 0; r < tree->topLevelItemCount(); ++r)
       if (tree->topLevelItem(r)->data(0, Qt::UserRole).toInt() == currentGroup_) {
@@ -1507,9 +1519,9 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   if (isVideoExt(path)) {
     msf::VideoDecoder dec;
     if (dec.open(path.toStdString())) {
-      msf::VideoFrame fr;
-      if (dec.frameAt(0.5, 160, 160, fr) && !fr.gray.empty() && fr.width > 0 && fr.height > 0) {
-        QImage im(fr.gray.data(), fr.width, fr.height, fr.width, QImage::Format_Grayscale8);
+      msf::ColorFrame cf;
+      if (dec.frameAtColor(0.5, 160, 160, cf) && cf.rgb.size() == (size_t)cf.width * cf.height * 3 && cf.width > 0 && cf.height > 0) {
+        QImage im(cf.rgb.data(), cf.width, cf.height, cf.width * 3, QImage::Format_RGB888);
         ic = QIcon(QPixmap::fromImage(im.copy()).scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation));
       }
       dec.close();
@@ -1525,13 +1537,15 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     im = rd.read();
   }
   if (im.isNull()) {
-    // Qt image-format plugins (png etc.) may be absent from a portable
-    // deployment while WIC is always present. Engine-side WIC decode then
-    // produces the preview the search itself relies on.
+    // Qt image-format plugins (e.g. qpng) may be absent from a portable
+    // deployment while WIC is always present. Decode color through WIC so
+    // previews stay color like the search relies on (the gray engine decode
+    // is fingerprint-only and must not leak into display).
     msf::ImageDecoder dec;
-    msf::GrayImage g;
-    if (dec.decodePreserveAspect(path.toStdString(), 256, g) && g.width > 0 && g.height > 0) {
-      im = QImage(g.pixels.data(), g.width, g.height, g.width, QImage::Format_Grayscale8).copy();
+    msf::ColorImage c;
+    if (dec.decodeColorAspect(path.toStdString(), 256, c) && c.width > 0 && c.height > 0 &&
+        c.bgra.size() == (size_t)c.width * c.height * 4) {
+      im = QImage(c.bgra.data(), c.width, c.height, c.width * 4, QImage::Format_ARGB32).copy();
     }
   }
   if (!im.isNull())

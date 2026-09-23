@@ -4,7 +4,7 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.2.59 — Blank pane recurrence fix (adaptive refresh throttle + timer drain + streaming regression test)
+- Current: 0.9.2.60 — Icon/list view restore (explicit delegate) + favorites dedup + color previews (WIC BGRA, FFmpeg RGB24)
 - Core Release build: PASS
 - CTest: **42/42 PASS** (CUDA build incl. `cuda_backend_test`, `unicode_path_test`, `match_store_test`, `video_reencode_test`)
 - candidatePairs exhaustive correctness regression: PASS

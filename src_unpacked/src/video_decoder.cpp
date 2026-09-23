@@ -60,6 +60,45 @@ bool VideoDecoder::frameAt(double seconds,int w,int h,VideoFrame&o){
     o=std::move(frames.front());
     return true;
 }
+bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
+    if(path_.empty() || w<=0 || h<=0 || !std::isfinite(seconds) || seconds<0) return false;
+#ifdef MSF_HAS_FFMPEG
+    if(!fmt_ || !codec_ || stream_<0) return false;
+    AVFormatContext* fmt=reinterpret_cast<AVFormatContext*>(fmt_);
+    AVCodecContext* cc=reinterpret_cast<AVCodecContext*>(codec_);
+    AVStream* st=fmt->streams[stream_];
+    int64_t ts=av_rescale_q((int64_t)(seconds*1000000.0),AV_TIME_BASE_Q,st->time_base);
+    if(av_seek_frame(fmt,stream_,ts,AVSEEK_FLAG_BACKWARD)<0) return false;
+    avcodec_flush_buffers(cc);
+    AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
+    if(!pkt||!fr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
+    bool got=false;
+    while(!got && av_read_frame(fmt,pkt)>=0){
+        if(pkt->stream_index==stream_ && avcodec_send_packet(cc,pkt)>=0){
+            while(avcodec_receive_frame(cc,fr)>=0){
+                double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?seconds:fr->best_effort_timestamp*av_q2d(st->time_base);
+                if(t+0.05<seconds) continue;
+                AVFrame* dst=av_frame_alloc(); if(!dst) break;
+                dst->format=AV_PIX_FMT_RGB24; dst->width=w; dst->height=h;
+                SwsContext* sws=sws_getContext(fr->width,fr->height,(AVPixelFormat)fr->format,w,h,AV_PIX_FMT_RGB24,SWS_BILINEAR,nullptr,nullptr,nullptr);
+                if(sws && av_frame_get_buffer(dst,1)>=0){
+                    sws_scale(sws,fr->data,fr->linesize,0,fr->height,dst->data,dst->linesize);
+                    o.timestamp=t; o.width=w; o.height=h; o.rgb.resize((size_t)w*h*3);
+                    for(int y=0;y<h;++y) std::copy(dst->data[0]+y*dst->linesize[0],dst->data[0]+y*dst->linesize[0]+w*3,o.rgb.begin()+size_t(y)*w*3);
+                    got=true;
+                }
+                if(sws)sws_freeContext(sws); av_frame_free(&dst);
+                break;
+            }
+        }
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt); av_frame_free(&fr);
+    return got;
+#else
+    (void)o; return false;
+#endif
+}
 
 bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::vector<VideoFrame>& out){
     out.clear();

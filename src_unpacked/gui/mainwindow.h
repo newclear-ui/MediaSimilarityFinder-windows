@@ -192,6 +192,8 @@ private:
   QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;
   QToolButton* viewBtn_=nullptr; QMenu* viewMenu_=nullptr; QVector<QAction*> viewActs_;
   QStyledItemDelegate* tileDelegate_=nullptr; // Explorer-style Tiles renderer for the group grid
+  QStyledItemDelegate* defaultDelegate_=nullptr; // plain delegate restored for icon/list modes
+  // (setItemDelegate(nullptr) does NOT restore painting; probed null visuals)
   QToolButton* kindBtn_=nullptr; QMenu* kindMenu_=nullptr; QAction *kindImgAct_=nullptr, *kindVidAct_=nullptr;
   QListWidget* ignoreList_=nullptr; QPushButton *unignoreBtn_=nullptr, *clearIgnoreBtn_=nullptr;
   QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
