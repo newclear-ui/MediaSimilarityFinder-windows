@@ -82,7 +82,11 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
  std::sort(out.begin(),out.end(),[](const SearchMatch&a,const SearchMatch&b){return a.percent>b.percent;}); return out;
 }
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){
- SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r; Scanner s; auto cur=s.scan(root,managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{});
+ SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r; Scanner s;
+ const std::string excl = managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{};
+ std::function<void(std::size_t)> walkCb;
+ if(control) walkCb = [control](std::size_t n){ if(control->listing) control->listing(n); };
+ auto cur=s.scan(root, excl, walkCb);
  const bool hasIgnored=control && !control->ignoredPaths.empty();
  if(hasIgnored){ const auto& ig=control->ignoredPaths; cur.erase(std::remove_if(cur.begin(),cur.end(),[&](const FileState& x){return ig.find(x.path)!=ig.end();}),cur.end()); }
  r.scanned=cur.size(); auto old=db_.all(); IncrementalScanner inc; auto ch=inc.classify(cur,old);

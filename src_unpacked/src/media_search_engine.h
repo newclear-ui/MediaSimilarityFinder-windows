@@ -23,7 +23,11 @@ struct SearchReport { std::size_t scanned=0, added=0, modified=0, unchanged=0, r
 struct ScanControl {
  std::atomic_bool cancel{false};
  std::atomic_bool pause{false};
- std::function<void(std::size_t,std::size_t,const std::string&)> progress;
+  std::function<void(std::size_t,std::size_t,const std::string&)> progress;
+  // Directory-walk phase reporter (file count so far). Fires before any
+  // analysis; lets the UI show listing progress on huge folders instead of
+  // sitting at 0% with only disk I/O visible.
+  std::function<void(std::size_t)> listing;
  // Optional streaming delivery for large result sets. When retainMatches is false,
  // SearchReport does not materialize the full match list in memory.
  std::function<void(const SearchMatch&)> onMatch;

@@ -163,6 +163,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"scanCancel")) return S("검색이 중지되었습니다.","Scan cancelled.");
   if (!std::strcmp(key,"scanErr")) return S("검색 오류","Scan error");
   if (!std::strcmp(key,"ready")) return S("준비","Ready");
+  if (!std::strcmp(key,"listing")) return S("파일 목록 작성 중…","Listing files…");
   if (!std::strcmp(key,"scanning")) return S("검색 중…","Scanning…");
   if (!std::strcmp(key,"paused")) return S("일시정지됨","Paused");
   if (!std::strcmp(key,"chooseTitle")) return S("미디어 폴더 선택","Select media folder");
@@ -191,7 +192,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.41\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.41\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.42\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.42\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -225,6 +226,7 @@ void ScanWorker::run() {
     control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
       emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(path));
     };
+    control_.listing = [this](std::size_t n) { emit listingProgress(n); };
     control_.onMatch = [this](const msf::SearchMatch& m) {
       QMutexLocker g(&pendingMutex_);
       const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
@@ -271,6 +273,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
   ignored_ = QSet<QString>(ig0.begin(), ig0.end());
   buildUi();
+  restoreGeometry(QSettings().value("ui/mainGeom").toByteArray());
   applyStaticTexts();
   monitor_ = std::make_unique<msf::MediaMonitor>();
   monitorTimer_ = new QTimer(this); monitorTimer_->setInterval(1000);
@@ -293,6 +296,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   statusMsg_->setText(trStr(lang(), "ready"));
 }
 MainWindow::~MainWindow() {
+  QSettings().setValue("ui/mainGeom", saveGeometry());
   QSettings().setValue("ui/splitter", split_ ? split_->saveState() : QByteArray());
   if (worker_) worker_->cancel();
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; }
@@ -303,7 +307,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.41"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.42"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -340,10 +344,9 @@ void MainWindow::buildToolbar() {
   refresh_->setToolTip(trStr(lang(), "refresh"));
   connect(refresh_, &QPushButton::clicked, this, &MainWindow::refreshFolders);
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
-  pause_ = new QPushButton(toolBar_); resume_ = new QPushButton(toolBar_); cancel_ = new QPushButton(toolBar_);
+  pause_ = new QPushButton(toolBar_); pause_->setCheckable(true); cancel_ = new QPushButton(toolBar_);
   connect(scan_, &QPushButton::clicked, this, &MainWindow::startScan);
-  connect(pause_, &QPushButton::clicked, this, &MainWindow::pauseScan);
-  connect(resume_, &QPushButton::clicked, this, &MainWindow::resumeScan);
+  connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
   connect(cancel_, &QPushButton::clicked, this, &MainWindow::cancelScan);
   preset_ = new QComboBox(toolBar_);
   preset_->addItems({QStringLiteral("Maximum"), QStringLiteral("Balanced"),
@@ -361,6 +364,7 @@ void MainWindow::buildToolbar() {
   connect(monBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitor);
   monPauseBtn_ = new QPushButton(QStringLiteral("⏸"), toolBar_);
   monPauseBtn_->setToolTip(trStr(lang(), "pause"));
+  monPauseBtn_->setCheckable(true);
   connect(monPauseBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitorPause);
   auto* settingsBtn = new QPushButton(QStringLiteral("⚙"), toolBar_);
   settingsBtn->setToolTip(trStr(lang(), "settings"));
@@ -370,7 +374,7 @@ void MainWindow::buildToolbar() {
   connect(helpBtn, &QPushButton::clicked, this, &MainWindow::showHelp);
   toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
-  toolBar_->addWidget(scan_); toolBar_->addWidget(pause_); toolBar_->addWidget(resume_); toolBar_->addWidget(cancel_);
+  toolBar_->addWidget(scan_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
   toolBar_->addWidget(gpuEnabled_);
   toolBar_->addWidget(settingsBtn); toolBar_->addWidget(helpBtn);
@@ -388,6 +392,7 @@ void MainWindow::buildLeft(QWidget* w) {
   folders_->setMinimumWidth(190);
   lay->addWidget(folders_, 1);
   connect(folders_, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem* it) { populateFolderChildren(it); });
+  connect(folders_, &QTreeWidget::itemClicked, this, &MainWindow::folderActivated);
   connect(folders_, &QTreeWidget::itemActivated, this, &MainWindow::folderActivated);
   auto* sumTitle = new QLabel(this); sumTitle->setObjectName("sumTitle"); sumTitle->setStyleSheet("font-weight:bold;");
   lay->addWidget(sumTitle);
@@ -554,11 +559,11 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.41"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.42"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
-  pause_->setText(QStringLiteral("❚❚ ") + trStr(l, "pause"));
-  resume_->setText(trStr(l, "resume"));
+  pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
+  pause_->setChecked(scanPaused_);
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
   gpuEnabled_->setText(trStr(l, "allowGpu"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
@@ -616,9 +621,11 @@ void MainWindow::chooseFolder() {
 }
 void MainWindow::setRunning(bool v) {
   scanning_ = v;
+  if (v) scanPaused_ = false;
   scan_->setEnabled(!v); browse_->setEnabled(!v); refresh_->setEnabled(!v);
-  pause_->setEnabled(v); resume_->setEnabled(v); cancel_->setEnabled(v);
-  statusProg_->setValue(0);
+  pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
+  if (!v) pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
+  statusProg_->setRange(0, 100); statusProg_->setValue(0);
   if (v) uiTimer_->start(); else uiTimer_->stop();
 }
 void MainWindow::startScan() {
@@ -639,6 +646,7 @@ void MainWindow::startScan() {
   worker_->moveToThread(thread_);
   connect(thread_, &QThread::started, worker_, &ScanWorker::run);
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);
+  connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
   connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
   connect(worker_, &ScanWorker::results, this, &MainWindow::onResults);
   connect(worker_, &ScanWorker::finished, this, &MainWindow::scanFinished);
@@ -651,13 +659,13 @@ void MainWindow::startScan() {
   statusProg_->setValue(0);
   thread_->start();
 }
-void MainWindow::pauseScan() {
-  if (worker_) QMetaObject::invokeMethod(worker_, "pause", Qt::QueuedConnection);
-  statusMsg_->setText(trStr(lang(), "paused"));
-}
-void MainWindow::resumeScan() {
-  if (worker_) QMetaObject::invokeMethod(worker_, "resume", Qt::QueuedConnection);
-  statusMsg_->setText(trStr(lang(), "scanning"));
+void MainWindow::togglePauseScan() {
+  if (!worker_) return;
+  scanPaused_ = !scanPaused_;
+  QMetaObject::invokeMethod(worker_, scanPaused_ ? "pause" : "resume", Qt::QueuedConnection);
+  pause_->setChecked(scanPaused_);
+  pause_->setText(scanPaused_ ? trStr(lang(), "resume") : QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
+  statusMsg_->setText(trStr(lang(), scanPaused_ ? "paused" : "scanning"));
 }
 void MainWindow::cancelScan() {
   if (worker_) QMetaObject::invokeMethod(worker_, "cancel", Qt::QueuedConnection);
@@ -665,10 +673,15 @@ void MainWindow::cancelScan() {
 }
 void MainWindow::scanProgress(int p, QString path) {
   lastPct_ = p; lastPath_ = path;
+  statusProg_->setRange(0, 100);
   statusProg_->setValue(p);
   const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
   statusMsg_->setText(QString("%1% — %2 — %3").arg(p).arg(QFileInfo(path).fileName()).arg(fmtElapsed(el)));
   updateStatusCounts();
+}
+void MainWindow::onListingProgress(std::size_t n) {
+  statusProg_->setRange(0, 0); // indeterminate: walking the directory tree
+  statusMsg_->setText(QString("%1 %2").arg(trStr(lang(), "listing")).arg(n));
 }
 void MainWindow::scanFinished(QString msg) {
   drainMatches();
@@ -1424,6 +1437,7 @@ void MainWindow::configureMonitor() {
   QDialog dlg(this);
   dlg.setWindowTitle(trStr(lang(), "monSettings"));
   dlg.resize(760, 560);
+  dlg.restoreGeometry(QSettings().value("ui/settingsGeom").toByteArray());
   auto* root = new QVBoxLayout(&dlg);
   auto* tabs = new QTabWidget(&dlg);
   root->addWidget(tabs, 1);
@@ -1500,7 +1514,9 @@ void MainWindow::configureMonitor() {
   root->addWidget(buttons);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-  if (dlg.exec() != QDialog::Accepted) return;
+  const bool accepted = (dlg.exec() == QDialog::Accepted);
+  QSettings().setValue("ui/settingsGeom", dlg.saveGeometry());
+  if (!accepted) return;
 
   QStringList watches, compares;
   for (int i = 0; i < watchList->count(); ++i) watches << watchList->item(i)->text();
@@ -1518,7 +1534,7 @@ void MainWindow::configureMonitor() {
 void MainWindow::toggleMonitor() {
   if (monitorEnabled_) {
     monitor_->stop(); monitorEnabled_ = false; monitorPaused_ = false;
-    monBtn_->setChecked(false);
+    monBtn_->setChecked(false); monPauseBtn_->setChecked(false);
     tray_->setToolTip(trStr(lang(), "app"));
     statusMsg_->setText(trStr(lang(), "monStop"));
     sumValMon_->setText("-");
@@ -1545,7 +1561,7 @@ void MainWindow::toggleMonitor() {
     QMetaObject::invokeMethod(this, [this, e] { monitorEvent(e); }, Qt::QueuedConnection);
   });
   monitorEnabled_ = true; monitorPaused_ = false;
-  monBtn_->setChecked(true);
+  monBtn_->setChecked(true); monPauseBtn_->setChecked(false);
   tray_->setToolTip(trStr(lang(), "monRun"));
   statusMsg_->setText(trStr(lang(), "monRun"));
 }
@@ -1553,6 +1569,7 @@ void MainWindow::toggleMonitorPause() {
   if (!monitorEnabled_ || !monitor_) return;
   monitorPaused_ = !monitorPaused_;
   monitor_->setPaused(monitorPaused_);
+  monPauseBtn_->setChecked(monitorPaused_);
   tray_->setToolTip(monitorPaused_ ? trStr(lang(), "paused") : trStr(lang(), "monRun"));
 }
 void MainWindow::monitorEvent(const msf::MonitorEvent& e) {

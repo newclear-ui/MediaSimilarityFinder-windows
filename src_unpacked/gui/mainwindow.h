@@ -45,6 +45,7 @@ public slots:
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
 signals:
   void progress(int,QString);
+  void listingProgress(std::size_t);
   void matchesArrived();            // throttled; call takePending()
   void results(QVector<GuiFile> files, QStringList matchRows);
   void finished(QString);
@@ -70,8 +71,9 @@ public:
   explicit MainWindow(QWidget* parent=nullptr); ~MainWindow();
 private slots:
   // scan
-  void chooseFolder(); void startScan(); void pauseScan(); void resumeScan(); void cancelScan();
+  void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
   void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
+  void onListingProgress(std::size_t);
   void onResults(QVector<GuiFile> files, QStringList matchRows);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
@@ -122,7 +124,7 @@ private:
   QString currentFile_; int currentGroup_=-1;
   int lastPct_=0; QString lastPath_;
   QStringList cutPaths_;
-  bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false;
+  bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
   QStringList lastStats_; // scanned|analyzed|unchanged|groups|candidates from finished()
   qint64 repElapsedMs_=0;
   QHash<QString,double> bestPct_; QSet<QString> marked_;
@@ -134,7 +136,7 @@ private:
   // toolbar
   QToolBar* toolBar_=nullptr;
   QLineEdit* folder_=nullptr; QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
-    *resume_=nullptr,*cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*monPauseBtn_=nullptr;
+    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*monPauseBtn_=nullptr;
   QComboBox* preset_=nullptr; QSpinBox *cpu_=nullptr,*gpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
