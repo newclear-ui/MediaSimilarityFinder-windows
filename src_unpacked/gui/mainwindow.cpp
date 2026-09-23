@@ -192,7 +192,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.43\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.43\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.44\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.44\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -234,6 +234,10 @@ void ScanWorker::run() {
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastEmitMs_ > 200) { lastEmitMs_ = now; emit matchesArrived(); }
     };
+    // Streaming-only delivery: on million-match scans, retaining every match
+    // (two path strings each) costs hundreds of MB. The GUI accumulates
+    // groups incrementally from onMatch and needs no retained vector.
+    control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
     if (control_.cancel.load()) { emit finished(QStringLiteral("CANCELLED")); return; }
@@ -307,7 +311,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.43"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.44"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -560,7 +564,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.43"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.44"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1087,9 +1091,15 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size) const {
   if (rd.canRead()) {
     rd.setAutoTransform(true);
     QImage im = rd.read();
-    if (!im.isNull()) return QIcon(QPixmap::fromImage(im.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+    if (!im.isNull())
+      ic = QIcon(QPixmap::fromImage(im.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
   }
-  return QFileIconProvider().icon(QFileInfo(path));
+  if (ic.isNull()) ic = QFileIconProvider().icon(QFileInfo(path));
+  // Bound the cache: group-list refreshes re-request the same representatives,
+  // but an unbounded cache over a 100k+ scan would cost gigabytes.
+  if (thumbCache_.size() > 3000) thumbCache_.clear();
+  thumbCache_[path] = ic;
+  return ic;
 }
 void MainWindow::setViewMode(int i) {
   viewGrid_->setChecked(i == 0); viewList_->setChecked(i == 1);

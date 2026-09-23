@@ -47,6 +47,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.41 | Non-ASCII (Korean) filename crash fix + unicode_path_test (39 tests PASS) |
 | 0.9.2.42 | Search feel fixes (walk progress, merged buttons, state save) |
 | 0.9.2.43 | Post-stop state restore + pause scope |
+| 0.9.2.44 | Large-scan live verification + streaming switch |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
