@@ -1,9 +1,9 @@
 #include "incremental_index.h"
 namespace msf {
-void IncrementalIndex::load(const std::vector<FileState>& states){
+void IncrementalIndex::load(const std::vector<IndexedFile>& states){
  old_.clear(); for(const auto&s:states) old_[s.path]=s;
 }
-std::vector<Change> IncrementalIndex::diff(const std::vector<FileState>& cur) const{
+std::vector<Change> IncrementalIndex::diff(const std::vector<IndexedFile>& cur) const{
  std::vector<Change> out; std::unordered_map<std::string,bool> seen;
  for(const auto&s:cur){
   seen[s.path]=true; auto it=old_.find(s.path);

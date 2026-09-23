@@ -7,8 +7,13 @@
 #include "similarity.h"
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <queue>
 #include <thread>
 #include <future>
 namespace msf {
@@ -82,68 +87,109 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
  std::sort(out.begin(),out.end(),[](const SearchMatch&a,const SearchMatch&b){return a.percent>b.percent;}); return out;
 }
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){
- SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r; Scanner s;
- const std::string excl = managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{};
- std::function<void(std::size_t)> walkCb;
- if(control) walkCb = [control](std::size_t n){ if(control->listing) control->listing(n); };
- auto cur=s.scan(root, excl, walkCb);
- const bool hasIgnored=control && !control->ignoredPaths.empty();
- if(hasIgnored){ const auto& ig=control->ignoredPaths; cur.erase(std::remove_if(cur.begin(),cur.end(),[&](const FileState& x){return ig.find(x.path)!=ig.end();}),cur.end()); }
- r.scanned=cur.size(); auto old=db_.all(); IncrementalScanner inc; auto ch=inc.classify(cur,old);
-  r.added=ch.added.size();r.modified=ch.modified.size();r.unchanged=ch.unchanged.size();r.removed=ch.deleted.size();
-  for(auto&x:ch.deleted){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; db_.remove(x.path); }
+ SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r;
+ auto old=db_.all();
  std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
+ const bool hasIgnored=control && !control->ignoredPaths.empty();
  const int workers=recommended_worker_count(policy_,static_cast<int>(std::thread::hardware_concurrency()));
  const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
- std::size_t done=0;
+ const std::string excl = managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{};
+ std::size_t done=0, scanned=0, nAdded=0, nModified=0, nUnchanged=0, nRemoved=0;
+ std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
+ std::unordered_map<std::string,FileState> currentByPath;
  MediaPipeline imagePipeline;
  std::vector<FileState> changedVideos;
- std::vector<std::string> changedImages;
-  std::unordered_map<std::string,FileState> currentByPath; currentByPath.reserve(cur.size()*2+1);
- for(const auto& x:cur) currentByPath.emplace(x.path,x);
- for(const auto& x:cur){
-   auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified);
-   if(!changed) continue;
-   // Remove the previous record before re-analysis. If decoding/analysis fails,
-   // the stale fingerprint must not silently survive this successful scan.
-   if(it!=oldByPath.end() && !db_.remove(x.path)){ if(tx) db_.rollbackTransaction(); return r; }
-   if(kindOf(x.path)==MediaKind::Image){ changedImages.push_back(x.path); }
-   else { FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(v); }
- }
+ std::vector<std::string> imageBatch; imageBatch.reserve(gpuBatch);
+ std::size_t videoBase=0;
+ std::mutex queueMutex; std::condition_variable queueCv;
+ std::queue<FileState> queue; std::atomic_bool walkDone{false};
+ bool failed=false, cancelled=false;
  // Images are the CUDA-accelerated path. Decode on CPU, pack normalized 32x32
  // grayscale frames, then hash them in bounded GPU batches. If CUDA is absent,
  // MediaPipeline transparently executes the same CPU pHash reference path.
- for(std::size_t base=0;base<changedImages.size();){
-   if(stopped(control)) break;
-   const std::size_t n=std::min(gpuBatch,changedImages.size()-base);
-   std::vector<std::string> batch(changedImages.begin()+base,changedImages.begin()+base+n);
-   auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch);
-   for(const auto& ir:results){
-     FileState x; auto it=currentByPath.find(ir.path);
-     if(it==currentByPath.end()) continue;
-     x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(!db_.upsert(x)){ db_.rollbackTransaction(); return r; } ++r.analyzed; files_.push_back({x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0});}
-     ++done; if(control&&control->progress)control->progress(done,cur.size(),x.path);
-   }
-   base+=n;
- }
- if(control&&control->cancel.load()){ if(tx) db_.rollbackTransaction(); return r; }
+ // Single DB connection: only this thread touches db_/files_/r.
+ auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
+  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch);
+  for(const auto& ir:results){
+   FileState x; auto it=currentByPath.find(ir.path);
+   if(it==currentByPath.end()) continue;
+   x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(!db_.upsert(x)){ return false; } ++r.analyzed; files_.push_back({x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0});}
+   ++done; if(control&&control->progress)control->progress(done,scanned,x.path);
+  }
+  return true;
+ };
  // Videos retain the bounded asynchronous CPU/FFmpeg analysis path. This keeps
  // GPU image batching independent from the video decoder architecture.
- for(std::size_t base=0;base<changedVideos.size();base+=static_cast<std::size_t>(workers)){
-   if(stopped(control)) break;
-   std::vector<std::future<AnalysisJob>> futs;
-   const std::size_t end=std::min(changedVideos.size(),base+static_cast<std::size_t>(workers));
-   for(std::size_t k=base;k<end;++k){
-     FileState x=changedVideos[k];
-     futs.emplace_back(std::async(std::launch::async,[x,this](){
-       AnalysisJob j{x,false,true}; VideoFingerprint vf;
-       if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; std::uint64_t h=0,mh=0; for(auto v:vf.hashes) h^=v; for(auto v:vf.mirrorHashes) mh^=v; j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=h!=0; }
-       return j;
-     }));
+ auto processVideoRange=[&](std::size_t from,std::size_t to)->bool{
+  std::vector<std::future<AnalysisJob>> futs;
+  for(std::size_t k=from;k<to;++k){
+   FileState x=changedVideos[k];
+   futs.emplace_back(std::async(std::launch::async,[x,this](){
+    AnalysisJob j{x,false,true}; VideoFingerprint vf;
+    if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; std::uint64_t h=0,mh=0; for(auto v:vf.hashes) h^=v; for(auto v:vf.mirrorHashes) mh^=v; j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=h!=0; }
+    return j;
+   }));
+  }
+  for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;files_.push_back({j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration});} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+  return true;
+ };
+ auto processOne=[&](FileState&& x){
+  if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
+  ++scanned;
+  auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified);
+  if(!changed){ ++nUnchanged; seen.insert(x.path); return; }
+  if(it==oldByPath.end()) ++nAdded; else ++nModified;
+  // Remove the previous record before re-analysis. If decoding/analysis fails,
+  // the stale fingerprint must not silently survive this successful scan.
+  if(it!=oldByPath.end() && !db_.remove(x.path)){ failed=true; return; }
+  seen.insert(x.path);
+  currentByPath.emplace(x.path,x);
+  if(kindOf(x.path)==MediaKind::Image){
+   imageBatch.push_back(x.path);
+   if(imageBatch.size()>=gpuBatch){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
+  } else {
+   FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(std::move(v));
+   while(!failed && changedVideos.size()-videoBase>=static_cast<std::size_t>(workers)){
+    if(!processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers))) failed=true;
+    else videoBase+=static_cast<std::size_t>(workers);
    }
-   for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ db_.rollbackTransaction(); return r; } ++r.analyzed;files_.push_back({j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration});} ++done; if(control&&control->progress)control->progress(done,cur.size(),j.state.path);}
+  }
+ };
+ // The walker streams walked files while this thread analyzes them, so CPU/GPU
+ // work overlaps the directory walk instead of waiting for it.
+ std::thread walker([&]{
+  Scanner s; Scanner::ScanCallbacks cb;
+  if(control){
+   cb.onProgress=[control](std::size_t n){ if(control->listing) control->listing(n); };
+   cb.cancel=&control->cancel; cb.pause=&control->pause;
+  }
+  cb.onFile=[&](FileState&& f){ {std::lock_guard<std::mutex> g(queueMutex); queue.push(std::move(f));} queueCv.notify_one(); };
+  s.scan_stream(root, excl, cb);
+  walkDone.store(true); queueCv.notify_all();
+ });
+ while(!failed && !cancelled){
+  FileState x; bool have=false;
+  { std::unique_lock<std::mutex> g(queueMutex);
+   queueCv.wait_for(g,std::chrono::milliseconds(50),[&]{return !queue.empty()||walkDone.load();});
+   if(!queue.empty()){ x=std::move(queue.front()); queue.pop(); have=true; } }
+  if(have) processOne(std::move(x));
+  if(stopped(control)) cancelled=true;
+  else if(walkDone.load() && queue.empty()) break;
  }
- if(control&&control->cancel.load()){ if(tx) db_.rollbackTransaction(); return r; }
+ if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
+ while(!failed && !cancelled && videoBase<changedVideos.size()){
+  const std::size_t n=std::min(static_cast<std::size_t>(workers),changedVideos.size()-videoBase);
+  if(stopped(control)){ cancelled=true; break; }
+  if(!processVideoRange(videoBase,videoBase+n)) failed=true; else videoBase+=n;
+ }
+ walker.join();
+ if(failed){ if(tx) db_.rollbackTransaction(); return r; }
+ if(cancelled||(control&&control->cancel.load())){ if(tx) db_.rollbackTransaction(); return r; }
+ r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged;
+ // Previously indexed files that no longer exist are removed. Ignored rows are
+ // retained in the database (they reappear only when unignored and rescanned).
+ for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ if(tx)db_.rollbackTransaction(); return r; } ++nRemoved; }
+ r.removed=nRemoved;
  if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); return r; }
  candidateStates_=db_.all(); rebuildCandidateIndexes();
  // Unchanged files must participate in every incremental search.
