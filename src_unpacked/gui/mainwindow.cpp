@@ -215,7 +215,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.54\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.54\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.55\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.55\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -370,6 +370,18 @@ QVector<LiveMatch> ScanWorker::takePending() {
 }
 
 // ------------------------------------------------------------ MainWindow core
+// One-time QSettings identity + storage bootstrap. MUST run before any
+// default-constructed QSettings is used: without organization/application
+// names every settings read/write silently fails (AccessError) and no UI
+// state (window size, splitter, headers, view mode, ...) persists across
+// runs. INI next to the executable keeps portable builds truly portable
+// instead of depending on the Windows registry.
+void initAppSettings(const QString& portableDir) {
+  QCoreApplication::setOrganizationName("newclear-ui");
+  QCoreApplication::setApplicationName("MediaSimilarityFinder");
+  QSettings::setDefaultFormat(QSettings::IniFormat);
+  QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, portableDir);
+}
 MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
   ignored_ = QSet<QString>(ig0.begin(), ig0.end());
@@ -442,7 +454,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.54"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.55"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -780,7 +792,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.54"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.55"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));

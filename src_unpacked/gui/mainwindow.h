@@ -28,6 +28,9 @@ class QStyledItemDelegate;
 // ---------------------------------------------------------------- language
 enum class UiLang { Ko, En };
 QString trStr(UiLang lang, const char* key); // KO/EN string table (see .cpp)
+// One-time QSettings bootstrap (org/app names + INI location). Call once in
+// main() before any default-constructed QSettings is used.
+void initAppSettings(const QString& portableDir);
 
 // A single streamed match (paths resolved in the worker thread).
 struct LiveMatch { QString left, right; double percent=0; int kind=1; };

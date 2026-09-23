@@ -1,5 +1,6 @@
 ﻿#include "mainwindow.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QString>
 #include <QTimer>
 #include <iostream>
@@ -21,11 +22,12 @@ static bool attachParentConsole() { return true; }
 #endif
 
 namespace {
-constexpr const char* kVersion = "0.9.2.54";
+constexpr const char* kVersion = "0.9.2.55";
 }
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    initAppSettings(QCoreApplication::applicationDirPath());
 
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
