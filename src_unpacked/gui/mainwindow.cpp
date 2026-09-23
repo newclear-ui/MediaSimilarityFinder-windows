@@ -1,6 +1,9 @@
 #include "mainwindow.h"
+#include "video_decoder.h"
 #include <QAbstractItemView>
+#include <QActionGroup>
 #include <QApplication>
+#include <QMetaType>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
@@ -98,12 +101,26 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"ram")) return S("RAM 사용","RAM usage");
   if (!std::strcmp(key,"monitor")) return S("모니터","Monitor");
   if (!std::strcmp(key,"general")) return S("일반","General");
+  if (!std::strcmp(key,"tabFolder")) return S("폴더","Folders");
+  if (!std::strcmp(key,"tabImages")) return S("결과: 이미지","Results: Images");
+  if (!std::strcmp(key,"tabVideos")) return S("결과: 비디오","Results: Videos");
+  if (!std::strcmp(key,"tabIgnore")) return S("무시 목록","Ignored");
+  if (!std::strcmp(key,"viewBtn")) return S("보기","View");
+  if (!std::strcmp(key,"duration")) return S("재생시간:","Duration:");
+  if (!std::strcmp(key,"ignore")) return S("무시","Ignore");
+  if (!std::strcmp(key,"unignore")) return S("무시 해제","Unignore");
+  if (!std::strcmp(key,"clearIgnored")) return S("모두 비우기","Clear all");
+  if (!std::strcmp(key,"recentFolders")) return S("최근 검색 폴더","Recent folders");
+  if (!std::strcmp(key,"scanHere")) return S("이 폴더로 검색","Scan this folder");
+  if (!std::strcmp(key,"browse")) return S("찾아보기…","Browse…");
+  if (!std::strcmp(key,"ignoredHint")) return S("무시된 파일은 검색 결과에서 제외됩니다 (다음 검색부터 적용).","Ignored files are excluded from results (applies from next scan).");
   if (!std::strcmp(key,"viewXL")) return S("아주 큰 아이콘","Extra large icons");
   if (!std::strcmp(key,"viewL")) return S("큰 아이콘","Large icons");
   if (!std::strcmp(key,"viewM")) return S("보통 아이콘","Medium icons");
   if (!std::strcmp(key,"viewS")) return S("작은 아이콘","Small icons");
   if (!std::strcmp(key,"viewList")) return S("리스트","List");
   if (!std::strcmp(key,"viewDetails")) return S("자세히","Details");
+  if (!std::strcmp(key,"viewPreview")) return S("미리보기 창으로 보기","Show preview pane");
   if (!std::strcmp(key,"sortSim")) return S("유사도 내림차순","Similarity");
   if (!std::strcmp(key,"sortName")) return S("이름 오름차순","Name");
   if (!std::strcmp(key,"searchGroups")) return S("그룹 검색","Search groups");
@@ -174,7 +191,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.37\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.37\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.38\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.38\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -188,9 +205,16 @@ static bool recycleFile(const QString& path) {
 #endif
 
 // ------------------------------------------------------------ ScanWorker
+static QString fmtElapsed(qint64 ms);
+static bool isVideoExt(const QString& path) {
+  const QString e = QFileInfo(path).suffix().toLower();
+  return e == "mp4" || e == "mkv" || e == "avi" || e == "mov" || e == "webm" || e == "m4v" || e == "wmv";
+}
 ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled)
   : root_(std::move(root)), appDir_(std::move(appDir)), distance_(distance),
-    cpu_(cpu), gpu_(gpu), gpuEnabled_(gpuEnabled) {}
+    cpu_(cpu), gpu_(gpu), gpuEnabled_(gpuEnabled) {
+  qRegisterMetaType<QVector<GuiFile>>();
+}
 
 void ScanWorker::run() {
   try {
@@ -203,7 +227,8 @@ void ScanWorker::run() {
     };
     control_.onMatch = [this](const msf::SearchMatch& m) {
       QMutexLocker g(&pendingMutex_);
-      pending_.push_back({QString::fromStdString(m.leftPath), QString::fromStdString(m.rightPath), m.percent});
+      const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
+      pending_.push_back({l, r, m.percent, isVideoExt(l) ? 2 : 1});
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastEmitMs_ > 200) { lastEmitMs_ = now; emit matchesArrived(); }
     };
@@ -211,17 +236,20 @@ void ScanWorker::run() {
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
     if (control_.cancel.load()) { emit finished(QStringLiteral("CANCELLED")); return; }
     const auto& fs = engine_.files();
-    QStringList paths, sizes, fps;
+    QVector<GuiFile> files; files.reserve((int)fs.size());
     for (const auto& f : fs) {
-      paths << QString::fromStdString(f.path);
-      sizes << QString::number((qulonglong)f.size);
-      fps << QString("%1").arg((qulonglong)f.fingerprint, 16, 16, QChar('0'));
+      GuiFile g;
+      g.path = QString::fromStdString(f.path);
+      g.size = (qulonglong)f.size;
+      g.fpHex = QString("%1").arg((qulonglong)f.fingerprint, 16, 16, QChar('0'));
+      g.duration = f.duration;
+      files.push_back(g);
     }
     QStringList matches;
     for (const auto& m : r.matches)
       matches << (QString::fromStdString(m.leftPath) + "\t" + QString::fromStdString(m.rightPath)
                   + "\t" + QString::number(m.percent, 'f', 1));
-    emit results(paths, matches, sizes, fps);
+    emit results(files, matches);
     emit finished(QString("Scan complete: %1 files, %2 analyzed, %3 candidates, %4 groups").arg(r.scanned).arg(r.analyzed).arg(r.candidates).arg(r.groups)
                   + QString("|%1|%2|%3|%4|%5").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates));
   } catch (const std::exception& e) { emit failed(e.what()); }
@@ -229,6 +257,10 @@ void ScanWorker::run() {
 void ScanWorker::pause() { control_.pause.store(true); }
 void ScanWorker::resume() { control_.pause.store(false); }
 void ScanWorker::cancel() { control_.cancel.store(true); control_.pause.store(false); }
+void ScanWorker::setIgnored(const QSet<QString>& s) {
+  control_.ignoredPaths.clear();
+  for (const auto& p : s) control_.ignoredPaths.insert(p.toStdString());
+}
 QVector<LiveMatch> ScanWorker::takePending() {
   QMutexLocker g(&pendingMutex_);
   QVector<LiveMatch> out = pending_; pending_.clear(); return out;
@@ -236,6 +268,8 @@ QVector<LiveMatch> ScanWorker::takePending() {
 
 // ------------------------------------------------------------ MainWindow core
 MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
+  const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
+  ignored_ = QSet<QString>(ig0.begin(), ig0.end());
   buildUi();
   applyStaticTexts();
   monitor_ = std::make_unique<msf::MediaMonitor>();
@@ -269,7 +303,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.37"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.38"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -385,56 +419,97 @@ void MainWindow::buildMiddle(QWidget* w) {
   lay->addWidget(groupTitle_);
   auto* bar = new QHBoxLayout;
   sortBox_ = new QComboBox(w);
-  groupViewBox_ = new QComboBox(w);
-  groupViewBox_->addItems({trStr(lang(), "viewXL"), trStr(lang(), "viewL"), trStr(lang(), "viewM"),
-                           trStr(lang(), "viewS"), trStr(lang(), "viewList"), trStr(lang(), "viewDetails")});
-  groupViewBox_->setCurrentIndex(QSettings().value("ui/groupView", 1).toInt());
-  connect(groupViewBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::groupViewChanged);
+  viewBtn_ = new QToolButton(w);
+  viewBtn_->setText(trStr(lang(), "viewBtn") + QStringLiteral(" ▾"));
+  viewBtn_->setPopupMode(QToolButton::InstantPopup);
+  viewMenu_ = new QMenu(viewBtn_);
+  const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewPreview"};
+  auto* vgroup = new QActionGroup(viewBtn_); vgroup->setExclusive(true);
+  for (int i = 0; i < 7; ++i) {
+    QAction* a = viewMenu_->addAction(trStr(lang(), vkeys[i]));
+    a->setCheckable(true); a->setData(i); vgroup->addAction(a); viewActs_.push_back(a);
+    connect(a, &QAction::triggered, this, [this, i] { groupViewChanged(i); });
+  }
+  viewBtn_->setMenu(viewMenu_);
   groupSearch_ = new QLineEdit(w); groupSearch_->setClearButtonEnabled(true);
   connect(groupSearch_, &QLineEdit::textChanged, this, &MainWindow::groupSearchChanged);
   connect(sortBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { refreshGroupList(); });
-  bar->addWidget(sortBox_); bar->addWidget(groupViewBox_); bar->addWidget(groupSearch_, 1);
+  bar->addWidget(sortBox_); bar->addWidget(viewBtn_); bar->addWidget(groupSearch_, 1);
   lay->addLayout(bar);
-  groupsStack_ = new QStackedWidget(w);
-  groupsList_ = new QListWidget(w);
-  groupsList_->setViewMode(QListView::IconMode); groupsList_->setResizeMode(QListView::Adjust);
-  groupsList_->setMovement(QListView::Static); groupsList_->setSpacing(8);
-  connect(groupsList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* cur, QListWidgetItem*) {
-    if (!cur) return;
-    const int gi = cur->data(Qt::UserRole).toInt();
-    if (gi < 0 || gi >= groups_.size()) return;
-    currentGroup_ = gi; currentFile_.clear();
-    refreshFileViews(); refreshDetail(); updateStatusCounts();
-    groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ + 1));
-  });
-  connect(groupsList_, &QListWidget::itemChanged, this, [this](QListWidgetItem* it) {
+  midTabs_ = new QTabWidget(w);
+  lay->addWidget(midTabs_, 1);
+  // ---- folder tab
+  folderTab_ = new QWidget(midTabs_);
+  auto* flay = new QVBoxLayout(folderTab_);
+  folderPathLabel_ = new QLabel(folderTab_); folderPathLabel_->setWordWrap(true);
+  flay->addWidget(folderPathLabel_);
+  auto* frow = new QHBoxLayout;
+  auto* browseBtn = new QPushButton(folderTab_);
+  browseBtn->setObjectName("browseBtn");
+  connect(browseBtn, &QPushButton::clicked, this, &MainWindow::chooseFolder);
+  auto* scanHereBtn = new QPushButton(folderTab_);
+  scanHereBtn->setObjectName("scanHereBtn");
+  connect(scanHereBtn, &QPushButton::clicked, this, &MainWindow::startScan);
+  frow->addWidget(browseBtn); frow->addWidget(scanHereBtn); frow->addStretch(1);
+  flay->addLayout(frow);
+  auto* recentTitle = new QLabel(trStr(lang(), "recentFolders"), folderTab_);
+  recentTitle->setObjectName("recentTitle");
+  flay->addWidget(recentTitle);
+  recentList_ = new QListWidget(folderTab_);
+  flay->addWidget(recentList_, 1);
+  connect(recentList_, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
     if (!it) return;
-    setGroupMarked(it->data(Qt::UserRole).toInt(), it->checkState() == Qt::Checked);
+    folder_->setText(it->text());
+    QSettings().setValue("ui/lastFolder", folder_->text());
+    updateFolderTab();
   });
-  groupsList_->setContextMenuPolicy(Qt::CustomContextMenu);
-  connect(groupsList_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) { showGroupMenu(groupsList_->mapToGlobal(p)); });
-  groupsView_ = new QTreeWidget(w);
-  groupsView_->setColumnCount(4);
-  groupsView_->setRootIsDecorated(false);
-  groupsView_->setMinimumWidth(300);
-  groupsStack_ = new QStackedWidget(w);
-  groupsStack_->addWidget(groupsList_);
-  groupsStack_->addWidget(groupsView_);
-  lay->addWidget(groupsStack_, 1);
-  connect(groupsView_, &QTreeWidget::currentItemChanged, this, &MainWindow::groupSelected);
-  connect(groupsView_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* it, int col) {
-    if (!it || col != 0) return;
-    setGroupMarked(it->data(0, Qt::UserRole).toInt(), it->checkState(0) == Qt::Checked);
-  });
-  groupsView_->setContextMenuPolicy(Qt::CustomContextMenu);
-  connect(groupsView_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) { showGroupMenu(groupsView_->mapToGlobal(p)); });
-  groupViewChanged(groupViewBox_->currentIndex());
+  midTabs_->addTab(folderTab_, QString());
+  // ---- results tabs (image / video share the view-mode logic via active pair)
+  auto* imgTab = new QWidget(midTabs_);
+  auto* imgLay = new QVBoxLayout(imgTab); imgLay->setContentsMargins(0, 0, 0, 0);
+  imgTree_ = new QTreeWidget(imgTab); imgTree_->setColumnCount(4); imgTree_->setRootIsDecorated(false);
+  imgGrid_ = new QListWidget(imgTab);
+  imgGrid_->setViewMode(QListView::IconMode); imgGrid_->setResizeMode(QListView::Adjust);
+  imgGrid_->setMovement(QListView::Static); imgGrid_->setSpacing(8);
+  imgLay->addWidget(imgTree_); imgLay->addWidget(imgGrid_);
+  midTabs_->addTab(imgTab, QString());
+  auto* vidTab = new QWidget(midTabs_);
+  auto* vidLay = new QVBoxLayout(vidTab); vidLay->setContentsMargins(0, 0, 0, 0);
+  vidTree_ = new QTreeWidget(vidTab); vidTree_->setColumnCount(4); vidTree_->setRootIsDecorated(false);
+  vidGrid_ = new QListWidget(vidTab);
+  vidGrid_->setViewMode(QListView::IconMode); vidGrid_->setResizeMode(QListView::Adjust);
+  vidGrid_->setMovement(QListView::Static); vidGrid_->setSpacing(8);
+  vidLay->addWidget(vidTree_); vidLay->addWidget(vidGrid_);
+  midTabs_->addTab(vidTab, QString());
+  connectResView(imgTree_, imgGrid_);
+  connectResView(vidTree_, vidGrid_);
+  // ---- ignore tab
+  auto* igTab = new QWidget(midTabs_);
+  auto* iglay = new QVBoxLayout(igTab);
+  iglay->addWidget(new QLabel(trStr(lang(), "ignoredHint"), igTab));
+  ignoreList_ = new QListWidget(igTab);
+  iglay->addWidget(ignoreList_, 1);
+  auto* igrow = new QHBoxLayout;
+  unignoreBtn_ = new QPushButton(igTab);
+  clearIgnoreBtn_ = new QPushButton(igTab);
+  connect(unignoreBtn_, &QPushButton::clicked, this, &MainWindow::unignoreSelected);
+  connect(clearIgnoreBtn_, &QPushButton::clicked, this, &MainWindow::clearIgnored);
+  igrow->addWidget(unignoreBtn_); igrow->addWidget(clearIgnoreBtn_); igrow->addStretch(1);
+  iglay->addLayout(igrow);
+  midTabs_->addTab(igTab, QString());
+  connect(midTabs_, &QTabWidget::currentChanged, this, &MainWindow::onMidTabChanged);
+  // legacy single-pair pointers track the ACTIVE tab's pair
+  groupsStack_ = nullptr;
+  groupsList_ = imgGrid_;
+  groupsView_ = imgTree_;
   auto* foot = new QHBoxLayout;
-  csvBtn_ = new QPushButton(w);
-  connect(csvBtn_, &QPushButton::clicked, this, &MainWindow::exportGroupsCsv);
   groupFoot_ = new QLabel(w); groupFoot_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  foot->addWidget(csvBtn_); foot->addWidget(groupFoot_, 1);
+  foot->addWidget(groupFoot_, 1);
   lay->addLayout(foot);
+  updateFolderTab();
+  updateIgnoreTab();
+  groupViewChanged(QSettings().value("ui/groupView", 1).toInt());
+  onMidTabChanged(1);
 }
 
 void MainWindow::buildRight(QWidget* w) {
@@ -508,7 +583,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.37"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.38"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   pause_->setText(QStringLiteral("❚❚ ") + trStr(l, "pause"));
   resume_->setText(trStr(l, "resume"));
@@ -524,11 +599,26 @@ void MainWindow::applyStaticTexts() {
   refreshSummary();
   groupTitle_->setText(trStr(l, "groups") + QString(" (%1)").arg(groups_.size()));
   sortBox_->blockSignals(true);
+  const int ssort = sortBox_->currentIndex();
   sortBox_->clear(); sortBox_->addItem(trStr(l, "sortSim")); sortBox_->addItem(trStr(l, "sortName"));
+  sortBox_->setCurrentIndex(ssort < 0 ? 0 : ssort);
   sortBox_->blockSignals(false);
   groupSearch_->setPlaceholderText(trStr(l, "searchGroups"));
-  csvBtn_->setText(trStr(l, "exportCsv"));
-  groupsView_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "similarity"), trStr(l, "fileSize")});
+  viewBtn_->setText(trStr(l, "viewBtn") + QStringLiteral(" ▾"));
+  {
+    const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewPreview"};
+    for (int i = 0; i < viewActs_.size() && i < 7; ++i) viewActs_[i]->setText(trStr(l, vkeys[i]));
+  }
+  midTabs_->setTabText(0, trStr(l, "tabFolder"));
+  if (auto* bb = folderTab_->findChild<QPushButton*>("browseBtn")) bb->setText(trStr(l, "browse"));
+  if (auto* sb = folderTab_->findChild<QPushButton*>("scanHereBtn")) sb->setText(trStr(l, "scanHere"));
+  if (auto* rt = folderTab_->findChild<QLabel*>("recentTitle")) rt->setText(trStr(l, "recentFolders"));
+  updateFolderTab();
+  updateIgnoreTab();
+  imgTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "similarity"), trStr(l, "fileSize")});
+  vidTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "similarity"), trStr(l, "fileSize")});
+  unignoreBtn_->setText(trStr(l, "unignore"));
+  clearIgnoreBtn_->setText(trStr(l, "clearIgnored"));
   viewGrid_->setToolTip(trStr(l, "viewGrid")); viewList_->setToolTip(trStr(l, "viewList"));
   list_->setHeaderLabels({"", trStr(l, "colFile"), trStr(l, "similarity"), trStr(l, "resolution"),
                           trStr(l, "format"), trStr(l, "fileSize"), trStr(l, "colDate")});
@@ -554,7 +644,7 @@ void MainWindow::setLanguage(int idx) {
 // ------------------------------------------------------------ scan control
 void MainWindow::chooseFolder() {
   const QString d = QFileDialog::getExistingDirectory(this, trStr(lang(), "chooseTitle"), folder_->text());
-  if (!d.isEmpty()) { folder_->setText(d); QSettings().setValue("ui/lastFolder", d); }
+  if (!d.isEmpty()) { folder_->setText(d); QSettings().setValue("ui/lastFolder", d); updateFolderTab(); }
 }
 void MainWindow::setRunning(bool v) {
   scanning_ = v;
@@ -568,14 +658,16 @@ void MainWindow::startScan() {
   if (folder_->text().isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; thread_ = nullptr; worker_ = nullptr; }
   matches_.clear(); groups_.clear(); pathGroup_.clear(); pathParent_.clear();
-  bestPct_.clear(); resCache_.clear();
-  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear();
+  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
+  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
+  lastDone_ = 0; lastTotal_ = 0;
   refreshGroupList(); refreshFileViews(); refreshDetail();
   QString appDir = QApplication::applicationDirPath();
   thread_ = new QThread(this);
   const int dist = 8;
   worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), gpu_->value(), gpuEnabled_->isChecked());
+  worker_->setIgnored(ignored_);
   worker_->moveToThread(thread_);
   connect(thread_, &QThread::started, worker_, &ScanWorker::run);
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);
@@ -586,6 +678,11 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::finished, thread_, &QThread::quit);
   connect(worker_, &ScanWorker::failed, thread_, &QThread::quit);
   scanStartMs_ = QDateTime::currentMSecsSinceEpoch();
+  QStringList recent = QSettings().value("ui/recentFolders").toStringList();
+  recent.removeAll(folder_->text()); recent.prepend(folder_->text());
+  while (recent.size() > 8) recent.removeLast();
+  QSettings().setValue("ui/recentFolders", recent);
+  updateFolderTab();
   setRunning(true);
   statusMsg_->setText(trStr(lang(), "scanning"));
   statusProg_->setValue(0);
@@ -604,8 +701,11 @@ void MainWindow::cancelScan() {
   statusMsg_->setText(trStr(lang(), "scanCancel"));
 }
 void MainWindow::scanProgress(int p, QString path) {
+  lastPct_ = p; lastPath_ = path;
   statusProg_->setValue(p);
-  statusMsg_->setText(QString("%1% — %2").arg(p).arg(QFileInfo(path).fileName()));
+  const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
+  statusMsg_->setText(QString("%1% — %2 — %3").arg(p).arg(QFileInfo(path).fileName()).arg(fmtElapsed(el)));
+  updateStatusCounts();
 }
 void MainWindow::scanFinished(QString msg) {
   drainMatches();
@@ -635,19 +735,21 @@ void MainWindow::scanFailed(QString msg) {
   statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
   setRunning(false);
 }
-void MainWindow::onResults(QStringList paths, QStringList matchRows, QStringList sizes, QStringList fpHex) {
+void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
   drainMatches();
-  allPaths_ = paths; matchRows_ = matchRows;
-  fileSize_.clear(); fileFp_.clear();
-  for (int i = 0; i < paths.size(); ++i) {
-    if (i < sizes.size()) fileSize_[paths[i]] = sizes[i];
-    if (i < fpHex.size()) fileFp_[paths[i]] = fpHex[i];
+  allPaths_.clear(); matchRows_ = matchRows;
+  fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
+  for (const auto& f : files) {
+    allPaths_ << f.path;
+    fileSize_[f.path] = QString::number(f.size);
+    fileFp_[f.path] = f.fpHex;
+    fileDur_[f.path] = f.duration;
   }
   // fold final retained matches (same data as streamed, dedup by rebuild)
   for (const auto& row : matchRows_) {
     const QStringList p = row.split('\t');
     if (p.size() != 3) continue;
-    addMatch(p[0], p[1], p[2].toDouble());
+    addMatch(p[0], p[1], p[2].toDouble(), isVideoExt(p[0]) ? 2 : 1);
   }
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
 }
@@ -731,7 +833,7 @@ QString MainWindow::findRoot(const QString& p) {
   while (pathParent_.value(q, q) != r) { const QString n = pathParent_.value(q); pathParent_[q] = r; q = n; }
   return r;
 }
-void MainWindow::addMatch(const QString& l, const QString& r, double pct) {
+void MainWindow::addMatch(const QString& l, const QString& r, double pct, int kind) {
   if (l.isEmpty() || r.isEmpty() || l == r) return;
   if (!pathParent_.contains(l)) pathParent_[l] = l;
   if (!pathParent_.contains(r)) pathParent_[r] = r;
@@ -739,12 +841,14 @@ void MainWindow::addMatch(const QString& l, const QString& r, double pct) {
   if (rl != rr) pathParent_[rr] = rl;
   bestPct_[l] = std::max(bestPct_.value(l, 0.0), pct);
   bestPct_[r] = std::max(bestPct_.value(r, 0.0), pct);
+  if (!pathKind_.contains(l)) pathKind_[l] = kind;
+  if (!pathKind_.contains(r)) pathKind_[r] = kind;
 }
 void MainWindow::drainMatches() {
   if (!worker_) return;
   const auto v = worker_->takePending();
   if (v.isEmpty()) return;
-  for (const auto& m : v) addMatch(m.left, m.right, m.percent);
+  for (const auto& m : v) addMatch(m.left, m.right, m.percent, m.kind);
   groupsDirty_ = true;
 }
 void MainWindow::rebuildGroups() {
@@ -756,7 +860,7 @@ void MainWindow::rebuildGroups() {
     DupGroup g; g.paths = it.value();
     std::sort(g.paths.begin(), g.paths.end(),
               [this](const QString& a, const QString& b) { return bestPct_.value(a, 0) > bestPct_.value(b, 0); });
-    g.best = 0;
+    g.best = 0; g.kind = pathKind_.value(g.paths[0], 1);
     for (const auto& p : g.paths) { g.pct[p] = bestPct_.value(p, 0); g.best = std::max(g.best, g.pct[p]); }
     groups_.push_back(g);
   }
@@ -775,66 +879,92 @@ QString MainWindow::fmtSize(qulonglong n) const {
   return QString("%1 GB").arg(n / (1024.0 * 1024 * 1024), 0, 'f', 2);
 }
 double MainWindow::pathBest(const QString& p) const { return bestPct_.value(p, 0.0); }
+void MainWindow::connectResView(QTreeWidget* tree, QListWidget* grid) {
+  connect(tree, &QTreeWidget::currentItemChanged, this, &MainWindow::groupSelected);
+  connect(tree, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* it, int col) {
+    if (!it || col != 0) return;
+    setGroupMarked(it->data(0, Qt::UserRole).toInt(), it->checkState(0) == Qt::Checked);
+  });
+  tree->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(tree, &QWidget::customContextMenuRequested, this, [this, tree](const QPoint& p) { showGroupMenu(tree->mapToGlobal(p)); });
+  connect(grid, &QListWidget::currentItemChanged, this, &MainWindow::gridSelected);
+  connect(grid, &QListWidget::itemChanged, this, &MainWindow::gridCheckChanged);
+  grid->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(grid, &QWidget::customContextMenuRequested, this, [this, grid](const QPoint& p) { showGroupMenu(grid->mapToGlobal(p)); });
+}
+void MainWindow::gridSelected(QListWidgetItem* cur, QListWidgetItem*) {
+  if (!cur) return;
+  const int gi = cur->data(Qt::UserRole).toInt();
+  if (gi < 0 || gi >= groups_.size()) return;
+  currentGroup_ = gi; currentFile_.clear();
+  refreshFileViews(); refreshDetail(); updateStatusCounts();
+  groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ + 1));
+}
+void MainWindow::gridCheckChanged(QListWidgetItem* it) {
+  if (!it) return;
+  setGroupMarked(it->data(Qt::UserRole).toInt(), it->checkState() == Qt::Checked);
+}
 void MainWindow::groupViewChanged(int idx) {
   if (idx < 0) idx = 1;
-  if (idx > 5) idx = 5;
-  QSettings().setValue("ui/groupView", idx);
-  groupViewBox_->blockSignals(true); groupViewBox_->setCurrentIndex(idx); groupViewBox_->blockSignals(false);
+  if (idx > 6) idx = 5;
+  if (idx <= 5) QSettings().setValue("ui/groupView", idx);
+  for (auto* a : viewActs_) a->setChecked(a->data().toInt() == idx);
+  if (idx == 6) {
+    rightPane_->setVisible(!rightPane_->isVisible());
+    return;
+  }
+  QTreeWidget* tree = (midTabs_ && midTabs_->currentIndex() == 2) ? vidTree_ : imgTree_;
+  QListWidget* grid = (midTabs_ && midTabs_->currentIndex() == 2) ? vidGrid_ : imgGrid_;
+  groupsView_ = tree; groupsList_ = grid;
   if (idx <= 4) {
-    groupsStack_->setCurrentIndex(0);
-    groupsList_->setViewMode(idx == 4 ? QListView::ListMode : QListView::IconMode);
+    tree->setVisible(false); grid->setVisible(true);
+    grid->setViewMode(idx == 4 ? QListView::ListMode : QListView::IconMode);
     static const int sizes[5] = {256, 128, 64, 32, 32};
-    groupsList_->setIconSize(QSize(sizes[idx], sizes[idx]));
-    for (int r = 0; r < groupsList_->count(); ++r)
-      if (groupsList_->item(r)->data(Qt::UserRole).toInt() == currentGroup_) {
-        groupsList_->setCurrentRow(r); break;
-      }
+    grid->setIconSize(QSize(sizes[idx], sizes[idx]));
+    for (int r = 0; r < grid->count(); ++r)
+      if (grid->item(r)->data(Qt::UserRole).toInt() == currentGroup_) { grid->setCurrentRow(r); break; }
   } else {
-    groupsStack_->setCurrentIndex(1);
-    for (int r = 0; r < groupsView_->topLevelItemCount(); ++r)
-      if (groupsView_->topLevelItem(r)->data(0, Qt::UserRole).toInt() == currentGroup_) {
-        groupsView_->setCurrentItem(groupsView_->topLevelItem(r)); break;
+    grid->setVisible(false); tree->setVisible(true);
+    for (int r = 0; r < tree->topLevelItemCount(); ++r)
+      if (tree->topLevelItem(r)->data(0, Qt::UserRole).toInt() == currentGroup_) {
+        tree->setCurrentItem(tree->topLevelItem(r)); break;
       }
   }
 }
 void MainWindow::setGroupMarked(int gi, bool on) {
   if (gi < 0 || gi >= groups_.size()) return;
   for (const auto& p : groups_[gi].paths) { if (on) marked_.insert(p); else marked_.remove(p); }
-  groupsView_->blockSignals(true); groupsList_->blockSignals(true);
-  for (int r = 0; r < groupsView_->topLevelItemCount(); ++r) {
-    auto* it = groupsView_->topLevelItem(r);
-    const int g2 = it->data(0, Qt::UserRole).toInt();
-    if (g2 < 0 || g2 >= groups_.size()) continue;
+  QTreeWidget* trees[2] = {imgTree_, vidTree_};
+  QListWidget* grids[2] = {imgGrid_, vidGrid_};
+  for (auto* t : trees) t->blockSignals(true);
+  for (auto* g : grids) g->blockSignals(true);
+  auto stateOf = [this](int g2) {
+    if (g2 < 0 || g2 >= groups_.size()) return Qt::Unchecked;
     int n = 0;
     for (const auto& p : groups_[g2].paths) if (marked_.contains(p)) ++n;
-    it->setCheckState(0, n == 0 ? Qt::Unchecked : (n == groups_[g2].paths.size() ? Qt::Checked : Qt::PartiallyChecked));
-  }
-  for (int r = 0; r < groupsList_->count(); ++r) {
-    auto* it = groupsList_->item(r);
-    const int g2 = it->data(Qt::UserRole).toInt();
-    if (g2 < 0 || g2 >= groups_.size()) continue;
-    int n = 0;
-    for (const auto& p : groups_[g2].paths) if (marked_.contains(p)) ++n;
-    it->setCheckState(n == 0 ? Qt::Unchecked : (n == groups_[g2].paths.size() ? Qt::Checked : Qt::PartiallyChecked));
-  }
-  groupsView_->blockSignals(false); groupsList_->blockSignals(false);
+    return n == 0 ? Qt::Unchecked : (n == groups_[g2].paths.size() ? Qt::Checked : Qt::PartiallyChecked);
+  };
+  for (auto* t : trees)
+    for (int r = 0; r < t->topLevelItemCount(); ++r) {
+      auto* it = t->topLevelItem(r);
+      it->setCheckState(0, stateOf(it->data(0, Qt::UserRole).toInt()));
+    }
+  for (auto* g : grids)
+    for (int r = 0; r < g->count(); ++r) {
+      auto* it = g->item(r);
+      it->setCheckState(stateOf(it->data(Qt::UserRole).toInt()));
+    }
+  for (auto* t : trees) t->blockSignals(false);
+  for (auto* g : grids) g->blockSignals(false);
   refreshFileViews(); updateStatusCounts();
 }
-void MainWindow::refreshGroupList() {
-  groupsView_->blockSignals(true); groupsList_->blockSignals(true);
-  groupsView_->clear(); groupsList_->clear();
-  groupTitle_->setText(trStr(lang(), "groups") + QString(" (%1)").arg(groups_.size()));
-  groupViewBox_->blockSignals(true);
-  const int gv = qBound(0, groupViewBox_->currentIndex(), 5);
-  groupViewBox_->clear();
-  groupViewBox_->addItems({trStr(lang(), "viewXL"), trStr(lang(), "viewL"), trStr(lang(), "viewM"),
-                           trStr(lang(), "viewS"), trStr(lang(), "viewList"), trStr(lang(), "viewDetails")});
-  groupViewBox_->setCurrentIndex(gv);
-  groupViewBox_->blockSignals(false);
-  groupViewChanged(gv);
+void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel) {
+  tree->blockSignals(true); grid->blockSignals(true);
+  tree->clear(); grid->clear();
   const QString f = groupSearch_->text().trimmed().toLower();
   for (int i = 0; i < groups_.size(); ++i) {
     const auto& g = groups_[i];
+    if (g.kind != wantKind) continue;
     if (!f.isEmpty()) {
       bool hit = false;
       for (const auto& p : g.paths) if (p.toLower().contains(f)) { hit = true; break; }
@@ -844,7 +974,7 @@ void MainWindow::refreshGroupList() {
     for (const auto& p : g.paths) bytes += fileSize_.value(p, "0").toULongLong();
     int marked = 0;
     for (const auto& p : g.paths) if (marked_.contains(p)) ++marked;
-    auto* it = new QTreeWidgetItem(groupsView_);
+    auto* it = new QTreeWidgetItem(tree);
     it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
     it->setCheckState(0, marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
     it->setText(0, QString("%1 %2").arg(trStr(lang(), "group")).arg(i + 1));
@@ -852,7 +982,7 @@ void MainWindow::refreshGroupList() {
     it->setText(2, QString("%1%").arg(g.best, 0, 'f', 1));
     it->setText(3, fmtSize(bytes));
     it->setData(0, Qt::UserRole, i);
-    if (i == currentGroup_) groupsView_->setCurrentItem(it);
+    if (syncSel && i == currentGroup_) tree->setCurrentItem(it);
     const QString rep = g.paths.isEmpty() ? QString() : g.paths[0];
     auto* li = new QListWidgetItem(fileThumb(rep, QSize(64, 64)),
                                    QString("%1 %2\n%3 %4 · %5%\n%6")
@@ -863,12 +993,73 @@ void MainWindow::refreshGroupList() {
     li->setCheckState(marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
     li->setData(Qt::UserRole, i);
     li->setToolTip(rep);
-    groupsList_->addItem(li);
-    if (i == currentGroup_) groupsList_->setCurrentItem(li);
+    grid->addItem(li);
+    if (syncSel && i == currentGroup_) grid->setCurrentItem(li);
   }
-  groupsView_->resizeColumnToContents(0);
-  groupsView_->blockSignals(false); groupsList_->blockSignals(false);
+  tree->resizeColumnToContents(0);
+  tree->blockSignals(false); grid->blockSignals(false);
+}
+void MainWindow::refreshGroupList() {
+  int ni = 0, nv = 0;
+  for (const auto& g : groups_) { if (g.kind == 2) ++nv; else ++ni; }
+  groupTitle_->setText(trStr(lang(), "groups") + QString(" (%1)").arg(groups_.size()));
+  midTabs_->setTabText(1, QString("%1 (%2)").arg(trStr(lang(), "tabImages")).arg(ni));
+  midTabs_->setTabText(2, QString("%1 (%2)").arg(trStr(lang(), "tabVideos")).arg(nv));
+  midTabs_->setTabText(3, QString("%1 (%2)").arg(trStr(lang(), "tabIgnore")).arg(ignored_.size()));
+  const int tab = midTabs_->currentIndex();
+  fillPair(imgTree_, imgGrid_, 1, tab == 1);
+  fillPair(vidTree_, vidGrid_, 2, tab == 2);
   groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ >= 0 ? QString::number(currentGroup_ + 1) : "-"));
+  updateIgnoreTab();
+}
+void MainWindow::activateTab(int idx) {
+  const bool res = (idx == 1 || idx == 2);
+  sortBox_->setEnabled(res); viewBtn_->setEnabled(res); groupSearch_->setEnabled(res);
+  if (idx == 1 || idx == 2) {
+    groupsView_ = (idx == 2) ? vidTree_ : imgTree_;
+    groupsList_ = (idx == 2) ? vidGrid_ : imgGrid_;
+    refreshGroupList();
+    groupViewChanged(QSettings().value("ui/groupView", 1).toInt());
+  } else if (idx == 0) {
+    updateFolderTab();
+  } else if (idx == 3) {
+    updateIgnoreTab();
+  }
+}
+void MainWindow::onMidTabChanged(int idx) { activateTab(idx); }
+void MainWindow::updateFolderTab() {
+  folderPathLabel_->setText(folder_->text().isEmpty() ? "-" : QDir::toNativeSeparators(folder_->text()));
+  recentList_->clear();
+  recentList_->addItems(QSettings().value("ui/recentFolders").toStringList());
+}
+void MainWindow::updateIgnoreTab() {
+  ignoreList_->clear();
+  QStringList ig = ignored_.values(); ig.sort();
+  ignoreList_->addItems(ig);
+}
+void MainWindow::unignoreSelected() {
+  QList<QString> sel;
+  for (auto* it : ignoreList_->selectedItems()) sel << it->text();
+  if (sel.isEmpty() && ignoreList_->currentItem()) sel << ignoreList_->currentItem()->text();
+  if (sel.isEmpty()) return;
+  for (const auto& p : sel) ignored_.remove(p);
+  QSettings().setValue("ui/ignored", QStringList(ignored_.begin(), ignored_.end()));
+  updateIgnoreTab(); refreshGroupList(); updateStatusCounts();
+  statusMsg_->setText(trStr(lang(), "ready"));
+}
+void MainWindow::clearIgnored() {
+  if (ignored_.isEmpty()) return;
+  ignored_.clear();
+  QSettings().setValue("ui/ignored", QStringList());
+  updateIgnoreTab(); updateStatusCounts();
+}
+void MainWindow::applyIgnore(const QStringList& paths, bool on) {
+  if (paths.isEmpty()) return;
+  for (const auto& p : paths) { if (on) ignored_.insert(p); else ignored_.remove(p); }
+  QSettings().setValue("ui/ignored", QStringList(ignored_.begin(), ignored_.end()));
+  if (on) prunePaths(QSet<QString>(paths.begin(), paths.end()));
+  updateIgnoreTab(); updateStatusCounts();
+  if (on) statusMsg_->setText(trStr(lang(), "ignoredHint"));
 }
 void MainWindow::groupSelected(QTreeWidgetItem* cur, QTreeWidgetItem*) {
   if (!cur) { currentGroup_ = -1; currentFile_.clear(); }
@@ -881,35 +1072,45 @@ void MainWindow::groupSelected(QTreeWidgetItem* cur, QTreeWidgetItem*) {
   groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ >= 0 ? QString::number(currentGroup_ + 1) : "-"));
 }
 void MainWindow::groupSearchChanged(const QString&) { refreshGroupList(); }
-void MainWindow::exportGroupsCsv() {
-  if (groups_.isEmpty()) return;
-  const QString fn = QFileDialog::getSaveFileName(this, trStr(lang(), "exportCsv"), "groups.csv", "CSV (*.csv)");
-  if (fn.isEmpty()) return;
-  QFile f(fn);
-  if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) { QMessageBox::warning(this, trStr(lang(), "exportCsv"), trStr(lang(), "csvFail")); return; }
-  QTextStream out(&f); out.setEncoding(QStringConverter::Utf8);
-  out << "group,file,similarity_percent,size_bytes\n";
-  for (int i = 0; i < groups_.size(); ++i)
-    for (const auto& p : groups_[i].paths) {
-      QString esc = p; esc.replace('"', "\"\"");
-      out << (i + 1) << ",\"" << esc << "\"," << QString::number(groups_[i].pct.value(p, 0), 'f', 1)
-          << "," << fileSize_.value(p, "0") << "\n";
-    }
-  statusMsg_->setText(trStr(lang(), "csvSaved") + fn);
-}
-
 // ------------------------------------------------------------ right pane: files + detail
 QString MainWindow::fileResolution(const QString& path) const {
   auto it = resCache_.find(path);
   if (it != resCache_.cend()) return it.value();
   QString r = "-";
-  QImageReader rd(path);
-  const QSize s = rd.size();
-  if (s.isValid()) r = QString("%1x%2").arg(s.width()).arg(s.height());
+  if (isVideoExt(path)) {
+    msf::VideoDecoder dec;
+    if (dec.open(path.toStdString())) {
+      msf::VideoInfo vi;
+      if (dec.info(vi) && vi.width > 0 && vi.height > 0)
+        r = QString("%1x%2").arg(vi.width).arg(vi.height);
+      dec.close();
+    }
+  } else {
+    QImageReader rd(path);
+    const QSize s = rd.size();
+    if (s.isValid()) r = QString("%1x%2").arg(s.width()).arg(s.height());
+  }
   resCache_[path] = r;
   return r;
 }
 QIcon MainWindow::fileThumb(const QString& path, const QSize& size) const {
+  auto tc = thumbCache_.find(path);
+  if (tc != thumbCache_.cend()) return tc.value();
+  QIcon ic;
+  if (isVideoExt(path)) {
+    msf::VideoDecoder dec;
+    if (dec.open(path.toStdString())) {
+      msf::VideoFrame fr;
+      if (dec.frameAt(0.5, 160, 160, fr) && !fr.gray.empty() && fr.width > 0 && fr.height > 0) {
+        QImage im(fr.gray.data(), fr.width, fr.height, fr.width, QImage::Format_Grayscale8);
+        ic = QIcon(QPixmap::fromImage(im.copy()).scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+      }
+      dec.close();
+    }
+    if (ic.isNull()) ic = QFileIconProvider().icon(QFileInfo(path));
+    thumbCache_[path] = ic;
+    return ic;
+  }
   QImageReader rd(path);
   if (rd.canRead()) {
     rd.setAutoTransform(true);
@@ -1001,6 +1202,9 @@ void MainWindow::refreshDetail() {
   detailForm_->addRow(trStr(lang(), "created"),
                       new QLabel(fi.birthTime().isValid() ? fi.birthTime().toString("yyyy-MM-dd hh:mm:ss") : "-", this));
   detailForm_->addRow(trStr(lang(), "resolution"), new QLabel(fileResolution(currentFile_), this));
+  const double dur = fileDur_.value(currentFile_, 0.0);
+  detailForm_->addRow(trStr(lang(), "duration"),
+                      new QLabel(dur > 0 ? QString("%1:%2").arg(int(dur) / 60, 2, 10, QChar('0')).arg(int(dur) % 60, 2, 10, QChar('0')) : "-", this));
   detailForm_->addRow(trStr(lang(), "similarity"),
                       new QLabel(ref ? QString("100% · ") + trStr(lang(), "reference")
                                      : QString("%1%").arg(pct, 0, 'f', 1), this));
@@ -1051,20 +1255,26 @@ void MainWindow::toggleMarkSelected() {
   auto inMid = [fw](QAbstractItemView* v) -> bool {
     return fw && (fw == v || fw == v->viewport() || v->isAncestorOf(fw));
   };
-  if (inMid(groupsView_) || inMid(groupsList_)) {
-    int gi = currentGroup_;
-    if (gi < 0) {
-      if (inMid(groupsList_) && groupsList_->currentItem())
-        gi = groupsList_->currentItem()->data(Qt::UserRole).toInt();
-      else if (inMid(groupsView_) && groupsView_->currentItem())
-        gi = groupsView_->currentItem()->data(0, Qt::UserRole).toInt();
+  QTreeWidget* trees[2] = {imgTree_, vidTree_};
+  QListWidget* grids[2] = {imgGrid_, vidGrid_};
+  for (auto* t : trees)
+    if (inMid(t)) {
+      const int gi = t->currentItem() ? t->currentItem()->data(0, Qt::UserRole).toInt() : currentGroup_;
+      if (gi < 0 || gi >= groups_.size()) return;
+      bool anyUn = false;
+      for (const auto& p : groups_[gi].paths) if (!marked_.contains(p)) { anyUn = true; break; }
+      setGroupMarked(gi, anyUn);
+      return;
     }
-    if (gi < 0 || gi >= groups_.size()) return;
-    bool anyUn = false;
-    for (const auto& p : groups_[gi].paths) if (!marked_.contains(p)) { anyUn = true; break; }
-    setGroupMarked(gi, anyUn);
-    return;
-  }
+  for (auto* g : grids)
+    if (inMid(g)) {
+      const int gi = g->currentItem() ? g->currentItem()->data(Qt::UserRole).toInt() : currentGroup_;
+      if (gi < 0 || gi >= groups_.size()) return;
+      bool anyUn = false;
+      for (const auto& p : groups_[gi].paths) if (!marked_.contains(p)) { anyUn = true; break; }
+      setGroupMarked(gi, anyUn);
+      return;
+    }
   const auto files = selectedFiles();
   if (files.isEmpty()) return;
   bool anyUnmarked = false;
@@ -1101,6 +1311,9 @@ void MainWindow::showFileMenu(const QPoint& pos) {
   m.addAction(trStr(lang(), "unmarkAll"), this, [this] { markAll(false); });
   m.addAction(trStr(lang(), "invertMark"), this, &MainWindow::invertMarked);
   m.addSeparator();
+  m.addAction(trStr(lang(), "ignore"), this, [this] { applyIgnore(selectedFiles(), true); });
+  m.addAction(trStr(lang(), "unignore"), this, [this] { applyIgnore(selectedFiles(), false); });
+  m.addSeparator();
   m.addAction(trStr(lang(), "analyze"), this, [this] {
     const auto f = selectedFiles();
     if (!f.isEmpty()) { folder_->setText(QFileInfo(f[0]).absolutePath()); startScan(); }
@@ -1111,7 +1324,13 @@ void MainWindow::showGroupMenu(const QPoint& pos) {
   QMenu m(this);
   m.addAction(trStr(lang(), "markAll"), this, [this] { markAll(true); });
   m.addAction(trStr(lang(), "unmarkAll"), this, [this] { markAll(false); });
-  m.addAction(trStr(lang(), "exportCsv"), this, &MainWindow::exportGroupsCsv);
+  m.addSeparator();
+  m.addAction(trStr(lang(), "ignore"), this, [this] {
+    if (currentGroup_ >= 0 && currentGroup_ < groups_.size()) applyIgnore(groups_[currentGroup_].paths, true);
+  });
+  m.addAction(trStr(lang(), "unignore"), this, [this] {
+    if (currentGroup_ >= 0 && currentGroup_ < groups_.size()) applyIgnore(groups_[currentGroup_].paths, false);
+  });
   m.exec(pos);
 }
 void MainWindow::openSelected() {
@@ -1196,6 +1415,7 @@ void MainWindow::moveSelected() {
 void MainWindow::prunePaths(const QSet<QString>& gone) {
   for (const auto& p : gone) {
     marked_.remove(p); resCache_.remove(p); fileSize_.remove(p); fileFp_.remove(p);
+    fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p); thumbCache_.remove(p);
     pathParent_.remove(p);
     if (currentFile_ == p) currentFile_.clear();
   }

@@ -41,6 +41,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.35 | Windows CPU build/test hardening (36/36 PASS, GUI runtime verified) |
 | 0.9.2.36 | Explorer-style UI rewrite (grid+list switch, KO/EN, marks, live streaming) |
 | 0.9.2.37 | UI feedback round (in-settings language, 6 group views, keyboard mark, splitter save) |
+| 0.9.2.38 | Unified 3-pane UI + video tab/ignore list/throughput (37 tests PASS) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

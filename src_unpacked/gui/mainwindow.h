@@ -29,9 +29,10 @@ enum class UiLang { Ko, En };
 QString trStr(UiLang lang, const char* key); // KO/EN string table (see .cpp)
 
 // A single streamed match (paths resolved in the worker thread).
-struct LiveMatch { QString left, right; double percent=0; };
+struct LiveMatch { QString left, right; double percent=0; int kind=1; };
 // Per-file data snapshot handed to the GUI thread when a scan finishes.
-struct FileRec { QString path; qulonglong size=0; QString fpHex; };
+struct GuiFile { QString path; qulonglong size=0; QString fpHex; double duration=0; };
+Q_DECLARE_METATYPE(GuiFile)
 
 // ---------------------------------------------------------------- worker
 class ScanWorker : public QObject {
@@ -40,11 +41,12 @@ public:
   ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled);
 public slots:
   void run(); void pause(); void resume(); void cancel();
+  void setIgnored(const QSet<QString>& s);
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
 signals:
   void progress(int,QString);
   void matchesArrived();            // throttled; call takePending()
-  void results(QStringList paths, QStringList matchRows, QStringList sizes, QStringList fpHex);
+  void results(QVector<GuiFile> files, QStringList matchRows);
   void finished(QString);
   void failed(QString);
 private:
@@ -58,6 +60,7 @@ private:
 struct DupGroup {
   QStringList paths;      // members, [0] is the reference
   double best=0;          // best similarity inside the group
+  int kind=1;             // 1=image, 2=video (MediaKind values)
   QHash<QString,double> pct; // per-path best percent
 };
 
@@ -69,7 +72,7 @@ private slots:
   // scan
   void chooseFolder(); void startScan(); void pauseScan(); void resumeScan(); void cancelScan();
   void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
-  void onResults(QStringList,QStringList,QStringList,QStringList);
+  void onResults(QVector<GuiFile> files, QStringList matchRows);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
@@ -80,7 +83,7 @@ private slots:
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
   void openSelected(); void revealSelected(); void renameSelected(); void deleteSelected();
   void copySelected(); void cutSelected(); void pasteFiles(); void moveSelected();
-  void exportGroupsCsv(); void refreshFolders(); void folderActivated(QTreeWidgetItem*,int);
+  void refreshFolders(); void folderActivated(QTreeWidgetItem*,int);
   void populateFolderChildren(QTreeWidgetItem*);
   QStringList selectedFiles() const;
   void prunePaths(const QSet<QString>&);
@@ -105,7 +108,7 @@ private:
   QString fileResolution(const QString&) const; // cached QImageReader::size
   QIcon fileThumb(const QString&, const QSize&) const;
   double pathBest(const QString&) const;
-  void addMatch(const QString&, const QString&, double);
+  void addMatch(const QString&, const QString&, double, int kind);
   QString findRoot(const QString&); // union-find over pathParent_
   // scan state
   QThread* thread_=nullptr; ScanWorker* worker_=nullptr; msf::ResourcePolicy policy_;
@@ -117,11 +120,16 @@ private:
   QHash<QString,QString> fileSize_; QHash<QString,QString> fileFp_;
   mutable QHash<QString,QString> resCache_;
   QString currentFile_; int currentGroup_=-1;
+  int lastPct_=0; QString lastPath_;
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false;
   QStringList lastStats_; // scanned|analyzed|unchanged|groups|candidates from finished()
   qint64 repElapsedMs_=0;
   QHash<QString,double> bestPct_; QSet<QString> marked_;
+  QHash<QString,int> pathKind_; QHash<QString,double> fileDur_;
+  mutable QHash<QString,QIcon> thumbCache_;
+  QSet<QString> ignored_;
+  std::size_t lastDone_=0, lastTotal_=0;
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar
   QToolBar* toolBar_=nullptr;
@@ -134,11 +142,29 @@ private:
   QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValGroups_=nullptr,
     *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr,*sumValMon_=nullptr;
   // middle
-  QLabel* groupTitle_=nullptr; QComboBox *sortBox_=nullptr,*groupViewBox_=nullptr; QLineEdit* groupSearch_=nullptr;
+  QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;
+  QTabWidget* midTabs_=nullptr;
+  QTreeWidget *imgTree_=nullptr, *vidTree_=nullptr;
+  QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;
+  QToolButton* viewBtn_=nullptr; QMenu* viewMenu_=nullptr; QVector<QAction*> viewActs_;
+  QWidget* folderTab_=nullptr; QLabel* folderPathLabel_=nullptr; QListWidget* recentList_=nullptr;
+  QListWidget* ignoreList_=nullptr; QPushButton *unignoreBtn_=nullptr, *clearIgnoreBtn_=nullptr;
   QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
   QSplitter* split_=nullptr;
-  QTreeWidget* groupsView_=nullptr; QLabel* groupFoot_=nullptr; QPushButton* csvBtn_=nullptr;
+  QTreeWidget* groupsView_=nullptr; QLabel* groupFoot_=nullptr;
+  void connectResView(QTreeWidget* tree, QListWidget* grid);
+  void fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel);
+  void activateTab(int idx);
+  void onMidTabChanged(int idx);
+  void updateFolderTab();
+  void updateIgnoreTab();
+  void unignoreSelected();
+  void clearIgnored();
+  void applyIgnore(const QStringList& paths, bool on);
+  void gridSelected(QListWidgetItem*, QListWidgetItem*);
+  void gridCheckChanged(QListWidgetItem*);
   // right
+  QWidget* rightPane_=nullptr;
   QLabel* detailTitle_=nullptr; QLabel* detailSim_=nullptr; QLabel* detailCount_=nullptr;
   QToolButton *viewGrid_=nullptr,*viewList_=nullptr; QSlider* zoom_=nullptr;
   QStackedWidget* viewStack_=nullptr; QListWidget* grid_=nullptr; QTreeWidget* list_=nullptr;

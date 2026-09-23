@@ -4,9 +4,9 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows common alignment: 0.9.2.34 — VS18 2026 baseline, CUDA unchanged
 - Windows CPU hardening: 0.9.2.35 — VS18 2026 build, 36/36 PASS, GUI runtime verified
-- Current: 0.9.2.37 — UI feedback round (in-settings language, 6 group views, keyboard mark)
+- Current: 0.9.2.38 — Unified 3-pane UI (tabs, view button, video/ignore, throughput)
 - Core Release build: PASS
-- CTest: **36/36 PASS**
+- CTest: **37/37 PASS**
 - candidatePairs exhaustive correctness regression: PASS
 - candidatePairs benchmark: PASS (environment-dependent timing; see build history)
 - Bucket-heavy benchmark: PASS — 5k / 12,497,500 pairs; streaming ScanPipeline path avoids materializing candidate-pair vectors

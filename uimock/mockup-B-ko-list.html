@@ -2,130 +2,195 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>UI 목업 B — 한국어 / 리스트형 결과 + % 바 + 컨텍스트 메뉴 (Similarity 참조)</title>
+<title>UI 목업 B (v2) — 3단 통일안: 좌 트리+정보 / 중 탭+보기버튼 / 우 미리보기</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 12px; color: #222;
          background: #888; display: flex; justify-content: center; padding: 12px; }
-  .win { width: 1520px; background: #f0f0f0; border: 1px solid #555; display: flex; flex-direction: column; }
-  .menubar { display: flex; gap: 16px; padding: 5px 10px; background: #f7f7f7; border-bottom: 1px solid #ddd; }
-  .transport { display: flex; gap: 6px; padding: 6px 10px; background: #f7f7f7; border-bottom: 1px solid #ddd; align-items: center; }
-  .t { width: 34px; height: 28px; border: 1px solid #bbb; background: #fff; border-radius: 4px; text-align: center; line-height: 26px; }
-  .tabs { display: flex; gap: 2px; padding: 6px 10px 0; background: #f0f0f0; }
-  .tab { border: 1px solid #bbb; border-bottom: none; background: #e4e4e4; border-radius: 5px 5px 0 0; padding: 5px 14px; }
+  .win { width: 1520px; background: #fff; border: 1px solid #555; display: flex; flex-direction: column; }
+  .titlebar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #ddd; font-weight: bold; }
+  .titlebar .sp { flex: 1; } .titlebar .btns span { display: inline-block; width: 34px; text-align: center; color: #666; }
+  .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+  .tbtn { border: 1px solid #ccc; background: #f7f7f7; border-radius: 5px; padding: 6px 10px; white-space: nowrap; }
+  .tbtn.primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; font-weight: bold; padding: 6px 18px; }
+  .path { flex: 1; border: 1px solid #ccc; border-radius: 5px; padding: 6px 10px; color: #333; }
+  .tabrow { display: flex; align-items: flex-end; gap: 2px; padding: 8px 10px 0; background: #f4f4f4; border-bottom: 1px solid #bbb; }
+  .tab { border: 1px solid #bbb; border-bottom: none; background: #e4e4e4; border-radius: 6px 6px 0 0; padding: 6px 16px; }
   .tab.on { background: #fff; font-weight: bold; }
-  .body { display: flex; background: #fff; border-top: 1px solid #bbb; min-height: 560px; position: relative; }
+  .tabrow .sp { flex: 1; }
+  .viewbtn { border: 1px solid #bbb; background: #fff; border-radius: 6px; padding: 5px 12px; margin-bottom: 4px; }
+  .viewmenu { position: absolute; right: 320px; top: 118px; width: 230px; background: #fff; border: 1px solid #999;
+              box-shadow: 3px 3px 10px rgba(0,0,0,.3); z-index: 20; padding: 4px; }
+  .viewmenu .vi { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 4px; }
+  .viewmenu .vi:hover { background: #dbeafe; }
+  .viewmenu .vi .dot { width: 16px; color: #2b6cb0; font-weight: bold; }
+  .viewmenu hr { border: none; border-top: 1px solid #ddd; margin: 4px 0; }
+  .vico { width: 30px; text-align: center; font-size: 15px; }
+  .tabrow .sp { flex: 1; }
+  .viewbtn { position: relative; border: 1px solid #bbb; background: #fff; border-radius: 6px; padding: 5px 12px; margin-bottom: 4px; }
+  .viewmenu { position: absolute; right: 10px; top: 118px; width: 230px; background: #fff; border: 1px solid #999;
+              box-shadow: 3px 3px 10px rgba(0,0,0,.3); z-index: 20; padding: 4px; }
+  .viewmenu .vi { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 4px; }
+  .viewmenu .vi:hover { background: #dbeafe; }
+  .viewmenu .vi .dot { width: 16px; color: #2b6cb0; font-weight: bold; }
+  .viewmenu hr { border: none; border-top: 1px solid #ddd; margin: 4px 0; }
+  .vico { width: 30px; text-align: center; font-size: 15px; }
+  .main { display: flex; min-height: 560px; }
+  .left { width: 210px; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+  .pane-h { font-weight: bold; padding: 8px 10px 4px; }
+  .tree { padding: 0 6px; line-height: 1.9; }
+  .tree .sel { background: #dbeafe; border-radius: 4px; padding: 0 4px; }
+  .info { border-top: 1px solid #ddd; margin-top: auto; padding: 8px 10px; }
+  .info table { width: 100%; border-collapse: collapse; }
+  .info td { padding: 2px 0; } .info td:last-child { text-align: right; color: #555; }
+  .mid { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
   table.res { border-collapse: collapse; width: 100%; }
-  .res th { background: #f2f2f2; border: 1px solid #ddd; padding: 5px 8px; text-align: left; font-weight: normal; color: #444; position: sticky; top: 0; }
+  .res th { background: #f2f2f2; border: 1px solid #ddd; padding: 5px 8px; text-align: left; font-weight: normal; color: #444; }
   .res td { border: 1px solid #eee; padding: 3px 8px; white-space: nowrap; }
   .res tr.grp td { background: #f7f9ff; font-weight: bold; color: #2b6cb0; }
   .res tr.marked td { background: #fff8e1; }
   .res tr.cur td { background: #dbeafe; }
-  .gno { color: #888; width: 30px; }
+  .gno { color: #888; }
   .bar { display: inline-block; width: 90px; height: 12px; background: #eee; border-radius: 2px; vertical-align: middle; }
   .bar i { display: block; height: 100%; border-radius: 2px; }
-  .r { background: #e53e3e; } .b { background: #3182ce; } .g { background: #38a169; }
+  .r { background: #e53e3e; } .g { background: #38a169; }
   .pct { font-size: 11px; color: #555; margin-left: 4px; }
-  .left { flex: 1; overflow: hidden; }
-  .preview { width: 300px; border-left: 1px solid #ddd; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-  .pv { height: 200px; border: 2px solid #2b6cb0; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  .right { width: 300px; border-left: 1px solid #ddd; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .pv { height: 210px; border: 2px solid #2b6cb0; border-radius: 6px; display: flex; align-items: center; justify-content: center;
         color: #fff; font-weight: bold; background: linear-gradient(135deg,#9db9f5,#3f6fd1); }
-  .pv2 { height: 90px; border: 1px solid #ccc; border-radius: 6px; display: flex; align-items: center; justify-content: center;
-         color: #fff; background: linear-gradient(135deg,#7aa7f0,#2f5fc0); }
+  .strip { display: flex; gap: 6px; }
+  .strip div { width: 64px; height: 48px; border-radius: 4px; border: 1px solid #ccc; display: flex; align-items: center;
+               justify-content: center; color: #fff; font-size: 10px; font-weight: bold; }
+  .strip .on { border: 2px solid #2b6cb0; }
   .pvinfo { line-height: 1.8; }
-  .ctx { position: absolute; left: 150px; top: 150px; width: 250px; background: #fff; border: 1px solid #999;
+  .acts { display: flex; gap: 8px; color: #555; }
+  .acts span { border: 1px solid #ccc; border-radius: 4px; padding: 3px 8px; background: #f7f7f7; }
+  .ctx { position: absolute; left: 420px; top: 170px; width: 240px; background: #fff; border: 1px solid #999;
          box-shadow: 3px 3px 8px rgba(0,0,0,.3); padding: 3px 0; z-index: 10; }
   .ctx div { padding: 5px 12px; display: flex; }
   .ctx div span:last-child { margin-left: auto; color: #888; }
-  .ctx div:hover, .ctx .hl { background: #2b6cb0; color: #fff; }
-  .ctx .hl span:last-child { color: #fff; }
   .ctx hr { border: none; border-top: 1px solid #ddd; margin: 3px 0; }
-  .ctx .sub { position: absolute; left: 248px; top: 228px; width: 220px; background: #fff; border: 1px solid #999;
-              box-shadow: 3px 3px 8px rgba(0,0,0,.3); padding: 3px 0; }
-  .status { display: flex; gap: 0; border-top: 1px solid #bbb; background: #f7f7f7; }
+  .status { display: flex; border-top: 1px solid #bbb; background: #f7f7f7; }
   .status div { padding: 5px 12px; border-right: 1px solid #ddd; }
   .status .grow { flex: 1; }
   .pbar { width: 180px; height: 14px; border: 1px solid #999; border-radius: 2px; margin: 4px 10px; background: #fff; }
-  .pbar i { display: block; height: 100%; width: 100%; background: linear-gradient(#9ae6b4,#38a169); }
-  .note { max-width: 1520px; color: #eee; font-size: 12px; margin-top: 8px; line-height: 1.7; }
-  .viewbar { display: flex; gap: 6px; align-items: center; padding: 6px 10px; background: #fff; border-bottom: 1px solid #ddd; }
-  .chip { border: 1px solid #bbb; background: #f2f2f2; border-radius: 4px; padding: 3px 10px; }
-  .chip.on { background: #dbeafe; border-color: #2b6cb0; }
+  .pbar i { display: block; height: 100%; width: 94%; background: linear-gradient(#9ae6b4,#38a169); }
+  .note { max-width: 1520px; color: #eee; font-size: 12px; margin-top: 8px; line-height: 1.8; }
+  .note b { color: #fff; }
+  .live { display: inline-block; background: #c53030; color: #fff; border-radius: 4px; padding: 1px 8px; font-size: 11px; }
 </style>
 </head>
 <body>
 <div>
 <div class="win">
-  <div class="menubar"><span><b>파일</b></span><span>검색</span><span>동작</span><span>도구</span><span>도움말</span>
-    <span style="margin-left:auto">언어: <b>한국어 ▾</b> (English)</span></div>
-  <div class="transport"><span class="t" style="color:green">▶</span><span class="t">❚❚</span><span class="t">■</span>
-    <span class="t">⚙</span><span class="t">🔧</span>
-    <span style="margin-left:8px;color:#555">D:\MediaLibrary — 검색 중... <b>12,103 / 12,846</b></span></div>
-  <div class="viewbar"><b>결과 보기:</b>
-    <span class="chip">아주 큰 아이콘</span><span class="chip">큰 아이콘</span>
-    <span class="chip on">리스트</span><span class="chip">자세히</span>
-    <span style="margin-left:12px;color:#555">표시/무시됨 숨기기 ☐ &nbsp; mark됨만 보기 ☐</span></div>
-  <div class="tabs"><span class="tab">폴더</span><span class="tab on">결과: 이미지 (31)</span>
-    <span class="tab">결과: 비디오 (12)</span><span class="tab">분석</span></div>
-  <div class="body">
+  <div class="titlebar"><span style="color:#2b6cb0">▦</span> Media Similarity Finder <span class="sp"></span>
+    <span class="btns"><span>–</span><span>▢</span><span>✕</span></span></div>
+  <div class="toolbar">
+    <span class="tbtn">📁 폴더 선택 ▾</span>
+    <span class="path">D:\MediaLibrary</span>
+    <span class="tbtn">🔄 새로고침</span>
+    <span class="tbtn primary">▶ 검색/업데이트 시작</span>
+    <span class="tbtn">❚❚ 일시정지</span>
+    <span class="tbtn">■ 중지</span>
+    <span class="tbtn">Maximum ▾</span>
+    <span class="tbtn">55% CPU</span>
+    <span class="tbtn">60% GPU</span>
+    <span style="flex:1"></span>
+    <span class="tbtn">⚙ 설정</span>
+    <span class="tbtn">☰ 도움말</span>
+  </div>
+  <div class="tabrow">
+    <span class="tab">폴더</span><span class="tab on">결과: 이미지 (31)</span><span class="tab">결과: 비디오 (12)</span><span class="tab">무시 목록 (2)</span>
+    <span class="sp"></span>
+    <span class="viewbtn">▦ 보기 ▾</span>
+  </div>
+  <div class="viewmenu">
+    <div class="vi"><span class="dot"></span><span class="vico">🖼</span> 아주 큰 아이콘</div>
+    <div class="vi"><span class="dot">●</span><span class="vico">🖼</span> 큰 아이콘</div>
+    <div class="vi"><span class="dot"></span><span class="vico">🖼</span> 보통 아이콘</div>
+    <div class="vi"><span class="dot"></span><span class="vico">▪</span> 작은 아이콘</div>
+    <div class="vi"><span class="dot"></span><span class="vico">☰</span> 리스트</div>
+    <div class="vi"><span class="dot"></span><span class="vico">▤</span> 자세히</div>
+    <hr>
+    <div class="vi"><span class="dot"></span><span class="vico">▦</span> 미리보기 창으로 보기</div>
+  </div>
+  <div class="main">
     <div class="left">
+      <div class="pane-h">탐색기</div>
+      <div class="tree">
+        ☆ 즐겨찾기<br>
+        &nbsp;&nbsp;🖼 사진&nbsp;&nbsp;🎬 동영상&nbsp;&nbsp;📄 문서<br>
+        🖥 내 PC<br>
+        &nbsp;&nbsp;💾 로컬 디스크 (C:)<br>
+        &nbsp;&nbsp;<span class="sel">💾 로컬 디스크 (D:)</span><br>
+        › 💾 로컬 디스크 (E:)<br>
+        🌐 네트워크
+      </div>
+      <div class="info"><div class="pane-h" style="padding:0 0 4px">정보</div>
+        <table>
+          <tr><td>총 파일</td><td>12,846</td></tr>
+          <tr><td>검색 완료</td><td>12,103</td></tr>
+          <tr><td>유사 그룹</td><td>1,247</td></tr>
+          <tr><td>중복 파일</td><td>3,785 (29.6 GB)</td></tr>
+          <tr><td>검색 시간</td><td>00:18:42</td></tr>
+          <tr><td>GPU 가속</td><td>RTX 4070</td></tr>
+          <tr><td>CPU 사용</td><td>18%</td></tr>
+          <tr><td>RAM 사용</td><td>6.1 / 32 GB</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="mid">
+      <div style="padding:6px 10px;color:#c53030;font-weight:bold">● 검색 중 실시간 갱신 <span style="color:#555;font-weight:normal">12,103 / 12,846</span></div>
       <table class="res">
-        <tr><th></th><th>파일</th><th>유사도</th><th>해상도</th><th>형식</th><th>크기</th><th>날짜</th></tr>
-        <tr class="grp"><td colspan="7">▸ 그룹 1 — 4 파일 · 유사도 98.7%</td></tr>
-        <tr class="marked cur"><td class="gno">1›</td><td>⌕ C:\Media\New\IMG_101500.JPG</td>
+        <tr><th></th><th></th><th>파일</th><th>유사도</th><th>해상도</th><th>형식</th><th>크기</th><th>날짜</th></tr>
+        <tr class="grp"><td colspan="8">▸ 그룹 1 — 4 파일 · 유사도 98.7%</td></tr>
+        <tr class="marked cur"><td>☑</td><td class="gno">1›</td><td>⌕ C:\Media\New\IMG_101500.JPG</td>
           <td><span class="bar"><i class="r" style="width:100%"></i></span><span class="pct">100% (기준)</span></td>
           <td>1920 x 1280</td><td>24bit JPG</td><td>612 KB</td><td>2024-05-01</td></tr>
-        <tr class="marked"><td class="gno">1›</td><td>⌕ C:\Media\New\IMG_101501.JPG</td>
+        <tr class="marked"><td>☑</td><td class="gno">1›</td><td>⌕ C:\Media\New\IMG_101501.JPG</td>
           <td><span class="bar"><i class="r" style="width:98.7%"></i></span><span class="pct">98.7%</span></td>
           <td>1920 x 1280</td><td>24bit JPG</td><td>605 KB</td><td>2024-05-01</td></tr>
-        <tr><td class="gno">1›</td><td>⌕ C:\Media\Other\IMG_101502.JPG</td>
+        <tr><td>☐</td><td class="gno">1›</td><td>C:\Media\Other\IMG_101502.JPG</td>
           <td><span class="bar"><i class="r" style="width:98.5%"></i></span><span class="pct">98.5%</span></td>
           <td>1920 x 1280</td><td>24bit JPG</td><td>640 KB</td><td>2024-05-01</td></tr>
-        <tr><td class="gno">1›</td><td>⌕ C:\Media\Other\IMG_101503.JPG</td>
-          <td><span class="bar"><i class="r" style="width:98.3%"></i></span><span class="pct">98.3%</span></td>
-          <td>1920 x 1280</td><td>24bit JPG</td><td>618 KB</td><td>2024-05-01</td></tr>
-        <tr class="grp"><td colspan="7">▸ 그룹 2 — 5 파일 · 유사도 97.3%</td></tr>
-        <tr><td class="gno">2›</td><td>⌕ C:\Media\New\beach_01.JPG</td>
+        <tr class="grp"><td colspan="8">▸ 그룹 2 — 5 파일 · 유사도 97.3%</td></tr>
+        <tr><td>☐</td><td class="gno">2›</td><td>C:\Media\New\beach_01.JPG</td>
           <td><span class="bar"><i class="g" style="width:97.3%"></i></span><span class="pct">97.3%</span></td>
           <td>4000 x 3000</td><td>24bit JPG</td><td>3.10 MB</td><td>2024-06-11</td></tr>
-        <tr><td class="gno">2›</td><td>⌕ C:\Media\Other\beach_02.JPG</td>
-          <td><span class="bar"><i class="g" style="width:97.1%"></i></span><span class="pct">97.1%</span></td>
-          <td>4000 x 3000</td><td>24bit JPG</td><td>3.12 MB</td><td>2024-06-11</td></tr>
-        <tr class="grp"><td colspan="7">▸ 그룹 3 — 3 파일 · 유사도 96.1% (비디오 🎬)</td></tr>
-        <tr><td class="gno">3›</td><td>🎬 C:\Media\New\clip01.mp4</td>
-          <td><span class="bar"><i class="b" style="width:96.1%"></i></span><span class="pct">96.1%</span></td>
-          <td>3840 x 2160</td><td>MP4 0:42</td><td>88.4 MB</td><td>2024-07-02</td></tr>
+        <tr class="grp"><td colspan="8">🎬 그룹 3 — 2 파일 · 유사도 96.1% (비디오는 결과: 비디오 탭)</td></tr>
       </table>
       <div class="ctx">
         <div><span>열기</span><span>Enter</span></div>
         <div><span>탐색기에서 보기</span><span>Ctrl+B</span></div>
-        <div><span>스펙트럼 분석</span><span>Ctrl+S</span></div>
         <hr>
-        <div><span>Mark/Unmark</span><span>Space</span></div>
+        <div><span>Mark / Unmark</span><span>Space</span></div>
         <div><span>Mark 전체 해제</span><span></span></div>
         <div><span>Mark 반전</span><span></span></div>
-        <div class="hl"><span>Mark된 폴더 ›</span><span></span></div>
         <hr>
-        <div><span>무시</span><span>Ctrl+I</span></div>
-        <div><span>무시된 항목</span><span></span></div>
+        <div><span>무시</span><span></span></div>
+        <div><span>무시 해제</span><span></span></div>
+        <hr>
         <div><span>이동...</span><span>Ctrl+M</span></div>
-        <div><span>Mark된 항목 이동</span><span></span></div>
         <div><span>삭제</span><span>Del</span></div>
-        <div><span>Mark된 항목 삭제</span><span></span></div>
-        <div class="sub"><div><span>C:\Media\Current</span></div></div>
       </div>
     </div>
-    <div class="preview">
+    <div class="right">
       <div class="pv">선택 미리보기<br>1920x1280</div>
-      <div class="pv2">다음</div>
-      <div class="pvinfo"><b>IMG_101500.JPG</b><br>612 KB · 2024-05-01 10:15:00<br>유사도 <b style="color:#2f855a">100% (기준)</b><br>☐ mark됨 &nbsp; <button>분석</button></div>
+      <div class="strip"><div class="on" style="background:#8ab4f8">1</div><div style="background:#93c5fd">2</div><div style="background:#7aa7f0">3</div><div style="background:#a5c8ff">4</div></div>
+      <div class="pvinfo"><b>IMG_101500.JPG</b> ☑ mark됨<br>612 KB · 2024-05-01 10:15:00<br>1920x1280 · 24bit JPG<br>유사도 <b style="color:#2f855a">100% (기준)</b></div>
+      <div class="acts"><span>👁</span><span>🗀</span><span>❐</span><span>✂</span><span>🗑</span></div>
     </div>
   </div>
   <div class="status"><div><b>68</b> duplicate(s)</div><div>Cache: 228</div>
-    <div class="grow">New: 228/228</div><div class="pbar"><i></i></div><div>100.0%</div></div>
+    <div class="grow">New: 228/228 · ⚡ 214 파일/초 · analyzed 8,204</div><div class="pbar"><i></i></div><div>94%</div></div>
 </div>
-<p class="note">목업 B — Similarity 참조 리스트형. 그룹 헤더 행 + % 바 컬럼 + 우측 미리보기 + 우클릭 컨텍스트 메뉴(Mark/Unmark Space, 이동/삭제 계열).
-`⌕` 표시는 mark된 행. Qt 구현: <b>QTableView + QAbstractTableModel(가상화)</b> + `onMatchRef` 스트리밍으로 검색 중 행追加.</p>
+<p class="note"><b>목업 B v3 — 3단 통일안</b> (A·C 폐기). 좌: 탐색기 트리 + 정보창(CSV 내보내기 제거).
+중: 탭(폴더/결과:이미지/결과:비디오/<b>무시 목록</b>) + 우측 탐색기식 <b>보기 ▾</b> 버튼(아주 큰/큰/보통/작은 아이콘·리스트·자세히·미리보기 창).
+이미지/비디오 탭 각각 리스트·미리보기·선택 지원, 방향키 이동 + Space mark. <b>비디오 탭은 재생시간 컬럼 추가, 필름스트립에 첫 프레임 썸네일.</b>
+우: 미리보기+필름스트립+정보+액션. 상태바에 <b>처리량(파일/초)+analyzed 실시간</b> 표시.
+<b>무시 목록 탭</b>: 무시된 파일 목록 + 무시 해제/모두 비우기, 다음 검색부터 결과에서 제외(인덱스 데이터는 유지).
+Qt 구현 매핑: 좌 `QTreeWidget`+`QFormLayout`, 중 `QTabWidget`(탭별 테이블 `QTreeWidget`/그리드 `QListWidget`)+`QToolButton` 드롭다운,
+우 기존 상세 패널(+재생시간 행), `QSplitter` 3분할. 상단 자원 선택(CPU/GPU) 유지, 언어는 설정&gt;일반 탭.</p>
 </div>
 </body>
 </html>

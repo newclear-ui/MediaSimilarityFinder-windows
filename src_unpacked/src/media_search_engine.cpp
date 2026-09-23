@@ -82,9 +82,12 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
  std::sort(out.begin(),out.end(),[](const SearchMatch&a,const SearchMatch&b){return a.percent>b.percent;}); return out;
 }
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){
- SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r; Scanner s; auto cur=s.scan(root,managedIndexActive_ ? managedIndex_.directory.parent_path().string() : std::string{}); r.scanned=cur.size(); auto old=db_.all(); IncrementalScanner inc; auto ch=inc.classify(cur,old);
- r.added=ch.added.size();r.modified=ch.modified.size();r.unchanged=ch.unchanged.size();r.removed=ch.deleted.size();
- for(auto&x:ch.deleted) db_.remove(x.path);
+ SearchReport r; files_.clear(); const bool tx= db_.beginTransaction(); if(!tx) return r; Scanner s; auto cur=s.scan(root,managedIndexActive_ ? managedIndex_.directory.parent_path().string() : std::string{});
+ const bool hasIgnored=control && !control->ignoredPaths.empty();
+ if(hasIgnored){ const auto& ig=control->ignoredPaths; cur.erase(std::remove_if(cur.begin(),cur.end(),[&](const FileState& x){return ig.find(x.path)!=ig.end();}),cur.end()); }
+ r.scanned=cur.size(); auto old=db_.all(); IncrementalScanner inc; auto ch=inc.classify(cur,old);
+  r.added=ch.added.size();r.modified=ch.modified.size();r.unchanged=ch.unchanged.size();r.removed=ch.deleted.size();
+  for(auto&x:ch.deleted){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; db_.remove(x.path); }
  std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
  const int workers=recommended_worker_count(policy_,static_cast<int>(std::thread::hardware_concurrency()));
  const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
@@ -114,7 +117,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    for(const auto& ir:results){
      FileState x; auto it=currentByPath.find(ir.path);
      if(it==currentByPath.end()) continue;
-     x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(!db_.upsert(x)){ db_.rollbackTransaction(); return r; } ++r.analyzed; files_.push_back({x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16});}
+     x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(!db_.upsert(x)){ db_.rollbackTransaction(); return r; } ++r.analyzed; files_.push_back({x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0});}
      ++done; if(control&&control->progress)control->progress(done,cur.size(),x.path);
    }
    base+=n;
@@ -134,7 +137,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
        return j;
      }));
    }
-   for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ db_.rollbackTransaction(); return r; } ++r.analyzed;files_.push_back({j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16});} ++done; if(control&&control->progress)control->progress(done,cur.size(),j.state.path);}
+   for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ db_.rollbackTransaction(); return r; } ++r.analyzed;files_.push_back({j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration});} ++done; if(control&&control->progress)control->progress(done,cur.size(),j.state.path);}
  }
  if(control&&control->cancel.load()){ if(tx) db_.rollbackTransaction(); return r; }
  if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); return r; }
@@ -142,7 +145,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // Unchanged files must participate in every incremental search.
  files_.clear();
  const auto currentStates=db_.all(); files_.reserve(currentStates.size());
- for(const auto& x:currentStates) if(x.fingerprint) files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16});
+ for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); }
  ScanPipeline pipe; for(auto&f:files_)pipe.add(f); auto st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);

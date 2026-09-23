@@ -10,6 +10,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
@@ -28,10 +29,13 @@ struct ScanControl {
  std::function<void(const SearchMatch&)> onMatch;
  // Preferred low-allocation callback for large result sets / virtualized GUI models.
  std::function<void(const SearchMatchRef&)> onMatchRef;
- bool retainMatches=true;
- // 0 means unlimited when retainMatches is true. A positive value bounds the
- // report-owned match vector while onMatch can still receive every match.
- std::size_t maxRetainedMatches=0;
+  bool retainMatches=true;
+  // 0 means unlimited when retainMatches is true. A positive value bounds the
+  // report-owned match vector while onMatch can still receive every match.
+  std::size_t maxRetainedMatches=0;
+  // Paths excluded from analysis and results (e.g. GUI ignore list).
+  // Compared against the canonical UTF-8 paths produced by the scanner.
+  std::unordered_set<std::string> ignoredPaths;
 };
 class MediaSearchEngine {
 public:
