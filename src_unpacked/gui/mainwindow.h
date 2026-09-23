@@ -49,6 +49,7 @@ signals:
   void progressCount(qulonglong,qulonglong);
   void listingProgress(std::size_t);
   void matchesArrived();            // throttled; call takePending()
+  void quickLoaded(int);            // stored matches reloaded from the index
   void results(QVector<GuiFile> files, QStringList matchRows);
   void finished(QString);
   void failed(QString);
@@ -57,6 +58,7 @@ private:
   bool scanImages_, scanVideos_;
   msf::ScanControl control_; msf::MediaSearchEngine engine_;
   QMutex pendingMutex_; QVector<LiveMatch> pending_;
+  QVector<LiveMatch> allMatches_;   // worker-thread only; persisted at the end
   qint64 lastEmitMs_=0;
 };
 
@@ -78,6 +80,7 @@ private slots:
   void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
   void onScanCounts(qulonglong,qulonglong);
   void onListingProgress(std::size_t);
+  void onQuickLoaded(int);
   void onResults(QVector<GuiFile> files, QStringList matchRows);
   void resourceChanged(int); void customResourceChanged();
   // groups / files

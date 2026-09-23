@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+﻿#include "mainwindow.h"
 #include <QApplication>
 #include <QString>
 #include <QTimer>
@@ -8,7 +8,7 @@
 #include <cstdio>
 // With WIN32_EXECUTABLE there is no console on launch. For CLI flags,
 // attach to the caller's console so output is visible. Returns false when
-// double-clicked (no console) — output is then silently dropped.
+// double-clicked (no console) ??output is then silently dropped.
 static bool attachParentConsole() {
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) return false;
     FILE* f = nullptr;
@@ -21,7 +21,7 @@ static bool attachParentConsole() { return true; }
 #endif
 
 namespace {
-constexpr const char* kVersion = "0.9.2.49";
+constexpr const char* kVersion = "0.9.2.50";
 }
 
 int main(int argc, char** argv) {

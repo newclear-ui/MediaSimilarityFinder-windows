@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BuildDir = "build-windows-cuda",
   [string]$Configuration = "Release",
   [string]$OutputDir = "portable-release"
@@ -24,10 +24,10 @@ if (Test-Path (Join-Path $qtPluginRoot "plugins")) {
 if (Test-Path "README.md") { Copy-Item "README.md" $OutputDir -Force }
 @{
   product = "MediaSimilarityFinder"
-  version = "0.9.2.49"
+  version = "0.9.2.50"
   mode = "portable"
   indexRoot = "Index"
 } | ConvertTo-Json | Set-Content (Join-Path $OutputDir "portable.json") -Encoding UTF8
-$zip = "MediaSimilarityFinder-v0.9.2.49-Portable-Windows-x64.zip"
+$zip = "MediaSimilarityFinder-v0.9.2.50-Portable-Windows-x64.zip"
 Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $zip -Force
 Write-Host "Portable package created: $zip"

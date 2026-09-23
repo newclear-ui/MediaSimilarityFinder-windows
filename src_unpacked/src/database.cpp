@@ -1,9 +1,12 @@
 #include "database.h"
 #include <sqlite3.h>
+#include <set>
 #include <string>
 namespace msf {
 static sqlite3* D(void* p){return reinterpret_cast<sqlite3*>(p);}
 static sqlite3_stmt* S(void* p){return reinterpret_cast<sqlite3_stmt*>(p);}
+
+static std::string pairKey(const std::string& a,const std::string& b){return a<=b?a+"\x1f"+b:b+"\x1f"+a;}
 
 Database::~Database(){ close(); }
 
@@ -64,6 +67,7 @@ bool Database::initialize(){
  // WAL + NORMAL is appropriate for a local index: readers remain responsive while a scan/monitor writes.
  if(!exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY;")) return false;
  if(!exec("CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,size INTEGER NOT NULL,modified INTEGER NOT NULL,quick_hash TEXT NOT NULL,fingerprint INTEGER NOT NULL DEFAULT 0,kind INTEGER NOT NULL DEFAULT 0,duration REAL NOT NULL DEFAULT 0,mirror_fingerprint INTEGER NOT NULL DEFAULT 0,crop_4x3 INTEGER NOT NULL DEFAULT 0,crop_1x1 INTEGER NOT NULL DEFAULT 0,crop_9x16 INTEGER NOT NULL DEFAULT 0,mirror_crop_4x3 INTEGER NOT NULL DEFAULT 0,mirror_crop_1x1 INTEGER NOT NULL DEFAULT 0,mirror_crop_9x16 INTEGER NOT NULL DEFAULT 0); CREATE INDEX IF NOT EXISTS idx_files_modified ON files(modified);")) return false;
+  if(!exec("CREATE TABLE IF NOT EXISTS matches(left_path TEXT NOT NULL,right_path TEXT NOT NULL,percent REAL NOT NULL,PRIMARY KEY(left_path,right_path)); CREATE INDEX IF NOT EXISTS idx_matches_left ON matches(left_path); CREATE INDEX IF NOT EXISTS idx_matches_right ON matches(right_path);")) return false;
  // Migrate databases created before mirror-aware fingerprints.
  bool hasMirror=false; sqlite3_stmt* info=nullptr;
  if(sqlite3_prepare_v2(D(db_),"PRAGMA table_info(files)",-1,&info,nullptr)==SQLITE_OK){
@@ -133,5 +137,61 @@ std::vector<FileState> Database::all() const{
    out.push_back(std::move(x));
  }
  sqlite3_finalize(s); return out;
+}
+
+bool Database::saveMatches(const std::vector<StoredMatch>& matches){
+  if(!db_) return false;
+  const char* upsert="INSERT INTO matches(left_path,right_path,percent) VALUES(?,?,?) ON CONFLICT(left_path,right_path) DO UPDATE SET percent=excluded.percent";
+  const char* allKey="SELECT left_path,right_path FROM matches";
+  sqlite3_stmt* u=nullptr; sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),upsert,-1,&u,nullptr)!=SQLITE_OK) return false;
+  if(sqlite3_prepare_v2(D(db_),allKey,-1,&s,nullptr)!=SQLITE_OK){sqlite3_finalize(u);return false;}
+  bool ok=true;
+  if(!exec("BEGIN IMMEDIATE TRANSACTION;")){sqlite3_finalize(u);sqlite3_finalize(s);return false;}
+  std::vector<std::string> removeKeys;
+  while(sqlite3_step(s)==SQLITE_ROW)
+    removeKeys.push_back(std::string(reinterpret_cast<const char*>(sqlite3_column_text(s,0)))+"\x1f"+std::string(reinterpret_cast<const char*>(sqlite3_column_text(s,1))));
+  sqlite3_finalize(s); s=nullptr;
+  std::set<std::string> keep;
+  for(const auto& m:matches){
+    // Store the ordered form so a pair is represented by exactly one row and
+    // loadMatches returns a canonical (sorted) left/right for late-comers.
+    const std::string key=pairKey(m.left,m.right);
+    const std::size_t sep=key.find('\x1f');
+    sqlite3_reset(u); sqlite3_clear_bindings(u);
+    sqlite3_bind_text(u,1,key.substr(0,sep).c_str(),-1,SQLITE_TRANSIENT);
+    sqlite3_bind_text(u,2,key.substr(sep+1).c_str(),-1,SQLITE_TRANSIENT);
+    sqlite3_bind_double(u,3,m.percent);
+    if(sqlite3_step(u)!=SQLITE_DONE){ok=false;break;}
+    keep.insert(key);
+  }
+  sqlite3_finalize(u);
+  // Drop rows whose files have been deleted or whose pair no longer matches.
+  sqlite3_stmt* d=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"DELETE FROM matches WHERE left_path=? AND right_path=?",-1,&d,nullptr)==SQLITE_OK){
+    for(const auto& k:removeKeys){
+      if(keep.find(k)!=keep.end()) continue;
+      const std::size_t sep=k.find('\x1f');
+      sqlite3_reset(d); sqlite3_clear_bindings(d);
+      sqlite3_bind_text(d,1,k.substr(0,sep).c_str(),-1,SQLITE_TRANSIENT);
+      sqlite3_bind_text(d,2,k.substr(sep+1).c_str(),-1,SQLITE_TRANSIENT);
+      if(sqlite3_step(d)!=SQLITE_DONE){ok=false;}
+    }
+    sqlite3_finalize(d);
+  }
+  if(!ok){exec("ROLLBACK;");return false;}
+  return exec("COMMIT;");
+}
+
+std::vector<StoredMatch> Database::loadMatches() const{
+  std::vector<StoredMatch> out; if(!db_) return out;
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"SELECT left_path,right_path,percent FROM matches",-1,&s,nullptr)!=SQLITE_OK) return out;
+  while(sqlite3_step(s)==SQLITE_ROW){
+    StoredMatch m; m.left=reinterpret_cast<const char*>(sqlite3_column_text(s,0));
+    m.right=reinterpret_cast<const char*>(sqlite3_column_text(s,1)); m.percent=sqlite3_column_double(s,2);
+    out.push_back(std::move(m));
+  }
+  sqlite3_finalize(s); return out;
 }
 }

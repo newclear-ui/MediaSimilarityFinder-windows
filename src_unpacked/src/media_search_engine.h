@@ -47,6 +47,14 @@ class MediaSearchEngine {
 public:
   bool openIndex(const std::string& dbPath);
   bool openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory);
+  // Persist the current duplicate-pair set so a later session can reload it.
+  // Rows are replaced wholesale (pairs no longer present are dropped), so
+  // deleted files disappear from stored results. Safe on cancel: the caller
+  // may pass a partial set to keep the last completed progress.
+  bool saveMatches(const std::vector<SearchMatch>& matches);
+  // Load the pairs persisted by the last completed scan. Paths use the same
+  // canonical UTF-8 form as scan results, so reload maps 1:1 onto files().
+  std::vector<SearchMatch> loadMatches() const;
   // Releases the index database so its files can be moved or removed.
   // Required on Windows, where open files cannot be deleted.
   void close();

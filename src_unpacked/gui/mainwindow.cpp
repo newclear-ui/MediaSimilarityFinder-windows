@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "video_decoder.h"
+#include "../src/image_decoder.h"
 #include <QAbstractItemView>
 #include <QActionGroup>
 #include <QApplication>
@@ -173,6 +174,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"listing")) return S("파일 목록 작성 중…","Listing files…");
   if (!std::strcmp(key,"scanning")) return S("검색 중…","Scanning…");
   if (!std::strcmp(key,"paused")) return S("일시정지됨","Paused");
+  if (!std::strcmp(key,"quickLoaded")) return S("저장된 매칭 %1건을 불러왔습니다 — 누락된 파일만 검색 중…","Loaded %1 stored matches — scanning only missing files…");
   if (!std::strcmp(key,"chooseTitle")) return S("미디어 폴더 선택","Select media folder");
   if (!std::strcmp(key,"chooseScanFolder")) return S("검색 폴더 선택","Select folder to scan");
   if (!std::strcmp(key,"chooseDest")) return S("이동 대상 폴더","Destination folder");
@@ -199,7 +201,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.49\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.49\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.50\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.50\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -232,6 +234,21 @@ void ScanWorker::run() {
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
+    // Quick load: the scan button restores the stored duplicate groups before
+    // analyzing anything, so a repeat scan of the same folder shows previous
+    // results immediately, then appends only files that changed meanwhile.
+    {
+      const auto stored = engine_.loadMatches();
+      int loaded = 0;
+      for (const auto& m : stored) {
+        const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
+        const LiveMatch lm{l, r, m.percent, isVideoExt(l) ? 2 : 1};
+        { QMutexLocker g(&pendingMutex_); pending_.push_back(lm); }
+        allMatches_.push_back(lm);
+        ++loaded;
+      }
+      if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
+    }
     control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
       emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(path));
       emit progressCount((qulonglong)done, (qulonglong)total);
@@ -240,7 +257,9 @@ void ScanWorker::run() {
     control_.onMatch = [this](const msf::SearchMatch& m) {
       QMutexLocker g(&pendingMutex_);
       const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-      pending_.push_back({l, r, m.percent, isVideoExt(l) ? 2 : 1});
+      const LiveMatch lm{l, r, m.percent, isVideoExt(l) ? 2 : 1};
+      pending_.push_back(lm);
+      allMatches_.push_back(lm);
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastEmitMs_ > 200) { lastEmitMs_ = now; emit matchesArrived(); }
     };
@@ -249,6 +268,14 @@ void ScanWorker::run() {
     // groups incrementally from onMatch and needs no retained vector.
     control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
+    // Persist the accumulated match set (loaded + new). Wholesale replacement
+    // keeps deleted files out of stored results; partial sets on cancel keep
+    // the last completed checkpoint, matching the scan-side semantics.
+    {
+      std::vector<msf::SearchMatch> all; all.reserve((std::size_t)allMatches_.size());
+      for (const auto& m : allMatches_) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
+      engine_.saveMatches(all);
+    }
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
     if (control_.cancel.load()) { emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
     const auto& fs = engine_.files();
@@ -331,7 +358,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.49"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.50"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -602,7 +629,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.49"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.50"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -698,6 +725,7 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::progressCount, this, &MainWindow::onScanCounts);
   connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
   connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
+  connect(worker_, &ScanWorker::quickLoaded, this, &MainWindow::onQuickLoaded);
   connect(worker_, &ScanWorker::results, this, &MainWindow::onResults);
   connect(worker_, &ScanWorker::finished, this, &MainWindow::scanFinished);
   connect(worker_, &ScanWorker::failed, this, &MainWindow::scanFailed);
@@ -741,6 +769,10 @@ void MainWindow::scanProgress(int p, QString path) {
 void MainWindow::onListingProgress(std::size_t n) {
   statusProg_->setRange(0, 0); // indeterminate: walking the directory tree
   statusMsg_->setText(QString("%1 %2").arg(trStr(lang(), "listing")).arg(n));
+}
+void MainWindow::onQuickLoaded(int n) {
+  drainMatches();
+  statusMsg_->setText(trStr(lang(), "quickLoaded").arg(n));
 }
 void MainWindow::scanFinished(QString msg) {
   drainMatches();
@@ -1160,12 +1192,23 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size) const {
     return ic;
   }
   QImageReader rd(path);
+  QImage im;
   if (rd.canRead()) {
     rd.setAutoTransform(true);
-    QImage im = rd.read();
-    if (!im.isNull())
-      ic = QIcon(QPixmap::fromImage(im.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+    im = rd.read();
   }
+  if (im.isNull()) {
+    // Qt image-format plugins (png etc.) may be absent from a portable
+    // deployment while WIC is always present. Engine-side WIC decode then
+    // produces the preview the search itself relies on.
+    msf::ImageDecoder dec;
+    msf::GrayImage g;
+    if (dec.decodePreserveAspect(path.toStdString(), 256, g) && g.width > 0 && g.height > 0) {
+      im = QImage(g.pixels.data(), g.width, g.height, g.width, QImage::Format_Grayscale8).copy();
+    }
+  }
+  if (!im.isNull())
+    ic = QIcon(QPixmap::fromImage(im.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
   if (ic.isNull()) ic = QFileIconProvider().icon(QFileInfo(path));
   // Bound the cache: group-list refreshes re-request the same representatives,
   // but an unbounded cache over a 100k+ scan would cost gigabytes.

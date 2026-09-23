@@ -28,6 +28,16 @@ bool MediaSearchEngine::openIndexForRoot(const std::string& rootPath, const std:
  if(!videoEngine_.openPersistentCache(path_to_utf8(paths.videoCache))) return false;
  managedIndex_=paths; managedIndexActive_=true; candidateStates_=db_.all(); rebuildCandidateIndexes(); return true;
 }
+bool MediaSearchEngine::saveMatches(const std::vector<SearchMatch>& matches){
+  std::vector<StoredMatch> s; s.reserve(matches.size());
+  for(const auto& m:matches) s.push_back({m.leftPath,m.rightPath,m.percent});
+  return db_.saveMatches(s);
+}
+std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
+  std::vector<SearchMatch> out; const auto s=db_.loadMatches(); out.reserve(s.size());
+  for(const auto& m:s) out.push_back({m.left,m.right,m.percent});
+  return out;
+}
 bool MediaSearchEngine::upsertFingerprint(const std::string& path, std::uint64_t fingerprint, int kind, std::uint64_t size, std::int64_t modified, std::uint64_t mirrorFingerprint, std::uint64_t crop4x3, std::uint64_t crop1x1, std::uint64_t crop9x16, std::uint64_t mirrorCrop4x3, std::uint64_t mirrorCrop1x1, std::uint64_t mirrorCrop9x16) {
  FileState x; x.path=path; x.fingerprint=fingerprint; x.mirrorFingerprint=mirrorFingerprint; x.crop4x3=crop4x3; x.crop1x1=crop1x1; x.crop9x16=crop9x16; x.mirrorCrop4x3=mirrorCrop4x3; x.mirrorCrop1x1=mirrorCrop1x1; x.mirrorCrop9x16=mirrorCrop9x16; x.kind=kind; x.size=size; x.modified=modified; if(!db_.upsert(x)) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return true;
 }
