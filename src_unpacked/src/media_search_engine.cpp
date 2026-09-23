@@ -244,19 +244,35 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  files_.clear();
  const auto currentStates=db_.all(); files_.reserve(currentStates.size());
  for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); }
- ScanPipeline pipe; for(auto&f:files_)pipe.add(f); auto st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
+  ScanPipeline pipe; for(auto&f:files_)pipe.add(f);
+  // The final analyze pass can grind through millions of candidate pairs (plus
+  // a video re-decode per video pair). Without a stop check, cancel/pause
+  // during this phase did nothing until it finished — the force-quit path
+  // that lost every streamed match. Poll pause-aware, like stopped().
+  auto stopCheck=[&]()->bool{
+    if(!control) return false;
+    while(control->pause.load()&&!control->cancel.load()) std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    return control->cancel.load();
+  };
+  ScanStats st;
+  st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
    if(control && control->onMatch) {
      SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
      control->onMatch(sm);
    }
-   if(!control || control->retainMatches) {
-     if(!control || control->maxRetainedMatches==0 || r.matches.size()<control->maxRetainedMatches) {
-       SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
-       r.matches.push_back(std::move(sm));
-     }
-   }
- }); r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_); return r;
+    if(!control || control->retainMatches) {
+      if(!control || control->maxRetainedMatches==0 || r.matches.size()<control->maxRetainedMatches) {
+        SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
+        r.matches.push_back(std::move(sm));
+      }
+    }
+  }, stopCheck);
+  // A stop during analyze() aborts the pair loops above (partial matches were
+  // already streamed via onMatch); mark the report incomplete like every
+  // other stop path. analyze() itself never propagates.
+  if(cancelled||(control&&control->cancel.load())) r.completed=false;
+  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_); return r;
 }
 }

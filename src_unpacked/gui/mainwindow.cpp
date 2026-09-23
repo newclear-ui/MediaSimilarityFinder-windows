@@ -215,7 +215,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.56\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.56\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.57\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.57\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -305,10 +305,11 @@ void ScanWorker::run() {
       // Incremental checkpoint: persist the FULL accumulated set (loaded + new,
       // including pairs whose files are currently missing from disk) so that a
       // kill, crash, or early close still leaves every match found so far in the
-      // index. Throttled by count AND time so million-match scans are not slowed.
-      // Must stay wholesale (never a partial set): saveMatches deletes rows
-      // absent from the saved set.
-      if (matchesSinceSave_ >= 25 && now - lastSaveMs_ > 5000) {
+      // index. Time-gated from the very first match (no count gate), so even a
+      // scan stopped after a handful of matches keeps them; the 5s cadence
+      // bounds the cost on million-match scans. Must stay wholesale (never a
+      // partial set): saveMatches deletes rows absent from the saved set.
+      if (matchesSinceSave_ > 0 && now - lastSaveMs_ > 5000) {
         lastSaveMs_ = now; matchesSinceSave_ = 0;
         persistMatchesSnapshot();
       }
@@ -464,7 +465,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.56"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.57"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -802,7 +803,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.56"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.57"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -880,6 +881,17 @@ void MainWindow::setRunning(bool v) {
 void MainWindow::startScan() {
   if (scanning_) return;
   if (folder_->text().isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
+  // Remember the most-recently scanned folders (max 2) for the favorites list.
+  {
+    QStringList recent = QSettings().value("ui/recentFolders").toStringList();
+    recent.removeAll(folder_->text());
+    recent.prepend(folder_->text());
+    while (recent.size() > 2) recent.removeLast();
+    if (recent != QSettings().value("ui/recentFolders").toStringList()) {
+      QSettings().setValue("ui/recentFolders", recent);
+      refreshFolders();
+    }
+  }
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; thread_ = nullptr; worker_ = nullptr; }
   matches_.clear(); groups_.clear(); pathGroup_.clear(); pathParent_.clear();
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
@@ -1034,6 +1046,18 @@ void MainWindow::refreshFolders() {
   favPath("pictures", QStandardPaths::writableLocation(QStandardPaths::PicturesLocation));
   favPath("videos", QStandardPaths::writableLocation(QStandardPaths::MoviesLocation));
   favPath("music", QStandardPaths::writableLocation(QStandardPaths::MusicLocation));
+  // Most-recently scanned folders (max 2): the most useful jump targets for
+  // resuming unfinished work on previous results.
+  {
+    const QStringList recent = QSettings().value("ui/recentFolders").toStringList();
+    for (const auto& rp : recent) {
+      if (rp.isEmpty() || !QFileInfo(rp).isDir()) continue;
+      auto* it = new QTreeWidgetItem(fav, QStringList(QDir::toNativeSeparators(rp)));
+      it->setData(0, Qt::UserRole, rp);
+      it->setIcon(0, icons.icon(QFileIconProvider::Folder));
+      it->setToolTip(0, rp);
+    }
+  }
   auto* pc = new QTreeWidgetItem(folders_, QStringList(trStr(lang(), "thispc")));
   pc->setExpanded(true);
   for (const auto& d : QDir::drives()) {

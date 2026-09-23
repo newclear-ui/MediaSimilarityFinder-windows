@@ -80,7 +80,10 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance){
  return analyze(maxDistance, {});
 }
 ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch){
- ScanStats s; s.files=files_.size();
+ return analyze(maxDistance, onMatch, {});
+}
+ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop){
+  ScanStats s; s.files=files_.size();
  imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
  imageMap_.clear(); videoMap_.clear(); imageMap_.reserve(files_.size()); videoMap_.reserve(files_.size());
  for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,i,f);imageMap_.push_back(i);}else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,i,f);videoMap_.push_back(i);}++s.indexed;}
@@ -95,11 +98,22 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
    auto it=baseCache.find(f.path); if(it==baseCache.end()){VideoFingerprint b;if(!temporalEngine.build(f.path,b))return false;it=baseCache.emplace(f.path,std::move(b)).first;} vf=it->second;
    auto ic=cropCache.find(f.path); if(ic==cropCache.end()){VideoCropFingerprint c;if(!temporalEngine.buildCropAware(f.path,vf,c,96))return false;ic=cropCache.emplace(f.path,std::move(c)).first;} cf=ic->second; return true;
  };
- std::unordered_set<std::uint64_t> seen;
- std::size_t imageFullCandidates=0,videoFullCandidates=0;
- bool dedupCrop=false;
- const auto process=[&](std::size_t rawA,const Candidate& c){
-   auto i=rawA,j=c.index;if(i==j)return;if(i>j)std::swap(i,j);
+  std::unordered_set<std::uint64_t> seen;
+  std::size_t imageFullCandidates=0,videoFullCandidates=0;
+  bool dedupCrop=false;
+  // Cooperative cancellation: candidate-pair loops can run into the millions
+  // (plus a video re-decode per video pair), so poll periodically. Without
+  // this, stop/pause during the final analyze phase did nothing and users had
+  // to force-quit — losing every match streamed so far. The throw is caught
+  // below; analyze() always returns partial stats, never propagates.
+  struct LocalCancel {};
+  std::size_t sincePoll=0;
+  const auto poll=[&]{
+    if(stop && ((++sincePoll & 1023)==0) && stop()) throw LocalCancel{};
+  };
+  const auto process=[&](std::size_t rawA,const Candidate& c){
+    poll();
+    auto i=rawA,j=c.index;if(i==j)return;if(i>j)std::swap(i,j);
    if(dedupCrop){
      const std::uint64_t key=(static_cast<std::uint64_t>(i)<<32)^static_cast<std::uint64_t>(j);
      if(!seen.insert(key).second)return;
@@ -115,26 +129,32 @@ if(files_[i].kind==MediaKind::Video){
       }
     }
  };
- const auto consume=[&](const CandidateIndex& idx){idx.forEachCandidatePair(maxDistance,process);};
- // Full indexes are authoritative first. If they already cover every possible pair
- // of a media kind, crop indexes cannot add anything and are skipped entirely.
- const auto imageBefore=s.candidates; consume(imageIdx_); imageFullCandidates=s.candidates-imageBefore;
- const auto videoBefore=s.candidates; consume(videoIdx_); videoFullCandidates=s.candidates-videoBefore;
- const std::size_t imagePossible=possible(imageMap_.size()), videoPossible=possible(videoMap_.size());
- const bool imageComplete=(imageFullCandidates>=imagePossible), videoComplete=(videoFullCandidates>=videoPossible);
- if(!imageComplete || !videoComplete){
-   dedupCrop=true;
-   const std::size_t reserveHint=std::min<std::size_t>(s.possiblePairs, std::max<std::size_t>(1024, files_.size()*2));
-   seen.reserve(reserveHint);
-   // Seed only the pairs from incomplete full indexes. Complete kinds are skipped,
-   // so their potentially enormous pair set never needs to be retained for dedup.
-   if(!imageComplete) imageIdx_.forEachCandidatePair(maxDistance,[&](std::size_t i,const Candidate& c){auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));});
-   if(!videoComplete) videoIdx_.forEachCandidatePair(maxDistance,[&](std::size_t i,const Candidate& c){auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));});
-   if(!imageComplete){consume(c4_);consume(c1_);consume(c916_);}
-   if(!videoComplete){consume(vc4_);consume(vc1_);consume(vc916_);}
- }
- if(s.possiblePairs)s.candidateReductionPercent=100.0*(1.0-(double)s.candidates/s.possiblePairs);
- return s;
+  const auto consume=[&](const CandidateIndex& idx){idx.forEachCandidatePair(maxDistance,process);};
+  // Full indexes are authoritative first. If they already cover every possible pair
+  // of a media kind, crop indexes cannot add anything and are skipped entirely.
+  try {
+  const auto imageBefore=s.candidates; consume(imageIdx_); imageFullCandidates=s.candidates-imageBefore;
+  const auto videoBefore=s.candidates; consume(videoIdx_); videoFullCandidates=s.candidates-videoBefore;
+  const std::size_t imagePossible=possible(imageMap_.size()), videoPossible=possible(videoMap_.size());
+  const bool imageComplete=(imageFullCandidates>=imagePossible), videoComplete=(videoFullCandidates>=videoPossible);
+  if(!imageComplete || !videoComplete){
+    dedupCrop=true;
+    const std::size_t reserveHint=std::min<std::size_t>(s.possiblePairs, std::max<std::size_t>(1024, files_.size()*2));
+    seen.reserve(reserveHint);
+    // Seed only the pairs from incomplete full indexes. Complete kinds are skipped,
+    // so their potentially enormous pair set never needs to be retained for dedup.
+    auto seed=[&](std::size_t i,const Candidate& c){poll();auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));};
+    if(!imageComplete) imageIdx_.forEachCandidatePair(maxDistance,seed);
+    if(!videoComplete) videoIdx_.forEachCandidatePair(maxDistance,seed);
+    if(!imageComplete){consume(c4_);consume(c1_);consume(c916_);}
+    if(!videoComplete){consume(vc4_);consume(vc1_);consume(vc916_);}
+  }
+  } catch (const LocalCancel&) {
+    // Partial stats (and every match already streamed via onMatch) survive;
+    // the caller observes the stop through its own control flag.
+  }
+  if(s.possiblePairs)s.candidateReductionPercent=100.0*(1.0-(double)s.candidates/s.possiblePairs);
+  return s;
 }
 const std::vector<MediaFile>& ScanPipeline::files()const{return files_;}
 }
