@@ -122,7 +122,7 @@
     </div>
     <div class="mid">
       <div class="mid-bar"><b>유사 그룹 (1,247)</b></div>
-      <div class="mid-bar"><span class="chip">유사도 내림차순 ▾</span><span class="search">🔍 그룹 검색</span></div>
+      <div class="mid-bar"><span class="chip">유사도 내림차순 ▾</span><span class="chip">큰 아이콘 ▾</span><span class="search">🔍 그룹 검색</span></div>
       <div class="groups">
         <div class="g sel"><div><div class="meta">그룹 1</div><div class="sub">4 파일</div></div>
           <div class="thumbs"><div class="th" style="background:#8ab4f8">IMG</div><div class="th" style="background:#93c5fd">IMG</div><div class="th" style="background:#7aa7f0">IMG</div><div class="th" style="background:#a5c8ff">IMG</div></div>
@@ -193,7 +193,19 @@
 </div>
 <p class="note">목업 A — 첨부 이미지 기준 한국어 그리드형. 썸네일은 자리표시자(실제 앱에서는 WIC 디코딩 미리보기).
 빨간 "검색 중 실시간 갱신" 표시는 요구사항(검색중 계속 출력·refresh) 반영 — <b>onMatchRef 스트리밍 콜백</b>으로 구현 예정.
-파일 액션(👁미리보기 🗀폴더열기 ❐복사 ✂잘라내기 🗑삭제) + 우클릭 메뉴(이동/표시/무시/분석)는 Similarity 참조.</p>
+파일 액션(👁미리보기 🗀폴더열기 ❐복사 ✂잘라내기 🗑삭제) + 우클릭 메뉴(이동/표시/무시/분석)는 Similarity 참조.
+<b>수정 반영</b>: Language 선택은 툴바에서 제거 → <b>설정 팝업 &gt; 일반 탭</b>으로 이동.
+2번째 화면 보기 전환 콤보: <b>아주 큰 아이콘 / 큰 아이콘 / 보통 아이콘 / 작은 아이콘 / 리스트 / 자세히</b> (탐색기식).
+3분할 스플리터로 좌우 크기 조절 + 상태 저장. 가운데 화면에서 <b>방향키 이동 + Space로 그룹 mark</b> 가능.</p>
+<div class="win" style="margin-top:10px">
+  <div class="titlebar">⚙ 설정 — 실시간 모니터 설정</div>
+  <div style="display:flex;gap:16px;padding:10px 14px;border-bottom:1px solid #ddd;color:#2b6cb0;font-weight:bold">
+    <span style="border-bottom:2px solid #2b6cb0;padding-bottom:6px">일반</span><span style="color:#555">모니터</span></div>
+  <div style="padding:14px;display:flex;gap:10px;align-items:center">
+    <b>언어:</b><span class="chip">한국어 ▾ (English)</span>
+    <span style="color:#555">← 즉시 전환, 재시작 불필요</span></div>
+  <div style="padding:0 14px 14px;color:#555">모니터 탭: 감시 폴더 / 비교 폴더 / 분석 정책(임계값·안정화·폴링·GPU 허용) — 기존 기능 유지</div>
+</div>
 </div>
 </body>
 </html>

@@ -5,7 +5,7 @@
 #include <iostream>
 
 namespace {
-constexpr const char* kVersion = "0.9.2.36";
+constexpr const char* kVersion = "0.9.2.37";
 }
 
 int main(int argc, char** argv) {

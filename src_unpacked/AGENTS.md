@@ -11,4 +11,4 @@
    - 아키텍처 변경 시 `docs/architecture/*.ko.md` + `.en.md`도 양쪽 갱신
 
 2. 빌드 기준: Visual Studio 18 2026 x64, project-local `vcpkg_installed`, `vcpkg.json`이 유일 의존성 기준
-3. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.2.36) 구분 유지. CUDA 알고리즘 변경 없이 공통 계층만 수정
+3. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.2.37) 구분 유지. CUDA 알고리즘 변경 없이 공통 계층만 수정

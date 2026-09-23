@@ -74,7 +74,9 @@ private slots:
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
+  void groupViewChanged(int);
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
+  void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
   void openSelected(); void revealSelected(); void renameSelected(); void deleteSelected();
   void copySelected(); void cutSelected(); void pasteFiles(); void moveSelected();
@@ -126,14 +128,15 @@ private:
   QLineEdit* folder_=nullptr; QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
     *resume_=nullptr,*cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*monPauseBtn_=nullptr;
   QComboBox* preset_=nullptr; QSpinBox *cpu_=nullptr,*gpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
-  QComboBox* langBox_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
     *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr,*sumMon_=nullptr;
   QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValGroups_=nullptr,
     *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr,*sumValMon_=nullptr;
   // middle
-  QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;
+  QLabel* groupTitle_=nullptr; QComboBox *sortBox_=nullptr,*groupViewBox_=nullptr; QLineEdit* groupSearch_=nullptr;
+  QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
+  QSplitter* split_=nullptr;
   QTreeWidget* groupsView_=nullptr; QLabel* groupFoot_=nullptr; QPushButton* csvBtn_=nullptr;
   // right
   QLabel* detailTitle_=nullptr; QLabel* detailSim_=nullptr; QLabel* detailCount_=nullptr;
