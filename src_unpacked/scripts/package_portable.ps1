@@ -19,7 +19,7 @@ Get-ChildItem $qtBin -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -De
 # (verified on 0.9.2.35); windeployqt covers this when present.
 $qtPluginRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "vcpkg_installed\x64-windows\Qt6"
 if (Test-Path (Join-Path $qtPluginRoot "plugins")) {
-  Copy-Item (Join-Path $qtPluginRoot "plugins") (Join-Path $OutputDir "Qt6\plugins") -Recurse -Force
+  Copy-Item (Join-Path $qtPluginRoot "plugins") (Join-Path $OutputDir "Qt6\plugins") -Recurse -Force -Exclude *.pdb
 }
 if (Test-Path "README.md") { Copy-Item "README.md" $OutputDir -Force }
 @{
