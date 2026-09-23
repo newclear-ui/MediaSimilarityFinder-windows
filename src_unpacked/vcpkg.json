@@ -1,6 +1,6 @@
 ﻿{
   "name": "media-similarity-finder",
-  "version-string": "0.9.2.53",
+  "version-string": "0.9.2.54",
   "dependencies": [
     "sqlite3",
     "ffmpeg",

@@ -4,6 +4,7 @@ namespace msf {
 ResourcePolicy make_policy(ResourceMode m,int c,int g){
     ResourcePolicy p; p.mode=m;
     if(m==ResourceMode::Maximum){p.cpuPercent=90;p.gpuPercent=90;}
+    else if(m==ResourceMode::High){p.cpuPercent=75;p.gpuPercent=75;}
     else if(m==ResourceMode::Balanced){p.cpuPercent=55;p.gpuPercent=60;}
     else if(m==ResourceMode::Gaming){p.cpuPercent=25;p.gpuPercent=25;}
     else {p.cpuPercent=std::clamp(c,5,100);p.gpuPercent=std::clamp(g,5,100);}

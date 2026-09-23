@@ -23,6 +23,7 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QImageReader>
 #include <QInputDialog>
 #include <QLabel>
@@ -214,7 +215,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.53\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.53\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.54\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.54\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -263,12 +264,28 @@ void ScanWorker::run() {
       }
       if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
     }
+    // Progress signals arrive once per analyzed file; a fast Maximum scan would
+    // flood the GUI event loop (setText per file) and freeze the window —
+    // no pause/cancel/move possible. Throttle display updates to ~7Hz; the
+    // latest values are kept and flushed when the scan returns, so pause,
+    // cancel, and close stay responsive no matter the scan speed.
+    lastProgMs_ = 0; lastProgDone_ = 0; lastProgTotal_ = 0; lastProgPath_.clear();
+    lastListMs_ = 0; lastListN_ = 0;
     control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
-      emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(path));
-      emit progressCount((qulonglong)done, (qulonglong)total);
+      lastProgDone_ = done; lastProgTotal_ = total; lastProgPath_ = path;
       gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
+      const qint64 now = QDateTime::currentMSecsSinceEpoch();
+      if (now - lastProgMs_ > 150) {
+        lastProgMs_ = now;
+        emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(path));
+        emit progressCount((qulonglong)done, (qulonglong)total);
+      }
     };
-    control_.listing = [this](std::size_t n) { emit listingProgress(n); };
+    control_.listing = [this](std::size_t n) {
+      lastListN_ = n;
+      const qint64 now = QDateTime::currentMSecsSinceEpoch();
+      if (now - lastListMs_ > 150) { lastListMs_ = now; emit listingProgress(n); }
+    };
     control_.onMatch = [this](const msf::SearchMatch& m) {
       { QMutexLocker g(&pendingMutex_);
         const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
@@ -296,6 +313,13 @@ void ScanWorker::run() {
     control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
     gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
+    // Flush the throttled progress display with the final counts.
+    {
+      const std::size_t done = lastProgDone_, total = lastProgTotal_;
+      emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(lastProgPath_));
+      emit progressCount((qulonglong)done, (qulonglong)total);
+      if (lastListN_ > 0) emit listingProgress(lastListN_);
+    }
     // Final persist of the accumulated match set (loaded + new, including pairs
     // whose files are currently missing from disk). Wholesale replacement keeps
     // every pair ever found, so unfinished work on those files resumes on the
@@ -350,8 +374,8 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
   ignored_ = QSet<QString>(ig0.begin(), ig0.end());
   buildUi();
-  restoreGeometry(QSettings().value("ui/mainGeom").toByteArray());
   applyStaticTexts();
+  restoreUiState();
   monitor_ = std::make_unique<msf::MediaMonitor>();
   monitorTimer_ = new QTimer(this); monitorTimer_->setInterval(1000);
   connect(monitorTimer_, &QTimer::timeout, this, &MainWindow::updateMonitorStatus);
@@ -384,18 +408,41 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   statusMsg_->setText(trStr(lang(), "ready"));
 }
 MainWindow::~MainWindow() {
-  QSettings().setValue("ui/mainGeom", saveGeometry());
-  QSettings().setValue("ui/splitter", split_ ? split_->saveState() : QByteArray());
+  saveUiState();
   if (worker_) worker_->cancel();
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; }
   if (monitor_) monitor_->stop();
+}
+void MainWindow::saveUiState() {
+  QSettings st;
+  st.setValue("ui/mainGeom", saveGeometry());
+  st.setValue("ui/splitter", split_ ? split_->saveState() : QByteArray());
+  st.setValue("ui/imgTreeHeader", imgTree_ ? imgTree_->header()->saveState() : QByteArray());
+  st.setValue("ui/vidTreeHeader", vidTree_ ? vidTree_->header()->saveState() : QByteArray());
+  st.setValue("ui/listHeader", list_ ? list_->header()->saveState() : QByteArray());
+}
+void MainWindow::restoreUiState() {
+  QSettings st;
+  restoreGeometry(st.value("ui/mainGeom").toByteArray());
+  if (split_) {
+    const auto sp = st.value("ui/splitter").toByteArray();
+    if (!sp.isEmpty()) split_->restoreState(sp);
+  }
+  auto restoreHeader = [&st](QTreeWidget* t, const char* key) {
+    if (!t) return;
+    const auto h = st.value(key).toByteArray();
+    if (!h.isEmpty()) t->header()->restoreState(h);
+  };
+  restoreHeader(imgTree_, "ui/imgTreeHeader");
+  restoreHeader(vidTree_, "ui/vidTreeHeader");
+  restoreHeader(list_, "ui/listHeader");
 }
 UiLang MainWindow::lang() const {
   return QSettings().value("ui/language", "ko").toString() == "en" ? UiLang::En : UiLang::Ko;
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.53"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.54"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -410,8 +457,8 @@ void MainWindow::buildUi() {
   split_->setCollapsible(0, true); split_->setCollapsible(1, true); split_->setCollapsible(2, false);
   split_->setStretchFactor(0, 0); split_->setStretchFactor(1, 0); split_->setStretchFactor(2, 1);
   const auto saved = QSettings().value("ui/splitter").toByteArray();
-  if (!saved.isEmpty() && split_->restoreState(saved)) { /* restored */ }
-  else split_->setSizes({200, 330, 950});
+  if (saved.isEmpty()) split_->setSizes({200, 330, 950});
+  // Non-empty saved state is applied by restoreUiState() after all panes exist.
   outer->addWidget(split_, 1);
   statusBar_ = statusBar();
   statusMsg_ = new QLabel(this); statusCount_ = new QLabel(this); statusProg_ = new QProgressBar(this);
@@ -442,9 +489,9 @@ void MainWindow::buildToolbar() {
   connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
   connect(cancel_, &QPushButton::clicked, this, &MainWindow::cancelScan);
   preset_ = new QComboBox(toolBar_);
-  preset_->addItems({QStringLiteral("Maximum"), QStringLiteral("Balanced"),
+  preset_->addItems({QStringLiteral("Maximum"), QStringLiteral("High"), QStringLiteral("Balanced"),
                      QStringLiteral("Gaming"), QStringLiteral("Custom")});
-  preset_->setCurrentIndex(1);
+  preset_->setCurrentIndex(2);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
   cpu_ = new QSpinBox(toolBar_); gpu_ = new QSpinBox(toolBar_);
   cpu_->setRange(1, 100); gpu_->setRange(1, 100);
@@ -498,6 +545,11 @@ void MainWindow::buildLeft(QWidget* w) {
   lay->addWidget(h);
   folders_ = new QTreeWidget(w);
   folders_->setHeaderHidden(true);
+  // With a hidden header the single column stretches to the viewport by
+  // default, which suppresses the horizontal scrollbar forever. Size to
+  // contents so long paths scroll horizontally like Explorer.
+  folders_->header()->setStretchLastSection(false);
+  folders_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
   folders_->setMinimumWidth(190);
   lay->addWidget(folders_, 1);
   connect(folders_, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem* it) { populateFolderChildren(it); });
@@ -653,7 +705,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   foot->addWidget(groupFoot_, 1);
   lay->addLayout(foot);
   updateIgnoreTab();
-  groupViewChanged(QSettings().value("ui/groupView", 1).toInt());
+  groupViewChanged(QSettings().value("ui/groupView", 0).toInt());
   onMidTabChanged(0);
 }
 
@@ -728,7 +780,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.53"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.54"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -936,7 +988,7 @@ void MainWindow::resourceChanged(int i) {
   cpu_->blockSignals(false); gpu_->blockSignals(false);
 }
 void MainWindow::customResourceChanged() {
-  if (preset_->currentIndex() != 3) preset_->setCurrentIndex(3);
+  if (preset_->currentIndex() != 4) preset_->setCurrentIndex(4);
   policy_ = msf::make_policy(msf::ResourceMode::Custom, cpu_->value(), gpu_->value());
   if (monitor_) monitor_->setPolicy(policy_);
 }
@@ -1092,7 +1144,7 @@ void MainWindow::updateKindBtn() {
                                    : (m == 1 ? trStr(lang(), "kindImages") : trStr(lang(), "kindVideos"))));
 }
 void MainWindow::groupViewChanged(int idx) {
-  if (idx < 0) idx = 1;
+  if (idx < 0) idx = 0;
   if (idx > 6) idx = 5;
   QSettings().setValue("ui/groupView", idx);
   for (auto* a : viewActs_) a->setChecked(a->data().toInt() == idx);
@@ -1215,7 +1267,7 @@ void MainWindow::activateTab(int idx) {
     groupsView_ = (idx == 1) ? vidTree_ : imgTree_;
     groupsList_ = (idx == 1) ? vidGrid_ : imgGrid_;
     refreshGroupList();
-    groupViewChanged(QSettings().value("ui/groupView", 1).toInt());
+    groupViewChanged(QSettings().value("ui/groupView", 0).toInt());
   } else if (idx == 2) {
     updateIgnoreTab();
   }

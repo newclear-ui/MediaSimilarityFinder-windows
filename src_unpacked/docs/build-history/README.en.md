@@ -57,6 +57,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.51 | Video scene-changes search + GPU status visibility + cache v4 + duration gate |
 | 0.9.2.52 | Incremental match checkpointing during scan (resume guarantee) |
 | 0.9.2.53 | Preview-toggle crash fix + Explorer-style Tiles view |
+| 0.9.2.54 | Folder h-scroll, XL default, UI-state restore, progress throttle, High mode, multicore |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

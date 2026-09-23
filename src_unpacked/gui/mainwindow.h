@@ -65,6 +65,11 @@ private:
   void persistMatchesSnapshot();    // save the full accumulated set (worker thread only)
   int matchesSinceSave_=0; qint64 lastSaveMs_=0; // incremental-checkpoint throttle
   qint64 lastEmitMs_=0;
+  // Progress-signal throttle (worker thread only): the engine reports every
+  // analyzed file, but the GUI is updated at most every ~150ms so a fast
+  // Maximum scan cannot flood the event loop and freeze the UI.
+  qint64 lastProgMs_=0; std::size_t lastProgDone_=0, lastProgTotal_=0; std::string lastProgPath_;
+  qint64 lastListMs_=0; std::size_t lastListN_=0;
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction
 };
@@ -122,6 +127,8 @@ private:
   void updateGpuLabel();
   void updateStatusCounts();
   void scanHeartbeat();
+  void saveUiState();              // window geometry + splitter + header layouts
+  void restoreUiState();           // counterpart applied after buildUi()
   static void scanLog(const QString& line);
   QString fmtSize(qulonglong) const;
   QString fileResolution(const QString&) const; // cached QImageReader::size

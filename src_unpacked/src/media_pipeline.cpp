@@ -10,7 +10,7 @@ namespace msf {
 // results (and the GPU hash batch built from them) are deterministic.
 static unsigned decodeWorkerCount(){
  unsigned hw=std::thread::hardware_concurrency();
- if(hw<4) hw=4; if(hw>16) hw=16; return hw;
+ if(hw<4) hw=4; if(hw>32) hw=32; return hw;
 }
 template <typename F>
 static void parallelFor(std::size_t n, F&& fn){
@@ -55,11 +55,13 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         bool used=false;
         if(preferGpu) used=gpu_.hashBatch(block,n,hashes.data());
         if(!used){
-            for(std::size_t k=0;k<n;++k) hashes[k]=perceptual_hash(std::vector<std::uint8_t>(block+k*1024,block+(k+1)*1024),32,32);
+            // CPU fallback used to hash serially on the batch thread, leaving
+            // the other cores idle when the GPU path is off. Fan out instead.
+            parallelFor(n,[&](std::size_t k){ hashes[k]=perceptual_hash(std::vector<std::uint8_t>(block+k*1024,block+(k+1)*1024),32,32); });
         }
-        for(std::size_t k=0;k<n;++k){ auto oi=map[base+k]; out[oi].fingerprint=hashes[k];
+        parallelFor(n,[&](std::size_t k){ auto oi=map[base+k]; out[oi].fingerprint=hashes[k];
             out[oi].mirrorFingerprint=perceptual_hash_mirrored(std::vector<std::uint8_t>(block+k*1024,block+(k+1)*1024),32,32);
-            out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; }
+            out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; });
     }
     // Crop pass decodes a second, larger frame per image; parallelize it the
     // same way. Each task writes only its own output slot.
