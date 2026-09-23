@@ -43,6 +43,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.37 | UI feedback round (in-settings language, 6 group views, keyboard mark, splitter save) |
 | 0.9.2.38 | Unified 3-pane UI + video tab/ignore list/throughput (37 tests PASS) |
 | 0.9.2.39 | Screenshot feedback round (toolbar cleanup, folder tab removal) |
+| 0.9.2.40 | CUDA first-hardware validation (RTX 3080 Ti, 38 tests PASS, kernels untouched) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

@@ -10,7 +10,7 @@
 
 namespace msf {
 namespace fs = std::filesystem;
-static constexpr const char* kApplicationVersion = "0.9.2.39";
+static constexpr const char* kApplicationVersion = "0.9.2.40";
 
 static std::uint64_t fnv1a64(const std::string& s, std::uint64_t seed) {
     std::uint64_t h = 14695981039346656037ull ^ seed;
@@ -194,7 +194,7 @@ bool IndexManager::updateLastScan(const IndexPaths& paths) {
     std::string old;
     {
         // NOTE: the reader must be closed before the atomic-replace rename
-        // below — Windows cannot replace a file that is still open.
+        // below - Windows cannot replace a file that is still open.
         std::ifstream in(paths.metadata, std::ios::binary);
         if (!in) return false;
         old.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
