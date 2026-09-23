@@ -1,9 +1,10 @@
 # Build Status
 
-- Current development version: **0.9.2.35**
+- Current development version: **0.9.2.36**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows common alignment: 0.9.2.34 — VS18 2026 baseline, CUDA unchanged
-- Current: 0.9.2.35 — Windows CPU build/test hardening (VS18 2026, vcpkg sqlite3+ffmpeg+qtbase)
+- Windows CPU hardening: 0.9.2.35 — VS18 2026 build, 36/36 PASS, GUI runtime verified
+- Current: 0.9.2.36 — Explorer-style UI rewrite (grid+list, KO/EN, live streaming)
 - Core Release build: PASS
 - CTest: **36/36 PASS**
 - candidatePairs exhaustive correctness regression: PASS

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>UI 목업 A — 한국어 / 탐색기 3분할 + 그리드 (첨부 이미지 기준)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 12px; color: #222;
+         background: #888; display: flex; justify-content: center; padding: 12px; }
+  .win { width: 1520px; background: #fff; border: 1px solid #555; display: flex; flex-direction: column; }
+  .titlebar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #ddd; font-weight: bold; }
+  .titlebar .sp { flex: 1; } .titlebar .btns span { display: inline-block; width: 34px; text-align: center; color: #666; }
+  .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+  .tbtn { border: 1px solid #ccc; background: #f7f7f7; border-radius: 5px; padding: 6px 10px; white-space: nowrap; }
+  .tbtn.primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; font-weight: bold; padding: 6px 18px; }
+  .tbtn:disabled { opacity: .55; }
+  .path { flex: 1; border: 1px solid #ccc; border-radius: 5px; padding: 6px 10px; color: #333; background: #fff; }
+  .main { display: flex; min-height: 640px; }
+  .left { width: 190px; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+  .pane-h { font-weight: bold; padding: 8px 10px 4px; }
+  .tree { padding: 0 6px; line-height: 1.9; color: #333; }
+  .tree .sel { background: #dbeafe; border-radius: 4px; padding: 0 4px; }
+  .summary { border-top: 1px solid #ddd; margin-top: auto; padding: 8px 10px; }
+  .summary table { width: 100%; border-collapse: collapse; }
+  .summary td { padding: 2px 0; } .summary td:last-child { text-align: right; color: #555; }
+  .mid { width: 300px; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+  .mid-bar { display: flex; gap: 6px; align-items: center; padding: 8px; border-bottom: 1px solid #eee; }
+  .chip { border: 1px solid #ccc; border-radius: 5px; padding: 4px 8px; background: #f7f7f7; }
+  .search { border: 1px solid #ccc; border-radius: 5px; padding: 4px 8px; color: #999; flex: 1; }
+  .groups { overflow: hidden; flex: 1; }
+  .g { border: 1px solid #ddd; border-radius: 8px; margin: 8px; padding: 8px; display: flex; gap: 8px; }
+  .g.sel { border-color: #2b6cb0; box-shadow: 0 0 0 1px #2b6cb0; }
+  .g .meta { font-weight: bold; white-space: nowrap; }
+  .g .sub { color: #555; margin-top: 4px; }
+  .thumbs { display: flex; gap: 3px; }
+  .th { width: 46px; height: 34px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 10px; font-weight: bold; }
+  .g .pct { margin-left: auto; text-align: right; color: #2f855a; font-size: 11px; white-space: nowrap; }
+  .mid-foot { display: flex; align-items: center; gap: 8px; padding: 8px; border-top: 1px solid #eee; color: #555; }
+  .right { flex: 1; display: flex; flex-direction: column; }
+  .r-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+  .r-head h2 { font-size: 16px; } .sim { color: #2f855a; font-weight: bold; }
+  .r-head .right { margin-left: auto; color: #555; display: flex; gap: 8px; align-items: center; }
+  .ico { border: 1px solid #ccc; border-radius: 4px; padding: 3px 7px; background: #f7f7f7; }
+  input[type=range] { width: 130px; }
+  .cards { display: flex; gap: 12px; padding: 4px 12px 12px; }
+  .card { width: 220px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; position: relative; }
+  .card.sel { border-color: #2b6cb0; box-shadow: 0 0 0 1px #2b6cb0; }
+  .mark { position: absolute; top: 8px; left: 8px; width: 20px; height: 20px; background: #2b6cb0; color: #fff;
+          border-radius: 4px; text-align: center; line-height: 20px; font-weight: bold; }
+  .big { height: 170px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; }
+  .card .info { padding: 8px 10px; line-height: 1.7; }
+  .card .fn { font-weight: bold; font-size: 11px; }
+  .card .dim { color: #555; }
+  .card .row { display: flex; align-items: center; }
+  .card .pc { margin-left: auto; color: #2f855a; font-weight: bold; }
+  .badge { display: inline-block; background: #e6f4ea; color: #2f855a; border-radius: 4px; padding: 1px 8px; font-size: 11px; }
+  .acts { display: flex; gap: 10px; padding: 0 10px 10px; color: #666; font-size: 14px; }
+  .tabs { display: flex; gap: 18px; padding: 0 12px; border-bottom: 1px solid #ddd; margin-top: 4px; }
+  .tabs span { padding: 6px 2px; color: #555; }
+  .tabs .on { color: #2b6cb0; border-bottom: 2px solid #2b6cb0; font-weight: bold; }
+  .detail { display: flex; gap: 16px; padding: 12px; }
+  .preview { width: 220px; height: 200px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+             color: #fff; font-weight: bold; }
+  .dtable td { padding: 3px 10px 3px 0; } .dtable td:first-child { color: #555; white-space: nowrap; }
+  .link { color: #2b6cb0; }
+  .status { display: flex; align-items: center; gap: 10px; border-top: 1px solid #ddd; padding: 7px 12px; color: #2f855a; }
+  .status .mid2 { margin-left: auto; color: #333; }
+  .pbar { width: 220px; height: 8px; background: #e2e8f0; border-radius: 4px; }
+  .pbar i { display: block; height: 100%; width: 94%; background: #2b6cb0; border-radius: 4px; }
+  .note { max-width: 1520px; color: #eee; font-size: 12px; margin-top: 8px; line-height: 1.7; }
+  .live { display: inline-block; background: #c53030; color: #fff; border-radius: 4px; padding: 1px 8px; font-size: 11px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div>
+<div class="win">
+  <div class="titlebar"><span style="color:#2b6cb0">▦</span> Media Similarity Finder <span class="sp"></span>
+    <span class="btns"><span>–</span><span>▢</span><span>✕</span></span></div>
+  <div class="toolbar">
+    <span class="tbtn">📁 폴더 선택 ▾</span>
+    <span class="path">D:\MediaLibrary</span>
+    <span class="tbtn">🔄 새로고침</span>
+    <span class="tbtn primary">검색/업데이트 시작</span>
+    <span class="tbtn">❚❚ 일시정지</span>
+    <span class="tbtn">■ 중지</span>
+    <span style="flex:1"></span>
+    <span class="tbtn">⚙ 설정</span>
+    <span class="tbtn">☰ 도움말</span>
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="pane-h">탐색기</div>
+      <div class="tree">
+        ☆ 즐겨찾기<br>
+        &nbsp;&nbsp;🖥 바탕 화면<br>
+        &nbsp;&nbsp;⬇ 다운로드<br>
+        &nbsp;&nbsp;📄 문서<br>
+        &nbsp;&nbsp;🖼 사진<br>
+        &nbsp;&nbsp;🎬 동영상<br>
+        &nbsp;&nbsp;🎵 음악<br>
+        🖥 내 PC<br>
+        &nbsp;&nbsp;💾 로컬 디스크 (C:)<br>
+        &nbsp;&nbsp;<span class="sel">💾 로컬 디스크 (D:)</span><br>
+        › 💾 로컬 디스크 (E:)<br>
+        🌐 네트워크
+      </div>
+      <div class="summary"><div class="pane-h" style="padding:0 0 4px">검색 요약</div>
+        <table>
+          <tr><td>총 파일</td><td>12,846</td></tr>
+          <tr><td>검색 완료</td><td>12,103</td></tr>
+          <tr><td>처리 중</td><td>-</td></tr>
+          <tr><td>유사 그룹</td><td>1,247</td></tr>
+          <tr><td>중복 파일</td><td>3,785 (29.6 GB)</td></tr>
+          <tr><td>검색 시간</td><td>00:18:42</td></tr>
+          <tr><td>마지막 업데이트</td><td>2025-05-31 14:22</td></tr>
+          <tr><td>GPU 가속</td><td>NVIDIA GeForce RTX 4070</td></tr>
+          <tr><td>CPU 사용</td><td>18%</td></tr>
+          <tr><td>RAM 사용</td><td>6.1 GB / 32 GB</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="mid">
+      <div class="mid-bar"><b>유사 그룹 (1,247)</b></div>
+      <div class="mid-bar"><span class="chip">유사도 내림차순 ▾</span><span class="search">🔍 그룹 검색</span></div>
+      <div class="groups">
+        <div class="g sel"><div><div class="meta">그룹 1</div><div class="sub">4 파일</div></div>
+          <div class="thumbs"><div class="th" style="background:#8ab4f8">IMG</div><div class="th" style="background:#93c5fd">IMG</div><div class="th" style="background:#7aa7f0">IMG</div><div class="th" style="background:#a5c8ff">IMG</div></div>
+          <div class="pct">유사도: 98.7%<br>2.45 MB</div></div>
+        <div class="g"><div><div class="meta">그룹 2</div><div class="sub">5 파일</div></div>
+          <div class="thumbs"><div class="th" style="background:#38bdf8">IMG</div><div class="th" style="background:#0ea5e9">IMG</div><div class="th" style="background:#7dd3fc">IMG</div><div class="th" style="background:#0284c7">IMG</div></div>
+          <div class="pct">유사도: 97.3%<br>3.12 MB</div></div>
+        <div class="g"><div><div class="meta">그룹 3</div><div class="sub">3 파일</div></div>
+          <div class="thumbs"><div class="th" style="background:#fb923c">IMG</div><div class="th" style="background:#f97316">IMG</div><div class="th" style="background:#fdba74">IMG</div></div>
+          <div class="pct">유사도: 96.1%<br>1.87 MB</div></div>
+        <div class="g"><div><div class="meta">그룹 4</div><div class="sub">4 파일</div></div>
+          <div class="thumbs"><div class="th" style="background:#334155">IMG</div><div class="th" style="background:#475569">IMG</div><div class="th" style="background:#1e293b">IMG</div><div class="th" style="background:#64748b">IMG</div></div>
+          <div class="pct">유사도: 95.4%<br>2.04 MB</div></div>
+      </div>
+      <div class="mid-foot"><span class="chip">🗂 그룹 내보내기 (CSV)</span><span style="margin-left:auto">1,247개 그룹 중 1개 선택됨</span></div>
+    </div>
+    <div class="right">
+      <div class="r-head"><h2>그룹 1</h2><span class="sim">유사도: 98.7%</span><span class="live">● 검색 중 실시간 갱신</span>
+        <span class="right">4 파일 (2.45 MB) <span class="ico">▦</span><span class="ico">☰</span> ＋ <input type="range"> ⊕</span></div>
+      <div class="cards">
+        <div class="card sel"><div class="mark">✓</div><div class="big" style="background:linear-gradient(135deg,#a5c8ff,#5b8def)">IMG_101500</div>
+          <div class="info"><div class="fn">IMG_20240501_101500.jpg</div><div class="dim">2024-05-01 10:15:00<br>612 KB<br>1920x1280</div>
+          <div class="row"><span class="badge">기준 파일</span><span class="pc">100%</span></div></div>
+          <div class="acts">👁 🗀 ❐ ✂ 🗑</div></div>
+        <div class="card"><div class="mark">✓</div><div class="big" style="background:linear-gradient(135deg,#93c5fd,#4a7ddb)">IMG_101501</div>
+          <div class="info"><div class="fn">IMG_20240501_101501.jpg</div><div class="dim">2024-05-01 10:15:01<br>605 KB<br>1920x1280</div>
+          <div class="row"><span class="pc">98.7%</span></div></div>
+          <div class="acts">👁 🗀 ❐ ✂ 🗑</div></div>
+        <div class="card"><div class="mark">✓</div><div class="big" style="background:linear-gradient(135deg,#b3d0ff,#6b9bf5)">IMG_101502</div>
+          <div class="info"><div class="fn">IMG_20240501_101502.jpg</div><div class="dim">2024-05-01 10:15:02<br>640 KB<br>1920x1280</div>
+          <div class="row"><span class="pc">98.5%</span></div></div>
+          <div class="acts">👁 🗀 ❐ ✂ 🗑</div></div>
+        <div class="card"><div class="mark">✓</div><div class="big" style="background:linear-gradient(135deg,#9db9f5,#3f6fd1)">IMG_101503</div>
+          <div class="info"><div class="fn">IMG_20240501_101503.jpg</div><div class="dim">2024-05-01 10:15:03<br>618 KB<br>1920x1280</div>
+          <div class="row"><span class="pc">98.3%</span></div></div>
+          <div class="acts">👁 🗀 ❐ ✂ 🗑</div></div>
+      </div>
+      <div class="tabs"><span class="on">상세 정보</span><span>EXIF 정보</span><span>유사도 분석</span><span>해시 정보</span></div>
+      <div class="detail">
+        <div class="preview" style="background:linear-gradient(135deg,#a5c8ff,#5b8def)">미리보기</div>
+        <table class="dtable">
+          <tr><td>파일 이름:</td><td>IMG_20240501_101500.jpg</td></tr>
+          <tr><td>전체 경로:</td><td class="link">D:\MediaLibrary\2024\05\01\IMG_20240501_101500.jpg</td></tr>
+          <tr><td>파일 크기:</td><td>612 KB (626,954 bytes)</td></tr>
+          <tr><td>파일 형식:</td><td>JPG 파일</td></tr>
+          <tr><td>수정 날짜:</td><td>2024-05-01 10:15:00</td></tr>
+          <tr><td>생성 날짜:</td><td>2024-05-01 10:15:00</td></tr>
+          <tr><td>해상도:</td><td>1920 x 1280</td></tr>
+          <tr><td>색상 모드:</td><td>RGB</td></tr>
+          <tr><td>카메라 모델:</td><td>Canon EOS R5</td></tr>
+          <tr><td>해시 (SHA-256):</td><td>a1b2c3d4e5f6g7h8j9k0l1m2n3o4p5q6r7s8t9u0t1v2w3x4y5z6</td></tr>
+        </table>
+        <svg width="230" height="200" viewBox="0 0 230 200">
+          <text x="115" y="14" text-anchor="middle" font-size="11">구조 유사도 (SSIM)</text>
+          <text x="8" y="100" font-size="11">색상 유사도</text>
+          <text x="168" y="100" font-size="11">히스토그램 유사도</text>
+          <text x="60" y="196" font-size="11">지각적 해시</text>
+          <text x="150" y="196" font-size="11">특징점 매칭</text>
+          <polygon points="115,30 195,85 165,170 65,170 35,85" fill="#e6f0ff" stroke="#7aa7f0"/>
+          <polygon points="115,45 175,90 150,155 80,155 55,90" fill="#9db9f5" stroke="#2b6cb0"/>
+        </svg>
+      </div>
+      <div class="status">✓ 검색 및 업데이트가 완료되었습니다.
+        <span class="mid2">총 12,846 파일 중 12,103 파일 검색 완료</span>
+        <span class="pbar"><i></i></span> 94%</div>
+    </div>
+  </div>
+</div>
+<p class="note">목업 A — 첨부 이미지 기준 한국어 그리드형. 썸네일은 자리표시자(실제 앱에서는 WIC 디코딩 미리보기).
+빨간 "검색 중 실시간 갱신" 표시는 요구사항(검색중 계속 출력·refresh) 반영 — <b>onMatchRef 스트리밍 콜백</b>으로 구현 예정.
+파일 액션(👁미리보기 🗀폴더열기 ❐복사 ✂잘라내기 🗑삭제) + 우클릭 메뉴(이동/표시/무시/분석)는 Similarity 참조.</p>
+</div>
+</body>
+</html>
