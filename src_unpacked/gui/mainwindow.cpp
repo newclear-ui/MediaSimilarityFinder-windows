@@ -45,6 +45,8 @@
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
+#include <QStyledItemDelegate>
+#include <QPainter>
 #include <QSystemTrayIcon>
 #include <QTabWidget>
 #include <QTextStream>
@@ -134,7 +136,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"viewS")) return S("작은 아이콘","Small icons");
   if (!std::strcmp(key,"viewList")) return S("리스트","List");
   if (!std::strcmp(key,"viewDetails")) return S("자세히","Details");
-  if (!std::strcmp(key,"viewPreview")) return S("미리보기 창으로 보기","Show preview pane");
+  if (!std::strcmp(key,"viewTiles")) return S("타일","Tiles");
   if (!std::strcmp(key,"kindMenu")) return S("검색 대상","Scan target");
   if (!std::strcmp(key,"kindImages")) return S("이미지","Images");
   if (!std::strcmp(key,"kindVideos")) return S("비디오","Videos");
@@ -212,7 +214,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.52\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.52\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.53\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.53\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -393,7 +395,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.52"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.53"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -523,6 +525,65 @@ void MainWindow::buildLeft(QWidget* w) {
   refreshFolders();
 }
 
+// ---------------------------------------------------------------------------
+// Explorer-style Tiles renderer for the group grid: a large icon on the left
+// with the (multi-line) label on its right, like Windows Explorer's Tiles view.
+// The check box is painted at the standard leading position with standard style
+// metrics, so the view's built-in hit testing keeps toggling marks.
+class TileDelegate : public QStyledItemDelegate {
+public:
+  static constexpr int kIconSide = 48;
+  static constexpr int kTileW = 320;
+  static constexpr int kTileH = 76;
+  explicit TileDelegate(QObject* parent=nullptr) : QStyledItemDelegate(parent) {}
+  QSize sizeHint(const QStyleOptionViewItem&, const QModelIndex&) const override {
+    return QSize(kTileW, kTileH);
+  }
+  void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+    QStyleOptionViewItem o(option);
+    initStyleOption(&o, index);
+    const QWidget* w = o.widget;
+    QStyle* st = w ? w->style() : QApplication::style();
+    painter->save();
+    st->drawPrimitive(QStyle::PE_PanelItemViewItem, &o, painter, w); // selection/focus bg
+    const QPalette::ColorRole textRole =
+        (o.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Text;
+    const bool enabled = (o.state & QStyle::State_Enabled) != 0;
+    QRect r = o.rect.adjusted(4, 4, -4, -4);
+    if (index.flags() & Qt::ItemIsUserCheckable) {
+      const int cw = st->pixelMetric(QStyle::PM_IndicatorWidth, &o, w);
+      const int ch = st->pixelMetric(QStyle::PM_IndicatorHeight, &o, w);
+      const QRect cr(r.left(), r.top() + (r.height() - ch) / 2, cw, ch);
+      QStyleOptionViewItem co(o);
+      co.rect = cr;
+      co.state &= ~(QStyle::State_On | QStyle::State_Off | QStyle::State_NoChange | QStyle::State_HasFocus);
+      const auto cs = static_cast<Qt::CheckState>(index.data(Qt::CheckStateRole).toInt());
+      co.state |= (cs == Qt::Checked) ? QStyle::State_On
+                  : (cs == Qt::PartiallyChecked ? QStyle::State_NoChange : QStyle::State_Off);
+      st->drawPrimitive(QStyle::PE_IndicatorItemViewItemCheck, &co, painter, w);
+      r.setLeft(cr.right() + 4);
+    }
+    const QRect ir(r.left(), r.top() + (r.height() - kIconSide) / 2, kIconSide, kIconSide);
+    if (!o.icon.isNull()) o.icon.paint(painter, ir);
+    r.setLeft(ir.right() + 8);
+    if (r.isValid() && !o.text.isEmpty()) {
+      const QStringList lines = o.text.split(QLatin1Char('\n'));
+      QFont bold = o.font; bold.setBold(true);
+      painter->setFont(bold);
+      const int lh = QFontMetrics(bold).height();
+      st->drawItemText(painter, r, Qt::AlignLeft | Qt::AlignTop, o.palette,
+                       enabled, lines.value(0), textRole);
+      if (lines.size() > 1) {
+        painter->setFont(o.font);
+        const QRect rr(r.left(), r.top() + lh + 2, r.width(), r.height() - lh - 2);
+        st->drawItemText(painter, rr, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                         o.palette, enabled, lines.mid(1).join(QLatin1Char('\n')), textRole);
+      }
+    }
+    painter->restore();
+  }
+};
+
 void MainWindow::buildMiddle(QWidget* w) {
   auto* lay = new QVBoxLayout(w); lay->setContentsMargins(0, 0, 0, 0);
   groupTitle_ = new QLabel(w); groupTitle_->setStyleSheet("font-weight:bold;");
@@ -533,7 +594,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   viewBtn_->setText(trStr(lang(), "viewBtn") + QStringLiteral(" ▾"));
   viewBtn_->setPopupMode(QToolButton::InstantPopup);
   viewMenu_ = new QMenu(viewBtn_);
-  const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewPreview"};
+  const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
   auto* vgroup = new QActionGroup(viewBtn_); vgroup->setExclusive(true);
   for (int i = 0; i < 7; ++i) {
     QAction* a = viewMenu_->addAction(trStr(lang(), vkeys[i]));
@@ -567,6 +628,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   midTabs_->addTab(vidTab, QString());
   connectResView(imgTree_, imgGrid_);
   connectResView(vidTree_, vidGrid_);
+  tileDelegate_ = new TileDelegate(this); // shared Tiles renderer for both grids
   // ---- ignore tab
   auto* igTab = new QWidget(midTabs_);
   auto* iglay = new QVBoxLayout(igTab);
@@ -666,7 +728,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.52"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.53"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -690,7 +752,7 @@ void MainWindow::applyStaticTexts() {
   groupSearch_->setPlaceholderText(trStr(l, "searchGroups"));
   viewBtn_->setText(trStr(l, "viewBtn") + QStringLiteral(" ▾"));
   {
-    const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewPreview"};
+    const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
     for (int i = 0; i < viewActs_.size() && i < 7; ++i) viewActs_[i]->setText(trStr(l, vkeys[i]));
   }
   kindBtn_->setText(trStr(l, "kindMenu") + QStringLiteral(" ▾"));
@@ -1032,23 +1094,32 @@ void MainWindow::updateKindBtn() {
 void MainWindow::groupViewChanged(int idx) {
   if (idx < 0) idx = 1;
   if (idx > 6) idx = 5;
-  if (idx <= 5) QSettings().setValue("ui/groupView", idx);
+  QSettings().setValue("ui/groupView", idx);
   for (auto* a : viewActs_) a->setChecked(a->data().toInt() == idx);
-  if (idx == 6) {
-    rightPane_->setVisible(!rightPane_->isVisible());
-    return;
-  }
   QTreeWidget* tree = (midTabs_ && midTabs_->currentIndex() == 1) ? vidTree_ : imgTree_;
   QListWidget* grid = (midTabs_ && midTabs_->currentIndex() == 1) ? vidGrid_ : imgGrid_;
   groupsView_ = tree; groupsList_ = grid;
-  if (idx <= 4) {
+  if (idx <= 4 || idx == 6) {
+    // Grid modes: 0-3 large-to-small icons, 4 list, 6 Explorer-style tiles
+    // (large icon left, label right). A previously saved 6 (removed preview
+    // toggle) now lands on tiles instead of crashing.
     tree->setVisible(false); grid->setVisible(true);
-    grid->setViewMode(idx == 4 ? QListView::ListMode : QListView::IconMode);
-    static const int sizes[5] = {256, 128, 64, 32, 32};
-    grid->setIconSize(QSize(sizes[idx], sizes[idx]));
+    const bool tiles = (idx == 6);
+    grid->setItemDelegate(tiles ? tileDelegate_ : nullptr);
+    if (tiles) {
+      grid->setViewMode(QListView::IconMode);
+      grid->setIconSize(QSize(TileDelegate::kIconSide, TileDelegate::kIconSide));
+      grid->setGridSize(QSize(TileDelegate::kTileW, TileDelegate::kTileH));
+    } else {
+      grid->setViewMode(idx == 4 ? QListView::ListMode : QListView::IconMode);
+      static const int sizes[5] = {256, 128, 64, 32, 32};
+      grid->setIconSize(QSize(sizes[idx], sizes[idx]));
+      grid->setGridSize(QSize()); // back to automatic per-item layout
+    }
     for (int r = 0; r < grid->count(); ++r)
       if (grid->item(r)->data(Qt::UserRole).toInt() == currentGroup_) { grid->setCurrentRow(r); break; }
   } else {
+    grid->setItemDelegate(nullptr);
     grid->setVisible(false); tree->setVisible(true);
     for (int r = 0; r < tree->topLevelItemCount(); ++r)
       if (tree->topLevelItem(r)->data(0, Qt::UserRole).toInt() == currentGroup_) {

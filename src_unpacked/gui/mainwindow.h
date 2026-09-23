@@ -23,6 +23,7 @@ class QListWidget; class QListWidgetItem; class QPushButton; class QProgressBar;
 class QLabel; class QComboBox; class QSpinBox; class QStackedWidget; class QSlider;
 class QToolButton; class QSplitter; class QCheckBox; class QTimer; class QStatusBar;
 class QTabWidget; class QFormLayout; class QToolBar; class QMenu; class QAction;
+class QStyledItemDelegate;
 
 // ---------------------------------------------------------------- language
 enum class UiLang { Ko, En };
@@ -166,6 +167,7 @@ private:
   QTreeWidget *imgTree_=nullptr, *vidTree_=nullptr;
   QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;
   QToolButton* viewBtn_=nullptr; QMenu* viewMenu_=nullptr; QVector<QAction*> viewActs_;
+  QStyledItemDelegate* tileDelegate_=nullptr; // Explorer-style Tiles renderer for the group grid
   QToolButton* kindBtn_=nullptr; QMenu* kindMenu_=nullptr; QAction *kindImgAct_=nullptr, *kindVidAct_=nullptr;
   QListWidget* ignoreList_=nullptr; QPushButton *unignoreBtn_=nullptr, *clearIgnoreBtn_=nullptr;
   QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
@@ -182,7 +184,6 @@ private:
   void gridSelected(QListWidgetItem*, QListWidgetItem*);
   void gridCheckChanged(QListWidgetItem*);
   // right
-  QWidget* rightPane_=nullptr;
   QLabel* detailTitle_=nullptr; QLabel* detailSim_=nullptr; QLabel* detailCount_=nullptr;
   QToolButton *viewGrid_=nullptr,*viewList_=nullptr; QSlider* zoom_=nullptr;
   QStackedWidget* viewStack_=nullptr; QListWidget* grid_=nullptr; QTreeWidget* list_=nullptr;
