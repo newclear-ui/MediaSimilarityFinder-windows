@@ -192,7 +192,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.42\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.42\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.43\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.43\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -307,7 +307,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.42"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.43"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -344,6 +344,7 @@ void MainWindow::buildToolbar() {
   refresh_->setToolTip(trStr(lang(), "refresh"));
   connect(refresh_, &QPushButton::clicked, this, &MainWindow::refreshFolders);
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
+  scan_->setDefault(true);
   pause_ = new QPushButton(toolBar_); pause_->setCheckable(true); cancel_ = new QPushButton(toolBar_);
   connect(scan_, &QPushButton::clicked, this, &MainWindow::startScan);
   connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
@@ -559,7 +560,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.42"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.43"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -621,10 +622,11 @@ void MainWindow::chooseFolder() {
 }
 void MainWindow::setRunning(bool v) {
   scanning_ = v;
-  if (v) scanPaused_ = false;
+  scanPaused_ = false;
   scan_->setEnabled(!v); browse_->setEnabled(!v); refresh_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
-  if (!v) pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
+  pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
+  if (!v) scan_->setFocus(); // return the highlight to Start, as at launch
   statusProg_->setRange(0, 100); statusProg_->setValue(0);
   if (v) uiTimer_->start(); else uiTimer_->stop();
 }
@@ -660,7 +662,7 @@ void MainWindow::startScan() {
   thread_->start();
 }
 void MainWindow::togglePauseScan() {
-  if (!worker_) return;
+  if (!scanning_ || !worker_) return; // pause acts only while its own scan runs
   scanPaused_ = !scanPaused_;
   QMetaObject::invokeMethod(worker_, scanPaused_ ? "pause" : "resume", Qt::QueuedConnection);
   pause_->setChecked(scanPaused_);
@@ -668,7 +670,8 @@ void MainWindow::togglePauseScan() {
   statusMsg_->setText(trStr(lang(), scanPaused_ ? "paused" : "scanning"));
 }
 void MainWindow::cancelScan() {
-  if (worker_) QMetaObject::invokeMethod(worker_, "cancel", Qt::QueuedConnection);
+  if (!scanning_ || !worker_) return;
+  QMetaObject::invokeMethod(worker_, "cancel", Qt::QueuedConnection);
   statusMsg_->setText(trStr(lang(), "scanCancel"));
 }
 void MainWindow::scanProgress(int p, QString path) {

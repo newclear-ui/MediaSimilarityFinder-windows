@@ -4,7 +4,7 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.2.42 — Search feel fixes (walk progress, merged pause, state save)
+- Current: 0.9.2.43 — Post-stop state restore + pause scope
 - Core Release build: PASS
 - CTest: **39/39 PASS** (CUDA build incl. `cuda_backend_test` on RTX 3080 Ti, `unicode_path_test`)
 - candidatePairs exhaustive correctness regression: PASS
