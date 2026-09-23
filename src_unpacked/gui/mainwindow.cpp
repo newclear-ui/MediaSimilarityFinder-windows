@@ -191,7 +191,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.38\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.38\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.39\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.39\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -303,7 +303,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.38"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.39"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -330,16 +330,13 @@ void MainWindow::buildUi() {
 void MainWindow::buildToolbar() {
   toolBar_ = new QToolBar(this); toolBar_->setMovable(false);
   centralWidget()->layout()->addWidget(toolBar_);
-  auto* folderBtn = new QPushButton(QStringLiteral("📁"), toolBar_);
-  folderBtn->setToolTip(trStr(lang(), "selectFolder"));
-  connect(folderBtn, &QPushButton::clicked, this, &MainWindow::chooseFolder);
   folder_ = new QLineEdit(toolBar_);
   folder_->setPlaceholderText(QStringLiteral("D:\\MediaLibrary"));
   folder_->setMinimumWidth(240);
   QSettings st; folder_->setText(st.value("ui/lastFolder", "").toString());
   browse_ = new QPushButton(QStringLiteral("…"), toolBar_); browse_->setFixedWidth(30);
   connect(browse_, &QPushButton::clicked, this, &MainWindow::chooseFolder);
-  refresh_ = new QPushButton(QStringLiteral("🔄"), toolBar_);
+  refresh_ = new QPushButton(QStringLiteral("🔄 ") + trStr(lang(), "refresh"), toolBar_);
   refresh_->setToolTip(trStr(lang(), "refresh"));
   connect(refresh_, &QPushButton::clicked, this, &MainWindow::refreshFolders);
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
@@ -371,14 +368,15 @@ void MainWindow::buildToolbar() {
   auto* helpBtn = new QPushButton(QStringLiteral("☰"), toolBar_);
   helpBtn->setToolTip(trStr(lang(), "help"));
   connect(helpBtn, &QPushButton::clicked, this, &MainWindow::showHelp);
-  toolBar_->addWidget(folderBtn); toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
+  toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); toolBar_->addWidget(pause_); toolBar_->addWidget(resume_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
-  toolBar_->addWidget(gpuEnabled_); toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(monPauseBtn_);
+  toolBar_->addWidget(gpuEnabled_);
+  toolBar_->addWidget(settingsBtn); toolBar_->addWidget(helpBtn);
+  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(monPauseBtn_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
-  toolBar_->addWidget(settingsBtn); toolBar_->addWidget(helpBtn);
 }
 
 void MainWindow::buildLeft(QWidget* w) {
@@ -438,32 +436,6 @@ void MainWindow::buildMiddle(QWidget* w) {
   lay->addLayout(bar);
   midTabs_ = new QTabWidget(w);
   lay->addWidget(midTabs_, 1);
-  // ---- folder tab
-  folderTab_ = new QWidget(midTabs_);
-  auto* flay = new QVBoxLayout(folderTab_);
-  folderPathLabel_ = new QLabel(folderTab_); folderPathLabel_->setWordWrap(true);
-  flay->addWidget(folderPathLabel_);
-  auto* frow = new QHBoxLayout;
-  auto* browseBtn = new QPushButton(folderTab_);
-  browseBtn->setObjectName("browseBtn");
-  connect(browseBtn, &QPushButton::clicked, this, &MainWindow::chooseFolder);
-  auto* scanHereBtn = new QPushButton(folderTab_);
-  scanHereBtn->setObjectName("scanHereBtn");
-  connect(scanHereBtn, &QPushButton::clicked, this, &MainWindow::startScan);
-  frow->addWidget(browseBtn); frow->addWidget(scanHereBtn); frow->addStretch(1);
-  flay->addLayout(frow);
-  auto* recentTitle = new QLabel(trStr(lang(), "recentFolders"), folderTab_);
-  recentTitle->setObjectName("recentTitle");
-  flay->addWidget(recentTitle);
-  recentList_ = new QListWidget(folderTab_);
-  flay->addWidget(recentList_, 1);
-  connect(recentList_, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
-    if (!it) return;
-    folder_->setText(it->text());
-    QSettings().setValue("ui/lastFolder", folder_->text());
-    updateFolderTab();
-  });
-  midTabs_->addTab(folderTab_, QString());
   // ---- results tabs (image / video share the view-mode logic via active pair)
   auto* imgTab = new QWidget(midTabs_);
   auto* imgLay = new QVBoxLayout(imgTab); imgLay->setContentsMargins(0, 0, 0, 0);
@@ -506,10 +478,9 @@ void MainWindow::buildMiddle(QWidget* w) {
   groupFoot_ = new QLabel(w); groupFoot_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
   foot->addWidget(groupFoot_, 1);
   lay->addLayout(foot);
-  updateFolderTab();
   updateIgnoreTab();
   groupViewChanged(QSettings().value("ui/groupView", 1).toInt());
-  onMidTabChanged(1);
+  onMidTabChanged(0);
 }
 
 void MainWindow::buildRight(QWidget* w) {
@@ -583,8 +554,9 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.38"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.39"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
+  refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(QStringLiteral("❚❚ ") + trStr(l, "pause"));
   resume_->setText(trStr(l, "resume"));
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
@@ -609,11 +581,8 @@ void MainWindow::applyStaticTexts() {
     const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewPreview"};
     for (int i = 0; i < viewActs_.size() && i < 7; ++i) viewActs_[i]->setText(trStr(l, vkeys[i]));
   }
-  midTabs_->setTabText(0, trStr(l, "tabFolder"));
-  if (auto* bb = folderTab_->findChild<QPushButton*>("browseBtn")) bb->setText(trStr(l, "browse"));
-  if (auto* sb = folderTab_->findChild<QPushButton*>("scanHereBtn")) sb->setText(trStr(l, "scanHere"));
-  if (auto* rt = folderTab_->findChild<QLabel*>("recentTitle")) rt->setText(trStr(l, "recentFolders"));
-  updateFolderTab();
+  midTabs_->setTabText(0, trStr(l, "tabImages"));
+  midTabs_->setTabText(1, trStr(l, "tabVideos"));
   updateIgnoreTab();
   imgTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "similarity"), trStr(l, "fileSize")});
   vidTree_->setHeaderLabels({trStr(l, "group"), trStr(l, "files"), trStr(l, "similarity"), trStr(l, "fileSize")});
@@ -632,7 +601,6 @@ void MainWindow::applyStaticTexts() {
   fileBar_->addAction(trStr(l, "paste"), this, &MainWindow::pasteFiles);
   fileBar_->addAction(trStr(l, "move"), this, &MainWindow::moveSelected);
   fileBar_->addAction(trStr(l, "del"), this, &MainWindow::deleteSelected);
-  fileBar_->addAction(trStr(l, "mark") + "/Space", this, &MainWindow::toggleMarkSelected);
   refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
 }
 
@@ -644,7 +612,7 @@ void MainWindow::setLanguage(int idx) {
 // ------------------------------------------------------------ scan control
 void MainWindow::chooseFolder() {
   const QString d = QFileDialog::getExistingDirectory(this, trStr(lang(), "chooseTitle"), folder_->text());
-  if (!d.isEmpty()) { folder_->setText(d); QSettings().setValue("ui/lastFolder", d); updateFolderTab(); }
+  if (!d.isEmpty()) { folder_->setText(d); QSettings().setValue("ui/lastFolder", d); }
 }
 void MainWindow::setRunning(bool v) {
   scanning_ = v;
@@ -678,11 +646,6 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::finished, thread_, &QThread::quit);
   connect(worker_, &ScanWorker::failed, thread_, &QThread::quit);
   scanStartMs_ = QDateTime::currentMSecsSinceEpoch();
-  QStringList recent = QSettings().value("ui/recentFolders").toStringList();
-  recent.removeAll(folder_->text()); recent.prepend(folder_->text());
-  while (recent.size() > 8) recent.removeLast();
-  QSettings().setValue("ui/recentFolders", recent);
-  updateFolderTab();
   setRunning(true);
   statusMsg_->setText(trStr(lang(), "scanning"));
   statusProg_->setValue(0);
@@ -913,8 +876,8 @@ void MainWindow::groupViewChanged(int idx) {
     rightPane_->setVisible(!rightPane_->isVisible());
     return;
   }
-  QTreeWidget* tree = (midTabs_ && midTabs_->currentIndex() == 2) ? vidTree_ : imgTree_;
-  QListWidget* grid = (midTabs_ && midTabs_->currentIndex() == 2) ? vidGrid_ : imgGrid_;
+  QTreeWidget* tree = (midTabs_ && midTabs_->currentIndex() == 1) ? vidTree_ : imgTree_;
+  QListWidget* grid = (midTabs_ && midTabs_->currentIndex() == 1) ? vidGrid_ : imgGrid_;
   groupsView_ = tree; groupsList_ = grid;
   if (idx <= 4) {
     tree->setVisible(false); grid->setVisible(true);
@@ -1003,35 +966,28 @@ void MainWindow::refreshGroupList() {
   int ni = 0, nv = 0;
   for (const auto& g : groups_) { if (g.kind == 2) ++nv; else ++ni; }
   groupTitle_->setText(trStr(lang(), "groups") + QString(" (%1)").arg(groups_.size()));
-  midTabs_->setTabText(1, QString("%1 (%2)").arg(trStr(lang(), "tabImages")).arg(ni));
-  midTabs_->setTabText(2, QString("%1 (%2)").arg(trStr(lang(), "tabVideos")).arg(nv));
-  midTabs_->setTabText(3, QString("%1 (%2)").arg(trStr(lang(), "tabIgnore")).arg(ignored_.size()));
+  midTabs_->setTabText(0, QString("%1 (%2)").arg(trStr(lang(), "tabImages")).arg(ni));
+  midTabs_->setTabText(1, QString("%1 (%2)").arg(trStr(lang(), "tabVideos")).arg(nv));
+  midTabs_->setTabText(2, QString("%1 (%2)").arg(trStr(lang(), "tabIgnore")).arg(ignored_.size()));
   const int tab = midTabs_->currentIndex();
-  fillPair(imgTree_, imgGrid_, 1, tab == 1);
-  fillPair(vidTree_, vidGrid_, 2, tab == 2);
+  fillPair(imgTree_, imgGrid_, 1, tab == 0);
+  fillPair(vidTree_, vidGrid_, 2, tab == 1);
   groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ >= 0 ? QString::number(currentGroup_ + 1) : "-"));
   updateIgnoreTab();
 }
 void MainWindow::activateTab(int idx) {
-  const bool res = (idx == 1 || idx == 2);
+  const bool res = (idx == 0 || idx == 1);
   sortBox_->setEnabled(res); viewBtn_->setEnabled(res); groupSearch_->setEnabled(res);
-  if (idx == 1 || idx == 2) {
-    groupsView_ = (idx == 2) ? vidTree_ : imgTree_;
-    groupsList_ = (idx == 2) ? vidGrid_ : imgGrid_;
+  if (idx == 0 || idx == 1) {
+    groupsView_ = (idx == 1) ? vidTree_ : imgTree_;
+    groupsList_ = (idx == 1) ? vidGrid_ : imgGrid_;
     refreshGroupList();
     groupViewChanged(QSettings().value("ui/groupView", 1).toInt());
-  } else if (idx == 0) {
-    updateFolderTab();
-  } else if (idx == 3) {
+  } else if (idx == 2) {
     updateIgnoreTab();
   }
 }
 void MainWindow::onMidTabChanged(int idx) { activateTab(idx); }
-void MainWindow::updateFolderTab() {
-  folderPathLabel_->setText(folder_->text().isEmpty() ? "-" : QDir::toNativeSeparators(folder_->text()));
-  recentList_->clear();
-  recentList_->addItems(QSettings().value("ui/recentFolders").toStringList());
-}
 void MainWindow::updateIgnoreTab() {
   ignoreList_->clear();
   QStringList ig = ignored_.values(); ig.sort();

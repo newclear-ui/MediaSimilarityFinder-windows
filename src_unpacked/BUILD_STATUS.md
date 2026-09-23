@@ -4,7 +4,7 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows common alignment: 0.9.2.34 — VS18 2026 baseline, CUDA unchanged
 - Windows CPU hardening: 0.9.2.35 — VS18 2026 build, 36/36 PASS, GUI runtime verified
-- Current: 0.9.2.38 — Unified 3-pane UI (tabs, view button, video/ignore, throughput)
+- Current: 0.9.2.39 — Screenshot feedback round (toolbar cleanup, folder tab removal)
 - Core Release build: PASS
 - CTest: **37/37 PASS**
 - candidatePairs exhaustive correctness regression: PASS

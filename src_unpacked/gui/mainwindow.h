@@ -147,7 +147,6 @@ private:
   QTreeWidget *imgTree_=nullptr, *vidTree_=nullptr;
   QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;
   QToolButton* viewBtn_=nullptr; QMenu* viewMenu_=nullptr; QVector<QAction*> viewActs_;
-  QWidget* folderTab_=nullptr; QLabel* folderPathLabel_=nullptr; QListWidget* recentList_=nullptr;
   QListWidget* ignoreList_=nullptr; QPushButton *unignoreBtn_=nullptr, *clearIgnoreBtn_=nullptr;
   QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
   QSplitter* split_=nullptr;
@@ -156,7 +155,6 @@ private:
   void fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel);
   void activateTab(int idx);
   void onMidTabChanged(int idx);
-  void updateFolderTab();
   void updateIgnoreTab();
   void unignoreSelected();
   void clearIgnored();
