@@ -4,7 +4,7 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.2.51 — Video scene-changes search + GPU status visibility + cache v4 + duration gate
+- Current: 0.9.2.52 — Incremental match checkpointing during scan (resume guarantee)
 - Core Release build: PASS
 - CTest: **42/42 PASS** (CUDA build incl. `cuda_backend_test`, `unicode_path_test`, `match_store_test`, `video_reencode_test`)
 - candidatePairs exhaustive correctness regression: PASS

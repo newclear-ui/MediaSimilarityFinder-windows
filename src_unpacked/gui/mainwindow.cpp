@@ -212,7 +212,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.51\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.51\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.52\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.52\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -268,13 +268,25 @@ void ScanWorker::run() {
     };
     control_.listing = [this](std::size_t n) { emit listingProgress(n); };
     control_.onMatch = [this](const msf::SearchMatch& m) {
-      QMutexLocker g(&pendingMutex_);
+      { QMutexLocker g(&pendingMutex_);
+        const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
+        pending_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1});
+      }
       const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-      const LiveMatch lm{l, r, m.percent, isVideoExt(l) ? 2 : 1};
-      pending_.push_back(lm);
-      allMatches_.push_back(lm);
+      allMatches_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1});
+      ++matchesSinceSave_;
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastEmitMs_ > 200) { lastEmitMs_ = now; emit matchesArrived(); }
+      // Incremental checkpoint: persist the FULL accumulated set (loaded + new,
+      // including pairs whose files are currently missing from disk) so that a
+      // kill, crash, or early close still leaves every match found so far in the
+      // index. Throttled by count AND time so million-match scans are not slowed.
+      // Must stay wholesale (never a partial set): saveMatches deletes rows
+      // absent from the saved set.
+      if (matchesSinceSave_ >= 25 && now - lastSaveMs_ > 5000) {
+        lastSaveMs_ = now; matchesSinceSave_ = 0;
+        persistMatchesSnapshot();
+      }
     };
     // Streaming-only delivery: on million-match scans, retaining every match
     // (two path strings each) costs hundreds of MB. The GUI accumulates
@@ -282,14 +294,12 @@ void ScanWorker::run() {
     control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
     gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
-    // Persist the accumulated match set (loaded + new). Wholesale replacement
-    // keeps deleted files out of stored results; partial sets on cancel keep
-    // the last completed checkpoint, matching the scan-side semantics.
-    {
-      std::vector<msf::SearchMatch> all; all.reserve((std::size_t)allMatches_.size());
-      for (const auto& m : allMatches_) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
-      engine_.saveMatches(all);
-    }
+    // Final persist of the accumulated match set (loaded + new, including pairs
+    // whose files are currently missing from disk). Wholesale replacement keeps
+    // every pair ever found, so unfinished work on those files resumes on the
+    // next scan of the same folder; a partial set on cancel keeps the last
+    // completed checkpoint, matching the scan-side semantics.
+    persistMatchesSnapshot();
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
     if (control_.cancel.load()) { emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
     const auto& fs = engine_.files();
@@ -309,7 +319,17 @@ void ScanWorker::run() {
     emit results(files, matches);
     emit finished(QString("Scan complete: %1 files, %2 analyzed, %3 candidates, %4 groups").arg(r.scanned).arg(r.analyzed).arg(r.candidates).arg(r.groups)
                   + QString("|%1|%2|%3|%4|%5").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates));
-  } catch (const std::exception& e) { emit failed(e.what()); }
+  } catch (const std::exception& e) {
+    // A failed scan must not discard what it already found: checkpoint first
+    // so the next scan of the same folder quick-loads the partial results.
+    persistMatchesSnapshot();
+    emit failed(e.what());
+  }
+}
+void ScanWorker::persistMatchesSnapshot() {
+  std::vector<msf::SearchMatch> all; all.reserve((std::size_t)allMatches_.size());
+  for (const auto& m : allMatches_) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
+  engine_.saveMatches(all);
 }
 void ScanWorker::pause() { control_.pause.store(true); }
 void ScanWorker::resume() { control_.pause.store(false); }
@@ -373,7 +393,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.51"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.52"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -646,7 +666,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.51"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.52"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));

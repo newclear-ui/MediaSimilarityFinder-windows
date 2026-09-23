@@ -21,7 +21,7 @@ static bool attachParentConsole() { return true; }
 #endif
 
 namespace {
-constexpr const char* kVersion = "0.9.2.51";
+constexpr const char* kVersion = "0.9.2.52";
 }
 
 int main(int argc, char** argv) {

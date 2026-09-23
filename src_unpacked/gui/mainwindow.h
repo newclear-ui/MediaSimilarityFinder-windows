@@ -60,7 +60,9 @@ private:
   bool scanImages_, scanVideos_;
   msf::ScanControl control_; msf::MediaSearchEngine engine_;
   QMutex pendingMutex_; QVector<LiveMatch> pending_;
-  QVector<LiveMatch> allMatches_;   // worker-thread only; persisted at the end
+  QVector<LiveMatch> allMatches_;   // worker-thread only; checkpointed incrementally + at the end
+  void persistMatchesSnapshot();    // save the full accumulated set (worker thread only)
+  int matchesSinceSave_=0; qint64 lastSaveMs_=0; // incremental-checkpoint throttle
   qint64 lastEmitMs_=0;
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction

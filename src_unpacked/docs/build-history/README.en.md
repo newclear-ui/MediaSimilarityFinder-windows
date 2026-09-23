@@ -55,6 +55,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.49 | Selective scan + live matching + multicore |
 | 0.9.2.50 | Match persistence (quick load) + preview WIC fallback |
 | 0.9.2.51 | Video scene-changes search + GPU status visibility + cache v4 + duration gate |
+| 0.9.2.52 | Incremental match checkpointing during scan (resume guarantee) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
