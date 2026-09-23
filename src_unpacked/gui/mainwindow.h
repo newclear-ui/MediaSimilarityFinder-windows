@@ -136,6 +136,7 @@ private:
   QString fmtSize(qulonglong) const;
   QString fileResolution(const QString&) const; // cached QImageReader::size
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
+  QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
   double pathBest(const QString&) const;
   void addMatch(const QString&, const QString&, double, int kind);
   QString findRoot(const QString&); // union-find over pathParent_
@@ -158,6 +159,7 @@ private:
   QHash<QString,double> bestPct_; QSet<QString> marked_;
   QHash<QString,int> pathKind_; QHash<QString,double> fileDur_;
   mutable QHash<QString,QIcon> thumbCache_;
+  mutable QHash<QString,QIcon> phCache_; // placeholder icons by lowercase suffix
   // Per-tick fresh-decode budget (see fileThumb): bounds GUI-thread blockage
   // so pause/cancel/close stay responsive during huge scans. Reset each tick.
   mutable int thumbBudget_ = 0;

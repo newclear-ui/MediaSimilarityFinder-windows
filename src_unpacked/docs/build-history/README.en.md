@@ -61,6 +61,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.55 | Window-layout non-restore root-cause fix (void QSettings) |
 | 0.9.2.56 | Scan-time UI freeze fix (thumbnail decode budget) |
 | 0.9.2.57 | Unstoppable final-analyze fix + recent-folders favorites |
+| 0.9.2.58 | Blank group pane fix (placeholder icon storm) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

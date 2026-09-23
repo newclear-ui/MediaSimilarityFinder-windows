@@ -215,7 +215,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.57\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.57\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.58\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.58\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -247,6 +247,23 @@ ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int 
 // Keeps pause/cancel/close responsive even when thousands of new groups
 // stream in during a scan.
 constexpr int kThumbBudgetPerTick = 4;
+// One shared provider: constructing QFileIconProvider per call plus a
+// per-file SHGetFileInfo costs milliseconds each — times 11k groups per
+// 600ms tick it blocked the GUI thread for tens of seconds (blank pane,
+// dead pause/cancel). All file-type lookups funnel through placeholderIcon().
+static QFileIconProvider* sharedIconProvider() {
+  static QFileIconProvider prov;
+  return &prov;
+}
+QIcon MainWindow::placeholderIcon(const QString& path) const {
+  const QString key = QFileInfo(path).suffix().toLower();
+  auto it = phCache_.find(key);
+  if (it != phCache_.cend()) return it.value();
+  const QIcon ic = sharedIconProvider()->icon(QFileInfo(path));
+  if (phCache_.size() > 64) phCache_.clear(); // suffix space is tiny; guard anyway
+  phCache_[key] = ic;
+  return ic;
+}
 
 void ScanWorker::run() {
   try {
@@ -465,7 +482,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.57"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.58"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -803,7 +820,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.57"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.58"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1445,7 +1462,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // a later tick. The explicitly selected file (detail pane) bypasses.
   if (!bypassBudget) {
     if (thumbBudget_ <= 0)
-      return QFileIconProvider().icon(QFileInfo(path));
+      return placeholderIcon(path);
     --thumbBudget_;
   }
   QIcon ic;
@@ -1471,7 +1488,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
       }
       dec.close();
     }
-    if (ic.isNull()) ic = QFileIconProvider().icon(QFileInfo(path));
+    if (ic.isNull()) ic = placeholderIcon(path);
     thumbCache_[path] = ic;
     return ic;
   }
@@ -1493,7 +1510,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   }
   if (!im.isNull())
     ic = QIcon(QPixmap::fromImage(im.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
-  if (ic.isNull()) ic = QFileIconProvider().icon(QFileInfo(path));
+  if (ic.isNull()) ic = placeholderIcon(path);
   // Bound the cache: group-list refreshes re-request the same representatives,
   // but an unbounded cache over a 100k+ scan would cost gigabytes. Evict a
   // chunk, never all: a full clear on huge scans caused a perpetual re-decode
