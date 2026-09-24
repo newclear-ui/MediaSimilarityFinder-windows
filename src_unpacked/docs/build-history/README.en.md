@@ -87,6 +87,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.81 | Single-tree revalidation + GUI test plugin path |
 | 0.9.2.82 | Portable launch fix (plugin layout + bundled CRT) |
 | 0.9.2.83 | Startup self-check (platform plugin pre-flight) |
+| 0.9.2.84 | Build output runs out of the box (in-build Qt plugin deploy) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
