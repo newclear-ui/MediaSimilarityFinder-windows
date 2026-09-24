@@ -2,7 +2,7 @@
 
 ## Current development version
 
-0.9.2.81 (engine 1.0.1, DB 1.0.1; official baseline 0.9.2.32)
+0.9.2.82 (engine 1.0.1, DB 1.0.1; official baseline 0.9.2.32)
 
 Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing on CUDA, incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 
@@ -14,7 +14,7 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 - `src_unpacked/tests/` - CTest tests, named `msf_*_test`.
 - `src_unpacked/scripts/` - `build_windows_cuda.ps1`, `build_windows_cpu.ps1`, `package_portable.ps1`.
 - `src_unpacked/docs/` - per-build history, architecture notes, `STRUCTURE.md`, and this file.
-- `src_unpacked/AGENTS.md` - working rules (docs policy, build baseline 0.9.2.32, working validation line 0.9.2.81, CUDA invariance, release procedure).
+- `src_unpacked/AGENTS.md` - working rules (docs policy, build baseline 0.9.2.32, working validation line 0.9.2.82, CUDA invariance, release procedure).
 
 ## Key entry points
 
