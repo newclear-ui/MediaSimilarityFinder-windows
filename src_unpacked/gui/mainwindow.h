@@ -150,8 +150,7 @@ private:
   QString findRoot(const QString&); // union-find over pathParent_
   // scan state
   QThread* thread_=nullptr; ScanWorker* worker_=nullptr; msf::ResourcePolicy policy_;
-  QVector<LiveMatch> matches_;                 // accumulated this scan
-  QVector<DupGroup> groups_;                   // built from matches_
+  QVector<DupGroup> groups_;                   // built incrementally from streamed matches
   QHash<QString,int> pathGroup_;               // path -> group index
   QHash<QString,QString> pathParent_;           // union-find parent
   QStringList allPaths_; QStringList matchRows_;
@@ -186,7 +185,6 @@ private:
   mutable int thumbBudget_ = 0;
   mutable int shellBudget_ = 0;
   QSet<QString> ignored_;
-  std::size_t lastDone_=0, lastTotal_=0;
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar
   QToolBar* toolBar_=nullptr;

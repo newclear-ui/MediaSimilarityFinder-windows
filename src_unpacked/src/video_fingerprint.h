@@ -30,6 +30,9 @@ public:
  void closePersistentCache() const;
  void clearCache() const;
  std::size_t memoryCacheSize() const;
+ // Read-only cache lookup (no decode on miss): lets callers attach cached
+ // per-frame data (e.g. candidate anchors) without re-analyzing files.
+ bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&) const;
 private:
  struct CacheEntry { std::uint64_t size=0, modified=0; VideoFingerprint fingerprint; };
  mutable std::unordered_map<std::string,CacheEntry> cache_;
@@ -41,7 +44,6 @@ private:
  static constexpr int kCacheFormatVersion=4;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
- bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&) const;
  void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&) const;
 };
 double video_similarity(const VideoFingerprint&,const VideoFingerprint&,const VideoSimilarityOptions& options={});

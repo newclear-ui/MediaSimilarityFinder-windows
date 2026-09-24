@@ -86,12 +86,24 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   ScanStats s; s.files=files_.size();
  imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
  imageMap_.clear(); videoMap_.clear(); imageMap_.reserve(files_.size()); videoMap_.reserve(files_.size());
- for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,i,f);imageMap_.push_back(i);}else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,i,f);videoMap_.push_back(i);}++s.indexed;}
+ for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,i,f);imageMap_.push_back(i);}else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,i,f);videoMap_.push_back(i); for(auto a:f.anchors) if(a) videoIdx_.add(i,a);}++s.indexed;}
  const auto possible=[](std::size_t n){return n>1?n*(n-1)/2:0;};s.possiblePairs=possible(imageMap_.size())+possible(videoMap_.size());
  // Stream candidate pairs instead of materializing the output of all eight indexes.
  // This is important for bucket-heavy datasets where the pair count can be millions.
  const double threshold=thresholdFor(maxDistance);
- auto best=[&](const MediaFile&a,const MediaFile&b){ return bestMatch(a,b); };
+  auto best=[&](const MediaFile&a,const MediaFile&b){ return bestMatch(a,b); };
+  // Anchor gate: best() above only sees the single XOR/mirror/crop values, so
+  // a re-encoded pair whose XORs drifted apart can never reach temporal
+  // through it. Frame anchors carry per-frame evidence instead: if any anchor
+  // pair is close, the pair earns the same temporal verification (which must
+  // still pass threshold to yield). Runs only on the miss path, and only for
+  // videos that actually carry anchors.
+  auto anchorSim=[&](const MediaFile&a,const MediaFile&b)->double{
+    if(a.anchors.empty()||b.anchors.empty()) return 0;
+    double z=0;
+    for(auto u:a.anchors){ if(!u)continue; for(auto v:b.anchors){ if(!v)continue; z=std::max(z,hash_similarity(u,v)); } }
+    return z;
+  };
  VideoFingerprintEngine temporalEngine;
  std::unordered_map<std::string,VideoFingerprint> baseCache; std::unordered_map<std::string,VideoCropFingerprint> cropCache;
  auto temporal=[&](const MediaFile& f, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
@@ -125,7 +137,10 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     double sim=best(files_[i],files_[j]);
     if(sim>=threshold){MediaMatch match{i,j,sim}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;return;}
 if(isVideo){
-      const double trigger=std::max(0.0,threshold-12.0);if(sim>=trigger&&durationGate(files_[i],files_[j])){
+      const double trigger=std::max(0.0,threshold-12.0);
+      double gate=sim;
+      if(gate<trigger) gate=std::max(gate,anchorSim(files_[i],files_[j]));
+      if(gate>=trigger&&durationGate(files_[i],files_[j])){
         VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
         if(temporal(files_[i],ai,ac)&&temporal(files_[j],bi,bc)){++s.videoTemporalChecks;double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2,2.0});if(ts>=threshold){MediaMatch match{i,j,ts}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}}
       }
@@ -143,9 +158,10 @@ if(isVideo){
     dedupCrop=true;
     const std::size_t reserveHint=std::min<std::size_t>(s.possiblePairs, std::max<std::size_t>(1024, files_.size()*2));
     seen.reserve(reserveHint);
-    // Seed only the pairs from incomplete full indexes. Complete kinds are skipped,
-    // so their potentially enormous pair set never needs to be retained for dedup.
-    auto seed=[&](std::size_t i,const Candidate& c){poll();auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));};
+    // Seed only verdict-known pairs (close in full-hash space, hence already
+    // evaluated above): seeding far pairs would wrongly skip their crop
+    // evaluation below, hiding crop-only duplicates.
+    auto seed=[&](std::size_t i,const Candidate& c){poll();if(c.distance>maxDistance)return;auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));};
     if(!imageComplete) imageIdx_.forEachCandidatePair(maxDistance,seed);
     if(!videoComplete) videoIdx_.forEachCandidatePair(maxDistance,seed);
     if(!imageComplete){consume(c4_);consume(c1_);consume(c916_);}

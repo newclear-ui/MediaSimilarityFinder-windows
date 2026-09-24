@@ -6,10 +6,9 @@
 #include <functional>
 namespace msf {
 enum class MediaKind { Unknown, Image, Video };
-struct MediaFile { std::string path; MediaKind kind=MediaKind::Unknown; std::uint64_t size=0,modified=0,fingerprint=0,mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0,mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0; double duration=0; };
+struct MediaFile { std::string path; MediaKind kind=MediaKind::Unknown; std::uint64_t size=0,modified=0,fingerprint=0,mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0,mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0; double duration=0; std::vector<std::uint64_t> anchors; };
 struct MediaMatch { std::size_t left=0,right=0; double percent=0; };
 struct ScanStats { std::size_t files=0,indexed=0,candidates=0,groups=0,possiblePairs=0; double candidateReductionPercent=0; std::vector<MediaMatch> matches; std::size_t videoCandidates=0,videoTemporalChecks=0; };
-struct ScanCancelled {}; // thrown by analyze() when its StopCheck fires; never escapes the engine
 class ScanPipeline {
  std::vector<MediaFile> files_;
  // Running candidate indexes shared by batch analyze() and incremental
@@ -20,7 +19,8 @@ class ScanPipeline {
 public:
   using MatchCallback = std::function<void(const MediaMatch&)>;
   // Polled periodically during analyze(); return true to abort promptly.
-  // Thrown as ScanCancelled (caught by the caller, never escapes the engine).
+  // Aborting is internal: analyze() returns partial stats, and the engine
+  // observes the stop through its own control flag as on every stop path.
   using StopCheck = std::function<bool()>;
   void add(const MediaFile& f);
  // Incremental first stage: add f and emit matches against previously added

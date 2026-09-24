@@ -1,10 +1,10 @@
 # Build Status
 
-- Current development version: **0.9.2.64**
+- Current development version: **0.9.2.65**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.2.64 — Direct stop delivery + video diagnostic counters
+- Current: 0.9.2.65 — Video L1 multi-anchor + variant dedup fix
 - Last completed Windows build/test line: **0.9.2.64**
 - Last completed v0.9.2.64 build: Core + GUI Release build PASS
 - Last completed v0.9.2.64 test run: **CTest 49/49 PASS**

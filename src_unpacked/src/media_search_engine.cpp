@@ -96,8 +96,21 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
  for(const auto& c:candidates){if(c.index>=candidateStates_.size())continue;const auto&x=candidateStates_[c.index];if(x.path==excludePath||x.fingerprint==0||x.kind!=kind)continue;double pct=bestAgainst(x);if(pct>=threshold)out.push_back({"",x.path,pct});}
  std::sort(out.begin(),out.end(),[](const SearchMatch&a,const SearchMatch&b){return a.percent>b.percent;}); return out;
 }
-SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){
- SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); const bool tx= db_.beginTransaction(); if(!tx) return r;
+// L1 temporal anchors: per-frame hashes loaded read-only from the persistent
+// video cache (never decoded here — cache misses simply yield no anchors and
+// the video falls back to XOR-only candidacy). Strided to at most 16 so very
+// long videos cannot flood the candidate index.
+static constexpr std::size_t kMaxAnchors = 16;
+static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf){
+  VideoFingerprint vf;
+  if(!engine.loadPersistent(mf.path, mf.size, mf.modified, vf) || vf.hashes.empty()) return;
+  const std::size_t n = vf.hashes.size();
+  const std::size_t stride = (n + kMaxAnchors - 1) / kMaxAnchors;
+  mf.anchors.reserve(std::min(n, kMaxAnchors));
+  for(std::size_t i = 0; i < n && mf.anchors.size() < kMaxAnchors; i += stride)
+    if(vf.hashes[i]) mf.anchors.push_back(vf.hashes[i]);
+}
+SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); const bool tx= db_.beginTransaction(); if(!tx) return r;
  auto old=db_.all();
  std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
  const bool hasIgnored=control && !control->ignoredPaths.empty();
@@ -243,7 +256,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // Unchanged files must participate in every incremental search.
   files_.clear();
   const auto currentStates=db_.all(); files_.reserve(currentStates.size());
-  for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); if((MediaKind)x.kind==MediaKind::Video) ++r.indexedVideos; }
+  for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); if((MediaKind)x.kind==MediaKind::Video){ loadVideoAnchors(videoEngine_, files_.back()); } if((MediaKind)x.kind==MediaKind::Video) ++r.indexedVideos; }
   ScanPipeline pipe; for(auto&f:files_)pipe.add(f);
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause

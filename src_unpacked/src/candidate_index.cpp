@@ -71,16 +71,20 @@ void CandidateIndex::forEachCandidatePair(unsigned maxDistance, const std::funct
      for(unsigned part=0;part<partitionCount;++part){
        const auto it=buckets_.find(key(e.hash,part));
        if(it==buckets_.end()) continue;
-       for(const auto otherPos:it->second){
-         if(seen[otherPos]==generation) continue;
-         seen[otherPos]=generation;
-         const auto&other=entries_[otherPos];
-         if(other.index<=e.index) continue;
-         if(seenGroups[other.group]==generation) continue;
-         seenGroups[other.group]=generation;
-         const unsigned d=popcount64(e.hash^other.hash);
-         if(d<=maxDistance) visitor(e.index,Candidate{other.index,d});
-       }
+        for(const auto otherPos:it->second){
+          if(seen[otherPos]==generation) continue;
+          seen[otherPos]=generation;
+          const auto&other=entries_[otherPos];
+          if(other.index<=e.index) continue;
+          if(seenGroups[other.group]==generation) continue;
+          const unsigned d=popcount64(e.hash^other.hash);
+          if(d>maxDistance) continue;
+          // Mark only on yield: marking before the distance check dropped file
+          // pairs whose first evaluated variant failed while a later variant
+          // would have passed (mirror/crop false negatives).
+          seenGroups[other.group]=generation;
+          visitor(e.index,Candidate{other.index,d});
+        }
      }
    }
  } else {
