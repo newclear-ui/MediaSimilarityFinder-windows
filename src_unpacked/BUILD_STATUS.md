@@ -5,6 +5,7 @@
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
 - Current: 0.9.2.63 — Disk thumbnail cache (instant rescan thumbs) + favorites/filename/resolution/0B fixes
+- Last completed Windows build/test line: **0.9.2.63**. The current working tree contains post-build runtime/packaging/documentation fixes that have **not yet been rebuilt**.
 - Core + GUI Release build: PASS
 - CTest: **49/49 PASS** at v0.9.2.63
 - v0.9.2.63 validation: thumb_cache_test included; --version 0.9.2.63 and --smoke exit 0
