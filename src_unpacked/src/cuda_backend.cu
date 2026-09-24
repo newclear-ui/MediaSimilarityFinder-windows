@@ -41,7 +41,8 @@ __global__ void msf_phash_kernel(const std::uint8_t* in,std::uint64_t count,std:
         const int u=tid/8, v=tid%8;
         double sum=0.0;
         for(int y=0;y<32;++y) sum += tmp[u*32+y]*c_cos[v][y];
-        coeff[tid]=sum*c_norm[v];
+        const double c=sum*c_norm[v];
+        coeff[tid]=(c>-1e-7&&c<1e-7)?0.0:c;
     }
     __syncthreads();
 

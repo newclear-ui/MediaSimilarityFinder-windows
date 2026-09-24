@@ -90,6 +90,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.2.84 | 빌드 산출물 즉시 실행(Qt 플러그인 빌드 내장 배포) |
 | 0.9.2.85 | 자가진단 경로 버그 수정(GetModuleFileNameW) |
 | 0.9.2.86 | 고속 pHash·탐색기 폴백·ffprobe DLL |
+| 0.9.2.87 | CUDA 커널 1e-7 스냅(CPU·GPU 단색 일치) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

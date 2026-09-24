@@ -6,15 +6,14 @@
 #include <vector>
 // Validated on RTX 3080 Ti (sm_86), CUDA 13.4, VS18 MSVC 19.51:
 // the CPU reference evaluates the same double-precision separable DCT as the
-// CUDA kernel (cached cosine tables, rows-then-columns, 1e-7 near-zero snap).
-// The two agree bit-exactly on well-conditioned data (all 56 random images
-// below), but can disagree where coefficients sit at numerical zero:
-// synthetic lattice pattern #5 has ~30 AC coefficients within 1e-12 of its
-// median, and the CPU snap pins them to one side while the kernel keeps
-// rounding noise (observed: 19). Random images require exact equality, so a
-// broken kernel (wrong indexing, races, launch failure) still fails loudly
-// there; the structured bound (<=24) is a sanity gate only. A broken kernel
-// lands at distance ~16-64 and still fails on the random set.
+// CUDA kernel (cached cosine tables, rows-then-columns, 1e-7 near-zero snap),
+// and the kernel applies the same snap, so CPU and GPU agree bit-exactly on
+// every input here: all 56 random images and all 8 synthetic patterns,
+// including lattice pattern #5 (measured ham=0), whose ~30 near-zero AC
+// coefficients previously diverged by 19 bits. The structured bound (<=8,
+// the product's D<=8 search range) is therefore exact in practice; a broken
+// kernel (wrong indexing, races, launch failure) lands at distance ~16-64
+// and still fails loudly.
 static int ham64(std::uint64_t a, std::uint64_t b) {
     std::uint64_t x = a ^ b; int n = 0; while (x) { x &= x - 1; ++n; } return n;
 }
@@ -39,7 +38,7 @@ int main() {
         auto cpu = msf::perceptual_hash(one, 32, 32);
         const int h = ham64(cpu, gpuHashes[i]);
         if (i < structured) {
-            if (h > 24) { std::cerr << "hash mismatch at " << i << " ham=" << h << "\n"; return 2; }
+            if (h > 8) { std::cerr << "hash mismatch at " << i << " ham=" << h << "\n"; return 2; }
         } else {
             if (h != 0) { std::cerr << "hash mismatch at random " << i << " ham=" << h << "\n"; return 3; }
         }
