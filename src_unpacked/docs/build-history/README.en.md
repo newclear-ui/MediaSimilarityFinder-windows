@@ -84,6 +84,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.78 | Fixed pre-count and selection-filter alignment |
 | 0.9.2.79 | Reuse existing Explorer window + three GPU states |
 | 0.9.2.80 | Reference tie-break (similarity first, then resolution/size) |
+| 0.9.2.81 | Single-tree revalidation + GUI test plugin path |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
