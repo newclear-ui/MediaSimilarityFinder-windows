@@ -35,7 +35,7 @@ Current CMake registers 49 tests, including `thumb_cache_test`, `video_reencode_
 - Build: `scripts/build_windows_cuda.ps1 -VcpkgRoot C:\src\vcpkg` (VS 2026 x64, project-local `vcpkg_installed`, `vcpkg.json` is the single dependency source).
 - Smoke: `MediaSimilarityFinder.exe --smoke` (offscreen) and `--version`.
 - Version bump files: `CMakeLists.txt`, `vcpkg.json`, `gui/main.cpp` (`kVersion`), `scripts/package_portable.ps1`, `src/index_manager.cpp`.
-- CI workflows under `.github/workflows/` are historical and currently lag the VS2026/current-version build scripts; do not treat them as the current build standard until updated.
+- CI workflows under `.github/workflows/` are manual-dispatch regression workflows aligned with VS2026, `src_unpacked`, and project-local `vcpkg_installed`. The hosted CUDA workflow validates CUDA compilation and device-independent tests; local NVIDIA hardware remains the runtime validation authority.
 
 ## URLs
 
