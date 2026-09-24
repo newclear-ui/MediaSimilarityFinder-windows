@@ -8,6 +8,7 @@
 #include "mainwindow.h"
 #include "media_search_engine.h"
 #include <QCoreApplication>
+#include <QObject>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -41,7 +42,12 @@ int main(int argc, char** argv) {
   // files -> 6 incremental pairs against previously added files).
   ScanWorker w(QString::fromStdString(root), QString::fromStdString(ad),
                8, 50, 50, false, true, false);
+  // Pre-walk denominator: 4 BMPs in, 4 counted (fixed total for the headline
+  // ratio, independent of the engine's growing streaming total).
+  qulonglong target = 0;
+  QObject::connect(&w, &ScanWorker::targetCount, [&](qulonglong n) { target = n; });
   w.run();
+  if (target != 4) { std::cerr << "target=" << target << "\n"; return 5; }
   const auto pending = w.takePending();
   if (pending.size() < 6) { std::cerr << "streamed=" << pending.size() << "\n"; return 2; }
   // Phase 2: a fresh engine on the same managed index must quick-load them.

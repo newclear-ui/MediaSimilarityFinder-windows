@@ -67,6 +67,7 @@ signals:
   void matchesArrived();            // throttled; call takePending()
   void quickLoaded(int);            // stored matches reloaded from the index
   void results(QVector<GuiFile> files, QStringList matchRows);
+  void targetCount(qulonglong);   // pre-walk file total (fixed denominator)
   void finished(QString);
   void failed(QString);
 private:
@@ -105,6 +106,7 @@ private slots:
   void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
   void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
   void onScanCounts(qulonglong,qulonglong);
+  void onTargetCount(qulonglong);
   void onListingProgress(std::size_t);
   void onQuickLoaded(int);
   void onResults(QVector<GuiFile> files, QStringList matchRows);
@@ -135,7 +137,7 @@ private:
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
   void rebuildGroups();          // union-find over accumulated matches
-  void refreshStreaming();       // throttled rebuild+fill for live scans
+  void refreshStreaming(bool force=false); // throttled rebuild+fill for live scans
   void refreshGroupList();       // middle pane from groups_
   void refreshFileViews();       // right grid+list from selected group
   void refreshDetail();          // tabs for current file
@@ -169,6 +171,7 @@ private:
   QString currentFile_; int currentGroup_=-1;
   int lastPct_=0; QString lastPath_; int maxPctShown_=0;
   qulonglong lastDoneN_=0, lastTotalN_=0;
+  qulonglong targetTotal_=0; // pre-walk fixed denominator (kind-filtered)
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
   qint64 pauseStartMs_=0, pausedAccumMs_=0; // ETR excludes paused time (see elapsedActiveMs)

@@ -22,6 +22,7 @@
 #include <QFileDialog>
 #include <QFileIconProvider>
 #include <QFileInfo>
+#include <QDirIterator>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -53,6 +54,8 @@
 #include <QPainter>
 #include <QSystemTrayIcon>
 #include <QTabWidget>
+#include <QTextEdit>
+#include <QTextOption>
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
@@ -121,6 +124,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"cpu")) return S("CPU 사용","CPU usage");
   if (!std::strcmp(key,"ram")) return S("RAM 사용","RAM usage");
   if (!std::strcmp(key,"monitor")) return S("모니터","Monitor");
+  if (!std::strcmp(key,"monitorGpu")) return S("모니터 GPU","Monitor GPU");
   if (!std::strcmp(key,"general")) return S("일반","General");
   if (!std::strcmp(key,"tabFolder")) return S("폴더","Folders");
   if (!std::strcmp(key,"tabImages")) return S("결과: 이미지","Results: Images");
@@ -143,8 +147,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"viewDetails")) return S("자세히","Details");
   if (!std::strcmp(key,"viewTiles")) return S("타일","Tiles");
   if (!std::strcmp(key,"kindMenu")) return S("검색 대상","Scan target");
-  if (!std::strcmp(key,"kindImages")) return S("이미지","Images");
-  if (!std::strcmp(key,"kindVideos")) return S("비디오","Videos");
+  if (!std::strcmp(key,"kindImages")) return S("사진","Photos");
+  if (!std::strcmp(key,"kindVideos")) return S("영상","Videos");
   if (!std::strcmp(key,"sortSim")) return S("유사도 내림차순","Similarity");
   if (!std::strcmp(key,"sortName")) return S("이름 오름차순","Name");
   if (!std::strcmp(key,"searchGroups")) return S("그룹 검색","Search groups");
@@ -178,7 +182,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"cut")) return S("잘라내기","Cut");
   if (!std::strcmp(key,"paste")) return S("붙여넣기","Paste");
   if (!std::strcmp(key,"move")) return S("이동...","Move...");
-  if (!std::strcmp(key,"del")) return S("삭제","Delete");
+  if (!std::strcmp(key,"del")) return S("휴지통으로","Move to Trash");
   if (!std::strcmp(key,"rename")) return S("이름 바꾸기","Rename");
   if (!std::strcmp(key,"mark")) return S("Mark","Mark");
   if (!std::strcmp(key,"unmark")) return S("Mark 해제","Unmark");
@@ -223,7 +227,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.68\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.68\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.69\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.69\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -295,6 +299,30 @@ void ScanWorker::run() {
         ++loaded;
       }
       if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
+    }
+    // Fixed denominator: count kind-filtered files up front (same universe the
+    // engine walks: every non-ignored file, videos by extension when videos
+    // are on, non-videos when images are on). The engine's streaming total
+    // grows as the walk continues, so without this the headline ratio chases
+    // a moving target and sits at 100% spuriously.
+    {
+      QSet<QString> ign;
+      for (const auto& s : control_.ignoredPaths) ign.insert(QString::fromStdString(s));
+      qulonglong total = 0;
+      QDirIterator it(QDir::cleanPath(root_), QDir::Files | QDir::NoDotAndDotDot,
+                      QDirIterator::Subdirectories);
+      int budget = 0;
+      while (it.hasNext()) {
+        it.next();
+        if ((++budget & 4095) == 0 && control_.cancel.load()) break;
+        const QString p = it.filePath();
+        if (ign.contains(p) || ign.contains(QDir::toNativeSeparators(p))) continue;
+        const bool vid = isVideoExt(p);
+        if (vid && !scanVideos_) continue;
+        if (!vid && !scanImages_) continue;
+        ++total;
+      }
+      emit targetCount(total);
     }
     // Progress signals arrive once per analyzed file; a fast Maximum scan would
     // flood the GUI event loop (setText per file) and freeze the window —
@@ -501,7 +529,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.68"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.69"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -534,7 +562,7 @@ void MainWindow::buildToolbar() {
   centralWidget()->layout()->addWidget(toolBar_);
   folder_ = new QLineEdit(toolBar_);
   folder_->setPlaceholderText(QStringLiteral("D:\\MediaLibrary"));
-  folder_->setMinimumWidth(240);
+  folder_->setMinimumWidth(200);
   QSettings st; folder_->setText(st.value("ui/lastFolder", "").toString());
   browse_ = new QPushButton(QStringLiteral("…"), toolBar_); browse_->setFixedWidth(30);
   connect(browse_, &QPushButton::clicked, this, &MainWindow::chooseFolder);
@@ -548,13 +576,16 @@ void MainWindow::buildToolbar() {
   connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
   connect(cancel_, &QPushButton::clicked, this, &MainWindow::cancelScan);
   preset_ = new QComboBox(toolBar_);
-  preset_->addItems({QStringLiteral("Maximum"), QStringLiteral("High"), QStringLiteral("Balanced"),
-                     QStringLiteral("Gaming"), QStringLiteral("Custom")});
+  // Percentages in the label make each level self-explanatory (Maximum 90%,
+  // High 75%, Balanced 55%, Gaming 25%).
+  preset_->addItems({QStringLiteral("Maximum 90%"), QStringLiteral("High 75%"), QStringLiteral("Balanced 55%"),
+                     QStringLiteral("Gaming 25%"), QStringLiteral("Custom")});
   preset_->setCurrentIndex(2);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
   cpu_ = new QSpinBox(toolBar_); gpu_ = new QSpinBox(toolBar_);
   cpu_->setRange(1, 100); gpu_->setRange(1, 100);
-  cpu_->setSuffix(QStringLiteral("% CPU")); gpu_->setSuffix(QStringLiteral("% GPU"));
+  cpu_->setPrefix(QStringLiteral("CPU ")); gpu_->setPrefix(QStringLiteral("GPU "));
+  cpu_->setSuffix(QStringLiteral("%")); gpu_->setSuffix(QStringLiteral("%"));
   cpu_->setValue(policy_.cpuPercent); gpu_->setValue(policy_.gpuPercent);
   connect(cpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   connect(gpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
@@ -580,19 +611,21 @@ void MainWindow::buildToolbar() {
   monPauseBtn_->setToolTip(trStr(lang(), "pause"));
   monPauseBtn_->setCheckable(true);
   connect(monPauseBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitorPause);
-  auto* settingsBtn = new QPushButton(QStringLiteral("⚙"), toolBar_);
-  settingsBtn->setToolTip(trStr(lang(), "settings"));
-  connect(settingsBtn, &QPushButton::clicked, this, &MainWindow::configureMonitor);
-  auto* helpBtn = new QPushButton(QStringLiteral("☰"), toolBar_);
-  helpBtn->setToolTip(trStr(lang(), "help"));
-  connect(helpBtn, &QPushButton::clicked, this, &MainWindow::showHelp);
+  auto* utilBtn_ = new QToolButton(toolBar_);
+  utilBtn_->setText(QStringLiteral("☰"));
+  utilBtn_->setToolTip(trStr(lang(), "settings") + "/" + trStr(lang(), "help"));
+  utilBtn_->setPopupMode(QToolButton::InstantPopup);
+  auto* utilMenu_ = new QMenu(utilBtn_);
+  utilMenu_->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
+  utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
+  utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
   toolBar_->addWidget(gpuEnabled_);
   toolBar_->addWidget(kindBtn_);
-  toolBar_->addWidget(settingsBtn); toolBar_->addWidget(helpBtn);
+  toolBar_->addWidget(utilBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(monPauseBtn_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
@@ -704,6 +737,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   viewBtn_ = new QToolButton(w);
   viewBtn_->setText(trStr(lang(), "viewBtn") + QStringLiteral(" ▾"));
   viewBtn_->setPopupMode(QToolButton::InstantPopup);
+  viewBtn_->setMinimumSize(110, 30); // finger-sized target, not a tiny label
   viewMenu_ = new QMenu(viewBtn_);
   const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
   auto* vgroup = new QActionGroup(viewBtn_); vgroup->setExclusive(true);
@@ -716,7 +750,8 @@ void MainWindow::buildMiddle(QWidget* w) {
   groupSearch_ = new QLineEdit(w); groupSearch_->setClearButtonEnabled(true);
   connect(groupSearch_, &QLineEdit::textChanged, this, &MainWindow::groupSearchChanged);
   connect(sortBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { refreshGroupList(); });
-  bar->addWidget(sortBox_); bar->addWidget(viewBtn_); bar->addWidget(groupSearch_, 1);
+  groupSearch_->setMaximumWidth(280); // balanced against the view button
+  bar->addWidget(sortBox_); bar->addWidget(viewBtn_); bar->addWidget(groupSearch_);
   lay->addLayout(bar);
   midTabs_ = new QTabWidget(w);
   lay->addWidget(midTabs_, 1);
@@ -841,13 +876,14 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.68"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.69"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
   pause_->setChecked(scanPaused_);
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
-  gpuEnabled_->setText(trStr(l, "allowGpu"));
+  gpuEnabled_->setText(trStr(l, "monitorGpu"));
+  gpuEnabled_->setToolTip(trStr(l, "allowGpu"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
   monBtn_->setChecked(monitorEnabled_);
   auto* leftTitle = findChild<QLabel*>("leftTitle"); if (leftTitle) leftTitle->setText(trStr(l, "explorer"));
@@ -891,7 +927,8 @@ void MainWindow::applyStaticTexts() {
   fileBar_->addAction(trStr(l, "cut"), this, &MainWindow::cutSelected);
   fileBar_->addAction(trStr(l, "paste"), this, &MainWindow::pasteFiles);
   fileBar_->addAction(trStr(l, "move"), this, &MainWindow::moveSelected);
-  fileBar_->addAction(trStr(l, "del"), this, &MainWindow::deleteSelected);
+  fileBar_->addAction(QApplication::style()->standardIcon(QStyle::SP_TrashIcon),
+                      trStr(l, "del"), this, &MainWindow::deleteSelected);
   refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
 }
 
@@ -907,7 +944,7 @@ void MainWindow::chooseFolder() {
 }
 void MainWindow::setRunning(bool v) {
   scanning_ = v;
-  scanPaused_ = false; maxPctShown_ = 0; lastDoneN_ = 0; lastTotalN_ = 0;
+  scanPaused_ = false; maxPctShown_ = 0; lastDoneN_ = 0; lastTotalN_ = 0; targetTotal_ = 0;
   scan_->setEnabled(!v); browse_->setEnabled(!v); refresh_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
@@ -961,6 +998,7 @@ void MainWindow::startScan() {
   connect(thread_, &QThread::started, worker_, &ScanWorker::run);
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);
   connect(worker_, &ScanWorker::progressCount, this, &MainWindow::onScanCounts);
+  connect(worker_, &ScanWorker::targetCount, this, &MainWindow::onTargetCount);
   connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
   connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
   connect(worker_, &ScanWorker::quickLoaded, this, &MainWindow::onQuickLoaded);
@@ -989,11 +1027,11 @@ void MainWindow::togglePauseScan() {
   pause_->setChecked(scanPaused_);
   pause_->setText(scanPaused_ ? trStr(lang(), "resume") : QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   statusMsg_->setText(trStr(lang(), scanPaused_ ? "paused" : "scanning"));
-  // Freezing the frame immediately: drain everything streamed so far so the
-  // paused view is complete within one tick instead of whenever the worker
-  // happens to emit next (it emits nothing while paused).
+  // Freezing the frame immediately: drain everything streamed so far and force
+  // one full refresh, so the paused view is complete within the click instead
+  // of whenever the gate would next allow (the worker emits nothing paused).
   drainMatches();
-  groupsDirty_ = true;
+  refreshStreaming(true);
 }
 void MainWindow::cancelScan() {
   if (!scanning_ || !worker_) return;
@@ -1005,15 +1043,29 @@ void MainWindow::cancelScan() {
 void MainWindow::onScanCounts(qulonglong done, qulonglong total) {
   lastDoneN_ = (std::size_t)done; lastTotalN_ = (std::size_t)total;
 }
+void MainWindow::onTargetCount(qulonglong n) {
+  targetTotal_ = (qulonglong)n;
+  updateStatusCounts();
+}
 void MainWindow::scanProgress(int p, QString path) {
   lastPct_ = p; lastPath_ = path;
   statusProg_->setRange(0, 100);
+  // Headline ratio uses the fixed pre-walk denominator when known: scanned /
+  // target. The engine's streaming total grows mid-walk, which used to pin the
+  // display at a spurious 100%. Falls back to the engine percent otherwise.
+  int show = p;
+  if (targetTotal_ > 0) {
+    show = lastTotalN_ >= targetTotal_ ? 100
+           : int((double)lastTotalN_ * 100.0 / (double)targetTotal_);
+  }
   // Streaming totals grow as the walk continues, so raw percent can dip.
   // The bar never moves backwards; exact counts stay in the message.
-  if (p > maxPctShown_) maxPctShown_ = p;
+  // The message headline mirrors the fixed denominator when known.
+  if (show > maxPctShown_) maxPctShown_ = show;
   statusProg_->setValue(maxPctShown_);
   const qint64 el = elapsedActiveMs();
-  statusMsg_->setText(scanStatusText(lastDoneN_, lastTotalN_, maxPctShown_, path, el));
+  const qulonglong msgTotal = targetTotal_ > 0 ? targetTotal_ : lastTotalN_;
+  statusMsg_->setText(scanStatusText(lastDoneN_, msgTotal, maxPctShown_, path, el));
   updateStatusCounts();
 }
 void MainWindow::onListingProgress(std::size_t n) {
@@ -1204,15 +1256,19 @@ void MainWindow::drainMatches() {
   for (const auto& m : v) addMatch(m.left, m.right, m.percent, m.kind);
   groupsDirty_ = true;
 }
-void MainWindow::refreshStreaming() {
-  rebuildGroups();
+void MainWindow::refreshStreaming(bool force) {
   // Full list rebuilds (widget churn for every group) are the most expensive
-  // GUI work during a scan. Throttle them adaptively so paint events and
-  // pause/cancel clicks always get through: at most one full fill per
-  // 3x measured cost (600ms..3s). Status counts stay live every tick.
+  // GUI work during a scan. rebuildGroups() itself walks every accumulated
+  // path, so it stays inside the gate too — running it every tick on 10k+
+  // groups starved paints and froze the pane (blank-list recurrence).
+  // Throttle adaptively so paint events and pause/cancel clicks always get
+  // through: at most one full refresh per 3x measured cost (600ms..3s).
+  // Status counts stay live every tick. force=true (pause click) refreshes
+  // immediately regardless of the gate.
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   const qint64 interval = std::clamp(lastFillCostMs_ * 3, (qint64)600, (qint64)3000);
-  if (matchSeq_ != lastFillSig_ && now - lastFillMs_ >= interval) {
+  if ((force || (matchSeq_ != lastFillSig_ && now - lastFillMs_ >= interval))) {
+    rebuildGroups();
     lastFillSig_ = matchSeq_; lastFillMs_ = now;
     QElapsedTimer t; t.start();
     refreshGroupList(); refreshFileViews();
@@ -1291,9 +1347,13 @@ void MainWindow::updateKindBtn() {
     m = 3;
   }
   QSettings().setValue("ui/kindMask", m);
-  kindBtn_->setToolTip(trStr(lang(), "kindMenu") + ": "
-                         + (m == 3 ? trStr(lang(), "kindImages") + "+" + trStr(lang(), "kindVideos")
-                                   : (m == 1 ? trStr(lang(), "kindImages") : trStr(lang(), "kindVideos"))));
+  // Button mirrors the selection so the state is visible without opening the
+  // menu; bold when filtered to a single kind (on/off feedback per click).
+  const QString sel = (m == 3 ? trStr(lang(), "kindImages") + "+" + trStr(lang(), "kindVideos")
+                              : (m == 1 ? trStr(lang(), "kindImages") : trStr(lang(), "kindVideos")));
+  kindBtn_->setText(sel + QStringLiteral(" ▾"));
+  QFont f = kindBtn_->font(); f.setBold(m != 3); kindBtn_->setFont(f);
+  kindBtn_->setToolTip(trStr(lang(), "kindMenu") + ": " + sel);
 }
 void MainWindow::groupViewChanged(int idx) {
   if (idx < 0) idx = 0;
@@ -1361,6 +1421,13 @@ void MainWindow::setGroupMarked(int gi, bool on) {
 void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel) {
   tree->blockSignals(true); grid->blockSignals(true);
   tree->clear(); grid->clear();
+  // During a live scan, decoding/file-DB hits for every group each fill would
+  // re-freeze the tick the budgets were meant to protect (11k SQLite reads per
+  // fill). Only the first rows get real thumbs mid-scan; the rest show cheap
+  // file-type icons until pause/finish triggers a full refresh. The list
+  // itself (names/counts) always renders — that is the intermediate result.
+  int thumbSeen = 0;
+  constexpr int kScanThumbRows = 60;
   const QString f = groupSearch_->text().trimmed().toLower();
   for (int i = 0; i < groups_.size(); ++i) {
     const auto& g = groups_[i];
@@ -1390,7 +1457,10 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     const QString rep = g.paths.isEmpty() ? QString() : g.paths[0];
     // Request the view's own icon size so cells stay uniform; fileThumb
     // normalizes every icon to that exact square (see squareFittedPixmap).
-    auto* li = new QListWidgetItem(fileThumb(rep, grid->iconSize()),
+    QIcon repIcon;
+    if (!scanning_ || thumbSeen < kScanThumbRows) { repIcon = fileThumb(rep, grid->iconSize()); ++thumbSeen; }
+    else repIcon = placeholderIcon(rep);
+    auto* li = new QListWidgetItem(repIcon,
                                    QString("%1 %2\n%3 %4 · %5 %6 · %7%\n%8")
                                        .arg(trStr(lang(), "group")).arg(i + 1)
                                        .arg(g.paths.size()).arg(trStr(lang(), "files"))
@@ -1758,10 +1828,10 @@ void MainWindow::refreshFileViews() {
     gi->setFlags(gi->flags() | Qt::ItemIsUserCheckable);
     gi->setCheckState(marked_.contains(p) ? Qt::Checked : Qt::Unchecked);
     // Long names wrap into extra lines and desynchronize row heights when
-    // mixed with short names. Elide to one line; the full path stays in the
-    // tooltip (hover shows it).
+    // mixed with short names. Elide to one line within the icon width so
+    // every cell keeps the same geometry; the full path stays in the tooltip.
     const QFontMetrics fm(grid_->font());
-    const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width() + 64);
+    const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width());
     gi->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(p) + "\n" + pctText(pct, ref, lang()));
     gi->setToolTip(p);
     grid_->addItem(gi);
@@ -1796,15 +1866,37 @@ void MainWindow::detailTabChanged(int) { refreshDetail(); }
 void MainWindow::refreshDetail() {
   while (detailForm_->count()) { auto* it = detailForm_->takeAt(0); delete it->widget(); delete it; }
   exifLabel_->clear(); simLabel_->clear(); simBar_->setValue(0); hashLabel_->clear();
-  if (currentFile_.isEmpty()) { preview_->setText("—"); return; }
+  // Always show the field labels, even with no selection (values become "-").
+  // The full-path row is a fixed two-line read-only field from the start:
+  // long paths wrap inside it (never stretching the pane) and stay
+  // drag-selectable.
+  auto* pathEdit = new QTextEdit(this);
+  pathEdit->setReadOnly(true);
+  pathEdit->setWordWrapMode(QTextOption::WrapAnywhere);
+  pathEdit->setFixedHeight(fontMetrics().lineSpacing() * 2 + 12);
+  pathEdit->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+  if (currentFile_.isEmpty()) {
+    preview_->setText("—");
+    detailForm_->addRow(trStr(lang(), "fileName"), new QLabel("-", this));
+    detailForm_->addRow(trStr(lang(), "fullPath"), pathEdit);
+    detailForm_->addRow(trStr(lang(), "fileSize"), new QLabel("-", this));
+    detailForm_->addRow(trStr(lang(), "format"), new QLabel("-", this));
+    detailForm_->addRow(trStr(lang(), "modified"), new QLabel("-", this));
+    detailForm_->addRow(trStr(lang(), "created"), new QLabel("-", this));
+    detailForm_->addRow(trStr(lang(), "resolution"), new QLabel("-", this));
+    detailForm_->addRow(trStr(lang(), "duration"), new QLabel("-", this));
+    detailForm_->addRow(trStr(lang(), "similarity"), new QLabel("-", this));
+    exifLabel_->setText("-"); simLabel_->setText("-"); hashLabel_->setText("-");
+    return;
+  }
   QFileInfo fi(currentFile_);
   preview_->setPixmap(fileThumb(currentFile_, QSize(220, 190), true).pixmap(220, 190));
   const bool ref = (currentGroup_ >= 0 && !groups_[currentGroup_].paths.isEmpty()
                     && groups_[currentGroup_].paths[0] == currentFile_);
   const double pct = ref ? 100.0 : pathBest(currentFile_);
   detailForm_->addRow(trStr(lang(), "fileName"), new QLabel(fi.fileName(), this));
-  auto* pl = new QLabel(currentFile_, this); pl->setTextInteractionFlags(Qt::TextSelectableByMouse); pl->setWordWrap(true);
-  detailForm_->addRow(trStr(lang(), "fullPath"), pl);
+  pathEdit->setPlainText(currentFile_);
+  detailForm_->addRow(trStr(lang(), "fullPath"), pathEdit);
   detailForm_->addRow(trStr(lang(), "fileSize"),
                       new QLabel(QString("%1 (%2 bytes)").arg(fmtSize(fi.size())).arg(fi.size()), this));
   detailForm_->addRow(trStr(lang(), "format"), new QLabel(fi.suffix().toUpper(), this));
@@ -2202,7 +2294,15 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
                             .arg(trStr(lang(), "groups")).arg(groups_.size())
                             .arg(trStr(lang(), "files")).arg(files)
                             .arg(trStr(lang(), "marked")).arg(marked_.size()));
-  if (scanning_) sumValTime_->setText(fmtElapsed(elapsedActiveMs()));
+  // Live summary during scans (previously only time+GPU moved): totals from
+  // the pre-walk count, done/scanned from the worker, groups/dups live.
+  if (scanning_) {
+    sumValTime_->setText(fmtElapsed(elapsedActiveMs()));
+    sumValTotal_->setText(targetTotal_ > 0 ? QString::number(targetTotal_) : "-");
+    sumValDone_->setText(QString("%1 / %2").arg(lastDoneN_).arg(lastTotalN_));
+    sumValGroups_->setText(QString::number(groups_.size()));
+    sumValDup_->setText(QString::number(files));
+  }
   updateGpuLabel();
 }
 // Live GPU status for the status bar. During a scan this shows how many images
