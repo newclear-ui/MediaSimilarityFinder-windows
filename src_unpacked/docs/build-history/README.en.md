@@ -77,6 +77,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.71 | Engine version stamp + stored-match revalidation |
 | 0.9.2.72 | Engine/DB version split (semver) |
 | 0.9.2.73 | Accepted audit items (SSIM gate, QuickLook, docs) |
+| 0.9.2.74 | Monitor toolbar cleanup (pause removed, toggle highlight, menu right) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

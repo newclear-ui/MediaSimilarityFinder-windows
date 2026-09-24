@@ -233,7 +233,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.73\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.73\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.74\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.74\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -546,7 +546,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.73"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.74"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -624,12 +624,13 @@ void MainWindow::buildToolbar() {
   }
   monBtn_ = new QPushButton(toolBar_); monBtn_->setCheckable(true);
   connect(monBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitor);
-  monPauseBtn_ = new QPushButton(QStringLiteral("⏸"), toolBar_);
-  monPauseBtn_->setToolTip(trStr(lang(), "pause"));
-  monPauseBtn_->setCheckable(true);
-  connect(monPauseBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitorPause);
+  // Merged settings/help menu, docked at the far right (after the spacer):
+  // monitor detail settings + help in one place.
   auto* utilBtn_ = new QToolButton(toolBar_);
   utilBtn_->setText(QStringLiteral("☰"));
+  QFont uf = utilBtn_->font(); uf.setPointSize(uf.pointSize() + 4); uf.setBold(true);
+  utilBtn_->setFont(uf);
+  utilBtn_->setMinimumSize(46, 32);
   utilBtn_->setToolTip(trStr(lang(), "settings") + "/" + trStr(lang(), "help"));
   utilBtn_->setPopupMode(QToolButton::InstantPopup);
   auto* utilMenu_ = new QMenu(utilBtn_);
@@ -642,10 +643,10 @@ void MainWindow::buildToolbar() {
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
   toolBar_->addWidget(gpuEnabled_);
   toolBar_->addWidget(kindBtn_);
-  toolBar_->addWidget(utilBtn_);
-  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(monPauseBtn_);
+  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
+  toolBar_->addWidget(utilBtn_); // far-right menu
 }
 
 void MainWindow::buildLeft(QWidget* w) {
@@ -893,7 +894,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.73"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.74"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -2492,9 +2493,17 @@ void MainWindow::configureMonitor() {
   statusMsg_->setText(QString("%1 — %2 / %3").arg(trStr(lang(), "monSaved")).arg(watches.size()).arg(compares.size()));
 }
 void MainWindow::toggleMonitor() {
+  // The monitor button is a pure on/off toggle with highlight feedback.
+  // First-run configuration lives in the far-right menu, not here: with no
+  // roots the button only reports what is missing.
+  auto paintMonBtn = [this] {
+    monBtn_->setStyleSheet(monBtn_->isChecked()
+        ? QStringLiteral("background:#2e7d32; color:white; font-weight:bold;")
+        : QString());
+  };
   if (monitorEnabled_) {
-    monitor_->stop(); monitorEnabled_ = false; monitorPaused_ = false;
-    monBtn_->setChecked(false); monPauseBtn_->setChecked(false);
+    monitor_->stop(); monitorEnabled_ = false;
+    monBtn_->setChecked(false); paintMonBtn();
     tray_->setToolTip(trStr(lang(), "app"));
     statusMsg_->setText(trStr(lang(), "monStop"));
     sumValMon_->setText("-");
@@ -2503,11 +2512,6 @@ void MainWindow::toggleMonitor() {
   QSettings st;
   auto ws = st.value("monitor/watchRoots").toStringList();
   auto cs = st.value("monitor/compareRoots").toStringList();
-  if (ws.isEmpty() || cs.isEmpty()) {
-    configureMonitor();
-    ws = st.value("monitor/watchRoots").toStringList();
-    cs = st.value("monitor/compareRoots").toStringList();
-  }
   if (ws.isEmpty() || cs.isEmpty()) { statusMsg_->setText(trStr(lang(), "monNeedCfg")); return; }
   msf::MonitorConfig c;
   for (const auto& x : ws) c.watchRoots.push_back(x.toStdString());
@@ -2520,17 +2524,10 @@ void MainWindow::toggleMonitor() {
   monitor_->start(c, policy_, [this](const msf::MonitorEvent& e) {
     QMetaObject::invokeMethod(this, [this, e] { monitorEvent(e); }, Qt::QueuedConnection);
   });
-  monitorEnabled_ = true; monitorPaused_ = false;
-  monBtn_->setChecked(true); monPauseBtn_->setChecked(false);
+  monitorEnabled_ = true;
+  monBtn_->setChecked(true); paintMonBtn();
   tray_->setToolTip(trStr(lang(), "monRun"));
   statusMsg_->setText(trStr(lang(), "monRun"));
-}
-void MainWindow::toggleMonitorPause() {
-  if (!monitorEnabled_ || !monitor_) return;
-  monitorPaused_ = !monitorPaused_;
-  monitor_->setPaused(monitorPaused_);
-  monPauseBtn_->setChecked(monitorPaused_);
-  tray_->setToolTip(monitorPaused_ ? trStr(lang(), "paused") : trStr(lang(), "monRun"));
 }
 void MainWindow::monitorEvent(const msf::MonitorEvent& e) {
   if (e.type == msf::MonitorEvent::Type::Match) { showMonitorMatch(e); return; }

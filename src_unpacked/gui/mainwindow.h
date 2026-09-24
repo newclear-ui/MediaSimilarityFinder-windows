@@ -131,7 +131,7 @@ private slots:
   void refreshAfterFileOperation(const QString&);
   void detailTabChanged(int); void fileActivated(QListWidgetItem*);
   // monitor
-  void configureMonitor(); void toggleMonitor(); void toggleMonitorPause();
+  void configureMonitor(); void toggleMonitor();
   void monitorEvent(const msf::MonitorEvent&); void showMonitorMatch(const msf::MonitorEvent&); void updateMonitorStatus();
   // misc
   void setLanguage(int); void showHelp(); void applyStaticTexts();
@@ -204,7 +204,7 @@ private:
   // toolbar
   QToolBar* toolBar_=nullptr;
   QLineEdit* folder_=nullptr; QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
-    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*monPauseBtn_=nullptr;
+    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr;
   QComboBox* preset_=nullptr; QSpinBox *cpu_=nullptr,*gpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
@@ -248,6 +248,6 @@ private:
   QProgressBar* statusProg_=nullptr;
   // monitor
   std::unique_ptr<msf::MediaMonitor> monitor_; QSystemTrayIcon* tray_=nullptr; QTimer* monitorTimer_=nullptr;
-  bool monitorEnabled_=false; bool monitorPaused_=false;
+  bool monitorEnabled_=false;
   QTimer* uiTimer_=nullptr; // throttled refresh while scanning
 };
