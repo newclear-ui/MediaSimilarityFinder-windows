@@ -19,7 +19,7 @@
 #include <thread>
 #include <future>
 namespace msf {
-static MediaKind kindOf(const std::string&p){auto e=path_from_utf8(p).extension().string();for(char&c:e)c=(char)std::tolower((unsigned char)c);return (e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv")?MediaKind::Video:MediaKind::Image;}
+static MediaKind kindOf(const std::string&p){return Scanner::isVideoPath(path_from_utf8(p))?MediaKind::Video:MediaKind::Image;}
 static bool stopped(ScanControl* c){ if(!c) return false; while(c->pause.load()&&!c->cancel.load())std::this_thread::sleep_for(std::chrono::milliseconds(80)); return c->cancel.load(); }
 struct AnalysisJob { FileState state; bool ok=false; bool changed=false; };
 bool MediaSearchEngine::openIndex(const std::string& p){ managedIndexActive_=false; if(!db_.open(p)||!db_.initialize()) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return videoEngine_.openPersistentCache(p+".video_cache.sqlite"); }
@@ -167,7 +167,7 @@ static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf
   for(std::size_t i = 0; i < n && mf.anchors.size() < kMaxAnchors; i += stride)
     if(vf.hashes[i]) mf.anchors.push_back(vf.hashes[i]);
 }
-SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); const bool tx= db_.beginTransaction(); if(!tx) return r;
+SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
  auto old=db_.all();
  std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
  const bool hasIgnored=control && !control->ignoredPaths.empty();
@@ -208,7 +208,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // MediaPipeline transparently executes the same CPU pHash reference path.
  // Single DB connection: only this thread touches db_/files_/r.
  auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
-  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch);
+  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch,&gpuActive_);
   for(const auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
    if(it==currentByPath.end()) continue;
@@ -234,11 +234,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
   return true;
  };
- auto processOne=[&](FileState&& x){
-  if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
-  const bool isVid=(kindOf(x.path)==MediaKind::Video);
-  if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
-  ++scanned;
+  auto processOne=[&](FileState&& x){
+   if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
+   const bool isVid=(kindOf(x.path)==MediaKind::Video);
+   if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
+   ++scanned;
+   if(control && control->walked) control->walked(scanned);
   auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.fingerprint==0);
   if(!changed){ ++nUnchanged; seen.insert(x.path); return; }
   if(it==oldByPath.end()) ++nAdded; else ++nModified;
@@ -313,7 +314,13 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // Unchanged files must participate in every incremental search.
   files_.clear();
   const auto currentStates=db_.all(); files_.reserve(currentStates.size());
-  for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); if((MediaKind)x.kind==MediaKind::Video){ loadVideoAnchors(videoEngine_, files_.back()); } if((MediaKind)x.kind==MediaKind::Video) ++r.indexedVideos; }
+  for(const auto& x:currentStates) if(x.fingerprint){
+   if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue;
+   const bool video=kindOf(x.path)==MediaKind::Video;
+   if(control && ((video&&!control->scanVideos)||(!video&&!control->scanImages))) continue;
+   files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration});
+   if(video){ loadVideoAnchors(videoEngine_, files_.back()); ++r.indexedVideos; }
+  }
   ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); for(auto&f:files_)pipe.add(f);
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause

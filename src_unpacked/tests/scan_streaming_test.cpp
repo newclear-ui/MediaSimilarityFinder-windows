@@ -9,6 +9,7 @@
 #include "media_search_engine.h"
 #include <QCoreApplication>
 #include <QObject>
+#include <QSet>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -37,13 +38,17 @@ int main(int argc, char** argv) {
   std::error_code ec; fs::remove_all(d, ec);
   fs::create_directories(d / "media", ec); fs::create_directories(d / "appdir", ec);
   for (int i = 0; i < 4; ++i) bmp(d / "media" / ("dup" + std::to_string(i) + ".bmp"));
+  { std::ofstream f(d / "media" / "notes.txt"); f << "not media: must not count"; }
+  { std::ofstream f(d / "media" / "clip.mp4"); f << "fake video: invalid data, listing count only"; }
+  { std::ofstream f(d / "media" / "ignored.bmp"); f << "ignored"; }
   const std::string root = (d / "media").string(), ad = (d / "appdir").string();
   // Phase 1: synchronous worker scan; matches must stream live (4 identical
   // files -> 6 incremental pairs against previously added files).
   ScanWorker w(QString::fromStdString(root), QString::fromStdString(ad),
                8, 50, 50, false, true, false);
-  // Pre-walk denominator: 4 BMPs in, 4 counted (fixed total for the headline
-  // ratio, independent of the engine's growing streaming total).
+  QSet<QString> ignored;
+  ignored.insert(QString::fromStdString((d / "media" / "ignored.bmp").string()));
+  w.setIgnored(ignored);
   qulonglong target = 0;
   QObject::connect(&w, &ScanWorker::targetCount, [&](qulonglong n) { target = n; });
   w.run();

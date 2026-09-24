@@ -82,6 +82,9 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <shobjidl.h>
+#include <shlguid.h>
+#include <exdisp.h>
 #include <thumbcache.h>
 #include <winerror.h>
 #include <psapi.h> // process CPU%/working set for the live summary
@@ -89,6 +92,7 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "uuid.lib")
 #endif
 #endif
 
@@ -130,6 +134,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"gpuOn")) return S("GPU 가동","GPU on");
   if (!std::strcmp(key,"gpuOff")) return S("GPU 꺼짐","GPU off");
   if (!std::strcmp(key,"gpuLive")) return S("GPU 처리 %1","GPU processing %1");
+  if (!std::strcmp(key,"gpuAccel")) return S("가속 중","Accelerating");
+  if (!std::strcmp(key,"gpuStop")) return S("정지","Stopped");
+  if (!std::strcmp(key,"gpuWait")) return S("대기","Idle");
   if (!std::strcmp(key,"cpu")) return S("CPU 사용","CPU usage");
   if (!std::strcmp(key,"ram")) return S("RAM 사용","RAM usage");
   if (!std::strcmp(key,"monitor")) return S("모니터","Monitor");
@@ -189,6 +196,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"quickLookStarting")) return S("QuickLook 시작 중…","Starting QuickLook…");
   if (!std::strcmp(key,"revalidated")) return S("구버전 인덱스 재검증: %1 유지·%2 제외, 최신 엔진에 맞춤","Legacy index revalidated: %1 kept, %2 dropped for the current engine");
   if (!std::strcmp(key,"reveal")) return S("탐색기에서 보기","Reveal in Explorer");
+  if (!std::strcmp(key,"revealNoWindow")) return S("열려 있는 해당 폴더 탐색기 창이 없습니다","No open Explorer window for this folder");
+  if (!std::strcmp(key,"revealFocusFail")) return S("탐색기 창은 열렸지만 파일을 선택하지 못했습니다","Explorer window opened, but the file could not be selected");
+  if (!std::strcmp(key,"revealFail")) return S("탐색기에서 파일을 찾지 못했습니다","Could not find the file in Explorer");
   if (!std::strcmp(key,"copy")) return S("복사","Copy");
   if (!std::strcmp(key,"cut")) return S("잘라내기","Cut");
   if (!std::strcmp(key,"paste")) return S("붙여넣기","Paste");
@@ -238,7 +248,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.77\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.77\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.79\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.79\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -296,6 +306,17 @@ void ScanWorker::run() {
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
+    {
+      msf::IndexPaths paths;
+      std::string excluded;
+      if (msf::IndexManager::resolve(msf::path_from_utf8(appDir_.toStdString()),
+                                     msf::path_from_utf8(root_.toStdString()), paths))
+        excluded = msf::path_to_utf8(paths.directory.parent_path());
+      const qulonglong total = msf::Scanner().count(root_.toStdString(), excluded,
+                                                    scanImages_, scanVideos_,
+                                                    control_.ignoredPaths, &control_.cancel);
+      emit targetCount(total);
+    }
     // Engine-version gate: pairs stored by an older verdict generation are
     // re-checked with the current logic (no rescan) before anything displays
     // them. Drops old false positives, keeps the rest, stamps the version.
@@ -315,36 +336,16 @@ void ScanWorker::run() {
       int loaded = 0;
       for (const auto& m : stored) {
         const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-        const LiveMatch lm{l, r, m.percent, isVideoExt(l) ? 2 : 1};
-        { QMutexLocker g(&pendingMutex_); pending_.push_back(lm); }
+        const bool video = isVideoExt(l) || isVideoExt(r);
+        const LiveMatch lm{l, r, m.percent, video ? 2 : 1};
         allMatches_.push_back(lm);
+        if ((video && !scanVideos_) || (!video && !scanImages_)) continue;
+        if (control_.ignoredPaths.find(m.leftPath) != control_.ignoredPaths.end() ||
+            control_.ignoredPaths.find(m.rightPath) != control_.ignoredPaths.end()) continue;
+        { QMutexLocker g(&pendingMutex_); pending_.push_back(lm); }
         ++loaded;
       }
       if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
-    }
-    // Fixed denominator: count kind-filtered files up front (same universe the
-    // engine walks: every non-ignored file, videos by extension when videos
-    // are on, non-videos when images are on). The engine's streaming total
-    // grows as the walk continues, so without this the headline ratio chases
-    // a moving target and sits at 100% spuriously.
-    {
-      QSet<QString> ign;
-      for (const auto& s : control_.ignoredPaths) ign.insert(QString::fromStdString(s));
-      qulonglong total = 0;
-      QDirIterator it(QDir::cleanPath(root_), QDir::Files | QDir::NoDotAndDotDot,
-                      QDirIterator::Subdirectories);
-      int budget = 0;
-      while (it.hasNext()) {
-        it.next();
-        if ((++budget & 4095) == 0 && control_.cancel.load()) break;
-        const QString p = it.filePath();
-        if (ign.contains(p) || ign.contains(QDir::toNativeSeparators(p))) continue;
-        const bool vid = isVideoExt(p);
-        if (vid && !scanVideos_) continue;
-        if (!vid && !scanImages_) continue;
-        ++total;
-      }
-      emit targetCount(total);
     }
     // Progress signals arrive once per analyzed file; a fast Maximum scan would
     // flood the GUI event loop (setText per file) and freeze the window —
@@ -352,7 +353,7 @@ void ScanWorker::run() {
     // latest values are kept and flushed when the scan returns, so pause,
     // cancel, and close stay responsive no matter the scan speed.
     lastProgMs_ = 0; lastProgDone_ = 0; lastProgTotal_ = 0; lastProgPath_.clear();
-    lastListMs_ = 0; lastListN_ = 0;
+    lastListMs_ = 0; lastListN_ = 0; lastWalkedMs_ = 0; lastWalkedN_ = 0;
     control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
       lastProgDone_ = done; lastProgTotal_ = total; lastProgPath_ = path;
       gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
@@ -367,6 +368,11 @@ void ScanWorker::run() {
       lastListN_ = n;
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastListMs_ > 150) { lastListMs_ = now; emit listingProgress(n); }
+    };
+    control_.walked = [this](std::size_t n) {
+      lastWalkedN_ = n;
+      const qint64 now = QDateTime::currentMSecsSinceEpoch();
+      if (now - lastWalkedMs_ > 150 || n == 0) { lastWalkedMs_ = now; emit walkedCount((qulonglong)n); }
     };
     control_.onMatch = [this](const msf::SearchMatch& m) {
       { QMutexLocker g(&pendingMutex_);
@@ -451,7 +457,14 @@ void ScanWorker::resume() { control_.pause.store(false); }
 void ScanWorker::cancel() { control_.cancel.store(true); control_.pause.store(false); }
 void ScanWorker::setIgnored(const QSet<QString>& s) {
   control_.ignoredPaths.clear();
-  for (const auto& p : s) control_.ignoredPaths.insert(p.toStdString());
+  for (const auto& p : s) {
+    const QString clean = QDir::cleanPath(p);
+    std::error_code ec;
+    const auto native = msf::path_from_utf8(clean.toUtf8().toStdString());
+    auto absolute = std::filesystem::absolute(native, ec);
+    if (ec) absolute = native;
+    control_.ignoredPaths.insert(msf::path_to_utf8(absolute.lexically_normal()));
+  }
 }
 QVector<LiveMatch> ScanWorker::takePending() {
   QMutexLocker g(&pendingMutex_);
@@ -500,7 +513,8 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
       // Recompose with live elapsed so a long single file (e.g. a big video)
       // shows activity instead of a frozen message.
       const qint64 el = elapsedActiveMs();
-      statusMsg_->setText(scanStatusText(lastDoneN_, lastTotalN_, maxPctShown_, lastPath_, el));
+      const qulonglong uiTotal = targetKnown_ ? targetTotal_ : lastTotalN_;
+      statusMsg_->setText(scanStatusText(lastTotalN_, uiTotal, maxPctShown_, lastPath_, el));
       scanHeartbeat();
     }
     updateGpuLabel();
@@ -552,7 +566,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.77"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.79"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -905,7 +919,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.77"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.79"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -975,8 +989,17 @@ void MainWindow::chooseFolder() {
   if (!d.isEmpty()) { folder_->setText(d); QSettings().setValue("ui/lastFolder", d); }
 }
 void MainWindow::setRunning(bool v) {
+  if (v) {
+    scanPaused_ = false;
+    maxPctShown_ = 0;
+    lastDoneN_ = 0;
+    lastTotalN_ = 0;
+    targetTotal_ = 0;
+    targetKnown_ = false;
+  } else {
+    scanPaused_ = false;
+  }
   scanning_ = v;
-  scanPaused_ = false; maxPctShown_ = 0; lastDoneN_ = 0; lastTotalN_ = 0; targetTotal_ = 0;
   scan_->setEnabled(!v); browse_->setEnabled(!v); refresh_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
@@ -984,6 +1007,7 @@ void MainWindow::setRunning(bool v) {
   statusProg_->setRange(0, 100); statusProg_->setValue(0);
   if (v) uiTimer_->start(); else uiTimer_->stop();
   updateGpuLabel();
+  sumValGpu_->setText(gpuStateText());
 }
 void MainWindow::startScan() {
   if (scanning_) return;
@@ -1030,6 +1054,7 @@ void MainWindow::startScan() {
   connect(thread_, &QThread::started, worker_, &ScanWorker::run);
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);
   connect(worker_, &ScanWorker::progressCount, this, &MainWindow::onScanCounts);
+  connect(worker_, &ScanWorker::walkedCount, this, &MainWindow::onWalkedCount);
   connect(worker_, &ScanWorker::targetCount, this, &MainWindow::onTargetCount);
   connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
   connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
@@ -1074,10 +1099,16 @@ void MainWindow::cancelScan() {
   statusMsg_->setText(trStr(lang(), "scanCancel"));
 }
 void MainWindow::onScanCounts(qulonglong done, qulonglong total) {
-  lastDoneN_ = (std::size_t)done; lastTotalN_ = (std::size_t)total;
+  lastDoneN_ = done;
+  if (!targetKnown_ || total > lastTotalN_) lastTotalN_ = total;
 }
 void MainWindow::onTargetCount(qulonglong n) {
   targetTotal_ = (qulonglong)n;
+  targetKnown_ = true;
+  updateStatusCounts();
+}
+void MainWindow::onWalkedCount(qulonglong n) {
+  lastTotalN_ = (qulonglong)n;
   updateStatusCounts();
 }
 void MainWindow::scanProgress(int p, QString path) {
@@ -1087,8 +1118,9 @@ void MainWindow::scanProgress(int p, QString path) {
   // target. The engine's streaming total grows mid-walk, which used to pin the
   // display at a spurious 100%. Falls back to the engine percent otherwise.
   int show = p;
-  if (targetTotal_ > 0) {
-    show = lastTotalN_ >= targetTotal_ ? 100
+  if (targetKnown_) {
+    show = targetTotal_ == 0 ? 100
+           : lastTotalN_ >= targetTotal_ ? 100
            : int((double)lastTotalN_ * 100.0 / (double)targetTotal_);
   }
   // Streaming totals grow as the walk continues, so raw percent can dip.
@@ -1097,8 +1129,9 @@ void MainWindow::scanProgress(int p, QString path) {
   if (show > maxPctShown_) maxPctShown_ = show;
   statusProg_->setValue(maxPctShown_);
   const qint64 el = elapsedActiveMs();
-  const qulonglong msgTotal = targetTotal_ > 0 ? targetTotal_ : lastTotalN_;
-  statusMsg_->setText(scanStatusText(lastDoneN_, msgTotal, maxPctShown_, path, el));
+  const qulonglong msgTotal = targetKnown_ ? targetTotal_ : lastTotalN_;
+  const qulonglong msgDone = targetKnown_ ? lastTotalN_ : lastDoneN_;
+  statusMsg_->setText(scanStatusText(msgDone, msgTotal, maxPctShown_, path, el));
   updateStatusCounts();
 }
 void MainWindow::onListingProgress(std::size_t n) {
@@ -1131,6 +1164,10 @@ void MainWindow::scanFinished(QString msg) {
     repElapsedMs_ = elapsedActiveMs();
     const qulonglong analyzed = st.size() > 2 ? st[2].toULongLong() : 0;
     const qulonglong unchanged = st.size() > 3 ? st[3].toULongLong() : 0;
+    const qulonglong completed = st.size() > 1 ? st[1].toULongLong() : 0;
+    if (targetKnown_ && completed != targetTotal_)
+      scanLog(QString("targetMismatch fixed=%1 completed=%2").arg(targetTotal_).arg(completed));
+    lastTotalN_ = completed;
     hasReport_ = true;
     if (analyzed == 0 && unchanged > 0)
       statusMsg_->setText(trStr(lang(), "upToDate") + QString(" (%1 %2)").arg(unchanged).arg(trStr(lang(), "files")));
@@ -2240,16 +2277,143 @@ bool quickLookSendMessage(const QString&, const QByteArray&) { return false; }
 void MainWindow::revealSelected() {
   const auto ps = selectedFiles();
   if (ps.isEmpty()) return;
-  QProcess::startDetached("explorer.exe", {QString("/select,%1").arg(QDir::toNativeSeparators(ps.first()))});
+  revealPath(ps.first());
+}
+#ifdef _WIN32
+enum class ExplorerReveal { Selected, FocusOnly, NoWindow, Failed };
+static QString explorerFolderFromView(IFolderView* view, PIDLIST_ABSOLUTE* outPidl) {
+  *outPidl = nullptr;
+  if (!view) return QString();
+  IPersistFolder2* persist = nullptr;
+  if (FAILED(view->GetFolder(IID_PPV_ARGS(&persist))) || !persist) return QString();
+  PIDLIST_ABSOLUTE pidl = nullptr;
+  const HRESULT hr = persist->GetCurFolder(&pidl);
+  persist->Release();
+  if (FAILED(hr) || !pidl) return QString();
+  QString path;
+  PWSTR raw = nullptr;
+  if (SUCCEEDED(SHGetNameFromIDList(pidl, SIGDN_FILESYSPATH, &raw)) && raw)
+    path = QString::fromWCharArray(raw);
+  if (raw) CoTaskMemFree(raw);
+  if (path.isEmpty()) { ILFree(pidl); return QString(); }
+  *outPidl = pidl;
+  return path;
+}
+static QString explorerLocationFolder(IWebBrowser2* browser) {
+  if (!browser) return QString();
+  BSTR raw = nullptr;
+  if (FAILED(browser->get_LocationURL(&raw)) || !raw) { if (raw) SysFreeString(raw); return QString(); }
+  const QUrl url(QString::fromWCharArray(raw));
+  SysFreeString(raw);
+  return url.isLocalFile() ? QDir::cleanPath(url.toLocalFile()) : QString();
+}
+static bool sameExplorerFolder(const QString& a, const QString& b) {
+  if (a.isEmpty() || b.isEmpty()) return false;
+  return QString::compare(QDir::cleanPath(a), QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
+}
+static ExplorerReveal revealInOpenExplorer(const QString& file) {
+  const QFileInfo fi(file);
+  if (!fi.exists()) return ExplorerReveal::Failed;
+  const QString targetDir = QDir::cleanPath(fi.absolutePath());
+  const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool uninitCom = SUCCEEDED(com);
+  IShellWindows* windows = nullptr;
+  if (FAILED(CoCreateInstance(__uuidof(ShellWindows), nullptr, CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&windows))) || !windows) {
+    if (uninitCom) CoUninitialize();
+    return ExplorerReveal::Failed;
+  }
+  long count = 0;
+  windows->get_Count(&count);
+  ExplorerReveal result = ExplorerReveal::NoWindow;
+  for (long i = 0; i < count && result != ExplorerReveal::Selected; ++i) {
+    VARIANT index; VariantInit(&index); index.vt = VT_I4; index.lVal = i;
+    IDispatch* disp = nullptr;
+    const HRESULT hrItem = windows->Item(index, &disp);
+    VariantClear(&index);
+    if (FAILED(hrItem) || !disp) continue;
+    IWebBrowser2* browser = nullptr;
+    disp->QueryInterface(IID_PPV_ARGS(&browser));
+    disp->Release();
+    if (!browser) continue;
+    IServiceProvider* provider = nullptr;
+    browser->QueryInterface(IID_PPV_ARGS(&provider));
+    IShellBrowser* shellBrowser = nullptr;
+    if (provider) provider->QueryService(SID_STopLevelBrowser, IID_PPV_ARGS(&shellBrowser));
+    IShellView* shellView = nullptr;
+    if (shellBrowser) shellBrowser->QueryActiveShellView(&shellView);
+    IFolderView* folderView = nullptr;
+    if (shellView) shellView->QueryInterface(IID_PPV_ARGS(&folderView));
+    PIDLIST_ABSOLUTE viewFolderPidl = nullptr;
+    const QString viewFolder = explorerFolderFromView(folderView, &viewFolderPidl);
+    const bool match = sameExplorerFolder(viewFolder, targetDir)
+                       || sameExplorerFolder(explorerLocationFolder(browser), targetDir);
+    if (match && shellView) {
+      HWND hwnd = nullptr;
+      SHANDLE_PTR rawHwnd = 0;
+      if (SUCCEEDED(browser->get_HWND(&rawHwnd)) && rawHwnd)
+        hwnd = reinterpret_cast<HWND>(rawHwnd);
+      if (hwnd) {
+        if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
+      }
+      PIDLIST_ABSOLUTE basePidl = viewFolderPidl;
+      viewFolderPidl = nullptr;
+      if (!basePidl) basePidl = ILCreateFromPathW(reinterpret_cast<LPCWSTR>(targetDir.utf16()));
+      PIDLIST_ABSOLUTE filePidl = nullptr;
+      IShellItem* fileItem = nullptr;
+      if (SUCCEEDED(SHCreateItemFromParsingName(reinterpret_cast<LPCWSTR>(fi.absoluteFilePath().utf16()),
+                                                nullptr, IID_PPV_ARGS(&fileItem))) && fileItem)
+        SHGetIDListFromObject(fileItem, &filePidl);
+      bool selected = false;
+      if (basePidl && filePidl) {
+        PUIDLIST_RELATIVE child = ILFindChild(basePidl, filePidl);
+        if (child) {
+          selected = SUCCEEDED(shellView->SelectItem(child, static_cast<SVSIF>(SVSI_SELECT | SVSI_DESELECTOTHERS | SVSI_ENSUREVISIBLE | SVSI_FOCUSED)))
+                     || SUCCEEDED(shellView->SelectItem(child, static_cast<SVSIF>(SVSI_SELECT | SVSI_ENSUREVISIBLE)));
+        }
+      }
+      if (filePidl) ILFree(filePidl);
+      if (basePidl) ILFree(basePidl);
+      if (fileItem) fileItem->Release();
+      result = selected ? ExplorerReveal::Selected : ExplorerReveal::FocusOnly;
+    }
+    if (viewFolderPidl) ILFree(viewFolderPidl);
+    if (folderView) folderView->Release();
+    if (shellView) shellView->Release();
+    if (shellBrowser) shellBrowser->Release();
+    if (provider) provider->Release();
+    browser->Release();
+  }
+  windows->Release();
+  if (uninitCom) CoUninitialize();
+  return result;
+}
+#endif
+void MainWindow::revealPath(const QString& path) {
+  if (path.isEmpty()) return;
+#ifdef _WIN32
+  switch (revealInOpenExplorer(path)) {
+    case ExplorerReveal::Selected: break;
+    case ExplorerReveal::FocusOnly: statusMsg_->setText(trStr(lang(), "revealFocusFail")); break;
+    case ExplorerReveal::NoWindow: statusMsg_->setText(trStr(lang(), "revealNoWindow")); break;
+    case ExplorerReveal::Failed: statusMsg_->setText(trStr(lang(), "revealFail")); break;
+  }
+#else
+  QProcess::startDetached("explorer.exe", {QString("/select,%1").arg(QDir::toNativeSeparators(path))});
+#endif
+}
+QString MainWindow::gpuStateText() const {
+  if (scanning_ && scanPaused_) return trStr(lang(), "gpuStop");
+  if (scanning_ && worker_ && worker_->gpuActive()) return trStr(lang(), "gpuAccel");
+  return trStr(lang(), "gpuWait");
 }
 void MainWindow::updateSysLabels() {
   // Process CPU% (compare against the High/Balanced preset) and working set,
-  // sampled live every UI tick. GPU row shows 켜짐/꺼짐 and is visible only
-  // while actually accelerating.
-  const bool accelerating = scanning_ && gpuEnabled_ && gpuEnabled_->isChecked()
-                            && worker_ && worker_->gpuAvailable();
-  sumGpu_->setVisible(accelerating); sumValGpu_->setVisible(accelerating);
-  if (accelerating) sumValGpu_->setText(trStr(lang(), "gpuOn"));
+  // sampled live every UI tick. The GPU row always carries a state label:
+  // accelerating / stopped (paused) / idle (no CUDA work right now).
+  sumGpu_->setVisible(true); sumValGpu_->setVisible(true);
+  sumValGpu_->setText(gpuStateText());
 #ifdef _WIN32
   FILETIME fc, fe, fk, fu;
   if (GetProcessTimes(GetCurrentProcess(), &fc, &fe, &fk, &fu)) {
@@ -2377,21 +2541,22 @@ qint64 MainWindow::elapsedActiveMs() const {
   return std::max<qint64>(0, now - scanStartMs_ - pausedAccumMs_ - tail);
 }
 void MainWindow::refreshSummary(const msf::SearchReport*) {
-  const UiLang l = lang();
   if (!hasReport_ || lastStats_.size() < 5) {
     sumValTotal_->setText("-"); sumValDone_->setText("-"); sumValGroups_->setText("-");
-    sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(trStr(l, "gpuOff"));
+    sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(gpuStateText());
     sumValCpu_->setText("-"); sumValRam_->setText("-");
     return;
   }
-  sumValTotal_->setText(lastStats_[0]);
-  sumValDone_->setText(lastStats_[1] + " / " + lastStats_[2]);
+  const qulonglong completed = lastStats_[0].toULongLong();
+  const qulonglong total = targetKnown_ ? targetTotal_ : completed;
+  sumValTotal_->setText(QString::number(total));
+  sumValDone_->setText(QString("%1 / %2").arg(completed).arg(total));
   sumValGroups_->setText(lastStats_[3]);
   qulonglong dupFiles = 0;
   for (const auto& g : groups_) dupFiles += (qulonglong)g.paths.size();
   sumValDup_->setText(QString::number(dupFiles));
   sumValTime_->setText(fmtElapsed(repElapsedMs_));
-  sumValGpu_->setText(gpuEnabled_->isChecked() ? trStr(l, "gpuOn") : trStr(l, "gpuOff"));
+  sumValGpu_->setText(gpuStateText());
 }
 void MainWindow::scanHeartbeat() {
   static qint64 lastBeat = 0;
@@ -2421,12 +2586,14 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
   // the pre-walk count, done/scanned from the worker, groups/dups live.
   if (scanning_) {
     sumValTime_->setText(fmtElapsed(elapsedActiveMs()));
-    sumValTotal_->setText(targetTotal_ > 0 ? QString::number(targetTotal_) : "-");
-    sumValDone_->setText(QString("%1 / %2").arg(lastDoneN_).arg(lastTotalN_));
+    sumValTotal_->setText(targetKnown_ ? QString::number(targetTotal_) : "-");
+    sumValDone_->setText(targetKnown_ ? QString("%1 / %2").arg(lastTotalN_).arg(targetTotal_)
+                                      : QString("%1 / %2").arg(lastTotalN_).arg(lastTotalN_));
     sumValGroups_->setText(QString::number(groups_.size()));
     sumValDup_->setText(QString::number(files));
   }
   updateGpuLabel();
+  sumValGpu_->setText(gpuStateText());
 }
 // Live GPU status for the status bar. During a scan this shows how many images
 // the CUDA backend already hashed; at rest it reports whether the backend is on.
@@ -2629,7 +2796,7 @@ void MainWindow::showMonitorMatch(const msf::MonitorEvent& e) {
   box.exec();
   if (box.clickedButton() == openNew) QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(m.newPath)));
   else if (box.clickedButton() == openOld)
-    QProcess::startDetached("explorer.exe", {QString("/select,%1").arg(QDir::toNativeSeparators(QString::fromStdString(m.existingPath)))});
+    revealPath(QString::fromStdString(m.existingPath));
 #ifdef _WIN32
   else if (box.clickedButton() == delNew) {
     if (!recycleFile(QString::fromStdString(m.newPath)))

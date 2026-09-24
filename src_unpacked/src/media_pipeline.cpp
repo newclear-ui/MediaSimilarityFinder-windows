@@ -28,7 +28,9 @@ static void parallelFor(std::size_t n, F&& fn){
  for(auto& f:futs) f.get();
 }
 bool MediaPipeline::image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint) const { ImageDecoder d; GrayImage img; if(!d.decode(path,32,32,img)) return false; fingerprint=perceptual_hash(img.pixels,img.width,img.height); if(mirrorFingerprint) *mirrorFingerprint=perceptual_hash_mirrored(img.pixels,img.width,img.height); return true; }
-std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<std::string>& paths,bool preferGpu,std::size_t gpuBatchSize) const {
+std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<std::string>& paths,bool preferGpu,std::size_t gpuBatchSize,std::atomic<bool>* activity) const {
+    struct ActivityGuard { std::atomic<bool>* p; ~ActivityGuard(){ if(p) p->store(false,std::memory_order_relaxed); } } guard{activity};
+    if(activity) activity->store(false,std::memory_order_relaxed);
     std::vector<ImageFingerprintResult> out(paths.size());
     struct Decoded { bool ok=false; GrayImage img; };
     std::vector<Decoded> dec(paths.size());
@@ -44,6 +46,7 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
     }
     if(map.empty()) return out;
     gpuBatchSize=std::max<std::size_t>(1,gpuBatchSize);
+    const bool gpuReady = preferGpu && gpu_.available();
     if(preferGpu){
         const auto safe=gpu_.recommendedBatchSize(gpuBatchSize);
         if(safe>0) gpuBatchSize=safe;
@@ -53,7 +56,11 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         std::vector<std::uint64_t> hashes(n);
         const std::uint8_t* block=packed.data()+base*1024;
         bool used=false;
-        if(preferGpu) used=gpu_.hashBatch(block,n,hashes.data());
+        if(gpuReady){
+            if(activity) activity->store(true,std::memory_order_relaxed);
+            used=gpu_.hashBatch(block,n,hashes.data());
+            if(!used && activity) activity->store(false,std::memory_order_relaxed);
+        }
         if(!used){
             // CPU fallback used to hash serially on the batch thread, leaving
             // the other cores idle when the GPU path is off. Fan out instead.
@@ -63,6 +70,7 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
             out[oi].mirrorFingerprint=perceptual_hash_mirrored(std::vector<std::uint8_t>(block+k*1024,block+(k+1)*1024),32,32);
             out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; });
     }
+    if(activity) activity->store(false,std::memory_order_relaxed);
     // Crop pass decodes a second, larger frame per image; parallelize it the
     // same way. Each task writes only its own output slot.
     parallelFor(map.size(), [&](std::size_t m){

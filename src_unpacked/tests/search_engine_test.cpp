@@ -4,7 +4,7 @@
 #include <fstream>
 #include <iostream>
 static void img(const std::filesystem::path&p,int high){std::ofstream f(p,std::ios::binary);f<<"P5\n64 64\n255\n";for(int i=0;i<4096;i++)f.put((char)((i%64)<32?high:20));}
-int main(){auto d=std::filesystem::temp_directory_path()/"msf_engine_test";std::filesystem::remove_all(d);std::filesystem::create_directories(d);img(d/"a.jpg",220);std::filesystem::copy_file(d/"a.jpg",d/"b.jpg");img(d/"c.jpg",200);msf::MediaSearchEngine e;if(!e.openIndex((d/"index.sqlite").string()))return 1;auto a=e.scan(d.string());if(a.scanned!=3||a.analyzed<3||a.groups<1)return 2;auto b=e.scan(d.string());if(b.analyzed!=0||b.unchanged<3||b.groups<1)return 3;std::filesystem::remove(d/"c.jpg");auto c=e.scan(d.string());if(c.removed!=1)return 4;std::vector<std::uint8_t> px(32*32,10), mx(32*32,10);
+int main(){auto d=std::filesystem::temp_directory_path()/"msf_engine_test";std::filesystem::remove_all(d);std::filesystem::create_directories(d);img(d/"a.jpg",220);std::filesystem::copy_file(d/"a.jpg",d/"b.jpg");img(d/"c.jpg",200);msf::MediaSearchEngine e;if(!e.openIndex((d/"index.sqlite").string()))return 1;auto a=e.scan(d.string());if(a.scanned!=3||a.analyzed<3||a.groups<1)return 2; if(e.gpuActive())return 17;auto b=e.scan(d.string());if(b.analyzed!=0||b.unchanged<3||b.groups<1)return 3;std::filesystem::remove(d/"c.jpg");auto c=e.scan(d.string());if(c.removed!=1)return 4;std::vector<std::uint8_t> px(32*32,10), mx(32*32,10);
 for(int y=5;y<27;++y) for(int x=4;x<14;++x){ px[y*32+x]=240; mx[y*32+(31-x)]=240; }
 const auto hf=msf::perceptual_hash(px,32,32), hm=msf::perceptual_hash_mirrored(px,32,32);
 const auto hmf=msf::perceptual_hash(mx,32,32), hmm=msf::perceptual_hash_mirrored(mx,32,32);

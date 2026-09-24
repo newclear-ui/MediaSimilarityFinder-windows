@@ -60,9 +60,11 @@ public slots:
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
   qulonglong gpuDone() const { return gpuDone_.load(); }
   bool gpuAvailable() const { return gpuAvail_; }
+  bool gpuActive() const { return engine_.gpuActive(); }
 signals:
   void progress(int,QString);
   void progressCount(qulonglong,qulonglong);
+  void walkedCount(qulonglong);
   void listingProgress(std::size_t);
   void matchesArrived();            // throttled; call takePending()
   void quickLoaded(int);            // stored matches reloaded from the index
@@ -85,6 +87,7 @@ private:
   // Maximum scan cannot flood the event loop and freeze the UI.
   qint64 lastProgMs_=0; std::size_t lastProgDone_=0, lastProgTotal_=0; std::string lastProgPath_;
   qint64 lastListMs_=0; std::size_t lastListN_=0;
+  qint64 lastWalkedMs_=0; std::size_t lastWalkedN_=0;
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction
 };
@@ -108,10 +111,11 @@ private slots:
   void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
   void onScanCounts(qulonglong,qulonglong);
   void onTargetCount(qulonglong);
+  void onWalkedCount(qulonglong);
   void onListingProgress(std::size_t);
+  void onResults(QVector<GuiFile> files, QStringList matchRows);
   void onQuickLoaded(int);
   void onRevalidated(int,int);
-  void onResults(QVector<GuiFile> files, QStringList matchRows);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
@@ -121,6 +125,7 @@ private slots:
   void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
   void openSelected(); void revealSelected(); void renameSelected(); void deleteSelected();
+  void revealPath(const QString& path);
   void previewSelectedQuickLook(); QString quickLookTarget() const; // empty when QuickLook unusable
   void pollQuickLookPipe(); // async launch follow-up (bounded, event-loop driven)
   void copySelected(); void cutSelected(); void pasteFiles(); void moveSelected();
@@ -147,8 +152,9 @@ private:
   void refreshDetail();          // tabs for current file
   void refreshSummary(const msf::SearchReport* r=nullptr);
   void updateGpuLabel();
+  QString gpuStateText() const;
   void updateStatusCounts();
-  void updateSysLabels(); // process CPU%/RAM live + GPU row on/off
+  void updateSysLabels(); // process CPU%/RAM live + GPU state row
   qint64 cpuPrevK_ = 0, cpuPrevU_ = 0, cpuPrevMs_ = 0; int cpuCount_ = 0;
   void scanHeartbeat();
   void saveUiState();              // window geometry + splitter + header layouts
@@ -177,7 +183,7 @@ private:
   QString currentFile_; int currentGroup_=-1;
   int lastPct_=0; QString lastPath_; int maxPctShown_=0;
   qulonglong lastDoneN_=0, lastTotalN_=0;
-  qulonglong targetTotal_=0; // pre-walk fixed denominator (kind-filtered)
+  qulonglong targetTotal_=0; bool targetKnown_=false;
   QString qlPendingPath_; int qlPollLeft_ = 0; // pending preview while its server starts
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;

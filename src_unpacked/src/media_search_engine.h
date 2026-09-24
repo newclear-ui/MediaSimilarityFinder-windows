@@ -28,6 +28,7 @@ struct ScanControl {
   // analysis; lets the UI show listing progress on huge folders instead of
   // sitting at 0% with only disk I/O visible.
   std::function<void(std::size_t)> listing;
+  std::function<void(std::size_t)> walked;
  // Optional streaming delivery for large result sets. When retainMatches is false,
  // SearchReport does not materialize the full match list in memory.
  std::function<void(const SearchMatch&)> onMatch;
@@ -88,9 +89,11 @@ const std::vector<MediaFile>& files() const { return files_; }
   // of polling nvidia-smi, whose polling window cannot see sub-millisecond
   // batches. Reset to 0 at the start of every scan().
   std::uint64_t gpuImagesProcessed() const { return gpuImagesProcessed_.load(); }
+  bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
 private:
   Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
+  std::atomic<bool> gpuActive_{false};
  std::vector<FileState> candidateStates_;
  CandidateIndex imageCandidates_;
  CandidateIndex videoCandidates_;

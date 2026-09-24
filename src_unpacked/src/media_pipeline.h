@@ -3,6 +3,7 @@
 #include "fingerprint.h"
 #include "gpu_backend.h"
 #include "crop_fingerprint.h"
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -11,7 +12,7 @@ struct ImageFingerprintResult { std::string path; std::uint64_t fingerprint=0, m
 class MediaPipeline {
 public:
  bool image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint=nullptr) const;
- std::vector<ImageFingerprintResult> imageBatch(const std::vector<std::string>& paths,bool preferGpu=true,std::size_t gpuBatchSize=256) const;
+ std::vector<ImageFingerprintResult> imageBatch(const std::vector<std::string>& paths,bool preferGpu=true,std::size_t gpuBatchSize=256,std::atomic<bool>* activity=nullptr) const;
 private:
  mutable GpuBackend gpu_;
 };
