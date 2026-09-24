@@ -248,7 +248,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.85\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.85\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.86\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.86\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -566,7 +566,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.85"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.86"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -919,7 +919,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.85"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.86"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -2425,7 +2425,9 @@ void MainWindow::revealPath(const QString& path) {
   switch (revealInOpenExplorer(path)) {
     case ExplorerReveal::Selected: break;
     case ExplorerReveal::FocusOnly: statusMsg_->setText(trStr(lang(), "revealFocusFail")); break;
-    case ExplorerReveal::NoWindow: statusMsg_->setText(trStr(lang(), "revealNoWindow")); break;
+    case ExplorerReveal::NoWindow:
+      QProcess::startDetached("explorer.exe", {QString("/select,%1").arg(QDir::toNativeSeparators(path))});
+      break;
     case ExplorerReveal::Failed: statusMsg_->setText(trStr(lang(), "revealFail")); break;
   }
 #else

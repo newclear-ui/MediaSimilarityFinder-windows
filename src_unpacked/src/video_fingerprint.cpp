@@ -136,7 +136,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o)const{
   // the 96x96 crop pass (already decoded); 2x2 box downsample to 48x48. Zero
   // fill when the 96 pass is short so alignment can never drift.
   constexpr int kT = VideoFingerprint::kThumbSize;
-  for(std::size_t i=0;i<frames32.size();++i){if(!keep[i])continue;const auto&f=frames32[i];ts.push_back(f.timestamp);hs.push_back(perceptual_hash(f.gray,f.width,f.height));mhs.push_back(perceptual_hash_mirrored(f.gray,f.width,f.height));
+  for(std::size_t i=0;i<frames32.size();++i){if(!keep[i])continue;const auto&f=frames32[i];ts.push_back(f.timestamp);{const auto hp=perceptual_hash_pair(f.gray,f.width,f.height);hs.push_back(hp.normal);mhs.push_back(hp.mirrored);}
     const std::size_t base=thumbs.size(); thumbs.resize(base+(std::size_t)kT*kT,0);
     if(i<frames96.size()){const auto&cf=frames96[i];
       if(cf.width==96&&cf.height==96&&(int)cf.gray.size()==96*96){

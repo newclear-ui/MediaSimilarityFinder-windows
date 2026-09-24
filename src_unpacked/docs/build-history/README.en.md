@@ -89,6 +89,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.83 | Startup self-check (platform plugin pre-flight) |
 | 0.9.2.84 | Build output runs out of the box (in-build Qt plugin deploy) |
 | 0.9.2.85 | Self-check path bug fix (GetModuleFileNameW) |
+| 0.9.2.86 | Fast pHash, reveal fallback, ffprobe DLLs |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

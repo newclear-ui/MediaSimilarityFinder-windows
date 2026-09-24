@@ -27,7 +27,7 @@ static void parallelFor(std::size_t n, F&& fn){
  }
  for(auto& f:futs) f.get();
 }
-bool MediaPipeline::image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint) const { ImageDecoder d; GrayImage img; if(!d.decode(path,32,32,img)) return false; fingerprint=perceptual_hash(img.pixels,img.width,img.height); if(mirrorFingerprint) *mirrorFingerprint=perceptual_hash_mirrored(img.pixels,img.width,img.height); return true; }
+bool MediaPipeline::image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint) const { ImageDecoder d; GrayImage img; if(!d.decode(path,32,32,img)) return false; const auto h=perceptual_hash_pair(img.pixels,img.width,img.height); fingerprint=h.normal; if(mirrorFingerprint) *mirrorFingerprint=h.mirrored; return true; }
 std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<std::string>& paths,bool preferGpu,std::size_t gpuBatchSize,std::atomic<bool>* activity) const {
     struct ActivityGuard { std::atomic<bool>* p; ~ActivityGuard(){ if(p) p->store(false,std::memory_order_relaxed); } } guard{activity};
     if(activity) activity->store(false,std::memory_order_relaxed);
@@ -53,7 +53,7 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
     }
     for(std::size_t base=0;base<map.size();base+=gpuBatchSize){
         const std::size_t n=std::min(gpuBatchSize,map.size()-base);
-        std::vector<std::uint64_t> hashes(n);
+        std::vector<std::uint64_t> hashes(n), mirrors(n);
         const std::uint8_t* block=packed.data()+base*1024;
         bool used=false;
         if(gpuReady){
@@ -61,14 +61,14 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
             used=gpu_.hashBatch(block,n,hashes.data());
             if(!used && activity) activity->store(false,std::memory_order_relaxed);
         }
-        if(!used){
-            // CPU fallback used to hash serially on the batch thread, leaving
-            // the other cores idle when the GPU path is off. Fan out instead.
-            parallelFor(n,[&](std::size_t k){ hashes[k]=perceptual_hash(std::vector<std::uint8_t>(block+k*1024,block+(k+1)*1024),32,32); });
-        }
-        parallelFor(n,[&](std::size_t k){ auto oi=map[base+k]; out[oi].fingerprint=hashes[k];
-            out[oi].mirrorFingerprint=perceptual_hash_mirrored(std::vector<std::uint8_t>(block+k*1024,block+(k+1)*1024),32,32);
-            out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; });
+        parallelFor(n,[&](std::size_t k){
+            const auto h=perceptual_hash_pair_32(block+k*1024);
+            if(!used) hashes[k]=h.normal;
+            mirrors[k]=h.mirrored;
+        });
+        for(std::size_t k=0;k<n;++k){ auto oi=map[base+k]; out[oi].fingerprint=hashes[k];
+            out[oi].mirrorFingerprint=mirrors[k];
+            out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; }
     }
     if(activity) activity->store(false,std::memory_order_relaxed);
     // Crop pass decodes a second, larger frame per image; parallelize it the
