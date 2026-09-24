@@ -177,13 +177,16 @@ static std::vector<char> sceneFlags(const VideoFingerprint& v){
  return f;
 }
 double frame_ssim(const std::uint8_t* a, const std::uint8_t* b, int w, int h){
- if(!a||!b||w<=0||h<=0||(w%8)!=0||(h%8)!=0) return 0;
+ if(!a||!b||w<=0||h<=0) return 0;
  // MSSIM with uniform (non-Gaussian) 8x8 windows: a few thousand integer-ish
  // ops per frame pair, far below one CPU pHash. Standard C1/C2 stability
- // constants. Identical frames -> ~1; unrelated content -> low.
+ // constants. Identical frames -> ~1; unrelated content -> low. Edge strips
+ // narrower than 8px are dropped (floor windows), never stretched.
  constexpr double C1=6.5025, C2=58.5225; // (0.01*255)^2, (0.03*255)^2
+ const int ww=(w/8)*8, hh=(h/8)*8;
+ if(ww<=0||hh<=0) return 0;
  double acc=0; int nw=0;
- for(int wy=0;wy<h;wy+=8)for(int wx=0;wx<w;wx+=8){
+ for(int wy=0;wy<hh;wy+=8)for(int wx=0;wx<ww;wx+=8){
   double sx=0,sy=0,sxx=0,syy=0,sxy=0;
   for(int dy=0;dy<8;++dy)for(int dx=0;dx<8;++dx){
    const double x=(double)a[(wy+dy)*w+wx+dx], y=(double)b[(wy+dy)*w+wx+dx];

@@ -1,5 +1,6 @@
 #include <cmath>
 #include "media_search_engine.h"
+#include "image_verify.h"
 #include "path_utils.h"
 #include "incremental_scanner.h"
 #include "media_pipeline.h"
@@ -93,7 +94,13 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
    }
    return best;
  };
- for(const auto& c:candidates){if(c.index>=candidateStates_.size())continue;const auto&x=candidateStates_[c.index];if(x.path==excludePath||x.fingerprint==0||x.kind!=kind)continue;double pct=bestAgainst(x);if(pct>=threshold)out.push_back({"",x.path,pct});}
+  for(const auto& c:candidates){if(c.index>=candidateStates_.size())continue;const auto&x=candidateStates_[c.index];if(x.path==excludePath||x.fingerprint==0||x.kind!=kind)continue;double pct=bestAgainst(x);if(pct>=threshold){
+   // Same image second stage as the scan paths (monitor live matches share
+   // the false-positive profile). Empty excludePath (adhoc queries) skips
+   // verification and keeps the raw Hamming verdict.
+   if(kind==(int)MediaKind::Image&&!excludePath.empty())
+     pct=verifyImagePair(excludePath,x.path,true,pct,threshold);
+   if(pct>=threshold)out.push_back({"",x.path,pct});}}
  std::sort(out.begin(),out.end(),[](const SearchMatch&a,const SearchMatch&b){return a.percent>b.percent;}); return out;
 }
 // L1 temporal anchors: per-frame hashes loaded read-only from the persistent

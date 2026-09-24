@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.2.69 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.2.70 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available" ON)
@@ -16,6 +16,7 @@ add_library(msf_core STATIC
     src/incremental_scanner.cpp
     src/scanner.cpp
     src/image_decoder.cpp
+    src/image_verify.cpp
     src/media_pipeline.cpp
     src/video_decoder.cpp
     src/video_fingerprint.cpp
@@ -114,6 +115,9 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_thumb_cache_test tests/thumb_cache_test.cpp)
     target_link_libraries(msf_thumb_cache_test PRIVATE msf_core)
     add_test(NAME thumb_cache_test COMMAND msf_thumb_cache_test)
+    add_executable(msf_image_verify_test tests/image_verify_test.cpp)
+    target_link_libraries(msf_image_verify_test PRIVATE msf_core)
+    add_test(NAME image_verify_test COMMAND msf_image_verify_test)
     add_executable(msf_scanner_test tests/scanner_test.cpp)
     target_link_libraries(msf_scanner_test PRIVATE msf_core)
     add_test(NAME scanner_test COMMAND msf_scanner_test)

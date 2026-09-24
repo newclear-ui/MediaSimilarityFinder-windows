@@ -73,6 +73,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.67 | L3 SSIM verification cells + thumb48 cache v5 |
 | 0.9.2.68 | QuickLook integration resume |
 | 0.9.2.69 | Toolbar cleanup + live intermediate results + summary/count fixes |
+| 0.9.2.70 | Image false-positive second-stage gate |
 | 0.9.2.65 | Video L1 multi-anchor + variant dedup fix |
 
 See the version-specific `.ko.md` / `.en.md` files for details.

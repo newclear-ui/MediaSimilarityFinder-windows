@@ -1,6 +1,7 @@
 #include "scan_pipeline.h"
 #include "candidate_index.h"
 #include "similarity.h"
+#include "image_verify.h"
 #include "video_fingerprint.h"
 #include <algorithm>
 #include <unordered_set>
@@ -53,10 +54,15 @@ void ScanPipeline::addAndMatch(const MediaFile& f,unsigned maxDistance,const Mat
    for(const auto& c:ix.query(h,maxDistance)){
     if(c.index>=idx) continue;
     if(!seenPartners.insert(c.index).second) continue;
-    const MediaFile& o=files_[c.index];
-    if(!o.fingerprint||o.kind!=f.kind) continue;
-    const double sim=bestMatch(f,o);
-    if(sim>=threshold) onMatch(MediaMatch{c.index,idx,sim});
+     const MediaFile& o=files_[c.index];
+     if(!o.fingerprint||o.kind!=f.kind) continue;
+     const double sim=bestMatch(f,o);
+     // Image second stage: Hamming-only verdicts let same-low-frequency false
+     // positives through (dark smooth photos within D<=8). verifyImagePair
+     // re-scores grey-zone pairs with SSIM; near-identical and video pairs
+     // pass through untouched, decode failures fall back to Hamming.
+     const double v=verifyImagePair(f.path,o.path,f.kind==MediaKind::Image,sim,threshold);
+     if(v>=threshold) onMatch(MediaMatch{c.index,idx,v});
    }
   };
   if(f.kind==MediaKind::Image){
@@ -135,7 +141,11 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     const bool isVideo=(files_[i].kind==MediaKind::Video);
     if(isVideo) ++s.videoCandidates;
     double sim=best(files_[i],files_[j]);
-    if(sim>=threshold){MediaMatch match{i,j,sim}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;return;}
+    if(sim>=threshold){
+     const double v=verifyImagePair(files_[i].path,files_[j].path,!isVideo,sim,threshold);
+     if(v>=threshold){MediaMatch match{i,j,v}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
+     return;
+    }
 if(isVideo){
       const double trigger=std::max(0.0,threshold-12.0);
       double gate=sim;

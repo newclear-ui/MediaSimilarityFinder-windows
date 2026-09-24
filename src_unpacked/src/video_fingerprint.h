@@ -55,7 +55,7 @@ private:
 double video_similarity(const VideoFingerprint&,const VideoFingerprint&,const VideoSimilarityOptions& options={});
 double video_crop_similarity(const VideoFingerprint&, const VideoCropFingerprint&, const VideoFingerprint&, const VideoCropFingerprint&, const VideoSimilarityOptions& options={});
 // L3 structural verification: mean SSIM over uniform 8x8 windows (MSSIM
-// without Gaussian; w,h must be positive multiples of 8). Returns [0,1].
-// Pure function, no fingerprint state — unit-testable in isolation.
+// without Gaussian). Sub-8px edge strips are dropped, never stretched.
+// Returns [0,1]. Pure function, no fingerprint state — unit-testable.
 double frame_ssim(const std::uint8_t* a, const std::uint8_t* b, int w, int h);
 }
