@@ -105,6 +105,7 @@ class MainWindow : public QMainWindow {
 public:
   explicit MainWindow(QWidget* parent=nullptr); ~MainWindow();
   static void scanLog(const QString& line); // process-wide scan log file
+  static void sortTiedReferencePaths(QStringList&, const QHash<QString,qulonglong>&, const QHash<QString,qulonglong>&);
 private slots:
   // scan
   void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
@@ -163,6 +164,7 @@ private:
   QString scanStatusText(qulonglong done, qulonglong total, int pct, const QString& path, qint64 elapsedMs) const;
   qint64 elapsedActiveMs() const; // scan clock minus paused intervals
   QString fileResolution(const QString&) const; // cached QImageReader::size
+  qulonglong filePixels(const QString&) const;
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
   void dropThumbCache(const QString& path); // exact + sized variants

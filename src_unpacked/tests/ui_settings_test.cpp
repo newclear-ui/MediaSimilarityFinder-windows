@@ -18,6 +18,17 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
+  if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--ref-order") {
+    QStringList paths({"a", "b", "c", "d"});
+    QHash<QString,qulonglong> pix, siz;
+    pix["a"] = 100; siz["a"] = 10;
+    pix["b"] = 400; siz["b"] = 5;
+    pix["c"] = 400; siz["c"] = 9;
+    pix["d"] = 0; siz["d"] = 99;
+    MainWindow::sortTiedReferencePaths(paths, pix, siz);
+    if (paths != QStringList({"c", "b", "a", "d"})) { std::cerr << "bad reference order\n"; return 1; }
+    std::cout << "reference_order=ok\n"; return 0;
+  }
   if (argc != 5) { std::cerr << "usage: ui_settings_test --probe-write|--probe-verify <dir> <W> <H>\n"; return 2; }
   const QString mode = QString::fromLocal8Bit(argv[1]);
   const QString dir = QString::fromLocal8Bit(argv[2]);

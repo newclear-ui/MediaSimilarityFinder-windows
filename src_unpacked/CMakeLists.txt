@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.2.79 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.2.80 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available" ON)
@@ -275,6 +275,7 @@ if(MSF_BUILD_GUI)
       add_test(NAME ui_settings_write COMMAND msf_ui_settings_test --probe-write "${MSF_UI_SETTINGS_DIR}" 640 480)
       add_test(NAME ui_settings_verify COMMAND msf_ui_settings_test --probe-verify "${MSF_UI_SETTINGS_DIR}" 640 480)
       set_tests_properties(ui_settings_verify PROPERTIES DEPENDS ui_settings_write)
+      add_test(NAME ui_reference_order_test COMMAND msf_ui_settings_test --ref-order)
       # Worker streaming + persistence probe: real scan over identical BMPs,
       # asserts live matches stream AND survive in a fresh engine handle.
       add_executable(msf_scan_streaming_test tests/scan_streaming_test.cpp gui/mainwindow.cpp gui/mainwindow.h)

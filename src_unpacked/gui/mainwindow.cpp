@@ -248,7 +248,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.79\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.79\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.80\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.80\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -566,7 +566,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.79"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.80"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -919,7 +919,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.79"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.80"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1365,6 +1365,18 @@ void MainWindow::rebuildGroups() {
     DupGroup g; g.paths = it.value();
     std::sort(g.paths.begin(), g.paths.end(),
               [this](const QString& a, const QString& b) { return bestPct_.value(a, 0) > bestPct_.value(b, 0); });
+    for (int i = 0; i < g.paths.size();) {
+      int j = i + 1;
+      while (j < g.paths.size() && bestPct_.value(g.paths[j], 0) == bestPct_.value(g.paths[i], 0)) ++j;
+      if (j - i > 1) {
+        QHash<QString,qulonglong> pix, siz;
+        for (int k = i; k < j; ++k) { pix[g.paths[k]] = filePixels(g.paths[k]); siz[g.paths[k]] = fileSizeCached(g.paths[k]); }
+        QStringList tied = g.paths.mid(i, j - i);
+        sortTiedReferencePaths(tied, pix, siz);
+        for (int k = i; k < j; ++k) g.paths[k] = tied[k - i];
+      }
+      i = j;
+    }
     g.best = 0; g.kind = pathKind_.value(g.paths[0], 1);
     for (const auto& p : g.paths) { g.pct[p] = bestPct_.value(p, 0); g.best = std::max(g.best, g.pct[p]); }
     groups_.push_back(g);
@@ -1384,6 +1396,23 @@ QString MainWindow::fmtSize(qulonglong n) const {
   return QString("%1 GB").arg(n / (1024.0 * 1024 * 1024), 0, 'f', 2);
 }
 double MainWindow::pathBest(const QString& p) const { return bestPct_.value(p, 0.0); }
+qulonglong MainWindow::filePixels(const QString& p) const {
+  const QString r = fileResolution(p);
+  const int x = r.indexOf('x');
+  if (x <= 0) return 0;
+  bool okW = false, okH = false;
+  const qulonglong w = r.left(x).toULongLong(&okW);
+  const qulonglong h = r.mid(x + 1).toULongLong(&okH);
+  if (!okW || !okH) return 0;
+  return w * h;
+}
+void MainWindow::sortTiedReferencePaths(QStringList& paths, const QHash<QString,qulonglong>& pixels, const QHash<QString,qulonglong>& sizes) {
+  std::sort(paths.begin(), paths.end(), [&](const QString& a, const QString& b) {
+    const qulonglong pa = pixels.value(a, 0), pb = pixels.value(b, 0);
+    if (pa != pb) return pa > pb;
+    return sizes.value(a, 0) > sizes.value(b, 0);
+  });
+}
 qulonglong MainWindow::fileSizeCached(const QString& p) {
   auto it = fileSize_.find(p);
   if (it != fileSize_.cend()) return it.value().toULongLong();
