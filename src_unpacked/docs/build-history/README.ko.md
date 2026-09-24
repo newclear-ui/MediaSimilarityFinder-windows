@@ -91,6 +91,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.2.85 | 자가진단 경로 버그 수정(GetModuleFileNameW) |
 | 0.9.2.86 | 고속 pHash·탐색기 폴백·ffprobe DLL |
 | 0.9.2.87 | CUDA 커널 1e-7 스냅(CPU·GPU 단색 일치) |
+| 0.9.2.88 | 탐색기 보기 근본 수정(CLSCTX_ALL) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 
