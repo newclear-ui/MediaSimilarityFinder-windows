@@ -221,7 +221,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.63\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.63\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.64\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.64\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -357,6 +357,12 @@ void ScanWorker::run() {
     // next scan of the same folder; a partial set on cancel keeps the last
     // completed checkpoint, matching the scan-side semantics.
     persistMatchesSnapshot();
+    // Diagnostic counters (ChatGPT step 1): where a video-heavy scan with few
+    // results loses its pairs. Log-only (the finished message below is parsed
+    // positionally and must not change shape).
+    MainWindow::scanLog(QString("videoStats indexedVideos=%1 pairs=%2 temporal=%3 matches=%4")
+                .arg(r.indexedVideos).arg(r.videoCandidatePairs)
+                .arg(r.videoTemporalChecks).arg(r.videoMatches));
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
     if (control_.cancel.load()) { emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
     const auto& fs = engine_.files();
@@ -493,7 +499,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.63"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.64"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -833,7 +839,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.63"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.64"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -972,7 +978,10 @@ void MainWindow::startScan() {
 void MainWindow::togglePauseScan() {
   if (!scanning_ || !worker_) return; // pause acts only while its own scan runs
   scanPaused_ = !scanPaused_;
-  QMetaObject::invokeMethod(worker_, scanPaused_ ? "pause" : "resume", Qt::QueuedConnection);
+  // Direct call, NOT QueuedConnection: pause()/resume() only store atomics,
+  // and a queued slot can never fire while run() occupies the worker thread's
+  // event loop — which is exactly why pause appeared dead mid-scan.
+  if (scanPaused_) worker_->pause(); else worker_->resume();
   pause_->setChecked(scanPaused_);
   pause_->setText(scanPaused_ ? trStr(lang(), "resume") : QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   statusMsg_->setText(trStr(lang(), scanPaused_ ? "paused" : "scanning"));
@@ -984,7 +993,9 @@ void MainWindow::togglePauseScan() {
 }
 void MainWindow::cancelScan() {
   if (!scanning_ || !worker_) return;
-  QMetaObject::invokeMethod(worker_, "cancel", Qt::QueuedConnection);
+  // Direct call (see togglePauseScan): a queued cancel slot would only run
+  // after run() returns, i.e. never in time to stop the scan.
+  worker_->cancel();
   statusMsg_->setText(trStr(lang(), "scanCancel"));
 }
 void MainWindow::onScanCounts(qulonglong done, qulonglong total) {

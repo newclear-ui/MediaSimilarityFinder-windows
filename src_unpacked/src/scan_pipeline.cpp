@@ -118,14 +118,16 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
      const std::uint64_t key=(static_cast<std::uint64_t>(i)<<32)^static_cast<std::uint64_t>(j);
      if(!seen.insert(key).second)return;
    }
-   ++s.candidates;
-   if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind)return;
-   double sim=best(files_[i],files_[j]);
-   if(sim>=threshold){MediaMatch match{i,j,sim}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;return;}
-if(files_[i].kind==MediaKind::Video){
+    ++s.candidates;
+    if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind)return;
+    const bool isVideo=(files_[i].kind==MediaKind::Video);
+    if(isVideo) ++s.videoCandidates;
+    double sim=best(files_[i],files_[j]);
+    if(sim>=threshold){MediaMatch match{i,j,sim}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;return;}
+if(isVideo){
       const double trigger=std::max(0.0,threshold-12.0);if(sim>=trigger&&durationGate(files_[i],files_[j])){
         VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
-        if(temporal(files_[i],ai,ac)&&temporal(files_[j],bi,bc)){double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2,2.0});if(ts>=threshold){MediaMatch match{i,j,ts}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}}
+        if(temporal(files_[i],ai,ac)&&temporal(files_[j],bi,bc)){++s.videoTemporalChecks;double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2,2.0});if(ts>=threshold){MediaMatch match{i,j,ts}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}}
       }
     }
  };

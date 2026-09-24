@@ -94,6 +94,7 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 public:
   explicit MainWindow(QWidget* parent=nullptr); ~MainWindow();
+  static void scanLog(const QString& line); // process-wide scan log file
 private slots:
   // scan
   void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
@@ -138,7 +139,6 @@ private:
   void scanHeartbeat();
   void saveUiState();              // window geometry + splitter + header layouts
   void restoreUiState();           // counterpart applied after buildUi()
-  static void scanLog(const QString& line);
   QString fmtSize(qulonglong) const;
   QString scanStatusText(qulonglong done, qulonglong total, int pct, const QString& path, qint64 elapsedMs) const;
   QString fileResolution(const QString&) const; // cached QImageReader::size

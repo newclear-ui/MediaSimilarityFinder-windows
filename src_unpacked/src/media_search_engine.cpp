@@ -241,9 +241,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); r.completed=false; return r; }
  candidateStates_=db_.all(); rebuildCandidateIndexes();
  // Unchanged files must participate in every incremental search.
- files_.clear();
- const auto currentStates=db_.all(); files_.reserve(currentStates.size());
- for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); }
+  files_.clear();
+  const auto currentStates=db_.all(); files_.reserve(currentStates.size());
+  for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); if((MediaKind)x.kind==MediaKind::Video) ++r.indexedVideos; }
   ScanPipeline pipe; for(auto&f:files_)pipe.add(f);
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause
@@ -260,6 +260,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(control && control->onMatchRef) control->onMatchRef(ref);
    if(control && control->onMatch) {
      SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
+     if(files_[m.left].kind==MediaKind::Video) ++r.videoMatches;
      control->onMatch(sm);
    }
     if(!control || control->retainMatches) {
@@ -273,6 +274,6 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // already streamed via onMatch); mark the report incomplete like every
   // other stop path. analyze() itself never propagates.
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
-  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_); return r;
+  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_); return r;
 }
 }

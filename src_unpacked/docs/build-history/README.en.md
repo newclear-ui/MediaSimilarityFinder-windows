@@ -67,6 +67,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.61 | Uniform preview sizes + wider shell lane |
 | 0.9.2.62 | Similarity-inspired additions (Pairs, ETR, thumbnail skip list) |
 | 0.9.2.63 | Disk thumbnail cache + favorites/filename/resolution/0B fixes |
+| 0.9.2.64 | Direct stop delivery + video diagnostic counters |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
