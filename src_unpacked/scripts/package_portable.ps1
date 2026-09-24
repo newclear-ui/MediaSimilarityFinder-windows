@@ -10,14 +10,38 @@ Remove-Item $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $OutputDir, (Join-Path $OutputDir "Index") -Force | Out-Null
 Copy-Item $exe $OutputDir -Force
 $qtBin = Split-Path $exe -Parent
+# Project-local vcpkg prefix used by the current Windows build.
+$vcpkgTripletRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "vcpkg_installed\x64-windows"
 if (Get-Command windeployqt.exe -ErrorAction SilentlyContinue) {
   & windeployqt.exe --release --no-translations (Join-Path $OutputDir "MediaSimilarityFinder.exe")
 }
 Get-ChildItem $qtBin -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $OutputDir -Force
+
+# Copy runtime DLLs from the project-local vcpkg installation. SQLite/FFmpeg
+# are linked from this prefix, so the portable package must not depend on the
+# developer/CI machine's PATH for these DLLs.
+$vcpkgBin = Join-Path $vcpkgTripletRoot "bin"
+if (Test-Path $vcpkgBin) {
+  Get-ChildItem $vcpkgBin -Filter *.dll -ErrorAction SilentlyContinue |
+    Copy-Item -Destination $OutputDir -Force
+}
+
+# ffmpeg/ffprobe are runtime fallbacks used by VideoDecoder and the resolution
+# probe. The manifest enables both tools; copy them from vcpkg's tools prefix.
+$vcpkgTools = Join-Path $vcpkgTripletRoot "tools"
+foreach ($toolName in @("ffmpeg.exe", "ffprobe.exe")) {
+  $tool = Get-ChildItem $vcpkgTools -Filter $toolName -Recurse -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if ($tool) {
+    Copy-Item $tool.FullName (Join-Path $OutputDir $toolName) -Force
+  } else {
+    throw "$toolName was not found in project-local vcpkg tools."
+  }
+}
 # vcpkg Qt keeps plugins under <prefix>\Qt6\plugins, which plain DLL copying
 # misses. Without Qt6\plugins the GUI failfasts in Qt6Core at startup
 # (verified on 0.9.2.35); windeployqt covers this when present.
-$qtPluginRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "vcpkg_installed\x64-windows\Qt6"
+$qtPluginRoot = Join-Path $vcpkgTripletRoot "Qt6"
 if (Test-Path (Join-Path $qtPluginRoot "plugins")) {
   Copy-Item (Join-Path $qtPluginRoot "plugins") (Join-Path $OutputDir "Qt6\plugins") -Recurse -Force -Exclude *.pdb
 }
