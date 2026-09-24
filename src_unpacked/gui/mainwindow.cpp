@@ -171,6 +171,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"phash")) return S("지각 해시(pHash):","Perceptual hash:");
   if (!std::strcmp(key,"noExif")) return S("EXIF 메타데이터가 없습니다.","No EXIF metadata found.");
   if (!std::strcmp(key,"open")) return S("열기","Open");
+  if (!std::strcmp(key,"quickLook")) return S("QuickLook으로 미리보기","Preview with QuickLook");
+  if (!std::strcmp(key,"quickLookFail")) return S("QuickLook을 시작할 수 없습니다","Could not start QuickLook");
   if (!std::strcmp(key,"reveal")) return S("탐색기에서 보기","Reveal in Explorer");
   if (!std::strcmp(key,"copy")) return S("복사","Copy");
   if (!std::strcmp(key,"cut")) return S("잘라내기","Cut");
@@ -221,7 +223,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.67\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.67\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.68\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.68\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -499,7 +501,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.67"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.68"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -839,7 +841,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.67"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.68"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1905,6 +1907,10 @@ void MainWindow::invertMarked() {
 }
 void MainWindow::showFileMenu(const QPoint& pos) {
   QMenu m(this);
+  // QuickLook preview goes on top, only when usable (installed exe found or
+  // its pipe already live). Missing entirely when QuickLook is absent.
+  if (!quickLookTarget().isEmpty())
+    m.addAction(trStr(lang(), "quickLook"), this, &MainWindow::previewSelectedQuickLook);
   m.addAction(trStr(lang(), "open"), this, &MainWindow::openSelected);
   m.addAction(trStr(lang(), "reveal"), this, &MainWindow::revealSelected);
   m.addSeparator();
@@ -1945,6 +1951,105 @@ void MainWindow::showGroupMenu(const QPoint& pos) {
 void MainWindow::openSelected() {
   for (const auto& p : selectedFiles()) QDesktopServices::openUrl(QUrl::fromLocalFile(p));
 }
+#ifdef _WIN32
+// ---- QuickLook integration (optional): preview the selected file through an
+// installed QuickLook (QL-Win) instead of opening a full application.
+// Detection: well-known install locations + Uninstall registry. Trigger:
+// QuickLook's own named-pipe protocol (PipeServerManager.cs) — pipe
+// \\.\pipe\QuickLook.App.Pipe.<UserSID>, UTF-8 message
+// "QuickLook.App.PipeMessages.Toggle|<native path>|\n". Pipe presence also
+// reports a running server, so a Store install (no launchable exe) still
+// works once the user has started it.
+QString quickLookToggleMessage(const QString& filePath) {
+  return QStringLiteral("QuickLook.App.PipeMessages.Toggle|") +
+         QDir::toNativeSeparators(filePath) + QStringLiteral("|\n");
+}
+bool quickLookSendMessage(const QString& pipeName, const QByteArray& payload) {
+  HANDLE h = CreateFileW(reinterpret_cast<LPCWSTR>(pipeName.utf16()), GENERIC_WRITE,
+                         0, nullptr, OPEN_EXISTING, 0, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return false;
+  DWORD written = 0;
+  const BOOL ok = WriteFile(h, payload.constData(), (DWORD)payload.size(), &written, nullptr);
+  CloseHandle(h);
+  return ok && written == (DWORD)payload.size();
+}
+static QString quickLookPipeName() {
+  // Enumerate \\.\pipe\ instead of computing the user SID: doubles as the
+  // is-running check with one syscall pattern.
+  WIN32_FIND_DATAW fd{};
+  HANDLE h = FindFirstFileW(L"\\\\.\\pipe\\QuickLook.App.Pipe.*", &fd);
+  if (h == INVALID_HANDLE_VALUE) return QString();
+  QString name = QString::fromWCharArray(fd.cFileName);
+  FindClose(h);
+  return QStringLiteral("\\\\.\\pipe\\") + name;
+}
+// _wgetenv returns null when the variable is absent; fromWCharArray(null)
+// would AV, so map missing vars to empty (no candidate from that root).
+static QString qlEnv(const wchar_t* name) {
+  const wchar_t* v = _wgetenv(name);
+  return v ? QString::fromWCharArray(v) : QString();
+}
+static QString quickLookExePath() {
+  static QString cached; static bool probed = false;
+  if (probed) return cached;
+  probed = true;
+  QStringList cands;
+  const QString pf = qlEnv(L"ProgramFiles");
+  const QString pf86 = qlEnv(L"ProgramFiles(x86)");
+  const QString local = qlEnv(L"LOCALAPPDATA");
+  const QString user = qlEnv(L"USERPROFILE");
+  if (!pf.isEmpty()) cands << pf + "\\QuickLook\\QuickLook.exe";
+  if (!pf86.isEmpty()) cands << pf86 + "\\QuickLook\\QuickLook.exe";
+  if (!local.isEmpty()) cands << local + "\\Programs\\QuickLook\\QuickLook.exe"
+                              << local + "\\QuickLook\\QuickLook.exe";
+  if (!user.isEmpty()) cands << user + "\\scoop\\apps\\quicklook\\current\\QuickLook.exe";
+  for (const auto& c : cands)
+    if (QFileInfo(c).isFile()) { cached = QDir::toNativeSeparators(c); return cached; }
+  // Uninstall registry (machine + user).
+  for (const char* root : {"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                           "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"}) {
+    QSettings reg(QString::fromLatin1(root), QSettings::NativeFormat);
+    for (const auto& g : reg.childGroups()) {
+      reg.beginGroup(g);
+      const QString disp = reg.value("DisplayName").toString();
+      const QString loc = reg.value("InstallLocation").toString();
+      reg.endGroup();
+      if (disp.contains("QuickLook", Qt::CaseInsensitive) && !loc.isEmpty()) {
+        const QString exe = QDir(loc).filePath("QuickLook.exe");
+        if (QFileInfo(exe).isFile()) { cached = QDir::toNativeSeparators(exe); return cached; }
+      }
+    }
+  }
+  return cached;
+}
+QString MainWindow::quickLookTarget() const {
+  if (!quickLookPipeName().isEmpty()) return QStringLiteral("pipe");
+  return quickLookExePath();
+}
+void MainWindow::previewSelectedQuickLook() {
+  const auto ps = selectedFiles();
+  if (ps.isEmpty()) return;
+  QString pipe = quickLookPipeName();
+  if (pipe.isEmpty()) {
+    // Installed but not running: launch, then wait briefly for its server.
+    const QString exe = quickLookExePath();
+    if (!exe.isEmpty() && QProcess::startDetached(exe, {})) {
+      QElapsedTimer t; t.start();
+      while (t.elapsed() < 2500 && (pipe = quickLookPipeName()).isEmpty()) {
+        QThread::msleep(100);
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+      }
+    }
+  }
+  if (pipe.isEmpty() || !quickLookSendMessage(pipe, quickLookToggleMessage(ps.first()).toUtf8())) {
+    statusMsg_->setText(trStr(lang(), "quickLookFail"));
+    return;
+  }
+}
+#else
+QString quickLookToggleMessage(const QString&) { return QString(); }
+bool quickLookSendMessage(const QString&, const QByteArray&) { return false; }
+#endif
 void MainWindow::revealSelected() {
   const auto ps = selectedFiles();
   if (ps.isEmpty()) return;

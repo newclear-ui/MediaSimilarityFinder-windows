@@ -29,6 +29,11 @@ class QStyledItemDelegate;
 // ---------------------------------------------------------------- language
 enum class UiLang { Ko, En };
 QString trStr(UiLang lang, const char* key); // KO/EN string table (see .cpp)
+// QuickLook wire protocol (see QL-Win/QuickLook PipeServerManager.cs):
+// message "QuickLook.App.PipeMessages.Toggle|<path>|\n" (UTF-8) written to
+// \\.\pipe\QuickLook.App.Pipe.<UserSID>. Exported for the pipe test.
+QString quickLookToggleMessage(const QString& filePath);
+bool quickLookSendMessage(const QString& pipeName, const QByteArray& payload);
 // Letterbox-fit helper: every display icon entering a grid is normalized to
 // the exact requested rect, so cells stay uniform (Explorer-like) regardless
 // of source aspect/size. Transparent padding, never distorted.
@@ -112,6 +117,7 @@ private slots:
   void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
   void openSelected(); void revealSelected(); void renameSelected(); void deleteSelected();
+  void previewSelectedQuickLook(); QString quickLookTarget() const; // empty when QuickLook unusable
   void copySelected(); void cutSelected(); void pasteFiles(); void moveSelected();
   void refreshFolders(); void folderActivated(QTreeWidgetItem*,int);
   void populateFolderChildren(QTreeWidgetItem*);
