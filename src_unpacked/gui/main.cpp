@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QString>
 #include <QTimer>
 #include <iostream>
@@ -24,11 +25,14 @@ static bool attachParentConsole() { return true; }
 #endif
 
 namespace {
-constexpr const char* kVersion = "0.9.2.84";
+constexpr const char* kVersion = "0.9.2.85";
 }
 #ifdef _WIN32
 static bool platformPluginPresent() {
-    const QString dir = QCoreApplication::applicationDirPath();
+    wchar_t imagePath[32768];
+    const DWORD imageLen = GetModuleFileNameW(nullptr, imagePath, 32768);
+    if (imageLen == 0 || imageLen >= 32768) return false;
+    const QString dir = QFileInfo(QString::fromWCharArray(imagePath, int(imageLen))).absolutePath();
     return QFile::exists(dir + QStringLiteral("/platforms/qwindows.dll"))
         || QFile::exists(dir + QStringLiteral("/Qt6/plugins/platforms/qwindows.dll"));
 }
