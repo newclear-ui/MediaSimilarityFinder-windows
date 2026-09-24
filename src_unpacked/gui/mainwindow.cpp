@@ -177,6 +177,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"open")) return S("열기","Open");
   if (!std::strcmp(key,"quickLook")) return S("QuickLook으로 미리보기","Preview with QuickLook");
   if (!std::strcmp(key,"quickLookFail")) return S("QuickLook을 시작할 수 없습니다","Could not start QuickLook");
+  if (!std::strcmp(key,"revalidated")) return S("구버전 인덱스 재검증: %1 유지·%2 제외, 최신 엔진에 맞춤","Legacy index revalidated: %1 kept, %2 dropped for the current engine");
   if (!std::strcmp(key,"reveal")) return S("탐색기에서 보기","Reveal in Explorer");
   if (!std::strcmp(key,"copy")) return S("복사","Copy");
   if (!std::strcmp(key,"cut")) return S("잘라내기","Cut");
@@ -227,7 +228,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.70\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.70\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.71\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.71\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -285,6 +286,17 @@ void ScanWorker::run() {
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
+    // Engine-version gate: pairs stored by an older verdict generation are
+    // re-checked with the current logic (no rescan) before anything displays
+    // them. Drops old false positives, keeps the rest, stamps the version.
+    // Cancelled here means: stop before touching results.
+    {
+      int kept = 0, dropped = 0;
+      if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
+        emit finished(QString("CANCELLED|0|0")); return;
+      }
+      if (kept + dropped > 0) emit revalidated(kept, dropped);
+    }
     // Quick load: the scan button restores the stored duplicate groups before
     // analyzing anything, so a repeat scan of the same folder shows previous
     // results immediately, then appends only files that changed meanwhile.
@@ -529,7 +541,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.70"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.71"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -876,7 +888,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.70"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.71"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1002,6 +1014,7 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
   connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
   connect(worker_, &ScanWorker::quickLoaded, this, &MainWindow::onQuickLoaded);
+  connect(worker_, &ScanWorker::revalidated, this, &MainWindow::onRevalidated);
   connect(worker_, &ScanWorker::results, this, &MainWindow::onResults);
   connect(worker_, &ScanWorker::finished, this, &MainWindow::scanFinished);
   connect(worker_, &ScanWorker::failed, this, &MainWindow::scanFailed);
@@ -1075,6 +1088,9 @@ void MainWindow::onListingProgress(std::size_t n) {
 void MainWindow::onQuickLoaded(int n) {
   drainMatches();
   statusMsg_->setText(trStr(lang(), "quickLoaded").arg(n));
+}
+void MainWindow::onRevalidated(int kept, int dropped) {
+  statusMsg_->setText(trStr(lang(), "revalidated").arg(kept).arg(dropped));
 }
 void MainWindow::scanFinished(QString msg) {
   drainMatches();

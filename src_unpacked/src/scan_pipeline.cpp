@@ -110,12 +110,15 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     for(auto u:a.anchors){ if(!u)continue; for(auto v:b.anchors){ if(!v)continue; z=std::max(z,hash_similarity(u,v)); } }
     return z;
   };
- VideoFingerprintEngine temporalEngine;
- std::unordered_map<std::string,VideoFingerprint> baseCache; std::unordered_map<std::string,VideoCropFingerprint> cropCache;
- auto temporal=[&](const MediaFile& f, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
-   auto it=baseCache.find(f.path); if(it==baseCache.end()){VideoFingerprint b;if(!temporalEngine.build(f.path,b))return false;it=baseCache.emplace(f.path,std::move(b)).first;} vf=it->second;
-   auto ic=cropCache.find(f.path); if(ic==cropCache.end()){VideoCropFingerprint c;if(!temporalEngine.buildCropAware(f.path,vf,c,96))return false;ic=cropCache.emplace(f.path,std::move(c)).first;} cf=ic->second; return true;
- };
+  VideoFingerprintEngine temporalEngine;
+  // Shared cache-backed engine when provided (same verdicts, skips re-decode
+  // on cache hits); otherwise a local engine that always decodes.
+  const VideoFingerprintEngine& te = temporalEngine_ ? *temporalEngine_ : temporalEngine;
+  std::unordered_map<std::string,VideoFingerprint> baseCache; std::unordered_map<std::string,VideoCropFingerprint> cropCache;
+  auto temporal=[&](const MediaFile& f, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
+    auto it=baseCache.find(f.path); if(it==baseCache.end()){VideoFingerprint b;if(!te.build(f.path,b))return false;it=baseCache.emplace(f.path,std::move(b)).first;} vf=it->second;
+    auto ic=cropCache.find(f.path); if(ic==cropCache.end()){VideoCropFingerprint c;if(!te.buildCropAware(f.path,vf,c,96))return false;ic=cropCache.emplace(f.path,std::move(c)).first;} cf=ic->second; return true;
+  };
   std::unordered_set<std::uint64_t> seen;
   std::size_t imageFullCandidates=0,videoFullCandidates=0;
   bool dedupCrop=false;

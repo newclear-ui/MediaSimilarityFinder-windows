@@ -45,6 +45,10 @@ struct ScanControl {
 };
 class MediaSearchEngine {
 public:
+  // Match-verdict generation. Bump when a code change can alter verdicts
+  // (candidate rules, similarity scoring, verification gates). Stored in the
+  // index DB (meta.engine_version); older DBs revalidate instead of rescanning.
+  static constexpr int kEngineVersion = 1;
   bool openIndex(const std::string& dbPath);
   bool openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory);
  // Persist the current duplicate-pair set so a later session can reload it.
@@ -53,9 +57,19 @@ public:
  // from disk are preserved for resuming unfinished work. Safe on cancel: the
  // caller may pass a partial set to keep the last completed progress.
   bool saveMatches(const std::vector<SearchMatch>& matches);
-  // Load the pairs persisted by the last completed scan. Paths use the same
-  // canonical UTF-8 form as scan results, so reload maps 1:1 onto files().
+ // Load the pairs persisted by the last completed scan. Paths use the same
+ // canonical UTF-8 form as scan results, so reload maps 1:1 onto files().
   std::vector<SearchMatch> loadMatches() const;
+ // Re-verify stored pairs against the current verdict logic without a full
+ // rescan (no directory walk, no re-analysis). Images re-run bestMatch plus
+ // the SSIM gate on DB fingerprints (grey-zone decodes only); videos re-run
+ // the full pipeline verdict through the shared cache-backed temporal engine
+ // (cache hits skip re-decode). Pairs whose files changed on disk or left the
+ // index are kept, never dropped (union semantics for unfinished work). Drops
+ // only pairs both files verify against at the scan-time line. Stamps the
+ // current engine version unless cancelled (returns false, nothing stamped).
+ // Pair-bounded and one-time per engine bump; cancel-aware. Counters may be null.
+ bool revalidateMatches(ScanControl* control=nullptr, int* kept=nullptr, int* dropped=nullptr);
   // Releases the index database so its files can be moved or removed.
   // Required on Windows, where open files cannot be deleted.
   void close();

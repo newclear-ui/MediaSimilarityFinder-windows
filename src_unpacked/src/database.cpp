@@ -69,6 +69,8 @@ bool Database::initialize(){
  if(!exec("CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,size INTEGER NOT NULL,modified INTEGER NOT NULL,quick_hash TEXT NOT NULL,fingerprint INTEGER NOT NULL DEFAULT 0,kind INTEGER NOT NULL DEFAULT 0,duration REAL NOT NULL DEFAULT 0,mirror_fingerprint INTEGER NOT NULL DEFAULT 0,crop_4x3 INTEGER NOT NULL DEFAULT 0,crop_1x1 INTEGER NOT NULL DEFAULT 0,crop_9x16 INTEGER NOT NULL DEFAULT 0,mirror_crop_4x3 INTEGER NOT NULL DEFAULT 0,mirror_crop_1x1 INTEGER NOT NULL DEFAULT 0,mirror_crop_9x16 INTEGER NOT NULL DEFAULT 0); CREATE INDEX IF NOT EXISTS idx_files_modified ON files(modified);")) return false;
   if(!exec("CREATE TABLE IF NOT EXISTS matches(left_path TEXT NOT NULL,right_path TEXT NOT NULL,percent REAL NOT NULL,PRIMARY KEY(left_path,right_path)); CREATE INDEX IF NOT EXISTS idx_matches_left ON matches(left_path); CREATE INDEX IF NOT EXISTS idx_matches_right ON matches(right_path);")) return false;
   if(!exec("CREATE TABLE IF NOT EXISTS thumbs(path TEXT PRIMARY KEY,modified INTEGER NOT NULL,size INTEGER NOT NULL,jpeg BLOB NOT NULL);")) return false;
+  if(!exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);")) return false;
+  if(!exec("CREATE TABLE IF NOT EXISTS thumbs(path TEXT PRIMARY KEY,modified INTEGER NOT NULL,size INTEGER NOT NULL,jpeg BLOB NOT NULL);")) return false;
  // Migrate databases created before mirror-aware fingerprints.
  bool hasMirror=false; sqlite3_stmt* info=nullptr;
  if(sqlite3_prepare_v2(D(db_),"PRAGMA table_info(files)",-1,&info,nullptr)==SQLITE_OK){
@@ -224,5 +226,26 @@ bool Database::getThumb(const std::string& path,std::int64_t modified,std::uint6
 bool Database::pruneThumbs(){
   if(!db_) return false;
   return exec("DELETE FROM thumbs WHERE path NOT IN (SELECT path FROM files);");
+}
+
+int Database::engineVersion() const{
+  if(!db_) return 0;
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"SELECT value FROM meta WHERE key='engine_version'",-1,&s,nullptr)!=SQLITE_OK) return 0;
+  int v=0;
+  if(sqlite3_step(s)==SQLITE_ROW){
+    const char* t=reinterpret_cast<const char*>(sqlite3_column_text(s,0));
+    if(t){ try{ v=std::max(0,std::stoi(t)); }catch(...){ v=0; } }
+  }
+  sqlite3_finalize(s); return v;
+}
+
+bool Database::setEngineVersion(int v){
+  if(!db_) return false;
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"INSERT INTO meta(key,value) VALUES('engine_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",-1,&s,nullptr)!=SQLITE_OK) return false;
+  const std::string vs=std::to_string(std::max(0,v));
+  sqlite3_bind_text(s,1,vs.c_str(),-1,SQLITE_TRANSIENT);
+  const bool ok=sqlite3_step(s)==SQLITE_DONE; sqlite3_finalize(s); return ok;
 }
 }

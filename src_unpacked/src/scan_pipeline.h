@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 namespace msf {
+class VideoFingerprintEngine; // cache-backed temporal source (optional, see below)
 enum class MediaKind { Unknown, Image, Video };
 struct MediaFile { std::string path; MediaKind kind=MediaKind::Unknown; std::uint64_t size=0,modified=0,fingerprint=0,mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0,mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0; double duration=0; std::vector<std::uint64_t> anchors; };
 struct MediaMatch { std::size_t left=0,right=0; double percent=0; };
@@ -31,6 +32,14 @@ public:
   ScanStats analyze(unsigned maxDistance=8);
   ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch);
   ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop);
- const std::vector<MediaFile>& files() const;
+  // Optional cache-backed engine for the expensive video temporal stage.
+  // Without it analyze() decodes every video pair from scratch (its local
+  // engine has no cache open); with it, cache hits skip the decode entirely.
+  // Same verdicts either way — build() output is content-determined. The
+  // pointed engine must outlive the analyze() call; not owned.
+  void setSharedTemporalEngine(const VideoFingerprintEngine* e) { temporalEngine_ = e; }
+  const std::vector<MediaFile>& files() const;
+ private:
+  const VideoFingerprintEngine* temporalEngine_ = nullptr;
 };
 }

@@ -66,6 +66,7 @@ signals:
   void listingProgress(std::size_t);
   void matchesArrived();            // throttled; call takePending()
   void quickLoaded(int);            // stored matches reloaded from the index
+  void revalidated(int,int);        // old-engine pairs re-checked: kept, dropped
   void results(QVector<GuiFile> files, QStringList matchRows);
   void targetCount(qulonglong);   // pre-walk file total (fixed denominator)
   void finished(QString);
@@ -109,6 +110,7 @@ private slots:
   void onTargetCount(qulonglong);
   void onListingProgress(std::size_t);
   void onQuickLoaded(int);
+  void onRevalidated(int,int);
   void onResults(QVector<GuiFile> files, QStringList matchRows);
   void resourceChanged(int); void customResourceChanged();
   // groups / files

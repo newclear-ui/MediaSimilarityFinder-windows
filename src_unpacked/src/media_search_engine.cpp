@@ -34,10 +34,59 @@ bool MediaSearchEngine::saveMatches(const std::vector<SearchMatch>& matches){
   for(const auto& m:matches) s.push_back({m.leftPath,m.rightPath,m.percent});
   return db_.saveMatches(s);
 }
+static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf);
 std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
   std::vector<SearchMatch> out; const auto s=db_.loadMatches(); out.reserve(s.size());
   for(const auto& m:s) out.push_back({m.left,m.right,m.percent});
   return out;
+}
+bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* dropped){
+  if(kept) *kept=0; if(dropped) *dropped=0;
+  if(db_.engineVersion()>=kEngineVersion) return true; // current: nothing to do
+  const auto stored=db_.loadMatches();
+  if(stored.empty()){ db_.setEngineVersion(kEngineVersion); return true; }
+  const auto states=db_.all();
+  std::unordered_map<std::string,const FileState*> byPath; byPath.reserve(states.size()*2+1);
+  for(const auto& x:states) byPath.emplace(x.path,&x);
+  // Disk freshness in the scanner's own unit (milliseconds — raw counts differ
+  // by clock granularity): a pair involving a file that changed since indexing
+  // is kept, never dropped — the coming scan re-analyzes it. Missing files
+  // stay too (union semantics for unfinished work); only verdict failures on
+  // fresh fingerprints are dropped.
+  auto fresh=[&](const FileState& x)->bool{
+    std::error_code ec; const auto fp=path_from_utf8(x.path);
+    const auto sz=std::filesystem::file_size(fp,ec); if(ec) return true;
+    const auto mt=std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::filesystem::last_write_time(fp,ec).time_since_epoch()).count(); if(ec) return true;
+    return (std::uint64_t)sz==x.size && (std::int64_t)mt==x.modified;
+  };
+  auto toMedia=[&](const FileState& x)->MediaFile{
+    MediaFile mf{x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration};
+    if((MediaKind)x.kind==MediaKind::Video) loadVideoAnchors(videoEngine_,mf);
+    return mf;
+  };
+  // One shared cache-backed temporal engine for the whole pass: video pairs
+  // whose fingerprints are cached skip re-decode entirely (same verdicts).
+  std::vector<StoredMatch> survivors; survivors.reserve(stored.size());
+  std::size_t n=0;
+  for(const auto& m:stored){
+    if(control && ((++n & 31)==0) && control->cancel.load()) return false;
+    auto it1=byPath.find(m.left), it2=byPath.find(m.right);
+    if(it1==byPath.end()||it2==byPath.end()){ survivors.push_back(m); if(kept)++*kept; continue; }
+    const FileState &a=*it1->second, &b=*it2->second;
+    if(!fresh(a)||!fresh(b)){ survivors.push_back(m); if(kept)++*kept; continue; }
+    if(!a.fingerprint||!b.fingerprint){ if(dropped)++*dropped; continue; }
+    // Exact pipeline verdict on the two files (L1 + anchors + temporal + SSIM
+    // gates, same code as scans). Pair-bounded and one-time per engine bump.
+    ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_);
+    pipe.add(toMedia(a)); pipe.add(toMedia(b));
+    auto st=pipe.analyze(8);
+    if(!st.matches.empty()){ survivors.push_back({m.left,m.right,st.matches.front().percent}); if(kept)++*kept; }
+    else if(dropped) ++*dropped;
+  }
+  if(!db_.saveMatches(survivors)) return false;
+  db_.setEngineVersion(kEngineVersion);
+  return true;
 }
 bool MediaSearchEngine::upsertFingerprint(const std::string& path, std::uint64_t fingerprint, int kind, std::uint64_t size, std::int64_t modified, std::uint64_t mirrorFingerprint, std::uint64_t crop4x3, std::uint64_t crop1x1, std::uint64_t crop9x16, std::uint64_t mirrorCrop4x3, std::uint64_t mirrorCrop1x1, std::uint64_t mirrorCrop9x16) {
  FileState x; x.path=path; x.fingerprint=fingerprint; x.mirrorFingerprint=mirrorFingerprint; x.crop4x3=crop4x3; x.crop1x1=crop1x1; x.crop9x16=crop9x16; x.mirrorCrop4x3=mirrorCrop4x3; x.mirrorCrop1x1=mirrorCrop1x1; x.mirrorCrop9x16=mirrorCrop9x16; x.kind=kind; x.size=size; x.modified=modified; if(!db_.upsert(x)) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return true;
@@ -264,7 +313,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   files_.clear();
   const auto currentStates=db_.all(); files_.reserve(currentStates.size());
   for(const auto& x:currentStates) if(x.fingerprint){ if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()) continue; files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration}); if((MediaKind)x.kind==MediaKind::Video){ loadVideoAnchors(videoEngine_, files_.back()); } if((MediaKind)x.kind==MediaKind::Video) ++r.indexedVideos; }
-  ScanPipeline pipe; for(auto&f:files_)pipe.add(f);
+  ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); for(auto&f:files_)pipe.add(f);
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause
   // during this phase did nothing until it finished — the force-quit path
