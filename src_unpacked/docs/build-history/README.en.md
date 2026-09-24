@@ -70,6 +70,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.64 | Direct stop delivery + video diagnostic counters |
 | 0.9.2.65 | Video L1 multi-anchor + variant dedup fix |
 | 0.9.2.66 | E2E video regression + EXIF rotation + cleanups |
+| 0.9.2.67 | L3 SSIM verification cells + thumb48 cache v5 |
 | 0.9.2.65 | Video L1 multi-anchor + variant dedup fix |
 
 See the version-specific `.ko.md` / `.en.md` files for details.

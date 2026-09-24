@@ -14,7 +14,13 @@ struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::ve
  // Scene-change boundaries detected at the sampling cadence. Timestamps align
  // with entries in timestamps; video_similarity() uses them as stable DTW
  // anchors (scene cuts survive re-encodes even when frames shift).
- std::vector<double> sceneChanges;};
+ std::vector<double> sceneChanges;
+ // L3 verification thumbnails: 48x48 gray per kept frame, 1:1 with hashes[].
+ // video_similarity() scores aligned frame pairs with SSIM on these (gated by
+ // Hamming, blended) instead of Hamming alone. Empty = pre-v5 data or
+ // hand-built fingerprints: scoring falls back to Hamming-only.
+ static constexpr int kThumbSize=48;
+ std::vector<std::uint8_t> thumb48;};
 struct VideoCropFingerprint {
  std::vector<std::uint64_t> a4x3, a1x1, a9x16;
  std::vector<std::uint64_t> mirrorA4x3, mirrorA1x1, mirrorA9x16;
@@ -41,11 +47,15 @@ private:
  mutable void* loadStmt_=nullptr;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
- static constexpr int kCacheFormatVersion=4;
+ static constexpr int kCacheFormatVersion=5;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
  void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&) const;
 };
 double video_similarity(const VideoFingerprint&,const VideoFingerprint&,const VideoSimilarityOptions& options={});
 double video_crop_similarity(const VideoFingerprint&, const VideoCropFingerprint&, const VideoFingerprint&, const VideoCropFingerprint&, const VideoSimilarityOptions& options={});
+// L3 structural verification: mean SSIM over uniform 8x8 windows (MSSIM
+// without Gaussian; w,h must be positive multiples of 8). Returns [0,1].
+// Pure function, no fingerprint state — unit-testable in isolation.
+double frame_ssim(const std::uint8_t* a, const std::uint8_t* b, int w, int h);
 }

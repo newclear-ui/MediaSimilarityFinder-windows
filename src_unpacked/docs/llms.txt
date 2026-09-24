@@ -20,7 +20,7 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 
 - `src/media_search_engine.cpp` - `MediaSearchEngine::scan()` orchestrates listing, analysis, candidate indexing, similarity, live streaming of matches, checkpoints, persistence, and the GPU counter (`gpuImagesProcessed()`).
 - `src/scan_pipeline.cpp` - duplicate detection. Image pairs via `bestMatch`/`thresholdFor`; video pairs run a duration gate then `temporal()` + `video_crop_similarity({threshold,8,2,2.0})`.
-- `src/video_fingerprint.cpp` - `VideoFingerprintEngine::build()` (low-variance frame exclusion, scene-change detection, crop fingerprints), `video_similarity()`/`video_crop_similarity()` DTW with `sceneBonus`; versioned SQLite cache (`kCacheFormatVersion==4`).
+- `src/video_fingerprint.cpp` - `VideoFingerprintEngine::build()` (low-variance frame exclusion, scene-change detection, crop fingerprints), `video_similarity()`/`video_crop_similarity()` DTW with `sceneBonus`; versioned SQLite cache (`kCacheFormatVersion==5`, per-frame 48x48 L3 thumbs).
 - `src/database.cpp` - primary SQLite index: file fingerprints, persistent matches, and GUI `thumbs` cache.
 - `src/video_sampling.cpp` - `make_sample_plan()` sample timestamps by duration; `sampling_interval()`.
 - `src/image_decoder.cpp` / `src/media_pipeline.cpp` / `src/gpu_backend.cpp` - image decode and CPU/CUDA hashing.
