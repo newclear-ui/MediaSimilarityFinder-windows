@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "video_decoder.h"
 #include "../src/image_decoder.h"
+#include "../src/proc_capture.h"
 #include "../src/path_utils.h"
 #include "../src/gpu_backend.h"
 #include <QAbstractItemView>
@@ -235,7 +236,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.75\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.75\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.76\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.76\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -549,7 +550,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.75"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.76"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -894,7 +895,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.75"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.76"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1575,26 +1576,18 @@ void MainWindow::groupSelected(QTreeWidgetItem* cur, QTreeWidgetItem*) {
 }
 void MainWindow::groupSearchChanged(const QString&) { refreshGroupList(); }
 // ------------------------------------------------------------ right pane: files + detail
-// Header-only dimensions via ffprobe (no decode): fallback for formats Qt
-// cannot read the size of. One process spawn, cached by the caller.
+// Last-resort dimensions via ffprobe (no decode), for formats nothing else
+// can read the size of. Windowless spawn (captureSilent): plain _popen lets
+// console-subsystem children flash a terminal on GUI apps — one flash plus a
+// ~100ms stall per file, directly on the UI thread. Cached by the caller, so
+// at most one spawn per path ever.
 static QSize ffprobeSize(const QString& path) {
-  const QString q = QStringLiteral("ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"") + path + '"';
-  const QByteArray cmd = q.toLocal8Bit();
-#ifdef _WIN32
-  FILE* fp = _popen(cmd.constData(), "r");
-#else
-  FILE* fp = popen(cmd.constData(), "r");
-#endif
-  if (!fp) return QSize();
-  char buf[128] = {0};
-  QString out;
-  while (fgets(buf, sizeof(buf), fp)) out += QString::fromLocal8Bit(buf);
-#ifdef _WIN32
-  _pclose(fp);
-#else
-  pclose(fp);
-#endif
-  const QStringList parts = out.trimmed().split(',');
+  // Local 8-bit (not UTF-8): console children parse non-ASCII paths in the
+  // system code page, so Korean filenames keep working as before.
+  const QByteArray cmd = (QStringLiteral("ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"") + path + '"').toLocal8Bit();
+  std::string out;
+  if (!msf::captureSilent(std::string(cmd.constData(), (std::size_t)cmd.size()), out)) return QSize();
+  const QStringList parts = QString::fromLocal8Bit(out.c_str()).trimmed().split(',');
   if (parts.size() != 2) return QSize();
   bool okW = false, okH = false;
   const int w = parts[0].trimmed().toInt(&okW), h = parts[1].trimmed().toInt(&okH);
@@ -1616,11 +1609,16 @@ QString MainWindow::fileResolution(const QString& path) const {  auto it = resCa
     const QSize s = rd.size();
     if (s.isValid()) r = QString("%1x%2").arg(s.width()).arg(s.height());
     else {
-      // Header-only probe for formats Qt cannot read the size of (e.g. PNG
-      // without the plugin): ffprobe reads dimensions without decoding.
-      // Cached like everything else here, so the process spawn is one-time.
-      const QSize probe = ffprobeSize(path);
-      if (probe.isValid()) r = QString("%1x%2").arg(probe.width()).arg(probe.height());
+      // Header parse first (PNG IHDR / JPEG SOF, microseconds, no process):
+      // covers exactly the formats Qt ships without plugins for. ffprobe stays
+      // as the last resort (one windowless spawn, one-time via the cache).
+      msf::ImageDecoder dec; int w = 0, h = 0;
+      if (dec.dimensionsFast(path.toStdString(), w, h) && w > 0 && h > 0)
+        r = QString("%1x%2").arg(w).arg(h);
+      else {
+        const QSize probe = ffprobeSize(path);
+        if (probe.isValid()) r = QString("%1x%2").arg(probe.width()).arg(probe.height());
+      }
     }
   }
   resCache_[path] = r;

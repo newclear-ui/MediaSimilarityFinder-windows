@@ -11,5 +11,10 @@ public:
     bool decodePreserveAspect(const std::string& path,int maxDimension,GrayImage& out) const;
     // Display path (previews): color via WIC BGRA. Fingerprint paths stay gray.
     bool decodeColorAspect(const std::string& path,int maxDimension,ColorImage& out) const;
+    // Header-only dimensions: PNG IHDR + JPEG SOF parsed from the first bytes,
+    // no decode, no process spawn. Lets the GUI show resolutions without
+    // paying an ffprobe child per file (console flash + ~100ms on the UI
+    // thread). Returns false for anything else (caller falls back).
+    bool dimensionsFast(const std::string& path,int& w,int& h) const;
 };
 }

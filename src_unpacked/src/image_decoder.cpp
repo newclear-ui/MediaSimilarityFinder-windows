@@ -37,6 +37,42 @@ bool scaleGray(const std::vector<unsigned char>& src,int sw,int sh,int w,int h,G
     for(int y=0;y<h;y++){int sy=std::min(sh-1,y*sh/h);for(int x=0;x<w;x++){int sx=std::min(sw-1,x*sw/w);out.pixels[(size_t)y*w+x]=src[(size_t)sy*sw+sx];}}
     return true;
 }
+// PNG IHDR dimensions straight from the header (signature + length + type +
+// width + height = 24 bytes). No decode, no zlib needed.
+bool parsePngDims(const std::vector<unsigned char>& b,int& w,int& h){
+    static const unsigned char kSig[8]={137,80,78,71,13,10,26,10};
+    if(b.size()<24) return false;
+    for(int i=0;i<8;++i) if(b[i]!=kSig[i]) return false;
+    if(b[12]!='I'||b[13]!='H'||b[14]!='D'||b[15]!='R') return false;
+    w=(b[16]<<24)|(b[17]<<16)|(b[18]<<8)|b[19];
+    h=(b[20]<<24)|(b[21]<<16)|(b[22]<<8)|b[23];
+    return w>0&&h>0;
+}
+// JPEG SOF dimensions by marker walk (baseline + progressive + extended).
+// Stops at SOS; RST/TEM/SOI/EOI carry no length. Bounds-checked throughout.
+bool parseJpegDims(const std::vector<unsigned char>& b,int& w,int& h){
+    if(b.size()<4||b[0]!=0xFF||b[1]!=0xD8) return false;
+    std::size_t pos=2;
+    while(pos+1<b.size()){
+        if(b[pos]!=0xFF){ ++pos; continue; }
+        unsigned char m=b[pos+1]; pos+=2;
+        if(m==0x00) continue; // stuffed byte (should not appear pre-SOS)
+        if(m==0xD8) continue; // SOI (should not repeat)
+        if(m==0xD9) return false; // EOI: no SOF found
+        if((m>=0xD0&&m<=0xD7)||m==0x01) continue; // standalone, no length
+        if(m==0xDA) return false; // SOS: entropy follows, SOF will not appear
+        if(pos+1>=b.size()) return false;
+        const std::size_t len=((std::size_t)b[pos]<<8)|b[pos+1];
+        if(len<2||pos+len>b.size()) return false;
+        if(m==0xC0||m==0xC1||m==0xC2||m==0xC3){
+            if(len<7) return false;
+            h=((int)b[pos+3]<<8)|b[pos+4]; w=((int)b[pos+5]<<8)|b[pos+6];
+            return w>0&&h>0;
+        }
+        pos+=len;
+    }
+    return false;
+}
 bool decodePgm(const std::string& path,int w,int h,GrayImage& out){
     std::vector<unsigned char> src; int sw=0,sh=0;
     if(!readPgmFile(path,src,sw,sh)) return false;
@@ -244,5 +280,14 @@ bool ImageDecoder::decodeColorAspect(const std::string&,int,ColorImage&) const {
   return false; // no color WIC outside Windows; callers fall back to file icons
 }
 #endif
+bool ImageDecoder::dimensionsFast(const std::string& path,int& w,int& h) const {
+    w=h=0;
+    // Read only the header: SOF markers sit within the first kilobytes even
+    // with large Exif segments; 256 KiB cap bounds the I/O.
+    std::ifstream f(path_from_utf8(path),std::ios::binary); if(!f) return false;
+    std::vector<unsigned char> b(262144); f.read((char*)b.data(),b.size());
+    b.resize((std::size_t)f.gcount());
+    return parsePngDims(b,w,h)||parseJpegDims(b,w,h);
+}
 
 }

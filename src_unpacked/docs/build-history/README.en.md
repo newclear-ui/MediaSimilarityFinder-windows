@@ -79,6 +79,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.73 | Accepted audit items (SSIM gate, QuickLook, docs) |
 | 0.9.2.74 | Monitor toolbar cleanup (pause removed, toggle highlight, menu right) |
 | 0.9.2.75 | Toolbar, detail, and summary UI round |
+| 0.9.2.76 | Console-flash removal + spawn-free resolutions |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
