@@ -76,7 +76,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.70 | Image false-positive second-stage gate |
 | 0.9.2.71 | Engine version stamp + stored-match revalidation |
 | 0.9.2.72 | Engine/DB version split (semver) |
-| 0.9.2.65 | Video L1 multi-anchor + variant dedup fix |
+| 0.9.2.73 | Accepted audit items (SSIM gate, QuickLook, docs) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

@@ -122,6 +122,7 @@ private slots:
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
   void openSelected(); void revealSelected(); void renameSelected(); void deleteSelected();
   void previewSelectedQuickLook(); QString quickLookTarget() const; // empty when QuickLook unusable
+  void pollQuickLookPipe(); // async launch follow-up (bounded, event-loop driven)
   void copySelected(); void cutSelected(); void pasteFiles(); void moveSelected();
   void refreshFolders(); void folderActivated(QTreeWidgetItem*,int);
   void populateFolderChildren(QTreeWidgetItem*);
@@ -174,6 +175,7 @@ private:
   int lastPct_=0; QString lastPath_; int maxPctShown_=0;
   qulonglong lastDoneN_=0, lastTotalN_=0;
   qulonglong targetTotal_=0; // pre-walk fixed denominator (kind-filtered)
+  QString qlPendingPath_; int qlPollLeft_ = 0; // pending preview while its server starts
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
   qint64 pauseStartMs_=0, pausedAccumMs_=0; // ETR excludes paused time (see elapsedActiveMs)

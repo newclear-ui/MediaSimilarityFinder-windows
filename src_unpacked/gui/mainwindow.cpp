@@ -59,6 +59,10 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
+#include <vector>
+#ifdef _WIN32
+#include <sddl.h> // ConvertSidToStringSidW for the QuickLook pipe owner check
+#endif
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -177,6 +181,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"open")) return S("열기","Open");
   if (!std::strcmp(key,"quickLook")) return S("QuickLook으로 미리보기","Preview with QuickLook");
   if (!std::strcmp(key,"quickLookFail")) return S("QuickLook을 시작할 수 없습니다","Could not start QuickLook");
+  if (!std::strcmp(key,"quickLookStarting")) return S("QuickLook 시작 중…","Starting QuickLook…");
   if (!std::strcmp(key,"revalidated")) return S("구버전 인덱스 재검증: %1 유지·%2 제외, 최신 엔진에 맞춤","Legacy index revalidated: %1 kept, %2 dropped for the current engine");
   if (!std::strcmp(key,"reveal")) return S("탐색기에서 보기","Reveal in Explorer");
   if (!std::strcmp(key,"copy")) return S("복사","Copy");
@@ -228,7 +233,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.72\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.72\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.73\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.73\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -541,7 +546,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.72"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.73"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -888,7 +893,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.72"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.73"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -2081,15 +2086,42 @@ bool quickLookSendMessage(const QString& pipeName, const QByteArray& payload) {
   CloseHandle(h);
   return ok && written == (DWORD)payload.size();
 }
+static QString quickLookUserSid() {
+  HANDLE tok = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &tok)) return QString();
+  DWORD len = 0;
+  GetTokenInformation(tok, TokenUser, nullptr, 0, &len);
+  std::vector<unsigned char> buf(len ? len : 1);
+  QString out;
+  if (len && GetTokenInformation(tok, TokenUser, buf.data(), len, &len)) {
+    LPWSTR s = nullptr;
+    if (ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(buf.data())->User.Sid, &s)) {
+      out = QString::fromWCharArray(s);
+      LocalFree(s);
+    }
+  }
+  CloseHandle(tok);
+  return out;
+}
 static QString quickLookPipeName() {
-  // Enumerate \\.\pipe\ instead of computing the user SID: doubles as the
-  // is-running check with one syscall pattern.
+  // Prefer this user's pipe: with Fast User Switching or several instances,
+  // the first wildcard hit could belong to another session. Fall back to the
+  // first hit only when the SID itself is unavailable.
+  const QString want = QStringLiteral("QuickLook.App.Pipe.") + quickLookUserSid();
+  const bool exact = !want.endsWith(QLatin1Char('.'));
+  QString first;
   WIN32_FIND_DATAW fd{};
   HANDLE h = FindFirstFileW(L"\\\\.\\pipe\\QuickLook.App.Pipe.*", &fd);
-  if (h == INVALID_HANDLE_VALUE) return QString();
-  QString name = QString::fromWCharArray(fd.cFileName);
-  FindClose(h);
-  return QStringLiteral("\\\\.\\pipe\\") + name;
+  if (h != INVALID_HANDLE_VALUE) {
+    do {
+      const QString name = QString::fromWCharArray(fd.cFileName);
+      if (first.isEmpty()) first = name;
+      if (exact && name == want) { first = name; break; }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+  }
+  if (first.isEmpty()) return QString();
+  return QStringLiteral("\\\\.\\pipe\\") + first;
 }
 // _wgetenv returns null when the variable is absent; fromWCharArray(null)
 // would AV, so map missing vars to empty (no candidate from that root).
@@ -2098,9 +2130,11 @@ static QString qlEnv(const wchar_t* name) {
   return v ? QString::fromWCharArray(v) : QString();
 }
 static QString quickLookExePath() {
-  static QString cached; static bool probed = false;
-  if (probed) return cached;
-  probed = true;
+  // Cache hits only: an empty or stale result re-probes, so installing (or
+  // moving) QuickLook mid-session is picked up without a restart.
+  static QString cached;
+  if (!cached.isEmpty() && QFileInfo(cached).isFile()) return cached;
+  cached.clear();
   QStringList cands;
   const QString pf = qlEnv(L"ProgramFiles");
   const QString pf86 = qlEnv(L"ProgramFiles(x86)");
@@ -2137,22 +2171,39 @@ QString MainWindow::quickLookTarget() const {
 void MainWindow::previewSelectedQuickLook() {
   const auto ps = selectedFiles();
   if (ps.isEmpty()) return;
-  QString pipe = quickLookPipeName();
-  if (pipe.isEmpty()) {
-    // Installed but not running: launch, then wait briefly for its server.
-    const QString exe = quickLookExePath();
-    if (!exe.isEmpty() && QProcess::startDetached(exe, {})) {
-      QElapsedTimer t; t.start();
-      while (t.elapsed() < 2500 && (pipe = quickLookPipeName()).isEmpty()) {
-        QThread::msleep(100);
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-      }
-    }
+  const QString pipe = quickLookPipeName();
+  if (!pipe.isEmpty()) {
+    if (!quickLookSendMessage(pipe, quickLookToggleMessage(ps.first()).toUtf8()))
+      statusMsg_->setText(trStr(lang(), "quickLookFail"));
+    return;
   }
-  if (pipe.isEmpty() || !quickLookSendMessage(pipe, quickLookToggleMessage(ps.first()).toUtf8())) {
+  // Installed but not running: launch without blocking the GUI thread (the old
+  // msleep loop froze input for up to 2.5s). Poll for the server pipe on the
+  // event loop instead; bounded, cancel-safe by window lifetime.
+  const QString exe = quickLookExePath();
+  if (exe.isEmpty() || !QProcess::startDetached(exe, {})) {
     statusMsg_->setText(trStr(lang(), "quickLookFail"));
     return;
   }
+  qlPendingPath_ = ps.first(); qlPollLeft_ = 25; // ~2.5s at 100ms
+  statusMsg_->setText(trStr(lang(), "quickLookStarting"));
+  QTimer::singleShot(100, this, &MainWindow::pollQuickLookPipe);
+}
+void MainWindow::pollQuickLookPipe() {
+  if (qlPendingPath_.isEmpty() || qlPollLeft_ <= 0) return;
+  const QString pipe = quickLookPipeName();
+  if (!pipe.isEmpty()) {
+    const QString path = qlPendingPath_; qlPendingPath_.clear(); qlPollLeft_ = 0;
+    if (!quickLookSendMessage(pipe, quickLookToggleMessage(path).toUtf8()))
+      statusMsg_->setText(trStr(lang(), "quickLookFail"));
+    return;
+  }
+  if (--qlPollLeft_ <= 0) {
+    qlPendingPath_.clear();
+    statusMsg_->setText(trStr(lang(), "quickLookFail"));
+    return;
+  }
+  QTimer::singleShot(100, this, &MainWindow::pollQuickLookPipe);
 }
 #else
 QString quickLookToggleMessage(const QString&) { return QString(); }

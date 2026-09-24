@@ -223,11 +223,13 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
  if(xm) sim=std::max(sim,hash_similarity(xm,y.hashes[j-1]));
  if(ym) sim=std::max(sim,hash_similarity(x.hashes[i-1],ym));
  if(xm&&ym) sim=std::max(sim,hash_similarity(xm,ym));
-  // L3 gate, not replacement: Hamming failures keep the cheap reject path
-  // (no SSIM cost). Passing cells are re-scored 0.4*Hamming + 0.6*SSIM, so a
-  // same-low-frequency false positive (high H, low S) drops while true
-  // re-encodes (high H, high S) hold. Missing/flat thumbs skip to Hamming.
-  if(useSsim&&xHas[i-1]&&yHas[j-1]){
+  // L3 gate (not replacement): only cells the Hamming stage already passes
+  // pay for SSIM. Failing cells keep the cheap reject path below, so SSIM can
+  // never promote a Hamming reject, and costs nothing on misses. Passing cells
+  // are re-scored 0.4*Hamming + 0.6*SSIM, so a same-low-frequency false
+  // positive (high H, low S) drops while true re-encodes (high H, high S)
+  // hold. Missing/flat thumbs skip to Hamming.
+  if(sim>=threshold&&useSsim&&xHas[i-1]&&yHas[j-1]){
    const double s1=frame_ssim(&x.thumb48[(i-1)*kPx],&y.thumb48[(j-1)*kPx],kT,kT);
    const double s2=frame_ssim(&x.thumb48[(i-1)*kPx],&yFlip[(j-1)*kPx],kT,kT);
    sim=0.4*sim+0.6*(100.0*std::max(s1,s2));
