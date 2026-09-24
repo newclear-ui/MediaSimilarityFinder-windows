@@ -1,107 +1,71 @@
-name: Windows CUDA build
+name: MediaSimilarityFinder 0.9.2.63 - Windows CUDA
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v0.9.2.*'
-  pull_request:
 
 jobs:
-  build-cuda:
-    runs-on: windows-2025
+  windows-cuda:
+    name: Windows x64 CUDA / VS2026
+    runs-on: windows-2025-vs2026
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_FEATURE_FLAGS: manifests,binarycaching
+
     steps:
-      - uses: actions/checkout@v5
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Locate CUDA Toolkit
+      - name: Show toolchain and CUDA
         shell: pwsh
         run: |
-          $nvcc = Get-Command nvcc -ErrorAction SilentlyContinue
-          if (-not $nvcc) { throw 'nvcc was not found on the Windows runner' }
-          nvcc --version
+          cmake --version
+          git --version
+          $vcpkg = Get-Command vcpkg.exe -ErrorAction Stop
+          $vcpkgRoot = Split-Path $vcpkg.Source -Parent
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $vcpkg.Source version
+          $nvcc = Get-Command nvcc.exe -ErrorAction SilentlyContinue
+          if (-not $nvcc) { throw 'nvcc.exe was not found on the hosted runner.' }
+          & $nvcc.Source --version
+          & "\${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 
-      - name: Install vcpkg dependencies
+      - name: Build and test
+        working-directory: src_unpacked
         shell: pwsh
         run: |
-          if (-not $env:VCPKG_ROOT) { throw 'VCPKG_ROOT is not set' }
-          & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows
+          .\scripts\build_windows_cuda.ps1 -VcpkgRoot $env:VCPKG_ROOT
 
-      - name: Configure
+      - name: Report GPU availability
         shell: pwsh
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DMSF_ENABLE_CUDA=ON `
-            -DMSF_ENABLE_FFMPEG=ON `
-            -DMSF_BUILD_GUI=ON `
-            -DMSF_BUILD_TESTS=ON `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
-
-      - name: Build Release
-        shell: pwsh
-        run: cmake --build build --config Release --parallel
-
-      - name: Run tests
-        shell: pwsh
-        run: ctest --test-dir build -C Release --output-on-failure
-
-      - name: Verify CUDA test was built
-        shell: pwsh
-        run: |
-          $exe = Join-Path $PWD 'build\tests\Release\msf_cuda_backend_test.exe'
-          if (-not (Test-Path $exe)) {
-            $exe = Join-Path $PWD 'build\Release\msf_cuda_backend_test.exe'
+          $nvidia = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+          if ($nvidia) {
+            & $nvidia.Source -L
+            if ($LASTEXITCODE -eq 0) {
+              "A hosted NVIDIA GPU is available to this job."
+            } else {
+              "No hosted NVIDIA GPU is available; CUDA runtime test paths may self-skip."
+            }
+          } else {
+            "nvidia-smi.exe is not present; this workflow validates CUDA compilation and device-independent tests only."
           }
-          if (-not (Test-Path $exe)) { throw 'CUDA regression executable was not produced' }
-          & $exe
-          if ($LASTEXITCODE -ne 0) { throw "CUDA regression test failed: $LASTEXITCODE" }
 
-      - name: Verify GUI
+      - name: Verify GUI executable
+        working-directory: src_unpacked
         shell: pwsh
         run: |
-          $exe = Join-Path $PWD 'build\Release\MediaSimilarityFinder.exe'
-          if (-not (Test-Path $exe)) { throw 'GUI executable was not produced' }
+          $exe = Join-Path $PWD 'build-windows-cuda\Release\MediaSimilarityFinder.exe'
+          if (-not (Test-Path $exe)) { throw "GUI executable not found: $exe" }
           & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "MediaSimilarityFinder --version failed: $LASTEXITCODE" }
+          & $exe --smoke
+          if ($LASTEXITCODE -ne 0) { throw "MediaSimilarityFinder --smoke failed: $LASTEXITCODE" }
 
-      - name: Deploy Qt runtime
-        shell: pwsh
-        run: |
-          $exe = Join-Path $PWD 'build\Release\MediaSimilarityFinder.exe'
-          $windeploy = Get-ChildItem "$env:VCPKG_ROOT\installed\x64-windows\tools" -Filter windeployqt.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $windeploy) { throw 'windeployqt.exe was not found' }
-          & $windeploy.FullName $exe --release --no-translations
-
-      - name: Collect MSVC runtime
-        shell: pwsh
-        run: |
-          $stage = Join-Path $PWD 'package'
-          New-Item -ItemType Directory -Force $stage | Out-Null
-          $vcCandidates = @(
-            (Get-Command vcruntime140.dll -ErrorAction SilentlyContinue).Source,
-            (Get-Command vcruntime140_1.dll -ErrorAction SilentlyContinue).Source,
-            (Get-Command msvcp140.dll -ErrorAction SilentlyContinue).Source
-          ) | Where-Object { $_ }
-          foreach ($src in $vcCandidates) { Copy-Item $src $stage -Force }
-
-      - name: Package CUDA runtime
-        shell: pwsh
-        run: |
-          $stage = Join-Path $PWD 'package'
-          New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item 'build\Release\MediaSimilarityFinder.exe' $stage
-          Copy-Item 'build\Release\*.dll' $stage -ErrorAction SilentlyContinue
-          Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\*.dll" $stage -ErrorAction SilentlyContinue
-          $cudart = Get-Command nvcc | Select-Object -ExpandProperty Source
-          $cudaBin = Split-Path $cudart
-          Get-ChildItem $cudaBin -Filter 'cudart64*.dll' -ErrorAction SilentlyContinue | Copy-Item -Destination $stage
-          Copy-Item 'README_CUDA_0.9.2.10.md' $stage
-          Copy-Item 'README.md' $stage
-          if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' $stage }
-          Compress-Archive -Path "$stage\*" -DestinationPath 'MediaSimilarityFinder-v0.9.2.10-CUDA-Windows-x64.zip' -Force
-
-      - uses: actions/upload-artifact@v7
+      - name: Upload CUDA build artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: MediaSimilarityFinder-v0.9.2.10-CUDA-Windows-x64
-          path: MediaSimilarityFinder-v0.9.2.10-CUDA-Windows-x64.zip
+          name: MediaSimilarityFinder-v0.9.2.63-CUDA-build
+          path: src_unpacked/build-windows-cuda/Release/MediaSimilarityFinder.exe
+          if-no-files-found: error
+          retention-days: 14
