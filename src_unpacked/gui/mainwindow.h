@@ -15,6 +15,7 @@
 #include <atomic>
 #include <memory>
 #include "../src/media_search_engine.h"
+#include "../src/database.h"
 #include "../src/resource_policy.h"
 #include "../src/monitor.h"
 
@@ -155,6 +156,9 @@ private:
   QHash<QString,QString> pathParent_;           // union-find parent
   QStringList allPaths_; QStringList matchRows_;
   QHash<QString,QString> fileSize_; QHash<QString,QString> fileFp_;
+  qulonglong fileSizeCached(const QString&); // index value, else live stat
+  mutable msf::Database thumbDb_; bool thumbDbOpen_ = false; // disk thumbnail cache
+  // (mutable: fileThumb is const but fills both caches on miss)
   mutable QHash<QString,QString> resCache_;
   QString currentFile_; int currentGroup_=-1;
   int lastPct_=0; QString lastPath_; int maxPctShown_=0;

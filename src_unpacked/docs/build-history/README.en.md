@@ -65,6 +65,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.59 | Blank pane recurrence fix (list-rebuild livelock) |
 | 0.9.2.60 | Icon/list view restore + favorites dedup + color previews |
 | 0.9.2.61 | Uniform preview sizes + wider shell lane |
+| 0.9.2.63 | Disk thumbnail cache + favorites/filename/resolution/0B fixes |
 | 0.9.2.62 | Similarity-inspired additions (Pairs, ETR, thumbnail skip list) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.

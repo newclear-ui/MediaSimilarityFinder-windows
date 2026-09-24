@@ -4,7 +4,7 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.2.62 — Similarity-inspired additions (Pairs column, ETR, thumbnail skip list)
+- Current: 0.9.2.63 — Disk thumbnail cache (instant rescan thumbs) + favorites/filename/resolution/0B fixes
 - Core Release build: PASS
 - CTest: **48/48 PASS** (CUDA build incl. `cuda_backend_test`, `unicode_path_test`, `match_store_test`, `video_reencode_test`, `color_thumb_test`, `scan_streaming_test`, `view_mode_probe`, `thumb_layout_test`, `ui_settings_write/verify`)
 - candidatePairs exhaustive correctness regression: PASS

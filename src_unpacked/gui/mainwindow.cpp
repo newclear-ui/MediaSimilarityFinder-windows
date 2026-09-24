@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "video_decoder.h"
 #include "../src/image_decoder.h"
+#include "../src/path_utils.h"
 #include "../src/gpu_backend.h"
 #include <QAbstractItemView>
 #include <QActionGroup>
@@ -9,6 +10,7 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QBuffer>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
@@ -61,6 +63,7 @@
 #include <QVBoxLayout>
 #include <QCryptographicHash>
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <cmath>
 #include <cstring>
@@ -218,7 +221,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.62\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.62\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.63\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.63\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -456,6 +459,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
 }
 MainWindow::~MainWindow() {
   saveUiState();
+  thumbDb_.close(); thumbDbOpen_ = false;
   if (worker_) worker_->cancel();
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; }
   if (monitor_) monitor_->stop();
@@ -489,7 +493,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.62"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.63"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -829,7 +833,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.62"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.63"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -907,11 +911,26 @@ void MainWindow::setRunning(bool v) {
 void MainWindow::startScan() {
   if (scanning_) return;
   if (folder_->text().isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
-  // Remember the most-recently scanned folders (max 2) for the favorites list.
+  // Thumbnail disk cache: a second connection to the managed index DB
+  // (WAL-safe). Lets rescans reuse decoded thumbs instead of burning the
+  // per-tick budget. Silent no-op when the index cannot be opened.
+  thumbDb_.close(); thumbDbOpen_ = false;
   {
+    msf::IndexPaths paths;
+    if (msf::IndexManager::resolve(msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                                   msf::path_from_utf8(folder_->text().toStdString()), paths) &&
+        thumbDb_.open(msf::path_to_utf8(paths.database)) && thumbDb_.initialize())
+      thumbDbOpen_ = true;
+  }
+  // Remember the most-recently scanned folders (max 2) for the favorites list.
+  // Compare normalized so separator/trailing-slash variants of one folder
+  // cannot duplicate the entry.
+  {
+    const QString cur = QDir::cleanPath(folder_->text());
     QStringList recent = QSettings().value("ui/recentFolders").toStringList();
-    recent.removeAll(folder_->text());
-    recent.prepend(folder_->text());
+    for (int i = recent.size() - 1; i >= 0; --i)
+      if (QDir::cleanPath(recent[i]).compare(cur, Qt::CaseInsensitive) == 0) recent.removeAt(i);
+    recent.prepend(cur);
     while (recent.size() > 2) recent.removeLast();
     if (recent != QSettings().value("ui/recentFolders").toStringList()) {
       QSettings().setValue("ui/recentFolders", recent);
@@ -992,6 +1011,7 @@ void MainWindow::onQuickLoaded(int n) {
 }
 void MainWindow::scanFinished(QString msg) {
   drainMatches();
+  if (thumbDbOpen_) thumbDb_.pruneThumbs(); // drop thumbs of files gone from the index
   scanLog(QString("finish %1").arg(msg));
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail();
   if (msg.startsWith(QStringLiteral("CANCELLED"))) {
@@ -1078,7 +1098,9 @@ void MainWindow::refreshFolders() {
   favPath("music", QStandardPaths::writableLocation(QStandardPaths::MusicLocation));
   // Most-recently scanned folders (max 2): the most useful jump targets for
   // resuming unfinished work on previous results. Skip paths already listed
-  // above (e.g. scanning Downloads would otherwise duplicate the entry).
+  // above (e.g. scanning Downloads would otherwise duplicate the entry), and
+  // defensively dedupe normalized variants (separator/case) so one folder can
+  // never appear twice even if stored raw forms differ.
   {
     const auto norm = [](const QString& p) {
       return QDir::cleanPath(p).toLower();
@@ -1088,10 +1110,13 @@ void MainWindow::refreshFolders() {
                      QStandardPaths::DocumentsLocation, QStandardPaths::PicturesLocation,
                      QStandardPaths::MoviesLocation, QStandardPaths::MusicLocation})
       listed.insert(norm(QStandardPaths::writableLocation(loc)));
+    QSet<QString> seenMru;
     const QStringList recent = QSettings().value("ui/recentFolders").toStringList();
     for (const auto& rp : recent) {
       if (rp.isEmpty() || !QFileInfo(rp).isDir()) continue;
-      if (listed.contains(norm(rp))) continue;
+      const QString n = norm(rp);
+      if (listed.contains(n) || seenMru.contains(n)) continue;
+      seenMru.insert(n);
       auto* it = new QTreeWidgetItem(fav, QStringList(QDir::toNativeSeparators(rp)));
       it->setData(0, Qt::UserRole, rp);
       it->setIcon(0, icons.icon(QFileIconProvider::Folder));
@@ -1208,6 +1233,15 @@ QString MainWindow::fmtSize(qulonglong n) const {
   return QString("%1 GB").arg(n / (1024.0 * 1024 * 1024), 0, 'f', 2);
 }
 double MainWindow::pathBest(const QString& p) const { return bestPct_.value(p, 0.0); }
+qulonglong MainWindow::fileSizeCached(const QString& p) {
+  auto it = fileSize_.find(p);
+  if (it != fileSize_.cend()) return it.value().toULongLong();
+  // Quick-loaded groups reference files the current scan has not (re)indexed
+  // yet; without this they permanently show "0 B" until a full scan ends.
+  const qulonglong s = (qulonglong)QFileInfo(p).size();
+  fileSize_[p] = QString::number(s);
+  return s;
+}
 void MainWindow::connectResView(QTreeWidget* tree, QListWidget* grid) {
   connect(tree, &QTreeWidget::currentItemChanged, this, &MainWindow::groupSelected);
   connect(tree, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* it, int col) {
@@ -1322,7 +1356,7 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
       if (!hit) continue;
     }
     qulonglong bytes = 0;
-    for (const auto& p : g.paths) bytes += fileSize_.value(p, "0").toULongLong();
+    for (const auto& p : g.paths) bytes += fileSizeCached(p);
     int marked = 0;
     for (const auto& p : g.paths) if (marked_.contains(p)) ++marked;
     auto* it = new QTreeWidgetItem(tree);
@@ -1426,10 +1460,34 @@ void MainWindow::groupSelected(QTreeWidgetItem* cur, QTreeWidgetItem*) {
 }
 void MainWindow::groupSearchChanged(const QString&) { refreshGroupList(); }
 // ------------------------------------------------------------ right pane: files + detail
-QString MainWindow::fileResolution(const QString& path) const {
-  auto it = resCache_.find(path);
-  if (it != resCache_.cend()) return it.value();
-  QString r = "-";
+// Header-only dimensions via ffprobe (no decode): fallback for formats Qt
+// cannot read the size of. One process spawn, cached by the caller.
+static QSize ffprobeSize(const QString& path) {
+  const QString q = QStringLiteral("ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"") + path + '"';
+  const QByteArray cmd = q.toLocal8Bit();
+#ifdef _WIN32
+  FILE* fp = _popen(cmd.constData(), "r");
+#else
+  FILE* fp = popen(cmd.constData(), "r");
+#endif
+  if (!fp) return QSize();
+  char buf[128] = {0};
+  QString out;
+  while (fgets(buf, sizeof(buf), fp)) out += QString::fromLocal8Bit(buf);
+#ifdef _WIN32
+  _pclose(fp);
+#else
+  pclose(fp);
+#endif
+  const QStringList parts = out.trimmed().split(',');
+  if (parts.size() != 2) return QSize();
+  bool okW = false, okH = false;
+  const int w = parts[0].trimmed().toInt(&okW), h = parts[1].trimmed().toInt(&okH);
+  if (!okW || !okH || w <= 0 || h <= 0) return QSize();
+  return QSize(w, h);
+}
+QString MainWindow::fileResolution(const QString& path) const {  auto it = resCache_.find(path);
+  if (it != resCache_.cend()) return it.value();  QString r = "-";
   if (isVideoExt(path)) {
     msf::VideoDecoder dec;
     if (dec.open(path.toStdString())) {
@@ -1442,6 +1500,13 @@ QString MainWindow::fileResolution(const QString& path) const {
     QImageReader rd(path);
     const QSize s = rd.size();
     if (s.isValid()) r = QString("%1x%2").arg(s.width()).arg(s.height());
+    else {
+      // Header-only probe for formats Qt cannot read the size of (e.g. PNG
+      // without the plugin): ffprobe reads dimensions without decoding.
+      // Cached like everything else here, so the process spawn is one-time.
+      const QSize probe = ffprobeSize(path);
+      if (probe.isValid()) r = QString("%1x%2").arg(probe.width()).arg(probe.height());
+    }
   }
   resCache_[path] = r;
   return r;
@@ -1525,6 +1590,27 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   const QString key = path + '|' + QString::number(size.width()) + 'x' + QString::number(size.height());
   auto tc = thumbCache_.find(key);
   if (tc != thumbCache_.cend()) return tc.value();
+  // Disk cache first: a fast indexed read, no budget spent. Thumbs decoded in
+  // any earlier scan reappear instantly on rescan instead of re-burning the
+  // per-tick budget (the reason loaded groups showed generic icons).
+  const QFileInfo fi(path);
+  const qint64 mtime = fi.lastModified().toSecsSinceEpoch();
+  const qulonglong fsize = (qulonglong)fi.size();
+  if (thumbDbOpen_) {
+    std::vector<unsigned char> bytes;
+    if (thumbDb_.getThumb(path.toStdString(), mtime, fsize, bytes)) {
+      const QImage disk = QImage::fromData(bytes.data(), (int)bytes.size());
+      if (!disk.isNull()) {
+        QIcon ic = QIcon(squareFittedPixmap(QPixmap::fromImage(disk), size));
+        thumbCache_[key] = ic;
+        if (thumbCache_.size() > 3000) {
+          auto it = thumbCache_.begin();
+          for (int n = 0; n < 750 && it != thumbCache_.end(); ++n) it = thumbCache_.erase(it);
+        }
+        return ic;
+      }
+    }
+  }
   // Skip-list (Similarity-inspired): a path whose heavy decode already failed
   // returns the cheap file-type icon immediately without spending the shared
   // per-tick budget, so corrupt/undecodable files cannot starve live thumbs.
@@ -1591,6 +1677,16 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     // Normalize to the exact requested rect: identical cells regardless of
     // source aspect/size (Explorer-like uniform grid), never distorted.
     ic = QIcon(squareFittedPixmap(pm, size));
+    // Persist for future rescans (best effort): 192px JPEG keeps the DB small
+    // while staying recognizable up to XL views.
+    if (thumbDbOpen_) {
+      QImage store = squareFittedPixmap(pm, QSize(192, 192)).toImage();
+      QByteArray ba; QBuffer buf(&ba); buf.open(QIODevice::WriteOnly);
+      if (buf.isOpen() && store.save(&buf, "JPG", 70) && !ba.isEmpty()) {
+        std::vector<unsigned char> v(ba.cbegin(), ba.cend());
+        thumbDb_.putThumb(path.toStdString(), mtime, fsize, v);
+      }
+    }
   } else {
     ic = placeholderIcon(path);
     if (thumbFail_.size() > 2000) {
@@ -1614,7 +1710,7 @@ void MainWindow::setViewMode(int i) {
   viewGrid_->setChecked(i == 0); viewList_->setChecked(i == 1);
   viewStack_->setCurrentIndex(i == 1 ? 1 : 0);
 }
-void MainWindow::zoomChanged(int v) { grid_->setIconSize(QSize(v, v)); }
+void MainWindow::zoomChanged(int v) { grid_->setIconSize(QSize(v, v)); refreshFileViews(); }
 static QString pctText(double v, bool ref, UiLang l) {
   if (ref) return QString("100% · ") + trStr(l, "reference");
   return QString("%1%").arg(v, 0, 'f', 1);
@@ -1642,7 +1738,12 @@ void MainWindow::refreshFileViews() {
     gi->setData(Qt::UserRole, p);
     gi->setFlags(gi->flags() | Qt::ItemIsUserCheckable);
     gi->setCheckState(marked_.contains(p) ? Qt::Checked : Qt::Unchecked);
-    gi->setText(fi.fileName() + "\n" + fmtSize(fi.size()) + " · " + fileResolution(p) + "\n" + pctText(pct, ref, lang()));
+    // Long names wrap into extra lines and desynchronize row heights when
+    // mixed with short names. Elide to one line; the full path stays in the
+    // tooltip (hover shows it).
+    const QFontMetrics fm(grid_->font());
+    const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width() + 64);
+    gi->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(p) + "\n" + pctText(pct, ref, lang()));
     gi->setToolTip(p);
     grid_->addItem(gi);
     auto* li = new QTreeWidgetItem(list_);

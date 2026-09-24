@@ -11,6 +11,12 @@ struct StoredMatch { std::string left, right; double percent=0; };
 class Database {
 public: ~Database(); bool open(const std::string& path); void close(); bool initialize(); bool beginTransaction(); bool commitTransaction(); bool rollbackTransaction(); bool upsert(const FileState& state); bool remove(const std::string& path); bool containsUnchanged(const FileState& state) const; std::vector<FileState> all() const;
  bool saveMatches(const std::vector<StoredMatch>& matches); std::vector<StoredMatch> loadMatches() const;
+ // Persistent thumbnail cache (display only): small JPEG previews keyed by
+ // path, validated against size+mtime. Lets rescans show thumbs instantly
+ // instead of re-decoding thousands of files through the per-tick budget.
+ bool putThumb(const std::string& path,std::int64_t modified,std::uint64_t size,const std::vector<unsigned char>& jpeg);
+ bool getThumb(const std::string& path,std::int64_t modified,std::uint64_t size,std::vector<unsigned char>& jpeg) const;
+ bool pruneThumbs(); // drop rows whose file left the index
 private:
     std::string path_;
     void* db_=nullptr;
