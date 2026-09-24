@@ -248,7 +248,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.88\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.88\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.89\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.89\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -566,7 +566,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.88"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.89"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -878,7 +878,13 @@ void MainWindow::buildRight(QWidget* w) {
     updateStatusCounts();
   });
   grid_->setContextMenuPolicy(Qt::CustomContextMenu);
-  connect(grid_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) { showFileMenu(grid_->mapToGlobal(p)); });
+  connect(grid_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) {
+    if (QListWidgetItem* it = grid_->itemAt(p)) {
+      if (!it->isSelected()) { grid_->clearSelection(); it->setSelected(true); }
+      grid_->setCurrentItem(it);
+    }
+    showFileMenu(grid_->mapToGlobal(p));
+  });
   list_ = new QTreeWidget(w);
   list_->setColumnCount(7); list_->setRootIsDecorated(false);
   connect(list_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem*, QTreeWidgetItem*) { fileListSelected(); });
@@ -892,7 +898,13 @@ void MainWindow::buildRight(QWidget* w) {
     updateStatusCounts();
   });
   list_->setContextMenuPolicy(Qt::CustomContextMenu);
-  connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) { showFileMenu(list_->mapToGlobal(p)); });
+  connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) {
+    if (QTreeWidgetItem* it = list_->itemAt(p)) {
+      if (!it->isSelected()) { list_->clearSelection(); it->setSelected(true); }
+      list_->setCurrentItem(it);
+    }
+    showFileMenu(list_->mapToGlobal(p));
+  });
   viewStack_->addWidget(grid_); viewStack_->addWidget(list_);
   lay->addWidget(viewStack_, 3);
   fileBar_ = new QToolBar(w); fileBar_->setMovable(false);
@@ -919,7 +931,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.88"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.89"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1429,11 +1441,17 @@ void MainWindow::connectResView(QTreeWidget* tree, QListWidget* grid) {
     setGroupMarked(it->data(0, Qt::UserRole).toInt(), it->checkState(0) == Qt::Checked);
   });
   tree->setContextMenuPolicy(Qt::CustomContextMenu);
-  connect(tree, &QWidget::customContextMenuRequested, this, [this, tree](const QPoint& p) { showGroupMenu(tree->mapToGlobal(p)); });
+  connect(tree, &QWidget::customContextMenuRequested, this, [this, tree](const QPoint& p) {
+    if (QTreeWidgetItem* it = tree->itemAt(p)) tree->setCurrentItem(it);
+    showGroupMenu(tree->mapToGlobal(p));
+  });
   connect(grid, &QListWidget::currentItemChanged, this, &MainWindow::gridSelected);
   connect(grid, &QListWidget::itemChanged, this, &MainWindow::gridCheckChanged);
   grid->setContextMenuPolicy(Qt::CustomContextMenu);
-  connect(grid, &QWidget::customContextMenuRequested, this, [this, grid](const QPoint& p) { showGroupMenu(grid->mapToGlobal(p)); });
+  connect(grid, &QWidget::customContextMenuRequested, this, [this, grid](const QPoint& p) {
+    if (QListWidgetItem* it = grid->itemAt(p)) grid->setCurrentItem(it);
+    showGroupMenu(grid->mapToGlobal(p));
+  });
 }
 void MainWindow::gridSelected(QListWidgetItem* cur, QListWidgetItem*) {
   if (!cur) return;
