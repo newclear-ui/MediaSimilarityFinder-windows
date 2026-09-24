@@ -75,6 +75,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 - `../architecture/realtime-monitor.ko.md` / `.en.md`
 - `../architecture/candidate-index.ko.md` / `.en.md`
 - `../architecture/reference-similarity.ko.md` / `.en.md`
+- `../architecture/runtime-audit-0.9.2.63.ko.md` / `.en.md`
 - `../architecture/storage-design.md`
 
 ## Legacy
