@@ -83,9 +83,11 @@
 #include <shlobj.h>
 #include <thumbcache.h>
 #include <winerror.h>
+#include <psapi.h> // process CPU%/working set for the live summary
 #ifdef _MSC_VER
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "psapi.lib")
 #endif
 #endif
 
@@ -233,7 +235,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.74\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.74\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.75\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.75\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -499,6 +501,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
       scanHeartbeat();
     }
     updateGpuLabel();
+    updateSysLabels();
   });
   tray_ = new QSystemTrayIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon), this);
   auto* tm = new QMenu(this);
@@ -546,7 +549,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.74"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.75"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -608,7 +611,7 @@ void MainWindow::buildToolbar() {
   connect(gpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
   kindBtn_ = new QToolButton(toolBar_);
-  kindBtn_->setText(trStr(lang(), "kindMenu") + QStringLiteral(" ▾"));
+  kindBtn_->setText(trStr(lang(), "kindMenu"));
   kindBtn_->setPopupMode(QToolButton::InstantPopup);
   kindMenu_ = new QMenu(kindBtn_);
   kindImgAct_ = kindMenu_->addAction(trStr(lang(), "kindImages"));
@@ -630,7 +633,7 @@ void MainWindow::buildToolbar() {
   utilBtn_->setText(QStringLiteral("☰"));
   QFont uf = utilBtn_->font(); uf.setPointSize(uf.pointSize() + 4); uf.setBold(true);
   utilBtn_->setFont(uf);
-  utilBtn_->setMinimumSize(46, 32);
+  utilBtn_->setMinimumSize(58, 32);
   utilBtn_->setToolTip(trStr(lang(), "settings") + "/" + trStr(lang(), "help"));
   utilBtn_->setPopupMode(QToolButton::InstantPopup);
   auto* utilMenu_ = new QMenu(utilBtn_);
@@ -641,9 +644,8 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
-  toolBar_->addWidget(gpuEnabled_);
   toolBar_->addWidget(kindBtn_);
-  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_);
+  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
   toolBar_->addWidget(utilBtn_); // far-right menu
@@ -670,20 +672,19 @@ void MainWindow::buildLeft(QWidget* w) {
   auto* form = new QFormLayout; lay->addLayout(form);
   sumTotal_ = new QLabel("-", w); sumDone_ = new QLabel("-", w); sumGroups_ = new QLabel("-", w);
   sumDup_ = new QLabel("-", w); sumTime_ = new QLabel("-", w); sumGpu_ = new QLabel("-", w);
-  sumCpu_ = new QLabel("-", w); sumRam_ = new QLabel("-", w); sumMon_ = new QLabel("-", w);
+  sumCpu_ = new QLabel("-", w); sumRam_ = new QLabel("-", w);
   sumTotal_->setObjectName("sumTotal"); sumDone_->setObjectName("sumDone"); sumGroups_->setObjectName("sumGroups");
   sumDup_->setObjectName("sumDup"); sumTime_->setObjectName("sumTime"); sumGpu_->setObjectName("sumGpu");
-  sumCpu_->setObjectName("sumCpu"); sumRam_->setObjectName("sumRam"); sumMon_->setObjectName("sumMon");
+  sumCpu_->setObjectName("sumCpu"); sumRam_->setObjectName("sumRam");
   // value labels are the field widgets; refreshSummary() writes "name: value" into the name labels
   // and keeps raw values here for layout stability.
   sumValTotal_ = new QLabel("-", w); sumValDone_ = new QLabel("-", w); sumValGroups_ = new QLabel("-", w);
   sumValDup_ = new QLabel("-", w); sumValTime_ = new QLabel("-", w); sumValGpu_ = new QLabel("-", w);
-  sumValCpu_ = new QLabel("-", w); sumValRam_ = new QLabel("-", w); sumValMon_ = new QLabel("-", w);
+  sumValCpu_ = new QLabel("-", w); sumValRam_ = new QLabel("-", w);
   form->addRow(sumTotal_, sumValTotal_); form->addRow(sumDone_, sumValDone_);
   form->addRow(sumGroups_, sumValGroups_); form->addRow(sumDup_, sumValDup_);
   form->addRow(sumTime_, sumValTime_); form->addRow(sumGpu_, sumValGpu_);
   form->addRow(sumCpu_, sumValCpu_); form->addRow(sumRam_, sumValRam_);
-  form->addRow(sumMon_, sumValMon_);
   refreshFolders();
 }
 
@@ -752,24 +753,20 @@ void MainWindow::buildMiddle(QWidget* w) {
   lay->addWidget(groupTitle_);
   auto* bar = new QHBoxLayout;
   sortBox_ = new QComboBox(w);
-  viewBtn_ = new QToolButton(w);
-  viewBtn_->setText(trStr(lang(), "viewBtn") + QStringLiteral(" ▾"));
-  viewBtn_->setPopupMode(QToolButton::InstantPopup);
-  viewBtn_->setMinimumSize(110, 30); // finger-sized target, not a tiny label
-  viewMenu_ = new QMenu(viewBtn_);
-  const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
-  auto* vgroup = new QActionGroup(viewBtn_); vgroup->setExclusive(true);
-  for (int i = 0; i < 7; ++i) {
-    QAction* a = viewMenu_->addAction(trStr(lang(), vkeys[i]));
-    a->setCheckable(true); a->setData(i); vgroup->addAction(a); viewActs_.push_back(a);
-    connect(a, &QAction::triggered, this, [this, i] { groupViewChanged(i); });
+  // View-mode dropdown in the same QComboBox style as the preset combo: one
+  // arrow only (the old QToolButton drew its own arrow next to the "▾" text).
+  viewBox_ = new QComboBox(w);
+  viewBox_->setMinimumHeight(30);
+  {
+    const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
+    for (int i = 0; i < 7; ++i) viewBox_->addItem(trStr(lang(), vkeys[i]));
   }
-  viewBtn_->setMenu(viewMenu_);
+  connect(viewBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int i) { groupViewChanged(i); });
   groupSearch_ = new QLineEdit(w); groupSearch_->setClearButtonEnabled(true);
   connect(groupSearch_, &QLineEdit::textChanged, this, &MainWindow::groupSearchChanged);
   connect(sortBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { refreshGroupList(); });
   groupSearch_->setMaximumWidth(280); // balanced against the view button
-  bar->addWidget(sortBox_); bar->addWidget(viewBtn_); bar->addWidget(groupSearch_);
+  bar->addWidget(sortBox_); bar->addWidget(viewBox_); bar->addWidget(groupSearch_);
   lay->addLayout(bar);
   midTabs_ = new QTabWidget(w);
   lay->addWidget(midTabs_, 1);
@@ -824,6 +821,9 @@ void MainWindow::buildMiddle(QWidget* w) {
 }
 
 void MainWindow::buildRight(QWidget* w) {
+  // Capped width: long filenames in the detail form used to push the middle
+  // group pane aside. The form wraps within this bound instead.
+  w->setMaximumWidth(430);
   auto* lay = new QVBoxLayout(w); lay->setContentsMargins(0, 0, 0, 0);
   auto* head = new QHBoxLayout;
   detailTitle_ = new QLabel(w); detailTitle_->setStyleSheet("font-weight:bold;font-size:14px;");
@@ -894,7 +894,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.74"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.75"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -908,7 +908,7 @@ void MainWindow::applyStaticTexts() {
   auto* sumTitle = findChild<QLabel*>("sumTitle"); if (sumTitle) sumTitle->setText(trStr(l, "summary"));
   sumTotal_->setText(trStr(l, "total")); sumDone_->setText(trStr(l, "scanned")); sumGroups_->setText(trStr(l, "groups"));
   sumDup_->setText(trStr(l, "dups")); sumTime_->setText(trStr(l, "elapsed")); sumGpu_->setText(trStr(l, "gpu"));
-  sumCpu_->setText(trStr(l, "cpu")); sumRam_->setText(trStr(l, "ram")); sumMon_->setText(trStr(l, "monitor"));
+  sumCpu_->setText(trStr(l, "cpu")); sumRam_->setText(trStr(l, "ram"));
   refreshSummary();
   groupTitle_->setText(trStr(l, "groups") + QString(" (%1)").arg(groups_.size()));
   sortBox_->blockSignals(true);
@@ -917,10 +917,14 @@ void MainWindow::applyStaticTexts() {
   sortBox_->setCurrentIndex(ssort < 0 ? 0 : ssort);
   sortBox_->blockSignals(false);
   groupSearch_->setPlaceholderText(trStr(l, "searchGroups"));
-  viewBtn_->setText(trStr(l, "viewBtn") + QStringLiteral(" ▾"));
   {
     const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
-    for (int i = 0; i < viewActs_.size() && i < 7; ++i) viewActs_[i]->setText(trStr(l, vkeys[i]));
+    const int vcur = viewBox_ ? viewBox_->currentIndex() : 0;
+    viewBox_->blockSignals(true);
+    viewBox_->clear();
+    for (int i = 0; i < 7; ++i) viewBox_->addItem(trStr(l, vkeys[i]));
+    viewBox_->setCurrentIndex(vcur < 0 ? 0 : vcur);
+    viewBox_->blockSignals(false);
   }
   kindBtn_->setText(trStr(l, "kindMenu") + QStringLiteral(" ▾"));
   kindImgAct_->setText(trStr(l, "kindImages"));
@@ -945,8 +949,7 @@ void MainWindow::applyStaticTexts() {
   fileBar_->addAction(trStr(l, "cut"), this, &MainWindow::cutSelected);
   fileBar_->addAction(trStr(l, "paste"), this, &MainWindow::pasteFiles);
   fileBar_->addAction(trStr(l, "move"), this, &MainWindow::moveSelected);
-  fileBar_->addAction(QApplication::style()->standardIcon(QStyle::SP_TrashIcon),
-                      trStr(l, "del"), this, &MainWindow::deleteSelected);
+  fileBar_->addAction(trStr(l, "del"), this, &MainWindow::deleteSelected);
   refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
 }
 
@@ -1370,10 +1373,11 @@ void MainWindow::updateKindBtn() {
   }
   QSettings().setValue("ui/kindMask", m);
   // Button mirrors the selection so the state is visible without opening the
-  // menu; bold when filtered to a single kind (on/off feedback per click).
+  // menu; bold when filtered to a single kind. No "▾" in the label: the
+  // ToolButton already draws its own arrow (double arrows otherwise).
   const QString sel = (m == 3 ? trStr(lang(), "kindImages") + "+" + trStr(lang(), "kindVideos")
                               : (m == 1 ? trStr(lang(), "kindImages") : trStr(lang(), "kindVideos")));
-  kindBtn_->setText(sel + QStringLiteral(" ▾"));
+  kindBtn_->setText(sel);
   QFont f = kindBtn_->font(); f.setBold(m != 3); kindBtn_->setFont(f);
   kindBtn_->setToolTip(trStr(lang(), "kindMenu") + ": " + sel);
 }
@@ -1381,7 +1385,9 @@ void MainWindow::groupViewChanged(int idx) {
   if (idx < 0) idx = 0;
   if (idx > 6) idx = 5;
   QSettings().setValue("ui/groupView", idx);
-  for (auto* a : viewActs_) a->setChecked(a->data().toInt() == idx);
+  if (viewBox_ && viewBox_->currentIndex() != idx) {
+    viewBox_->blockSignals(true); viewBox_->setCurrentIndex(idx); viewBox_->blockSignals(false);
+  }
   QTreeWidget* tree = (midTabs_ && midTabs_->currentIndex() == 1) ? vidTree_ : imgTree_;
   QListWidget* grid = (midTabs_ && midTabs_->currentIndex() == 1) ? vidGrid_ : imgGrid_;
   groupsView_ = tree; groupsList_ = grid;
@@ -1517,7 +1523,7 @@ void MainWindow::refreshGroupList() {
 }
 void MainWindow::activateTab(int idx) {
   const bool res = (idx == 0 || idx == 1);
-  sortBox_->setEnabled(res); viewBtn_->setEnabled(res); groupSearch_->setEnabled(res);
+  sortBox_->setEnabled(res); viewBox_->setEnabled(res); groupSearch_->setEnabled(res);
   if (idx == 0 || idx == 1) {
     groupsView_ = (idx == 1) ? vidTree_ : imgTree_;
     groupsList_ = (idx == 1) ? vidGrid_ : imgGrid_;
@@ -1889,18 +1895,16 @@ void MainWindow::refreshDetail() {
   while (detailForm_->count()) { auto* it = detailForm_->takeAt(0); delete it->widget(); delete it; }
   exifLabel_->clear(); simLabel_->clear(); simBar_->setValue(0); hashLabel_->clear();
   // Always show the field labels, even with no selection (values become "-").
-  // The full-path row is a fixed two-line read-only field from the start:
-  // long paths wrap inside it (never stretching the pane) and stay
-  // drag-selectable.
-  auto* pathEdit = new QTextEdit(this);
-  pathEdit->setReadOnly(true);
-  pathEdit->setWordWrapMode(QTextOption::WrapAnywhere);
-  pathEdit->setFixedHeight(fontMetrics().lineSpacing() * 2 + 12);
-  pathEdit->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+  // The folder row looks like every other row (plain label, wraps to two
+  // lines inside the capped pane) and shows the containing folder only — the
+  // filename is already one row above, no need to repeat it.
+  auto* pathLabel = new QLabel(this);
+  pathLabel->setWordWrap(true);
+  pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
   if (currentFile_.isEmpty()) {
     preview_->setText("—");
     detailForm_->addRow(trStr(lang(), "fileName"), new QLabel("-", this));
-    detailForm_->addRow(trStr(lang(), "fullPath"), pathEdit);
+    detailForm_->addRow(trStr(lang(), "fullPath"), pathLabel);
     detailForm_->addRow(trStr(lang(), "fileSize"), new QLabel("-", this));
     detailForm_->addRow(trStr(lang(), "format"), new QLabel("-", this));
     detailForm_->addRow(trStr(lang(), "modified"), new QLabel("-", this));
@@ -1917,8 +1921,9 @@ void MainWindow::refreshDetail() {
                     && groups_[currentGroup_].paths[0] == currentFile_);
   const double pct = ref ? 100.0 : pathBest(currentFile_);
   detailForm_->addRow(trStr(lang(), "fileName"), new QLabel(fi.fileName(), this));
-  pathEdit->setPlainText(currentFile_);
-  detailForm_->addRow(trStr(lang(), "fullPath"), pathEdit);
+  pathLabel->setText(QDir::toNativeSeparators(fi.absolutePath()));
+  pathLabel->setToolTip(QDir::toNativeSeparators(fi.absolutePath()));
+  detailForm_->addRow(trStr(lang(), "fullPath"), pathLabel);
   detailForm_->addRow(trStr(lang(), "fileSize"),
                       new QLabel(QString("%1 (%2 bytes)").arg(fmtSize(fi.size())).arg(fi.size()), this));
   detailForm_->addRow(trStr(lang(), "format"), new QLabel(fi.suffix().toUpper(), this));
@@ -2215,6 +2220,35 @@ void MainWindow::revealSelected() {
   if (ps.isEmpty()) return;
   QProcess::startDetached("explorer.exe", {QString("/select,%1").arg(QDir::toNativeSeparators(ps.first()))});
 }
+void MainWindow::updateSysLabels() {
+  // Process CPU% (compare against the High/Balanced preset) and working set,
+  // sampled live every UI tick. GPU row shows 켜짐/꺼짐 and is visible only
+  // while actually accelerating.
+  const bool accelerating = scanning_ && gpuEnabled_ && gpuEnabled_->isChecked()
+                            && worker_ && worker_->gpuAvailable();
+  sumGpu_->setVisible(accelerating); sumValGpu_->setVisible(accelerating);
+  if (accelerating) sumValGpu_->setText(trStr(lang(), "gpuOn"));
+#ifdef _WIN32
+  FILETIME fc, fe, fk, fu;
+  if (GetProcessTimes(GetCurrentProcess(), &fc, &fe, &fk, &fu)) {
+    ULARGE_INTEGER k, u;
+    k.LowPart = fk.dwLowDateTime; k.HighPart = fk.dwHighDateTime;
+    u.LowPart = fu.dwLowDateTime; u.HighPart = fu.dwHighDateTime;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (cpuPrevMs_ > 0 && now > cpuPrevMs_) {
+      if (cpuCount_ <= 0) { SYSTEM_INFO si{}; GetSystemInfo(&si); cpuCount_ = (int)si.dwNumberOfProcessors; }
+      const double cpuMs = (double)(qint64)(k.QuadPart - (qulonglong)cpuPrevK_)
+                         + (double)(qint64)(u.QuadPart - (qulonglong)cpuPrevU_);
+      const double pct = cpuMs / 10000.0 * 100.0 / ((double)(now - cpuPrevMs_) * std::max(1, cpuCount_));
+      sumValCpu_->setText(QString("%1%").arg(std::clamp(pct, 0.0, 100.0), 0, 'f', 0));
+    }
+    cpuPrevK_ = (qint64)k.QuadPart; cpuPrevU_ = (qint64)u.QuadPart; cpuPrevMs_ = now;
+  }
+  PROCESS_MEMORY_COUNTERS pmc{};
+  if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+    sumValRam_->setText(fmtSize((qulonglong)pmc.WorkingSetSize));
+#endif
+}
 void MainWindow::renameSelected() {
   const auto ps = selectedFiles();
   if (ps.size() != 1) return;
@@ -2324,9 +2358,8 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
   const UiLang l = lang();
   if (!hasReport_ || lastStats_.size() < 5) {
     sumValTotal_->setText("-"); sumValDone_->setText("-"); sumValGroups_->setText("-");
-    sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(gpuEnabled_->isChecked() ? "GPU" : "CPU");
+    sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(trStr(l, "gpuOff"));
     sumValCpu_->setText("-"); sumValRam_->setText("-");
-    if (!monitor_ || !monitor_->running()) sumValMon_->setText("-");
     return;
   }
   sumValTotal_->setText(lastStats_[0]);
@@ -2336,7 +2369,7 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
   for (const auto& g : groups_) dupFiles += (qulonglong)g.paths.size();
   sumValDup_->setText(QString::number(dupFiles));
   sumValTime_->setText(fmtElapsed(repElapsedMs_));
-  sumValGpu_->setText(gpuEnabled_->isChecked() ? "GPU" : "CPU");
+  sumValGpu_->setText(gpuEnabled_->isChecked() ? trStr(l, "gpuOn") : trStr(l, "gpuOff"));
 }
 void MainWindow::scanHeartbeat() {
   static qint64 lastBeat = 0;
@@ -2506,7 +2539,6 @@ void MainWindow::toggleMonitor() {
     monBtn_->setChecked(false); paintMonBtn();
     tray_->setToolTip(trStr(lang(), "app"));
     statusMsg_->setText(trStr(lang(), "monStop"));
-    sumValMon_->setText("-");
     return;
   }
   QSettings st;
@@ -2551,7 +2583,6 @@ void MainWindow::updateMonitorStatus() {
     }
   };
   const QString gpu = s.gpuPercent < 0 ? "n/a" : QString::number(s.gpuPercent, 'f', 0) + "%";
-  sumValMon_->setText(s.paused ? trStr(lang(), "paused") : trStr(lang(), "monRun"));
   sumValCpu_->setText(QString("%1%").arg(s.cpuPercent, 0, 'f', 0));
   sumValRam_->setText(QString("%1%").arg(s.memoryPercent, 0, 'f', 0));
   tray_->setToolTip(QString("%1 | %2 | GPU %3 | Q %4").arg(state(s.loadState)).arg(s.analyzed).arg(gpu).arg(s.pending));

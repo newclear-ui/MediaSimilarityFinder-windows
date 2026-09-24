@@ -147,6 +147,8 @@ private:
   void refreshSummary(const msf::SearchReport* r=nullptr);
   void updateGpuLabel();
   void updateStatusCounts();
+  void updateSysLabels(); // process CPU%/RAM live + GPU row on/off
+  qint64 cpuPrevK_ = 0, cpuPrevU_ = 0, cpuPrevMs_ = 0; int cpuCount_ = 0;
   void scanHeartbeat();
   void saveUiState();              // window geometry + splitter + header layouts
   void restoreUiState();           // counterpart applied after buildUi()
@@ -208,15 +210,15 @@ private:
   QComboBox* preset_=nullptr; QSpinBox *cpu_=nullptr,*gpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
-    *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr,*sumMon_=nullptr;
+    *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;
   QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValGroups_=nullptr,
-    *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr,*sumValMon_=nullptr;
+    *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr;
   // middle
   QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;
   QTabWidget* midTabs_=nullptr;
   QTreeWidget *imgTree_=nullptr, *vidTree_=nullptr;
   QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;
-  QToolButton* viewBtn_=nullptr; QMenu* viewMenu_=nullptr; QVector<QAction*> viewActs_;
+  QComboBox* viewBox_=nullptr; // view-mode dropdown (same style as the preset combo)
   QStyledItemDelegate* tileDelegate_=nullptr; // Explorer-style Tiles renderer for the group grid
   QStyledItemDelegate* defaultDelegate_=nullptr; // plain delegate restored for icon/list modes
   // (setItemDelegate(nullptr) does NOT restore painting; probed null visuals)
