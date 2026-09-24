@@ -12,9 +12,6 @@ Copy-Item $exe $OutputDir -Force
 $qtBin = Split-Path $exe -Parent
 # Project-local vcpkg prefix used by the current Windows build.
 $vcpkgTripletRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "vcpkg_installed\x64-windows"
-if (Get-Command windeployqt.exe -ErrorAction SilentlyContinue) {
-  & windeployqt.exe --release --no-translations (Join-Path $OutputDir "MediaSimilarityFinder.exe")
-}
 Get-ChildItem $qtBin -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $OutputDir -Force
 
 # Copy runtime DLLs from the project-local vcpkg installation. SQLite/FFmpeg
@@ -29,6 +26,18 @@ if (Test-Path $vcpkgBin) {
 # ffmpeg/ffprobe are runtime fallbacks used by VideoDecoder and the resolution
 # probe. The manifest enables both tools; copy them from vcpkg's tools prefix.
 $vcpkgTools = Join-Path $vcpkgTripletRoot "tools"
+
+$windeployqt = Get-Command windeployqt.exe -ErrorAction SilentlyContinue
+if (-not $windeployqt) {
+  $windeployqt = Get-ChildItem $vcpkgTools -Filter "windeployqt.exe" -Recurse -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+}
+if ($windeployqt) {
+  $windeployqtPath = if ($windeployqt.PSObject.Properties.Name -contains "Source") { $windeployqt.Source } else { $windeployqt.FullName }
+  & $windeployqtPath --release --no-translations (Join-Path $OutputDir "MediaSimilarityFinder.exe")
+  if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
+}
+
 foreach ($toolName in @("ffmpeg.exe", "ffprobe.exe")) {
   $tool = Get-ChildItem $vcpkgTools -Filter $toolName -Recurse -ErrorAction SilentlyContinue |
     Select-Object -First 1
