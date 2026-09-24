@@ -1,19 +1,12 @@
-name: MediaSimilarityFinder 0.9.1.0 - Windows CPU
+name: MediaSimilarityFinder 0.9.2.63 - Windows CPU
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v0.9.1.*'
-  pull_request:
-
-permissions:
-  contents: read
 
 jobs:
   windows-cpu:
-    name: Windows x64 CPU / MSVC / Qt6
-    runs-on: windows-2025
+    name: Windows x64 CPU / VS2026 / Qt6
+    runs-on: windows-2025-vs2026
 
     env:
       BUILD_TYPE: Release
@@ -29,97 +22,25 @@ jobs:
         run: |
           cmake --version
           git --version
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" version
-          & "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vcpkg = Get-Command vcpkg.exe -ErrorAction Stop
+          $vcpkgRoot = Split-Path $vcpkg.Source -Parent
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $vcpkg.Source version
+          & "\${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 
-      - name: Configure MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Install manifest dependencies
+      - name: Build and test
+        working-directory: src_unpacked
         shell: pwsh
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install --triplet x64-windows --clean-after-build
-          if ($LASTEXITCODE -ne 0) { throw 'vcpkg dependency installation failed.' }
-
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          cmake -S . -B build-windows-cpu `
-            -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DMSF_ENABLE_CUDA=OFF `
-            -DMSF_ENABLE_FFMPEG=ON `
-            -DMSF_BUILD_GUI=ON `
-            -DMSF_BUILD_TESTS=ON `
-            -DCMAKE_VS_GLOBALS="VcpkgEnableManifest=true"
-          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
-
-      - name: Build Release
-        shell: pwsh
-        run: |
-          cmake --build build-windows-cpu --config $env:BUILD_TYPE --parallel 4
-          if ($LASTEXITCODE -ne 0) { throw 'Windows CPU build failed.' }
-
-      - name: Run regression tests
-        shell: pwsh
-        run: |
-          ctest --test-dir build-windows-cpu -C $env:BUILD_TYPE --output-on-failure
-          if ($LASTEXITCODE -ne 0) { throw 'CTest failed.' }
+          .\scripts\build_windows_cpu.ps1 -VcpkgRoot $env:VCPKG_ROOT
 
       - name: Verify GUI executable
+        working-directory: src_unpacked
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'build-windows-cpu\Release\MediaSimilarityFinder.exe'
           if (-not (Test-Path $exe)) { throw "GUI executable not found: $exe" }
-          & $exe --version 2>$null
-          if ($LASTEXITCODE -notin @(0, -1073741510)) {
-            Write-Warning "GUI smoke invocation returned exit code $LASTEXITCODE. The executable exists; interactive GUI testing is not possible on the runner."
-          }
-
-      - name: Assemble Windows runtime package
-        shell: pwsh
-        run: |
-          $stage = Join-Path $PWD 'dist\MediaSimilarityFinder-0.9.1.0-CPU-Windows-x64'
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item 'build-windows-cpu\Release\MediaSimilarityFinder.exe' $stage
-
-          $qtRoot = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed\x64-windows\tools\qt6\bin'
-          $windeployqt = Join-Path $qtRoot 'windeployqt.exe'
-          if (-not (Test-Path $windeployqt)) {
-            $windeployqt = Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools" -Filter windeployqt.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $windeployqt) { throw 'windeployqt.exe was not found in the vcpkg Qt installation.' }
-
-          & $windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw (Join-Path $stage 'MediaSimilarityFinder.exe')
-          if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed.' }
-
-          $bin = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed\x64-windows\bin'
-          Get-ChildItem $bin -Filter '*.dll' -ErrorAction SilentlyContinue | Copy-Item -Destination $stage -Force
-
-          Copy-Item 'README_CPU_0.9.1.0.md' $stage
-          Copy-Item 'BUILD_WINDOWS_CPU.md' $stage
-          Copy-Item 'LICENSE*' $stage -ErrorAction SilentlyContinue
-
-          @"
-          Media Similarity Finder 0.9.1.0
-          Windows x64 CPU initial build
-
-          CUDA is intentionally disabled for this build (MSF_ENABLE_CUDA=OFF).
-          GPU/CUDA source remains in the project for the future 0.9.2.x GPU line.
-          "@ | Set-Content (Join-Path $stage 'BUILD_INFO.txt')
-
-      - name: Package ZIP
-        shell: pwsh
-        run: |
-          $stage = 'dist\MediaSimilarityFinder-0.9.1.0-CPU-Windows-x64'
-          Compress-Archive -Path "$stage\*" -DestinationPath 'MediaSimilarityFinder-v0.9.1.0-CPU-Windows-x64.zip' -Force
-
-      - name: Upload Windows CPU artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: MediaSimilarityFinder-v0.9.1.0-CPU-Windows-x64
-          path: MediaSimilarityFinder-v0.9.1.0-CPU-Windows-x64.zip
-          if-no-files-found: error
-          retention-days: 14
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "MediaSimilarityFinder --version failed: $LASTEXITCODE" }
+          & $exe --smoke
+          if ($LASTEXITCODE -ne 0) { throw "MediaSimilarityFinder --smoke failed: $LASTEXITCODE" }
