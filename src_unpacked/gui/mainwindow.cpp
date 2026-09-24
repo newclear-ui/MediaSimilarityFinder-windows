@@ -1594,7 +1594,9 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // any earlier scan reappear instantly on rescan instead of re-burning the
   // per-tick budget (the reason loaded groups showed generic icons).
   const QFileInfo fi(path);
-  const qint64 mtime = fi.lastModified().toSecsSinceEpoch();
+  // Match scanner/database timestamp precision (milliseconds) so a same-size file
+   // replaced within the same second cannot accidentally reuse an old thumbnail.
+   const qint64 mtime = fi.lastModified().toMSecsSinceEpoch();
   const qulonglong fsize = (qulonglong)fi.size();
   if (thumbDbOpen_) {
     std::vector<unsigned char> bytes;
