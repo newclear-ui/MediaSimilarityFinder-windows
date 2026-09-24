@@ -28,7 +28,7 @@ jobs:
           $nvcc = Get-Command nvcc.exe -ErrorAction SilentlyContinue
           if (-not $nvcc) { throw 'nvcc.exe was not found on the hosted runner.' }
           & $nvcc.Source --version
-          & "\${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          & "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 
       - name: Build and test
         working-directory: src_unpacked
