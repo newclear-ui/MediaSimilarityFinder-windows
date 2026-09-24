@@ -80,6 +80,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.74 | Monitor toolbar cleanup (pause removed, toggle highlight, menu right) |
 | 0.9.2.75 | Toolbar, detail, and summary UI round |
 | 0.9.2.76 | Console-flash removal + spawn-free resolutions |
+| 0.9.2.77 | Button style unification + detail/grid intrusion fixes |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

@@ -121,6 +121,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"scanned")) return S("검색 완료","Scanned");
   if (!std::strcmp(key,"processing")) return S("처리 중","Processing");
   if (!std::strcmp(key,"groups")) return S("유사 그룹","Similar groups");
+  if (!std::strcmp(key,"groupsTotal")) return S("전체","Total");
+  if (!std::strcmp(key,"groupSel")) return S("선택","Selected");
   if (!std::strcmp(key,"dups")) return S("중복 파일","Duplicates");
   if (!std::strcmp(key,"elapsed")) return S("검색 시간","Elapsed");
   if (!std::strcmp(key,"updated")) return S("마지막 업데이트","Last update");
@@ -236,7 +238,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.76\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.76\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.77\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.77\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -550,7 +552,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.76"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.77"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -613,7 +615,10 @@ void MainWindow::buildToolbar() {
   gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
   kindBtn_ = new QToolButton(toolBar_);
   kindBtn_->setText(trStr(lang(), "kindMenu"));
-  kindBtn_->setPopupMode(QToolButton::InstantPopup);
+  // Combo-style arrow on the side (same look as the preset/view combos):
+  // the button part reopens the menu, so a press anywhere works.
+  kindBtn_->setPopupMode(QToolButton::MenuButtonPopup);
+  connect(kindBtn_, &QToolButton::clicked, this, [this] { kindBtn_->showMenu(); });
   kindMenu_ = new QMenu(kindBtn_);
   kindImgAct_ = kindMenu_->addAction(trStr(lang(), "kindImages"));
   kindVidAct_ = kindMenu_->addAction(trStr(lang(), "kindVideos"));
@@ -636,7 +641,9 @@ void MainWindow::buildToolbar() {
   utilBtn_->setFont(uf);
   utilBtn_->setMinimumSize(58, 32);
   utilBtn_->setToolTip(trStr(lang(), "settings") + "/" + trStr(lang(), "help"));
-  utilBtn_->setPopupMode(QToolButton::InstantPopup);
+  // Same combo-style side arrow as the preset/view/kind controls.
+  utilBtn_->setPopupMode(QToolButton::MenuButtonPopup);
+  connect(utilBtn_, &QToolButton::clicked, this, [this, utilBtn_] { utilBtn_->showMenu(); });
   auto* utilMenu_ = new QMenu(utilBtn_);
   utilMenu_->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
   utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
@@ -822,9 +829,9 @@ void MainWindow::buildMiddle(QWidget* w) {
 }
 
 void MainWindow::buildRight(QWidget* w) {
-  // Capped width: long filenames in the detail form used to push the middle
-  // group pane aside. The form wraps within this bound instead.
-  w->setMaximumWidth(430);
+  // No fixed maximum: the splitter between the group pane and this pane stays
+  // movable. Width stability comes from the labels below (word-wrap inside
+  // allotted width, never stretching the pane), not from clamping.
   auto* lay = new QVBoxLayout(w); lay->setContentsMargins(0, 0, 0, 0);
   auto* head = new QHBoxLayout;
   detailTitle_ = new QLabel(w); detailTitle_->setStyleSheet("font-weight:bold;font-size:14px;");
@@ -844,7 +851,10 @@ void MainWindow::buildRight(QWidget* w) {
   viewStack_ = new QStackedWidget(w);
   grid_ = new QListWidget(w);
   grid_->setViewMode(QListView::IconMode); grid_->setResizeMode(QListView::Adjust);
-  grid_->setMovement(QListView::Static); grid_->setSpacing(10); grid_->setIconSize(QSize(128, 128));
+  // Tight uniform cells: no side margins for text to spill into the neighbor
+  // photo, and one layout pass for all rows (long/short names align).
+  grid_->setMovement(QListView::Static); grid_->setSpacing(2); grid_->setUniformItemSizes(true);
+  grid_->setIconSize(QSize(128, 128));
   connect(grid_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem*, QListWidgetItem*) { fileGridSelected(); });
   connect(grid_, &QListWidget::itemDoubleClicked, this, &MainWindow::fileActivated);
   connect(grid_, &QListWidget::itemChanged, this, [this](QListWidgetItem* it) {
@@ -895,7 +905,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.76"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.77"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1302,6 +1312,13 @@ void MainWindow::refreshStreaming(bool force) {
   }
   updateStatusCounts();
 }
+void MainWindow::updateGroupFoot() {
+  // "전체 619 · 선택 116": total groups vs the 1-based selected group.
+  // The old "619: 116" left the second number unexplained.
+  const QString sel = currentGroup_ >= 0 ? QString::number(currentGroup_ + 1) : "-";
+  groupFoot_->setText(QString("%1 %2 · %3 %4").arg(trStr(lang(), "groupsTotal")).arg(groups_.size())
+                                                 .arg(trStr(lang(), "groupSel")).arg(sel));
+}
 void MainWindow::rebuildGroups() {
   QHash<QString, QStringList> buckets;
   for (auto it = pathParent_.cbegin(); it != pathParent_.cend(); ++it) buckets[findRoot(it.key())] << it.key();
@@ -1358,7 +1375,7 @@ void MainWindow::gridSelected(QListWidgetItem* cur, QListWidgetItem*) {
   if (gi < 0 || gi >= groups_.size()) return;
   currentGroup_ = gi; currentFile_.clear();
   refreshFileViews(); refreshDetail(); updateStatusCounts();
-  groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ + 1));
+  updateGroupFoot();
 }
 void MainWindow::gridCheckChanged(QListWidgetItem* it) {
   if (!it) return;
@@ -1519,7 +1536,7 @@ void MainWindow::refreshGroupList() {
   // side is always filled lazily on show.
   if (tab == 0) fillPair(imgTree_, imgGrid_, 1, true);
   else if (tab == 1) fillPair(vidTree_, vidGrid_, 2, true);
-  groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ >= 0 ? QString::number(currentGroup_ + 1) : "-"));
+  updateGroupFoot();
   updateIgnoreTab();
 }
 void MainWindow::activateTab(int idx) {
@@ -1572,7 +1589,7 @@ void MainWindow::groupSelected(QTreeWidgetItem* cur, QTreeWidgetItem*) {
     currentGroup_ = gi; currentFile_.clear();
   }
   refreshFileViews(); refreshDetail(); updateStatusCounts();
-  groupFoot_->setText(QString("%1: %2").arg(groups_.size()).arg(currentGroup_ >= 0 ? QString::number(currentGroup_ + 1) : "-"));
+  updateGroupFoot();
 }
 void MainWindow::groupSearchChanged(const QString&) { refreshGroupList(); }
 // ------------------------------------------------------------ right pane: files + detail
@@ -1898,6 +1915,9 @@ void MainWindow::refreshDetail() {
   // filename is already one row above, no need to repeat it.
   auto* pathLabel = new QLabel(this);
   pathLabel->setWordWrap(true);
+  // Ignored horizontal size: wrap inside the allotted width instead of
+  // stretching the pane (the old sudden widen/narrow jumps).
+  pathLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
   if (currentFile_.isEmpty()) {
     preview_->setText("—");
@@ -1918,7 +1938,11 @@ void MainWindow::refreshDetail() {
   const bool ref = (currentGroup_ >= 0 && !groups_[currentGroup_].paths.isEmpty()
                     && groups_[currentGroup_].paths[0] == currentFile_);
   const double pct = ref ? 100.0 : pathBest(currentFile_);
-  detailForm_->addRow(trStr(lang(), "fileName"), new QLabel(fi.fileName(), this));
+  auto* nameLabel = new QLabel(fi.fileName(), this);
+  nameLabel->setWordWrap(true);
+  nameLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  nameLabel->setToolTip(fi.fileName());
+  detailForm_->addRow(trStr(lang(), "fileName"), nameLabel);
   pathLabel->setText(QDir::toNativeSeparators(fi.absolutePath()));
   pathLabel->setToolTip(QDir::toNativeSeparators(fi.absolutePath()));
   detailForm_->addRow(trStr(lang(), "fullPath"), pathLabel);

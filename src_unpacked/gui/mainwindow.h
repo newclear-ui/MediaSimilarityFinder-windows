@@ -140,6 +140,7 @@ private:
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
   void rebuildGroups();          // union-find over accumulated matches
+  void updateGroupFoot();        // "전체 N · 선택 M" footer label
   void refreshStreaming(bool force=false); // throttled rebuild+fill for live scans
   void refreshGroupList();       // middle pane from groups_
   void refreshFileViews();       // right grid+list from selected group
