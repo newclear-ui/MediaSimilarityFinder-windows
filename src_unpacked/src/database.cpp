@@ -89,11 +89,15 @@ bool Database::initialize(){
    }
  }
  sqlite3_finalize(info);
- for(int i=0;i<6;++i) if(!present[i]){
-   const std::string q="ALTER TABLE files ADD COLUMN "+std::string(cols[i])+" INTEGER NOT NULL DEFAULT 0;";
-   if(!exec(q.c_str())) return false;
- }
- return prepareStatements();
+  for(int i=0;i<6;++i) if(!present[i]){
+    const std::string q="ALTER TABLE files ADD COLUMN "+std::string(cols[i])+" INTEGER NOT NULL DEFAULT 0;";
+    if(!exec(q.c_str())) return false;
+  }
+  if(!prepareStatements()) return false;
+  // Migrations above are idempotent, so after a successful open the schema is
+  // always current: stamp it (diagnostics + future breaking-change gates).
+  setDbVersion(kDatabaseVersion);
+  return true;
 }
 
 bool Database::beginTransaction(){return db_ && exec("BEGIN IMMEDIATE TRANSACTION;");}
@@ -228,24 +232,43 @@ bool Database::pruneThumbs(){
   return exec("DELETE FROM thumbs WHERE path NOT IN (SELECT path FROM files);");
 }
 
-int Database::engineVersion() const{
-  if(!db_) return 0;
+std::string Database::engineVersion() const{
+  if(!db_) return "0.0.0";
   sqlite3_stmt* s=nullptr;
-  if(sqlite3_prepare_v2(D(db_),"SELECT value FROM meta WHERE key='engine_version'",-1,&s,nullptr)!=SQLITE_OK) return 0;
-  int v=0;
+  if(sqlite3_prepare_v2(D(db_),"SELECT value FROM meta WHERE key='engine_version'",-1,&s,nullptr)!=SQLITE_OK) return "0.0.0";
+  std::string v;
   if(sqlite3_step(s)==SQLITE_ROW){
     const char* t=reinterpret_cast<const char*>(sqlite3_column_text(s,0));
-    if(t){ try{ v=std::max(0,std::stoi(t)); }catch(...){ v=0; } }
+    if(t) v=t;
   }
-  sqlite3_finalize(s); return v;
+  sqlite3_finalize(s); return v.empty() ? "0.0.0" : v;
 }
 
-bool Database::setEngineVersion(int v){
+bool Database::setEngineVersion(const std::string& v){
   if(!db_) return false;
   sqlite3_stmt* s=nullptr;
   if(sqlite3_prepare_v2(D(db_),"INSERT INTO meta(key,value) VALUES('engine_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",-1,&s,nullptr)!=SQLITE_OK) return false;
-  const std::string vs=std::to_string(std::max(0,v));
-  sqlite3_bind_text(s,1,vs.c_str(),-1,SQLITE_TRANSIENT);
+  sqlite3_bind_text(s,1,v.c_str(),-1,SQLITE_TRANSIENT);
+  const bool ok=sqlite3_step(s)==SQLITE_DONE; sqlite3_finalize(s); return ok;
+}
+
+std::string Database::dbVersion() const{
+  if(!db_) return "0.0.0";
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"SELECT value FROM meta WHERE key='db_version'",-1,&s,nullptr)!=SQLITE_OK) return "0.0.0";
+  std::string v;
+  if(sqlite3_step(s)==SQLITE_ROW){
+    const char* t=reinterpret_cast<const char*>(sqlite3_column_text(s,0));
+    if(t) v=t;
+  }
+  sqlite3_finalize(s); return v.empty() ? "0.0.0" : v;
+}
+
+bool Database::setDbVersion(const std::string& v){
+  if(!db_) return false;
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"INSERT INTO meta(key,value) VALUES('db_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",-1,&s,nullptr)!=SQLITE_OK) return false;
+  sqlite3_bind_text(s,1,v.c_str(),-1,SQLITE_TRANSIENT);
   const bool ok=sqlite3_step(s)==SQLITE_DONE; sqlite3_finalize(s); return ok;
 }
 }

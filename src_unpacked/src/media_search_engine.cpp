@@ -1,6 +1,7 @@
 #include <cmath>
 #include "media_search_engine.h"
 #include "image_verify.h"
+#include "semver.h"
 #include "path_utils.h"
 #include "incremental_scanner.h"
 #include "media_pipeline.h"
@@ -42,7 +43,7 @@ std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
 }
 bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* dropped){
   if(kept) *kept=0; if(dropped) *dropped=0;
-  if(db_.engineVersion()>=kEngineVersion) return true; // current: nothing to do
+  if(!semverLess(db_.engineVersion(), kEngineVersion)) return true; // current: nothing to do
   const auto stored=db_.loadMatches();
   if(stored.empty()){ db_.setEngineVersion(kEngineVersion); return true; }
   const auto states=db_.all();

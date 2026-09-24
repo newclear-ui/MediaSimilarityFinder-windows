@@ -45,10 +45,11 @@ struct ScanControl {
 };
 class MediaSearchEngine {
 public:
-  // Match-verdict generation. Bump when a code change can alter verdicts
-  // (candidate rules, similarity scoring, verification gates). Stored in the
-  // index DB (meta.engine_version); older DBs revalidate instead of rescanning.
-  static constexpr int kEngineVersion = 1;
+  // Match-verdict generation, independent of the 0.9.2.x build numbers.
+  // "M.m.p": patch = threshold/weight/gate tuning; minor = new stage or rule;
+  // major = verdict architecture change. Any bump revalidates stored pairs on
+  // the next scan (no rescan). Stored in the index DB (meta.engine_version).
+  static constexpr const char* kEngineVersion = "1.0.1";
   bool openIndex(const std::string& dbPath);
   bool openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory);
  // Persist the current duplicate-pair set so a later session can reload it.

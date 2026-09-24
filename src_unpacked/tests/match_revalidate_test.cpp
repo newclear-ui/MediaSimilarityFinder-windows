@@ -1,13 +1,14 @@
 // Engine-version upgrade path: stored pairs from an older verdict generation
 // are re-checked with the current logic instead of forcing a full rescan.
-// Seeds an unversioned DB (engineVersion 0) with one true pair (identical
+// Seeds an unversioned DB (engineVersion "0.0.0") with one true pair (identical
 // BMPs) and one bogus pair (solid vs checker), then asserts revalidation
-// keeps the true pair, drops the bogus one, and stamps version 1. A second
-// call must be a no-op.
+// keeps the true pair, drops the bogus one, and stamps the current version.
+// A second call must be a no-op. Also covers semver ordering + db stamp.
 #include "media_search_engine.h"
 #include "database.h"
 #include "index_manager.h"
 #include "path_utils.h"
+#include "semver.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -48,7 +49,16 @@ int main() {
   msf::IndexPaths paths;
   if (!msf::IndexManager::resolve(msf::path_from_utf8(ad), msf::path_from_utf8(root), paths)) return 4;
   if (!db.open(msf::path_to_utf8(paths.database)) || !db.initialize()) return 5;
-  if (db.engineVersion() != 0) return 6; // unversioned legacy DB
+  if (db.engineVersion() != "0.0.0") return 6; // unversioned legacy DB
+  // DB schema stamp is written by initialize(); engine stamp untouched.
+  if (db.dbVersion() != msf::Database::kDatabaseVersion) return 6;
+  // Malformed rows sort below any real version.
+  if (!msf::semverLess("", "1.0.1")) return 6;
+  if (!msf::semverLess("abc", "0.0.1")) return 6;
+  if (msf::compareSemver("1.0.10", "1.0.2") <= 0) return 6; // numeric, not lexicographic
+  if (msf::compareSemver("1.1.0", "1.0.10") <= 0) return 6;
+  if (msf::compareSemver("2.0.1", "1.9.9") <= 0) return 6;
+  if (msf::compareSemver("1.0.1", msf::MediaSearchEngine::kEngineVersion) != 0) return 6;
   db.close();
   int kept = 0, dropped = 0;
   if (!e.revalidateMatches(nullptr, &kept, &dropped)) return 7;
