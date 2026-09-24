@@ -285,8 +285,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   }, stopCheck);
   // A stop during analyze() aborts the pair loops above (partial matches were
   // already streamed via onMatch); mark the report incomplete like every
-  // other stop path. analyze() itself never propagates.
+  // other stop path. analyze() itself never propagates. Only completed scans
+  // refresh the last-scan marker (a cancelled run must not claim freshness).
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
-  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_); return r;
+  else if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_);
+  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; return r;
 }
 }

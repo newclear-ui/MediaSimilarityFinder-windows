@@ -67,12 +67,44 @@ bool decodeWicFile(const wchar_t* wpath,int w,int h,GrayImage& out){
     hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,
           WICDecodeMetadataCacheOnDemand,&dec);
     if(FAILED(hr))return false;
-    ComPtr<IWICBitmapFrameDecode> frame;
-    hr=dec->GetFrame(0,&frame);
-    if(FAILED(hr))return false;
+    // EXIF orientation: the fingerprint must describe the image as displayed.
+    // QImageReader::setAutoTransform(true) does this in the display lane, but
+    // WIC raw frames do not. Read the tag and swap/flip on the decoded pixels
+    // (orientations 2..8) so rotated phone photos match their displayed form.
+    ComPtr<IWICBitmapFlipRotator> orient;
+    ComPtr<IWICBitmapSource> src;
+    {
+      ComPtr<IWICBitmapFrameDecode> frame;
+      hr=dec->GetFrame(0,&frame);
+      if(FAILED(hr))return false;
+      WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
+      ComPtr<IWICMetadataQueryReader> meta;
+      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta){
+        PROPVARIANT v; PropVariantInit(&v);
+        if(SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}",&v))&&v.vt==VT_UI2){
+          switch(v.uiVal){
+            case 2: xform=WICBitmapTransformFlipHorizontal; break;
+            case 3: xform=WICBitmapTransformRotate180; break;
+            case 4: xform=WICBitmapTransformFlipVertical; break;
+            case 5: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal); break;
+            case 6: xform=WICBitmapTransformRotate90; break;
+            case 7: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal); break;
+            case 8: xform=WICBitmapTransformRotate270; break;
+          }
+        }
+        PropVariantClear(&v);
+      }
+      if(xform!=WICBitmapTransformRotate0){
+        if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
+        if(FAILED(orient->Initialize(frame.Get(),xform))) return false;
+        src=orient;
+      } else {
+        src=frame;
+      }
+    }
     ComPtr<IWICBitmapScaler> scaler;
     hr=factory->CreateBitmapScaler(&scaler);
-    if(SUCCEEDED(hr)) hr=scaler->Initialize(frame.Get(),w,h,WICBitmapInterpolationModeFant);
+    if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant);
     if(FAILED(hr))return false;
     ComPtr<IWICFormatConverter> conv;
     hr=factory->CreateFormatConverter(&conv);
@@ -88,9 +120,40 @@ bool decodeWicFileAspect(const wchar_t* wpath,int maxDimension,GrayImage& out){
     ComPtr<IWICImagingFactory> factory;
     HRESULT hr=CoCreateInstance(CLSID_WICImagingFactory2,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)); if(FAILED(hr)) hr=CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory));
     if(FAILED(hr))return false; ComPtr<IWICBitmapDecoder> dec; hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&dec); if(FAILED(hr))return false;
-    ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false; UINT sw=0,sh=0; frame->GetSize(&sw,&sh); if(!sw||!sh)return false;
+    ComPtr<IWICBitmapFlipRotator> orient;
+    ComPtr<IWICBitmapSource> src;
+    UINT sw=0,sh=0;
+    {
+      ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false;
+      WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
+      ComPtr<IWICMetadataQueryReader> meta;
+      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta){
+        PROPVARIANT v; PropVariantInit(&v);
+        if(SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}",&v))&&v.vt==VT_UI2){
+          switch(v.uiVal){
+            case 2: xform=WICBitmapTransformFlipHorizontal; break;
+            case 3: xform=WICBitmapTransformRotate180; break;
+            case 4: xform=WICBitmapTransformFlipVertical; break;
+            case 5: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal); break;
+            case 6: xform=WICBitmapTransformRotate90; break;
+            case 7: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal); break;
+            case 8: xform=WICBitmapTransformRotate270; break;
+          }
+        }
+        PropVariantClear(&v);
+      }
+      if(xform!=WICBitmapTransformRotate0){
+        if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
+        if(FAILED(orient->Initialize(frame.Get(),xform))) return false;
+        src=orient;
+      } else {
+        src=frame;
+      }
+      // Oriented size drives the aspect math: 90/270-degree rotations swap w/h.
+      UINT fw=0,fh=0; if(FAILED(src->GetSize(&fw,&fh))||!fw||!fh)return false; sw=fw; sh=fh;
+    }
     UINT w=sw,h=sh; if(sw>sh){w=maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)sh*maxDimension/sw));} else {h=maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)sw*maxDimension/sh));}
-    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(frame.Get(),w,h,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
+    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
     ComPtr<IWICFormatConverter> conv; hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat8bppGray,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom); if(FAILED(hr))return false;
     out.width=(int)w;out.height=(int)h;out.pixels.resize((size_t)w*h); hr=conv->CopyPixels(nullptr,w,out.pixels.size(),out.pixels.data()); return SUCCEEDED(hr);
 }
@@ -98,9 +161,42 @@ bool decodeWicFileAspectColor(const wchar_t* wpath,int maxDimension,msf::ColorIm
     ComPtr<IWICImagingFactory> factory;
     HRESULT hr=CoCreateInstance(CLSID_WICImagingFactory2,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)); if(FAILED(hr)) hr=CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory));
     if(FAILED(hr))return false; ComPtr<IWICBitmapDecoder> dec; hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&dec); if(FAILED(hr))return false;
-    ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false; UINT sw=0,sh=0; frame->GetSize(&sw,&sh); if(!sw||!sh)return false;
+    // EXIF orientation applies to the color display lane too (same mapping as
+    // the gray fingerprint lanes above): decoded previews must match what the
+    // fingerprint describes, or rotated photos show one way and match another.
+    ComPtr<IWICBitmapFlipRotator> orient;
+    ComPtr<IWICBitmapSource> src;
+    UINT sw=0,sh=0;
+    {
+      ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false;
+      WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
+      ComPtr<IWICMetadataQueryReader> meta;
+      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta){
+        PROPVARIANT v; PropVariantInit(&v);
+        if(SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}",&v))&&v.vt==VT_UI2){
+          switch(v.uiVal){
+            case 2: xform=WICBitmapTransformFlipHorizontal; break;
+            case 3: xform=WICBitmapTransformRotate180; break;
+            case 4: xform=WICBitmapTransformFlipVertical; break;
+            case 5: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal); break;
+            case 6: xform=WICBitmapTransformRotate90; break;
+            case 7: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal); break;
+            case 8: xform=WICBitmapTransformRotate270; break;
+          }
+        }
+        PropVariantClear(&v);
+      }
+      if(xform!=WICBitmapTransformRotate0){
+        if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
+        if(FAILED(orient->Initialize(frame.Get(),xform))) return false;
+        src=orient;
+      } else {
+        src=frame;
+      }
+      UINT fw=0,fh=0; if(FAILED(src->GetSize(&fw,&fh))||!fw||!fh)return false; sw=fw; sh=fh;
+    }
     UINT w=sw,h=sh; if(sw>sh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)sh*maxDimension/sw));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)sw*maxDimension/sh));}
-    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(frame.Get(),w,h,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
+    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
     // BGRA bytes land in QImage::Format_ARGB32 order on little-endian.
     ComPtr<IWICFormatConverter> conv; hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat32bppBGRA,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom); if(FAILED(hr))return false;
     out.width=(int)w;out.height=(int)h;out.bgra.resize((size_t)w*h*4); hr=conv->CopyPixels(nullptr,w*4,out.bgra.size(),out.bgra.data()); return SUCCEEDED(hr);

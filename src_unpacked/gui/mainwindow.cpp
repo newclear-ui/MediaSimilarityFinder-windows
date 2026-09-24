@@ -221,7 +221,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.65\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.65\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.66\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.66\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -447,7 +447,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
     if (scanning_) {
       // Recompose with live elapsed so a long single file (e.g. a big video)
       // shows activity instead of a frozen message.
-      const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
+      const qint64 el = elapsedActiveMs();
       statusMsg_->setText(scanStatusText(lastDoneN_, lastTotalN_, maxPctShown_, lastPath_, el));
       scanHeartbeat();
     }
@@ -499,7 +499,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.65"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.66"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -839,7 +839,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.65"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.66"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -968,6 +968,7 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::finished, thread_, &QThread::quit);
   connect(worker_, &ScanWorker::failed, thread_, &QThread::quit);
   scanStartMs_ = QDateTime::currentMSecsSinceEpoch();
+  pauseStartMs_ = 0; pausedAccumMs_ = 0;
   scanLog(QString("start folder=%1").arg(folder_->text()));
   setRunning(true);
   statusMsg_->setText(trStr(lang(), "scanning"));
@@ -977,6 +978,8 @@ void MainWindow::startScan() {
 void MainWindow::togglePauseScan() {
   if (!scanning_ || !worker_) return; // pause acts only while its own scan runs
   scanPaused_ = !scanPaused_;
+  if (scanPaused_) pauseStartMs_ = QDateTime::currentMSecsSinceEpoch();
+  else if (pauseStartMs_ > 0) { pausedAccumMs_ += QDateTime::currentMSecsSinceEpoch() - pauseStartMs_; pauseStartMs_ = 0; }
   // Direct call, NOT QueuedConnection: pause()/resume() only store atomics,
   // and a queued slot can never fire while run() occupies the worker thread's
   // event loop — which is exactly why pause appeared dead mid-scan.
@@ -1007,7 +1010,7 @@ void MainWindow::scanProgress(int p, QString path) {
   // The bar never moves backwards; exact counts stay in the message.
   if (p > maxPctShown_) maxPctShown_ = p;
   statusProg_->setValue(maxPctShown_);
-  const qint64 el = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
+  const qint64 el = elapsedActiveMs();
   statusMsg_->setText(scanStatusText(lastDoneN_, lastTotalN_, maxPctShown_, path, el));
   updateStatusCounts();
 }
@@ -1035,7 +1038,7 @@ void MainWindow::scanFinished(QString msg) {
     const QStringList st = msg.split('|');
     // st[0]=text st[1]=scanned st[2]=analyzed st[3]=unchanged st[4]=groups st[5]=candidates
     lastStats_ = st.mid(1, 5);
-    repElapsedMs_ = QDateTime::currentMSecsSinceEpoch() - scanStartMs_;
+    repElapsedMs_ = elapsedActiveMs();
     const qulonglong analyzed = st.size() > 2 ? st[2].toULongLong() : 0;
     const qulonglong unchanged = st.size() > 3 ? st[3].toULongLong() : 0;
     hasReport_ = true;
@@ -1374,6 +1377,8 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     it->setCheckState(0, marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
     it->setText(0, QString("%1 %2").arg(trStr(lang(), "group")).arg(i + 1));
     it->setText(1, QString("%1 %2").arg(g.paths.size()).arg(trStr(lang(), "files")));
+    // Pairs = file count choose 2: direct pairwise comparisons a complete
+    // group implies. Transitive pairs may exceed verified matches — documented.
     const qulonglong pairs = (qulonglong)g.paths.size() * ((qulonglong)g.paths.size() - 1) / 2;
     it->setText(2, QString("%1 %2").arg(pairs).arg(trStr(lang(), "pairs")));
     it->setText(3, QString("%1%").arg(g.best, 0, 'f', 1));
@@ -2039,12 +2044,16 @@ static QString fmtElapsed(qint64 ms) {
 // Similarity-inspired ETR: linear extrapolation from the observed analyze
 // rate. Totals grow while walking, so this is an estimate, never a promise.
 QString MainWindow::scanStatusText(qulonglong done, qulonglong total, int pct,
-                                   const QString& path, qint64 elapsedMs) const {
-  const QString base = QString("%1 / %2 (%3%) — %4 — %5").arg(done).arg(total).arg(pct)
+                                   const QString& path, qint64 elapsedMs) const {  const QString base = QString("%1 / %2 (%3%) — %4 — %5").arg(done).arg(total).arg(pct)
                            .arg(QFileInfo(path).fileName()).arg(fmtElapsed(elapsedMs));
   if (elapsedMs < 1000 || done == 0 || total <= done) return base;
   const qint64 remainMs = elapsedMs * (qint64)(total - done) / (qint64)done;
   return base + QString(" — %1 %2").arg(trStr(lang(), "remain")).arg(fmtElapsed(remainMs));
+}
+qint64 MainWindow::elapsedActiveMs() const {
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  const qint64 tail = (scanPaused_ && pauseStartMs_ > 0) ? (now - pauseStartMs_) : 0;
+  return std::max<qint64>(0, now - scanStartMs_ - pausedAccumMs_ - tail);
 }
 void MainWindow::refreshSummary(const msf::SearchReport*) {
   const UiLang l = lang();
@@ -2069,8 +2078,9 @@ void MainWindow::scanHeartbeat() {
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   if (now - lastBeat < 10000) return;
   lastBeat = now;
+  Q_UNUSED(now); // elapsed comes from elapsedActiveMs() (pause-excluded)
   scanLog(QString("alive elapsed=%1 lastPct=%2 lastPath=%3 groups=%4 marked=%5")
-              .arg(fmtElapsed(now - scanStartMs_)).arg(lastPct_).arg(lastPath_)
+              .arg(fmtElapsed(elapsedActiveMs())).arg(lastPct_).arg(lastPath_)
               .arg(groups_.size()).arg(marked_.size()));
 }
 void MainWindow::scanLog(const QString& line) {
@@ -2081,14 +2091,13 @@ void MainWindow::scanLog(const QString& line) {
   QTextStream out(&f);
   out << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") << " " << line << "\n";
 }
-void MainWindow::updateStatusCounts() {
-  qulonglong files = 0;
+void MainWindow::updateStatusCounts() {  qulonglong files = 0;
   for (const auto& g : groups_) files += (qulonglong)g.paths.size();
   statusCount_->setText(QString("%1: %2 · %3: %4 · %5: %6")
                             .arg(trStr(lang(), "groups")).arg(groups_.size())
                             .arg(trStr(lang(), "files")).arg(files)
                             .arg(trStr(lang(), "marked")).arg(marked_.size()));
-  if (scanning_) sumValTime_->setText(fmtElapsed(QDateTime::currentMSecsSinceEpoch() - scanStartMs_));
+  if (scanning_) sumValTime_->setText(fmtElapsed(elapsedActiveMs()));
   updateGpuLabel();
 }
 // Live GPU status for the status bar. During a scan this shows how many images

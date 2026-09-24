@@ -141,6 +141,7 @@ private:
   void restoreUiState();           // counterpart applied after buildUi()
   QString fmtSize(qulonglong) const;
   QString scanStatusText(qulonglong done, qulonglong total, int pct, const QString& path, qint64 elapsedMs) const;
+  qint64 elapsedActiveMs() const; // scan clock minus paused intervals
   QString fileResolution(const QString&) const; // cached QImageReader::size
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
@@ -164,6 +165,7 @@ private:
   qulonglong lastDoneN_=0, lastTotalN_=0;
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
+  qint64 pauseStartMs_=0, pausedAccumMs_=0; // ETR excludes paused time (see elapsedActiveMs)
   // Live-refresh streaming state: full list rebuilds cost up to ~1s at 11k
   // groups, so they are throttled adaptively (see refreshStreaming) instead of
   // every 600ms tick — otherwise timer timeouts backlog behind each slow tick

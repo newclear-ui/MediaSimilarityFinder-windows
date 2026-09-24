@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.2.65 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.2.66 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available" ON)
@@ -268,6 +268,12 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_scan_streaming_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_streaming_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_streaming_test COMMAND msf_scan_streaming_test)
+      # E2E video probe: copy + libx264 re-encode + trim + stranger through a
+      # real scan (full XOR -> CandidateIndex incl. L1 anchors -> temporal).
+      add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
+      target_link_libraries(msf_video_scan_e2e_test PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_video_scan_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME video_scan_e2e_test COMMAND msf_video_scan_e2e_test)
       # View-mode round-trip probe: Tiles -> Icons must keep grid items
       # visible (explicit grid size + delegate swap must fully reset).
       add_executable(msf_view_mode_probe tests/view_mode_probe.cpp)
