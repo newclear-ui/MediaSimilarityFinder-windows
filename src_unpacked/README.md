@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## Current development version: 0.9.2.91
+## Current development version: 0.9.3.1
 
 0.9.2.26 replaced the previous BK-tree candidate traversal with an exact 9-part multi-index hash for the normal Hamming-distance <=8 candidate stage. Full 64-bit Hamming verification preserves exact candidate semantics while substantially improving large-index scaling and reducing per-node allocation overhead.
 
