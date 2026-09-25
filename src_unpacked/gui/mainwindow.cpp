@@ -274,7 +274,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.8\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.8\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+   if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.9\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.9\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -614,7 +614,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.8"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.9"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -984,7 +984,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.8"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.9"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1350,6 +1350,10 @@ void MainWindow::scanFinished(QString msg) {
 }
 void MainWindow::scanFailed(QString msg) {
   scanLog(QString("failed %1").arg(msg));
+  // Keep matches streamed before the worker failure visible in the current UI.
+  drainMatches();
+  rebuildGroups();
+  refreshGroupList(); refreshFileViews(); refreshDetail();
   QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
   statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
   setRunning(false);
@@ -1553,7 +1557,12 @@ void MainWindow::rebuildGroups() {
   if (sortBox_->currentIndex() == 1)
     std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) { return a.paths[0] < b.paths[0]; });
   else
-    std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) { return a.best > b.best; });
+    std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) {
+      if (a.best != b.best) return a.best > b.best;
+      const QString ap = a.paths.isEmpty() ? QString() : a.paths.front();
+      const QString bp = b.paths.isEmpty() ? QString() : b.paths.front();
+      return ap < bp;
+    });
   for (int i = 0; i < groups_.size(); ++i)
     for (const auto& p : groups_[i].paths) pathGroup_[p] = i;
   if (currentGroup_ >= groups_.size()) { currentGroup_ = -1; currentFile_.clear(); }

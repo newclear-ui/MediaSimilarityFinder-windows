@@ -97,6 +97,7 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   cpuCount_ = 1;
 #endif
   scanned_ = analyzed_ = unchanged_ = candidates_ = matches_ = groups_ = 0;
+  streamedMatches_.store(0, std::memory_order_relaxed);
   reductionPct_ = 0;
   gpuImages_ = gpuFallback_ = 0;
   completed_ = false;
@@ -300,7 +301,8 @@ std::string BenchmarkRecorder::toJson() const {
     }
   }
   o << "]},";
-  o << "\"matches\":{\"candidates\":" << candidates_ << ",\"pairs\":" << matches_ << ",\"groups\":" << groups_
+  o << "\"matches\":{\"candidates\":" << candidates_ << ",\"pairs\":" << streamedMatches_.load(std::memory_order_relaxed)
+    << ",\"retainedPairs\":" << matches_ << ",\"groups\":" << groups_
     << ",\"reductionPct\":" << reductionPct_ << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_ << "}}";
   return o.str();
 }

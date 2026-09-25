@@ -8,7 +8,7 @@ int main() {
   if (rec.hasData()) return 1;
   msf::BenchmarkConfig cfg;
   cfg.root = "C:/media";
-  cfg.build = "0.9.3.1"; cfg.engine = "1.1.0"; cfg.db = "1.0.2";
+   cfg.build = "0.9.3.9"; cfg.engine = "1.2.0"; cfg.db = "1.0.2";
   cfg.distance = 8; cfg.cpuWorkers = 4; cfg.gpuBatch = 64;
   cfg.scanImages = true; cfg.scanVideos = true; cfg.cudaAvailable = false;
   rec.start(cfg);
@@ -26,14 +26,15 @@ int main() {
   bool gpu = false;
   rec.startSampler([&gpu]() { return gpu; });
   std::this_thread::sleep_for(std::chrono::milliseconds(650));
-  rec.stopSampler();
-  rec.finalize(true, 100, 55, 45, 200, 12, 6, 75.5, 18, 2);
+   rec.stopSampler();
+   for (int i = 0; i < 12; ++i) rec.addStreamedMatch();
+   rec.finalize(true, 100, 55, 45, 200, 12, 6, 75.5, 18, 2);
   const std::string js = rec.toJson();
   auto need = [&](const char* s) {
     if (js.find(s) == std::string::npos) { std::cerr << "missing: " << s << "\n"; return false; }
     return true;
   };
-  if (!need("\"build\":\"0.9.3.1\"")) return 3;
+   if (!need("\"build\":\"0.9.3.9\"")) return 3;
   if (!need("\"completed\":true")) return 4;
   if (!need("\"count\":30")) return 5;
   if (!need("\"gpuHashed\":10")) return 6;
@@ -43,19 +44,21 @@ int main() {
   if (!need("\"slowest\":[{")) return 10;
   if (!need("img29.jpg")) return 11;
   if (!need("vid24.mp4")) return 12;
-  if (!need("\"matches\":{\"candidates\":200")) return 13;
-  if (!need("\"secPerPlayMin\"")) return 14;
-  if (!need("\"gpuBatchMs\":25.000")) return 15;
-  if (!need("\"summary\":{\"wallMs\"")) return 16;
-  if (!need("\"config\":{\"distance\":8")) return 17;
-  if (!need("\"resources\":{\"sampleMs\":250")) return 18;
-  if (!need("\"videos\":{\"count\":25")) return 19;
-  if (!need("\"cpuProcStd\"")) return 20;
-  if (!need("\"gpuLongestIdleMs\"")) return 21;
+   if (!need("\"matches\":{\"candidates\":200")) return 13;
+   if (!need("\"pairs\":12")) return 14;
+   if (!need("\"retainedPairs\":12")) return 15;
+   if (!need("\"secPerPlayMin\"")) return 16;
+   if (!need("\"gpuBatchMs\":25.000")) return 17;
+   if (!need("\"summary\":{\"wallMs\"")) return 18;
+   if (!need("\"config\":{\"distance\":8")) return 19;
+   if (!need("\"resources\":{\"sampleMs\":250")) return 20;
+   if (!need("\"videos\":{\"count\":25")) return 21;
+   if (!need("\"cpuProcStd\"")) return 22;
+   if (!need("\"gpuLongestIdleMs\"")) return 23;
   rec.abortUnfinished();
-  if (!rec.hasData()) return 22;
+   if (!rec.hasData()) return 24;
   rec.reset();
-  if (rec.hasData()) return 23;
+   if (rec.hasData()) return 25;
   std::cout << "benchmark=ok\n";
   return 0;
 }

@@ -91,7 +91,7 @@ bool StableFileDetector::isStable(const std::string& path,int stableSeconds){
 
 MediaMonitor::MediaMonitor()=default;
 MediaMonitor::~MediaMonitor(){stop();}
-void MediaMonitor::setPolicy(const ResourcePolicy& p){std::lock_guard<std::mutex> g(mutex_);policy_=p;}
+void MediaMonitor::setPolicy(const ResourcePolicy& p){std::lock_guard<std::mutex> g(mutex_);policy_=p;policy_.gpuEnabled=policy_.gpuEnabled&&config_.gpuEnabled;}
 void MediaMonitor::setPaused(bool paused){
     paused_.store(paused);
     { std::lock_guard<std::mutex> g(mutex_); status_.paused=paused; }
@@ -141,13 +141,13 @@ void MediaMonitor::enqueueRemoval(const std::string& path, bool notify){
 }
 
 bool MediaMonitor::start(const MonitorConfig& c,const ResourcePolicy& p,Callback cb){
-    stop(); config_=c;policy_=p;callback_=std::move(cb);seen_.clear();
+    stop(); config_=c;policy_=p;policy_.gpuEnabled=policy_.gpuEnabled&&config_.gpuEnabled;callback_=std::move(cb);seen_.clear();
     paused_.store(false);
     { std::lock_guard<std::mutex> g(mutex_); status_=MonitorStatus{}; status_.running=true; status_.paused=false; }
     {std::lock_guard<std::mutex> g(mutex_); while(!pending_.empty())pending_.pop(); pendingSet_.clear(); retryCounts_.clear();}
     compareEngines_.clear();
     const auto appDir=config_.applicationDirectory.empty()?path_to_utf8(fs::current_path()):config_.applicationDirectory;
-    for(const auto& root:config_.compareRoots){ auto e=std::make_unique<MediaSearchEngine>(); if(e->openIndexForRoot(root,appDir)){ e->setResourcePolicy(policy_); e->setExpensiveStageGuard([this]{ auto l=load_.sample(); { std::lock_guard<std::mutex> g(mutex_); status_.loadState=l.state; status_.cpuPercent=l.cpuPercent; status_.memoryPercent=l.memoryPercent; status_.gpuPercent=l.gpuPercent; } return load_.allowAnalysis(policy_,l); }); compareEngines_.push_back({root,std::move(e)}); } }
+    for(const auto& root:config_.compareRoots){ auto e=std::make_unique<MediaSearchEngine>(); if(!e->openIndexForRoot(root,appDir)){ compareEngines_.clear(); { std::lock_guard<std::mutex> g(mutex_); status_.running=false; } return false; } e->setResourcePolicy(policy_); e->setExpensiveStageGuard([this]{ auto l=load_.sample(); { std::lock_guard<std::mutex> g(mutex_); status_.loadState=l.state; status_.cpuPercent=l.cpuPercent; status_.memoryPercent=l.memoryPercent; status_.gpuPercent=l.gpuPercent; } return load_.allowAnalysis(policy_,l); }); compareEngines_.push_back({root,std::move(e)}); }
     running_=true;
 #ifdef _WIN32
     for(const auto& root:c.watchRoots) watcherThreads_.emplace_back(&MediaMonitor::windowsWatchLoop,this,root,true);
@@ -225,6 +225,7 @@ void MediaMonitor::windowsWatchLoop(const std::string& root, bool notify){
 
 static bool isWithinRoot(const std::string& path,const std::string& root){ std::error_code ec1,ec2; auto p=fs::weakly_canonical(path_from_utf8(path),ec1); auto r=fs::weakly_canonical(path_from_utf8(root),ec2); if(ec1||ec2) return false; auto rel=fs::relative(p,r,ec1); if(ec1) return false; return rel.empty() || (rel!=fs::path("..") && *rel.begin()!=fs::path("..")); }
 static std::uint64_t fileKey(const std::string& p){std::error_code ec;const fs::path fp=path_from_utf8(p);auto sz=fs::file_size(fp,ec);auto mt=fs::last_write_time(fp,ec);if(ec)return 0;return (std::uint64_t)sz ^ (std::uint64_t)mt.time_since_epoch().count();}
+static std::uint64_t foldVideoHashes(const std::vector<std::uint64_t>& values){std::uint64_t h=0x9e3779b97f4a7c15ULL;for(const auto v:values){h^=v+0x9e3779b97f4a7c15ULL+(h<<6)+(h>>2);h=(h<<13)|(h>>51);}return h?h:1;}
 static bool mediaFile(const fs::path&p){auto e=p.extension().string();std::transform(e.begin(),e.end(),e.begin(),[](unsigned char c){return(char)std::tolower(c);});return e==".jpg"||e==".jpeg"||e==".png"||e==".bmp"||e==".gif"||e==".webp"||e==".tif"||e==".tiff"||e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv";}
 
 void MediaMonitor::loop(){
@@ -252,7 +253,7 @@ void MediaMonitor::loop(){
             if(!running_) break;
             if(!pending_.empty()) {
                 const auto now=std::chrono::steady_clock::now();
-                item=pending_.front();
+                item=pending_.top();
                 if(item.due>now) { queueCv_.wait_until(lk,item.due); continue; }
                 pending_.pop();
                 auto fit=pendingSet_.find(item.path);
@@ -303,7 +304,7 @@ void MediaMonitor::loop(){
         auto load=load_.sample(); { std::lock_guard<std::mutex> g(mutex_); status_.loadState=load.state; status_.cpuPercent=load.cpuPercent; status_.memoryPercent=load.memoryPercent; status_.gpuPercent=load.gpuPercent; } if(!load_.allowAnalysis(policy_,load)){defer("Analysis paused to protect foreground workload",500);continue;}
         auto ext=path_from_utf8(path).extension().string();std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return(char)std::tolower(c);});
         const bool image=ext==".jpg"||ext==".jpeg"||ext==".png"||ext==".bmp"||ext==".gif"||ext==".webp"||ext==".tif"||ext==".tiff";
-        std::uint64_t fp=0, mirrorFp=0; CropFingerprints crops{}; bool ok=false;if(image){ok=imagePipeline_.image(path,fp,&mirrorFp); ImageDecoder d; GrayImage original; if(ok&&d.decodePreserveAspect(path,128,original)) crops=cropFingerprints(original);}else{VideoFingerprint vf;if(videoEngine_.build(path,vf)){for(auto h:vf.hashes)fp^=h;for(auto h:vf.mirrorHashes)mirrorFp^=h;crops.a4x3=vf.crop4x3;crops.a1x1=vf.crop1x1;crops.a9x16=vf.crop9x16;crops.mirrorA4x3=vf.mirrorCrop4x3;crops.mirrorA1x1=vf.mirrorCrop1x1;crops.mirrorA9x16=vf.mirrorCrop9x16;ok=fp!=0;}}
+         std::uint64_t fp=0, mirrorFp=0; CropFingerprints crops{}; bool ok=false;if(image){ok=imagePipeline_.image(path,fp,&mirrorFp); ImageDecoder d; GrayImage original; if(ok&&d.decodePreserveAspect(path,128,original)) crops=cropFingerprints(original);}else{VideoFingerprint vf;if(videoEngine_.build(path,vf)){fp=foldVideoHashes(vf.hashes);mirrorFp=foldVideoHashes(vf.mirrorHashes);crops.a4x3=vf.crop4x3;crops.a1x1=vf.crop1x1;crops.a9x16=vf.crop9x16;crops.mirrorA4x3=vf.mirrorCrop4x3;crops.mirrorA1x1=vf.mirrorCrop1x1;crops.mirrorA9x16=vf.mirrorCrop9x16;ok=!vf.hashes.empty();}}
         if(!ok){ { std::lock_guard<std::mutex> g(mutex_); ++status_.errors; status_.lastErrorPath=path; status_.lastError="Media fingerprinting failed"; } MonitorEvent e;e.type=MonitorEvent::Type::Error;e.path=path;e.detail="Media fingerprinting failed";emitEvent(e);continue;}
         const int kind=image?1:2;
         const double analysisMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-analysisStarted).count();

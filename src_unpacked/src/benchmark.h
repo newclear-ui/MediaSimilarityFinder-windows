@@ -52,6 +52,7 @@ public:
   void addImage(std::uint64_t bytes, double decodeMs, double hashMs, double cropMs, bool usedGpu, const std::string& path);
   void addGpuBatchMs(double ms);
   void addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path);
+  void addStreamedMatch() { streamedMatches_.fetch_add(1, std::memory_order_relaxed); }
   void startSampler(std::function<bool()> gpuActive);
   void stopSampler();
   void abortUnfinished();
@@ -86,6 +87,7 @@ private:
   int cpuCount_ = 1;
   bool completed_ = false;
   bool finished_ = false;
+  std::atomic<std::uint64_t> streamedMatches_{0};
   std::size_t scanned_ = 0, analyzed_ = 0, unchanged_ = 0, candidates_ = 0, matches_ = 0, groups_ = 0;
   double reductionPct_ = 0;
   std::uint64_t gpuImages_ = 0, gpuFallback_ = 0;

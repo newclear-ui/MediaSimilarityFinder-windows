@@ -115,8 +115,11 @@ private:
         std::chrono::steady_clock::time_point due{};
         unsigned retries=0;
     };
+    struct PendingCompare {
+        bool operator()(const PendingItem& a,const PendingItem& b) const { return a.due>b.due; }
+    };
     std::unordered_map<std::string,std::uint64_t> seen_;
-    std::queue<PendingItem> pending_;
+    std::priority_queue<PendingItem,std::vector<PendingItem>,PendingCompare> pending_;
     struct PendingFlags { bool notify=false; bool removal=false; };
     std::unordered_map<std::string,PendingFlags> pendingSet_;
     std::condition_variable queueCv_;

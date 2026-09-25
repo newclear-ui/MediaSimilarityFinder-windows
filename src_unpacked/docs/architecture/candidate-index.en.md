@@ -20,11 +20,11 @@ The trade-off was a separately allocated heap node for each hash, with `unique_p
 
 After mirror-aware matching was introduced, the separate mirror-only BK-trees were removed. Normal and mirrored fingerprints were handled by a shared CandidateIndex while preserving exact BK-tree candidate semantics.
 
-### 0.9.2.26 — 9-part Multi-Index Hash
+### Current implementation — four 16-bit Multi-Index Hash partitions
 
-To improve large-index scaling, the BK-tree storage and lookup structure was replaced with a 9-part Multi-Index Hash.
+To improve large-index scaling, the BK-tree storage and lookup structure was replaced with four 16-bit Multi-Index Hash partitions.
 
-The 64-bit hash is split into `8 + 7×8` bits across nine partitions. For the normal search range `D <= 8`, two hashes that differ in at most eight bits must share at least one complete partition. Therefore, querying all exact buckets for the query's nine partitions cannot miss a true candidate.
+The 64-bit hash is split into four 16-bit partitions. For `D <= 8`, each partition queries its exact value plus all radius-1 and radius-2 values (137 keys per partition). If every partition differed by at least three bits, the total distance would be at least 12; therefore a pair at distance <=8 is guaranteed to enter at least one queried bucket.
 
 Bucket results are deduplicated and then verified using the full 64-bit Hamming distance. The bucket structure is therefore a **candidate narrowing mechanism**, while the full Hamming calculation is the **exact verification step**.
 

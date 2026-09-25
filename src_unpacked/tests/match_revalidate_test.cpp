@@ -58,7 +58,7 @@ int main() {
   if (msf::compareSemver("1.0.10", "1.0.2") <= 0) return 6; // numeric, not lexicographic
   if (msf::compareSemver("1.1.0", "1.0.10") <= 0) return 6;
   if (msf::compareSemver("2.0.1", "1.9.9") <= 0) return 6;
-  if (msf::compareSemver("1.1.0", msf::MediaSearchEngine::kEngineVersion) != 0) return 6;
+   if (msf::compareSemver("1.2.0", msf::MediaSearchEngine::kEngineVersion) != 0) return 6;
   db.close();
   int kept = 0, dropped = 0;
   if (!e.revalidateMatches(nullptr, &kept, &dropped)) return 7;

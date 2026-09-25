@@ -76,10 +76,10 @@ if ($vsCrt) {
 if (Test-Path "README.md") { Copy-Item "README.md" $OutputDir -Force }
 @{
   product = "MediaSimilarityFinder"
-  version = "0.9.3.8"
+  version = "0.9.3.9"
   mode = "portable"
   indexRoot = "Index"
 } | ConvertTo-Json | Set-Content (Join-Path $OutputDir "portable.json") -Encoding UTF8
-$zip = "MediaSimilarityFinder-v0.9.3.8-Portable-Windows-x64.zip"
+$zip = "MediaSimilarityFinder-v0.9.3.9-Portable-Windows-x64.zip"
 Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $zip -Force
 Write-Host "Portable package created: $zip"

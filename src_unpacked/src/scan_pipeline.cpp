@@ -194,7 +194,8 @@ if(isVideo){
       const double trigger=std::max(0.0,threshold-12.0);
       double gate=sim;
       if(gate<trigger) gate=std::max(gate,anchorSim(files_[i],files_[j]));
-      if(gate>=trigger&&durationGate(files_[i],files_[j])){
+       const bool anchorMatched=anchorSim(files_[i],files_[j])>=trigger;
+       if(gate>=trigger&&(durationGate(files_[i],files_[j])||anchorMatched)){
         pendingVideo.push_back({i,j});
         if(pendingVideo.size()>=4096) flushVideo();
       }

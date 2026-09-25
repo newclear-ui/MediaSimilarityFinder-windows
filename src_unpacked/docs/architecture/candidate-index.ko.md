@@ -20,11 +20,11 @@ CandidateIndex는 최종 유사도 판정을 수행하는 계층이 아니라, 6
 
 mirror-aware 검색 도입 후 별도의 mirror-only BK-tree를 두는 대신 normal/mirror fingerprint를 하나의 CandidateIndex에서 처리하도록 정리했다. 이 단계에서는 BK-tree 자체의 정확한 후보 의미는 유지했다.
 
-### 0.9.2.26 — 9-part Multi-Index Hash
+### 현재 구현 — 4개 16-bit Multi-Index Hash partition
 
-대규모 인덱스 확장을 위해 BK-tree의 저장/탐색 구조를 9-part Multi-Index Hash로 교체했다.
+대규모 인덱스 확장을 위해 BK-tree의 저장/탐색 구조를 4개 16-bit Multi-Index Hash partition으로 교체했다.
 
-64-bit hash를 `8 + 7×8` bit의 9개 partition으로 나누고 partition별 exact bucket을 만든다. 기본 검색 범위인 Hamming distance `D <= 8`에서는 두 hash가 최대 8 bit만 다르므로 9개 partition 중 적어도 하나는 완전히 동일하다. 따라서 동일 partition bucket을 모두 확인하면 true candidate를 놓치지 않는다.
+64-bit hash를 4개의 16-bit partition으로 나누고 partition별 bucket을 만든다. `D <= 8`에서는 각 partition의 exact 값과 반경 1·2 값을 조회한다. 모든 partition이 3 bit 이상 다르면 총 거리가 최소 12가 되므로, 거리 8 이하의 pair는 반드시 하나 이상의 조회 bucket에 들어온다.
 
 후보 bucket에서 수집한 entry는 중복 제거 후 전체 64-bit Hamming distance를 다시 계산한다. 즉 bucket은 **후보 축소용**, 최종 Hamming 계산은 **정확성 검증용**이다.
 

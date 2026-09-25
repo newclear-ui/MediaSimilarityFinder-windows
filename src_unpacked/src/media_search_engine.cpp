@@ -20,6 +20,11 @@
 #include <future>
 namespace msf {
 static MediaKind kindOf(const std::string&p){return Scanner::isVideoPath(path_from_utf8(p))?MediaKind::Video:MediaKind::Image;}
+static std::uint64_t foldVideoHashes(const std::vector<std::uint64_t>& values){
+  std::uint64_t h=0x9e3779b97f4a7c15ULL;
+  for(const auto v:values){ h^=v+0x9e3779b97f4a7c15ULL+(h<<6)+(h>>2); h=(h<<13)|(h>>51); }
+  return h ? h : 1;
+}
 static bool stopped(ScanControl* c){ if(!c) return false; while(c->pause.load()&&!c->cancel.load())std::this_thread::sleep_for(std::chrono::milliseconds(80)); return c->cancel.load(); }
 struct AnalysisJob { FileState state; bool ok=false; bool changed=false; };
 bool MediaSearchEngine::openIndex(const std::string& p){ managedIndexActive_=false; if(!db_.open(p)||!db_.initialize()) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return videoEngine_.openPersistentCache(p+".video_cache.sqlite"); }
@@ -50,10 +55,8 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
   std::unordered_map<std::string,const FileState*> byPath; byPath.reserve(states.size()*2+1);
   for(const auto& x:states) byPath.emplace(x.path,&x);
   // Disk freshness in the scanner's own unit (milliseconds — raw counts differ
-  // by clock granularity): a pair involving a file that changed since indexing
-  // is kept, never dropped — the coming scan re-analyzes it. Missing files
-  // stay too (union semantics for unfinished work); only verdict failures on
-  // fresh fingerprints are dropped.
+  // by clock granularity). Missing or changed files cannot safely retain an old
+  // verdict; the next scan will recreate a current pair if it still matches.
   auto fresh=[&](const FileState& x)->bool{
     std::error_code ec; const auto fp=path_from_utf8(x.path);
     const auto sz=std::filesystem::file_size(fp,ec); if(ec) return true;
@@ -73,9 +76,9 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
   for(const auto& m:stored){
     if(control && ((++n & 31)==0) && control->cancel.load()) return false;
     auto it1=byPath.find(m.left), it2=byPath.find(m.right);
-    if(it1==byPath.end()||it2==byPath.end()){ survivors.push_back(m); if(kept)++*kept; continue; }
+    if(it1==byPath.end()||it2==byPath.end()){ if(dropped)++*dropped; continue; }
     const FileState &a=*it1->second, &b=*it2->second;
-    if(!fresh(a)||!fresh(b)){ survivors.push_back(m); if(kept)++*kept; continue; }
+    if(!fresh(a)||!fresh(b)){ if(dropped)++*dropped; continue; }
     if(!a.fingerprint||!b.fingerprint){ if(dropped)++*dropped; continue; }
     // Exact pipeline verdict on the two files (L1 + anchors + temporal + SSIM
     // gates, same code as scans). Pair-bounded and one-time per engine bump.
@@ -275,7 +278,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     futs.emplace_back(std::async(std::launch::async,[x,this,benchOn](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
-     if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; std::uint64_t h=0,mh=0; for(auto v:vf.hashes) h^=v; for(auto v:vf.mirrorHashes) mh^=v; j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=h!=0; if(benchOn) bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); }
+      if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn) bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); }
      return j;
     }));
   }
@@ -289,7 +292,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
    ++scanned;
    if(control && control->walked) control->walked(scanned);
-  auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.fingerprint==0||(isVid&&videoRegrid));
+   auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.quickHash!=x.quickHash||it->second.fingerprint==0||(isVid&&videoRegrid));
   if(!changed){ ++nUnchanged; seen.insert(x.path); return; }
   if(it==oldByPath.end()) ++nAdded; else ++nModified;
   // Remove the previous record before re-analysis. If decoding/analysis fails,
@@ -386,8 +389,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   };
   ScanStats st;
   const auto benchAT0=std::chrono::steady_clock::now();
-  st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
-   SearchMatchRef ref{m.left,m.right,m.percent};
+   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
+    if(benchOn) bench_.addStreamedMatch();
+    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
    if(control && control->onMatch) {
      SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
