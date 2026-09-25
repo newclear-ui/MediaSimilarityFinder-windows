@@ -33,29 +33,15 @@ CPU 자원 정책은 사용자가 선택하지만 GPU 사용률을 직접 지정
 
 Vulkan은 vendor-neutral GPU compute 후보이며, Intel은 Level Zero, AMD는 HIP/ROCm을 선택적 vendor-specific backend 후보로 둡니다. 실제 지원 여부와 성능은 장치/드라이버/backend capability 및 실제 workload 측정으로 판단합니다.
 
-## Current / Next Development Line
-
-현재 검증 코드 라인:
-
-**0.9.3.19**
-
-다음 구조적 개발 라인:
-
-**0.9.4.x**
-
-첫 전환 빌드는 **0.9.4.0**을 권장합니다.
-
-0.9.4.x에서는 CPU/GPU 용어 일반화, Adaptive Scheduler, INI 성능 프로파일, multi-vendor GPU 연결점, GPU build naming 정리를 진행합니다.
-
 ## Development Documentation Model
 
-The 0.9.4 development line separates development stages from build numbers.
+0.9.4 개발선의 실제 작업 순서는 버전 번호가 아니라 Development Roadmap의 A→B→C 순서도로 관리합니다.
 
 - Development Roadmap: `src_unpacked/docs/development-roadmap.ko.md`
 - Development Progress: `src_unpacked/docs/development-progress.ko.md`
 - Build History: `src_unpacked/docs/build-history/`
 
-Roadmap nodes A/B/C are not version numbers. Validated code states advance according to actual progress.
+Roadmap 노드는 버전 번호가 아니며, 검증된 코드 상태가 만들어질 때 실제 진행 상황에 따라 버전이 증가합니다.
 
 ## Detailed Architecture
 
