@@ -47,3 +47,10 @@ MediaSimilarityFinder는 CPU와 GPU를 함께 활용하는 프로그램이며, G
 - 1.0.0: CPU + GPU 완성 목표
 
 빌드 기록은 docs/build-history/에 한글/영문으로 관리(CTest 59개). 아키텍처 문서는 docs/architecture/ 참조.
+
+
+### Benchmark / Telemetry 방향
+
+0.9.4.x에서는 Adaptive Scheduler와 함께 benchmark도 전면 개편한다. 총 시간뿐 아니라 CPU/GPU/decoder throughput, scheduler 판단, calibration, backend 선택, fallback, queue/transfer, video decode 병목을 기록하며, 측정되지 않은 값은 0으로 기록하지 않는다.
+
+자세한 내용은 [Benchmark and Runtime Telemetry Roadmap](docs/architecture/benchmark-telemetry-roadmap.ko.md)을 참조한다.
