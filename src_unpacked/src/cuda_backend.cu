@@ -145,7 +145,7 @@ extern "C" void msf_cuda_backend_destroy(void* p){
 
 extern "C" bool msf_cuda_backend_ssim_batch(void* p,const std::uint8_t* a,const std::uint8_t* b,std::uint64_t count,double* out){
     auto* s=static_cast<CudaBackendState*>(p);
-    if(!s||!a||!b||!out||!count||count>static_cast<std::uint64_t>(SIZE_MAX/2304)) return false;
+    if(!s||!a||!b||!out||!count||count>2147483647ULL||count>static_cast<std::uint64_t>(SIZE_MAX/2304)) return false;
     const std::size_t bytes=static_cast<std::size_t>(count)*2304u;
     const std::size_t outBytes=static_cast<std::size_t>(count)*36u*sizeof(double);
     if(bytes>s->ssimCapacity){

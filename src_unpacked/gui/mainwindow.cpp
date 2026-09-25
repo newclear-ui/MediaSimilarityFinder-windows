@@ -66,6 +66,7 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
+#include <QCloseEvent>
 #include <vector>
 #ifdef _WIN32
 #include <sddl.h> // ConvertSidToStringSidW for the QuickLook pipe owner check
@@ -274,8 +275,21 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.14\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.14\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"repWaitTitle")) return S("검색 리포트 작성 중","Writing search report");
+  if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
+  if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.15\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.15\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
+}
+// High-contrast selection for result/file views: the native theme highlight
+// is too faint to tell which file is selected. One shared blue for active
+// selection, a lighter blue when the view is inactive.
+static void applySelectionStyle(QWidget* w) {
+  w->setStyleSheet(
+      "QListWidget::item:selected { background:#2b6cb0; color:#ffffff; }"
+      "QListWidget::item:selected:!active { background:#7aa7d9; color:#ffffff; }"
+      "QTreeWidget::item:selected { background:#2b6cb0; color:#ffffff; }"
+      "QTreeWidget::item:selected:!active { background:#7aa7d9; color:#ffffff; }");
 }
 
 #ifdef _WIN32
@@ -578,6 +592,16 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   setRunning(false);
   statusMsg_->setText(trStr(lang(), "ready"));
 }
+void MainWindow::closeEvent(QCloseEvent* ev) {
+  // While a scan (and its report rebuild) is in flight, closing would drop
+  // the run silently. Nudge the user to wait instead; explicit confirm exits.
+  if (scanning_ && worker_) {
+    const auto r = QMessageBox::question(this, trStr(lang(), "repWaitTitle"),
+        trStr(lang(), "repWaitClose"), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (r != QMessageBox::Yes) { ev->ignore(); return; }
+  }
+  ev->accept();
+}
 MainWindow::~MainWindow() {
   saveUiState();
   thumbDb_.close(); thumbDbOpen_ = false;
@@ -614,7 +638,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.14"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.15"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -862,6 +886,8 @@ void MainWindow::buildMiddle(QWidget* w) {
   vidGrid_->setUniformItemSizes(true); vidGrid_->setLayoutMode(QListView::Batched);
   vidLay->addWidget(vidTree_); vidLay->addWidget(vidGrid_);
   midTabs_->addTab(vidTab, QString());
+  applySelectionStyle(imgTree_); applySelectionStyle(imgGrid_);
+  applySelectionStyle(vidTree_); applySelectionStyle(vidGrid_);
   connectResView(imgTree_, imgGrid_);
   connectResView(vidTree_, vidGrid_);
   tileDelegate_ = new TileDelegate(this); // shared Tiles renderer for both grids
@@ -922,6 +948,7 @@ void MainWindow::buildRight(QWidget* w) {
   // photo, and one layout pass for all rows (long/short names align).
   grid_->setMovement(QListView::Static); grid_->setSpacing(2); grid_->setUniformItemSizes(true);
   grid_->setIconSize(QSize(128, 128));
+  applySelectionStyle(grid_);
   connect(grid_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem*, QListWidgetItem*) { fileGridSelected(); });
   connect(grid_, &QListWidget::itemDoubleClicked, this, &MainWindow::fileActivated);
   connect(grid_, &QListWidget::itemChanged, this, [this](QListWidgetItem* it) {
@@ -940,6 +967,7 @@ void MainWindow::buildRight(QWidget* w) {
   });
   list_ = new QTreeWidget(w);
   list_->setColumnCount(7); list_->setRootIsDecorated(false);
+  applySelectionStyle(list_);
   connect(list_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem*, QTreeWidgetItem*) { fileListSelected(); });
   connect(list_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* it, int) {
     if (it) { currentFile_ = it->data(1, Qt::UserRole).toString(); openSelected(); }
@@ -984,7 +1012,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.14"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.15"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1310,7 +1338,24 @@ void MainWindow::showBenchmarkDialog(const QString& json) {
   dlg.resize(620, 480);
   dlg.exec();
 }
+// Small non-modal notice shown while the finished-scan report views rebuild.
+// It is closed as soon as the real results are on screen, so users wait
+// instead of closing the program mid-rebuild.
+static QDialog* showReportWaitPopup(QWidget* parent, UiLang lang) {
+  auto* dlg = new QDialog(parent);
+  dlg->setWindowTitle(trStr(lang, "repWaitTitle"));
+  dlg->setModal(false);
+  auto* lay = new QVBoxLayout(dlg);
+  auto* lab = new QLabel(trStr(lang, "repWait"), dlg);
+  lab->setAlignment(Qt::AlignCenter);
+  lay->addWidget(lab);
+  dlg->setFixedSize(340, 90);
+  dlg->show();
+  QApplication::processEvents();
+  return dlg;
+}
 void MainWindow::scanFinished(QString msg) {
+  QDialog* wait = showReportWaitPopup(this, lang());
   drainMatches();
   if (thumbDbOpen_) thumbDb_.pruneThumbs(); // drop thumbs of files gone from the index
   scanLog(QString("finish %1").arg(msg));
@@ -1345,6 +1390,8 @@ void MainWindow::scanFinished(QString msg) {
   }
   refreshSummary();
   updateStatusCounts();
+  wait->close();
+  wait->deleteLater();
   setRunning(false);
   statusProg_->setValue(100);
 }
@@ -1359,6 +1406,7 @@ void MainWindow::scanFailed(QString msg) {
   setRunning(false);
 }
 void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
+  QDialog* wait = showReportWaitPopup(this, lang());
   drainMatches();
   allPaths_.clear(); matchRows_ = matchRows;
   fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
@@ -1375,6 +1423,8 @@ void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
     addMatch(p[0], p[1], p[2].toDouble(), isVideoExt(p[0]) ? 2 : 1);
   }
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
+  wait->close();
+  wait->deleteLater();
 }
 void MainWindow::resourceChanged(int i) {
   auto m = static_cast<msf::ResourceMode>(i + 1);
@@ -2022,7 +2072,9 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     std::vector<unsigned char> bytes;
     if (thumbDb_.getThumb(path.toStdString(), mtime, fsize, bytes)) {
       const QImage disk = QImage::fromData(bytes.data(), (int)bytes.size());
-      if (!disk.isNull()) {
+      // Legacy gray engine thumbs persisted by older builds must not stick:
+      // a grayscale disk entry falls through to the color decoders below.
+      if (!disk.isNull() && !disk.isGrayscale()) {
         ++thumbStatDisk_;
         QIcon ic = QIcon(squareFittedPixmap(QPixmap::fromImage(disk), size));
         thumbCache_[key] = ic;
@@ -2046,6 +2098,8 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     return placeholderIcon(path);
   }
   QPixmap pm;
+  bool grayOnly = false; // engine fingerprint thumb: display fallback only,
+                         // never persisted (a gray disk entry would stick)
   if (worker_) {
     std::vector<unsigned char> px; int pw = 0, ph = 0;
     bool gray = false;
@@ -2061,7 +2115,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
       const QImage im = gray
           ? QImage(px.data(), 48, 48, 48, QImage::Format_Grayscale8).copy()
           : QImage(px.data(), pw, ph, pw * 4, QImage::Format_ARGB32).copy();
-      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im); }
+      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im); grayOnly = gray; }
     }
   }
   // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
@@ -2082,7 +2136,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   if (bypassBudget || shellBudget_ > 0) {
     if (!bypassBudget) --shellBudget_;
     const QImage shell = shellThumbnailImage(path);
-    if (!shell.isNull()) { ++thumbStatShell_; pm = QPixmap::fromImage(shell); }
+    if (!shell.isNull()) { ++thumbStatShell_; pm = QPixmap::fromImage(shell); grayOnly = false; }
   }
   if (pm.isNull()) {
     if (isVideoExt(path)) {
@@ -2093,6 +2147,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
         if (dec.frameAtColor(0.5, dim, dim, cf) && cf.rgb.size() == (size_t)cf.width * cf.height * 3 && cf.width > 0 && cf.height > 0) {
           QImage im(cf.rgb.data(), cf.width, cf.height, cf.width * 3, QImage::Format_RGB888);
           pm = QPixmap::fromImage(im.copy());
+          grayOnly = false;
           ++thumbStatDecode_;
         }
         dec.close();
@@ -2125,8 +2180,10 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     // source aspect/size (Explorer-like uniform grid), never distorted.
     ic = QIcon(squareFittedPixmap(pm, size));
     // Persist for future rescans (best effort): 192px JPEG keeps the DB small
-    // while staying recognizable up to XL views.
-    if (thumbDbOpen_) {
+    // while staying recognizable up to XL views. A gray-only engine thumb is
+    // never persisted: it would stick as a B&W disk entry and hide the color
+    // decoders on every later view.
+    if (thumbDbOpen_ && !grayOnly) {
       QImage store = squareFittedPixmap(pm, QSize(192, 192)).toImage();
       QByteArray ba; QBuffer buf(&ba); buf.open(QIODevice::WriteOnly);
       if (buf.isOpen() && store.save(&buf, "JPG", 70) && !ba.isEmpty()) {

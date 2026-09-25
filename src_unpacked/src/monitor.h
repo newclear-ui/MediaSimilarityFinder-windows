@@ -107,7 +107,7 @@ private:
 #endif
     MonitorConfig config_; ResourcePolicy policy_{}; Callback callback_;
     std::atomic_bool running_{false}; std::atomic_bool paused_{false}; std::thread thread_; mutable std::mutex mutex_;
-    StableFileDetector stable_; SystemLoadMonitor load_; MediaPipeline imagePipeline_; VideoFingerprintEngine videoEngine_;
+    StableFileDetector stable_; SystemLoadMonitor load_; MediaPipeline imagePipeline_; VideoFingerprintEngine videoEngine_; GpuBackend videoGpu_;
     struct PendingItem {
         std::string path;
         bool notify=true;

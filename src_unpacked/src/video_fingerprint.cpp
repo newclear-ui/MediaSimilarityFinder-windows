@@ -452,7 +452,9 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
       if(options.stats) options.stats->gpuPairs+=map.size();
       const auto t0=std::chrono::steady_clock::now();
       std::vector<double> out(map.size()*2);
+      if(options.gpuActivity) options.gpuActivity->store(true,std::memory_order_relaxed);
       const bool ok=map.size()>=8&&options.gpu->ssimBatch(pa.data(),pb.data(),map.size()*2,out.data());
+      if(options.gpuActivity) options.gpuActivity->store(false,std::memory_order_relaxed);
       if(options.stats) options.stats->gpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
       if(ok){
        if(options.stats) options.stats->gpuUsed=true;

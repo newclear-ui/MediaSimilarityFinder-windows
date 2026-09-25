@@ -1,5 +1,6 @@
 #pragma once
 #include "candidate_index.h"
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -40,9 +41,11 @@ public:
   // pointed engine must outlive the analyze() call; not owned.
   void setSharedTemporalEngine(const VideoFingerprintEngine* e) { temporalEngine_ = e; }
   void setVideoGpuBackend(GpuBackend* g) { videoGpu_ = g; }
+  void setVideoGpuActivity(std::atomic<bool>* a) { videoGpuActivity_ = a; }
   const std::vector<MediaFile>& files() const;
  private:
   const VideoFingerprintEngine* temporalEngine_ = nullptr;
   GpuBackend* videoGpu_ = nullptr;
+  std::atomic<bool>* videoGpuActivity_ = nullptr;
 };
 }

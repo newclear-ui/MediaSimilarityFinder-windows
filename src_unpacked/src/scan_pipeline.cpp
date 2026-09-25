@@ -34,11 +34,11 @@ static bool durationGate(const MediaFile&a,const MediaFile&b){
 // so live matches carry identical similarity values.
 static double bestMatch(const MediaFile&a,const MediaFile&b){
  double z=0; const std::uint64_t xFull[]={a.fingerprint,a.mirrorFingerprint}; const std::uint64_t yFull[]={b.fingerprint,b.mirrorFingerprint};
- for(auto u:xFull) if(u) for(auto v:yFull) if(v) z=std::max(z,hash_similarity(u,v));
+ for(auto u:xFull) if(hash_usable(u)) for(auto v:yFull) if(hash_usable(v)) z=std::max(z,hash_similarity(u,v));
  if(a.kind==MediaKind::Image || a.kind==MediaKind::Video){
   const std::uint64_t xCrop[][2]={{a.crop4x3,a.mirrorCrop4x3},{a.crop1x1,a.mirrorCrop1x1},{a.crop9x16,a.mirrorCrop9x16}};
   const std::uint64_t yCrop[][2]={{b.crop4x3,b.mirrorCrop4x3},{b.crop1x1,b.mirrorCrop1x1},{b.crop9x16,b.mirrorCrop9x16}};
-  for(int r=0;r<3;++r){for(auto u:xCrop[r])if(u)for(auto v:yFull)if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xFull)if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));for(auto u:xCrop[r])if(u)for(auto v:yCrop[r])if(v)z=std::max(z,hash_similarity(u,v));}
+  for(int r=0;r<3;++r){for(auto u:xCrop[r])if(hash_usable(u))for(auto v:yFull)if(hash_usable(v))z=std::max(z,hash_similarity(u,v));for(auto u:xFull)if(hash_usable(u))for(auto v:yCrop[r])if(hash_usable(v))z=std::max(z,hash_similarity(u,v));for(auto u:xCrop[r])if(hash_usable(u))for(auto v:yCrop[r])if(hash_usable(v))z=std::max(z,hash_similarity(u,v));}
  } return z;
 }
 static void indexFile(CandidateIndex& full,CandidateIndex& c4,CandidateIndex& c1,CandidateIndex& c916,std::size_t idx,const MediaFile& f){
@@ -109,7 +109,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   auto anchorSim=[&](const MediaFile&a,const MediaFile&b)->double{
     if(a.anchors.empty()||b.anchors.empty()) return 0;
     double z=0;
-    for(auto u:a.anchors){ if(!u)continue; for(auto v:b.anchors){ if(!v)continue; z=std::max(z,hash_similarity(u,v)); } }
+    for(auto u:a.anchors){ if(!hash_usable(u))continue; for(auto v:b.anchors){ if(!hash_usable(v))continue; z=std::max(z,hash_similarity(u,v)); } }
     return z;
   };
   VideoFingerprintEngine temporalEngine;
@@ -161,7 +161,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
             VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
             if(temporal(files_[tk.i],ai,ac)&&temporal(files_[tk.j],bi,bc)){
               vr.verified=true;
-              VideoSimilarityOptions options{threshold,8,2,2.0}; options.gpu=videoGpu_;
+              VideoSimilarityOptions options{threshold,8,2,2.0}; options.gpu=videoGpu_; options.gpuActivity=videoGpuActivity_;
               const double ts=video_crop_similarity(ai,ac,bi,bc,options);
               if(ts>=threshold){ vr.matched=true; vr.percent=ts; }
             }

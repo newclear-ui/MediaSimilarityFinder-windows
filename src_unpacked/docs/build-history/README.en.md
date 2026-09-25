@@ -108,6 +108,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.3.12 | Explorer reuse, cache freshness, and group-identity follow-ups |
 | 0.9.3.13 | First-stage CUDA batch acceleration for video pHash |
 | 0.9.3.14 | CUDA row-batch acceleration for video MSSIM |
+| 0.9.3.15 | Degenerate-hash false-positive fix, report-wait UI, video GPU activity wiring |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

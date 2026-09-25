@@ -57,7 +57,7 @@ public:
   // "M.m.p": patch = threshold/weight/gate tuning; minor = new stage or rule;
   // major = verdict architecture change. Any bump revalidates stored pairs on
   // the next scan (no rescan). Stored in the index DB (meta.engine_version).
-   static constexpr const char* kEngineVersion = "1.2.0";
+   static constexpr const char* kEngineVersion = "1.3.0";
    static constexpr const char* kSamplingGeneration = "3";
   bool openIndex(const std::string& dbPath);
   bool openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory);
@@ -108,7 +108,7 @@ const std::vector<MediaFile>& files() const { return files_; }
   Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
   mutable GpuBackend videoGpu_;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
-  std::atomic<bool> gpuActive_{false};
+  mutable std::atomic<bool> gpuActive_{false};
   BenchmarkRecorder bench_;
   struct ColorThumb { int w=0, h=0; std::vector<unsigned char> bgra; };
   static constexpr std::size_t kColorThumbMax = 2048;

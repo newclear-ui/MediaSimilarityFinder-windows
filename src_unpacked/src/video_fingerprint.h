@@ -31,7 +31,7 @@ struct VideoCropFingerprint {
  std::vector<std::uint64_t> mirrorA4x3, mirrorA1x1, mirrorA9x16;
  std::vector<double> timestamps;
 };
-struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; double sceneBonus=0; GpuBackend* gpu=nullptr; VideoSimilarityStats* stats=nullptr; };
+struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; double sceneBonus=0; GpuBackend* gpu=nullptr; std::atomic<bool>* gpuActivity=nullptr; VideoSimilarityStats* stats=nullptr; };
 class VideoFingerprintEngine{
 public:
  ~VideoFingerprintEngine();

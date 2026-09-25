@@ -26,7 +26,7 @@ class QListWidget; class QListWidgetItem; class QPushButton; class QProgressBar;
 class QLabel; class QComboBox; class QSpinBox; class QStackedWidget; class QSlider;
 class QToolButton; class QSplitter; class QCheckBox; class QTimer; class QStatusBar;
 class QTabWidget; class QFormLayout; class QToolBar; class QMenu; class QAction;
-class QStyledItemDelegate;
+class QStyledItemDelegate; class QCloseEvent;
 
 // ---------------------------------------------------------------- language
 enum class UiLang { Ko, En };
@@ -151,6 +151,7 @@ private slots:
   void setLanguage(int); void showHelp(); void applyStaticTexts();
 private:
   UiLang lang() const;
+  void closeEvent(QCloseEvent*) override;
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
   void rebuildGroups();          // union-find over accumulated matches
