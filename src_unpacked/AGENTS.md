@@ -19,3 +19,17 @@
    - DB 스키마 버전 `Database::kDatabaseVersion`: patch=부가적 추가(테이블·컬럼·인덱스, 구코드 읽기 가능), minor=마이그레이션 필요 변경, major=파괴적 변경(구행 무효, wipe+재스캔). open 시 마이그레이션 후 스탬프
    - 빌드 번호와 무관하게 필요할 때만 상향. 상향한 빌드는 build-history에 명시
 3. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.3.19, 마이너 라인 0.9.3.x) 구분 유지. 판정 의미 불변, additive CUDA 커널·호출 병합 허용, CPU fallback 유지
+
+4. **다음 개발선 0.9.4.x**
+   - 권장 첫 빌드 번호: 0.9.4.0
+   - 사용자/상위 아키텍처 명칭은 CPU/GPU로 통일
+   - GPU는 ON/OFF만 사용자에게 노출하며 GPU 사용률 수동 설정은 제거
+   - Resource Mode는 Maximum/High/Balanced/Gaming/Manual 유지. CPU 정책은 기존 의미를 유지하고 GPU는 AUTO Adaptive Scheduler로 관리
+   - CPU/GPU 작업 배분은 고정 50:50 금지. 하드웨어 capability + calibration + 실시간 부하 + throughput + queue + transfer cost를 기반으로 동적 조정
+   - 성능 프로파일은 INI에 기록하여 다음 실행의 초기값으로 사용하되 live runtime state가 항상 우선
+   - 상위 GPU abstraction은 vendor-neutral. NVIDIA CUDA, NVDEC, Vulkan, AMD HIP/ROCm, Intel Level Zero를 독립 backend 후보로 연결
+   - Intel/AMD iGPU 및 dGPU는 동일 GPU abstraction으로 취급
+   - 상위 계층에서 CUDA API를 직접 확산시키지 않으며 CPU fallback은 항상 유지
+   - 빌드 이름은 build-windows-cpu / build-windows-gpu로 전환. build-windows-cuda는 0.9.4.x GPU build가 검증될 때까지 보존
+   - CMake 상위 옵션은 MSF_ENABLE_GPU, backend 선택은 MSF_GPU_BACKEND 계열을 목표로 한다. 실제 구현 파일의 CUDA/Vulkan/HIP/Level Zero 이름은 기술명으로 유지
+   - 0.9.4.0의 구조 변경 후 build-history를 ko/en 쌍으로 기록
