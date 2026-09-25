@@ -74,6 +74,8 @@ if ($vsCrt) {
   Write-Warning "VS CRT redist not found; target PCs need a matching VC++ Redistributable."
 }
 if (Test-Path "README.md") { Copy-Item "README.md" $OutputDir -Force }
+$smoke = Start-Process -FilePath (Join-Path $OutputDir "MediaSimilarityFinder.exe") -ArgumentList @("--smoke") -WorkingDirectory $OutputDir -Wait -PassThru -NoNewWindow
+if ($smoke.ExitCode -ne 0) { throw "Portable smoke failed: $($smoke.ExitCode)" }
 @{
   product = "MediaSimilarityFinder"
   version = "0.9.3.12"

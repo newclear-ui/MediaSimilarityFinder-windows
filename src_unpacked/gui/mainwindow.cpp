@@ -2038,6 +2038,13 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // returns the cheap file-type icon immediately without spending the shared
   // per-tick budget, so corrupt/undecodable files cannot starve live thumbs.
   if (thumbFail_.contains(path)) { ++thumbStatPlace_; return placeholderIcon(path); }
+  // Check the budget before touching the engine or decoder. Both cache misses
+  // can still perform synchronous work, especially for video thumbnails.
+  if (!bypassBudget && thumbBudget_ <= 0) {
+    thumbStarved_ = true;
+    ++thumbStatPlace_;
+    return placeholderIcon(path);
+  }
   QPixmap pm;
   if (worker_) {
     std::vector<unsigned char> px; int pw = 0, ph = 0;
@@ -2064,11 +2071,6 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // Shell thumbnails (cheap COM) get a wider lane than heavy decodes so
   // Explorer-cached thumbs fill ~10x faster.
   if (!bypassBudget) {
-    if (thumbBudget_ <= 0) {
-      thumbStarved_ = true;
-      ++thumbStatPlace_;
-      return placeholderIcon(path);
-    }
     --thumbBudget_;
   }
   // Shell thumbnail cache is the fast lane: Explorer already stored a rendered
