@@ -25,7 +25,7 @@ static bool attachParentConsole() { return true; }
 #endif
 
 namespace {
-constexpr const char* kVersion = "0.9.3.9";
+constexpr const char* kVersion = "0.9.3.10";
 }
 #ifdef _WIN32
 static bool platformPluginPresent() {

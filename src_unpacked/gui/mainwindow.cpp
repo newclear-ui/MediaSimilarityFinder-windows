@@ -274,7 +274,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-   if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.9\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.9\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.10\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.10\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -614,7 +614,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.9"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.10"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -984,7 +984,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.9"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.10"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1718,6 +1718,15 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   tree->blockSignals(true); grid->blockSignals(true);
   const int treePos = tree->verticalScrollBar() ? tree->verticalScrollBar()->value() : 0;
   const int gridPos = grid->verticalScrollBar() ? grid->verticalScrollBar()->value() : 0;
+  // Rebuilding the widgets can make setCurrentItem() scroll to the selected
+  // group (usually group 1) after the old pixel offset was captured. Preserve
+  // the group at the viewport's top edge as a semantic anchor instead.
+  int treeAnchor = -1;
+  if (auto* top = tree->itemAt(QPoint(2, 2)))
+    treeAnchor = top->data(0, Qt::UserRole).toInt();
+  int gridAnchor = -1;
+  if (auto* top = grid->itemAt(QPoint(2, 2)))
+    gridAnchor = top->data(Qt::UserRole).toInt();
   tree->clear(); grid->clear();
   const QString f = groupSearch_->text().trimmed().toLower();
   for (int i = 0; i < groups_.size(); ++i) {
@@ -1760,8 +1769,30 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     if (syncSel && i == currentGroup_) grid->setCurrentItem(li);
   }
   tree->resizeColumnToContents(0);
-  if (tree->verticalScrollBar()) tree->verticalScrollBar()->setValue(treePos);
-  if (grid->verticalScrollBar()) grid->verticalScrollBar()->setValue(gridPos);
+  bool restoredTree = false;
+  if (treeAnchor >= 0) {
+    for (int row = 0; row < tree->topLevelItemCount(); ++row) {
+      auto* item = tree->topLevelItem(row);
+      if (item->data(0, Qt::UserRole).toInt() == treeAnchor) {
+        tree->scrollToItem(item, QAbstractItemView::PositionAtTop);
+        restoredTree = true;
+        break;
+      }
+    }
+  }
+  bool restoredGrid = false;
+  if (gridAnchor >= 0) {
+    for (int row = 0; row < grid->count(); ++row) {
+      auto* item = grid->item(row);
+      if (item->data(Qt::UserRole).toInt() == gridAnchor) {
+        grid->scrollToItem(item, QAbstractItemView::PositionAtTop);
+        restoredGrid = true;
+        break;
+      }
+    }
+  }
+  if (!restoredTree && tree->verticalScrollBar()) tree->verticalScrollBar()->setValue(treePos);
+  if (!restoredGrid && grid->verticalScrollBar()) grid->verticalScrollBar()->setValue(gridPos);
   tree->blockSignals(false); grid->blockSignals(false);
 }
 void MainWindow::refreshGroupList() {

@@ -103,6 +103,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.3.7 | Engine lookup before budget gate + video unit fix |
 | 0.9.3.8 | Thumbnail catch-up scheduler after scan completion |
 | 0.9.3.9 | Search freshness, video fingerprint, benchmark, and monitor hardening |
+| 0.9.3.10 | Group-list scroll anchor restoration |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

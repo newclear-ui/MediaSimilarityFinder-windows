@@ -103,6 +103,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.3.7 | 엔진 조회 버짓 제외 + 비디오 단위 수정 |
 | 0.9.3.8 | 검색 완료 후 thumbnail catch-up scheduler 수정 |
 | 0.9.3.9 | 검색 신선도·영상 fingerprint·Benchmark·Monitor 안정성 개선 |
+| 0.9.3.10 | 그룹 목록 스크롤 anchor 복원 |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 
