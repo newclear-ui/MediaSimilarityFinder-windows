@@ -36,7 +36,7 @@ MediaSimilarityFinder는 CPU와 GPU를 함께 활용하는 프로그램이며, G
 - 저사양 GPU 또는 GPU 가속이 불리한 환경에서는 CPU 중심 또는 CPU-only 실행으로 자동 수렴할 수 있어야 한다.
 - GPU video decode/NVDEC 역시 선택적 backend로 취급하고, 실패 시 Software FFmpeg 경로로 안전하게 폴백한다.
 
-세부 설계와 구현 순서는 [docs/architecture/resource-scheduling.ko.md](docs/architecture/resource-scheduling.ko.md) 및 [docs/architecture/resource-scheduling.en.md](docs/architecture/resource-scheduling.en.md)에 기록한다.
+세부 설계와 구현 순서는 [CPU/GPU Adaptive Resource Scheduling](docs/architecture/resource-scheduling.ko.md) 및 [GPU Backend and Build Naming Roadmap](docs/architecture/gpu-backend-roadmap.ko.md)에 기록한다.
 
 > 참고: 0.9.3.19 현재 코드에는 기존 CPU/GPU 고정 퍼센트 정책과 GPU 퍼센트 UI가 남아 있다. 위 Adaptive GPU AUTO와 INI 기반 성능 프로파일은 승인된 다음 단계의 목표 아키텍처이며, 이후 0.9.3.x에서 단계적으로 구현한다.
 
