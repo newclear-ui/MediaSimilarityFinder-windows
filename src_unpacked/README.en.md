@@ -36,7 +36,7 @@ The approved resource-management direction is:
 - Low-end or inefficient GPUs can automatically converge toward CPU-heavy or CPU-only execution.
 - Hardware video decode/NVDEC is an optional backend; failures must fall back safely to Software FFmpeg.
 
-See [docs/architecture/resource-scheduling.ko.md](docs/architecture/resource-scheduling.ko.md) and [docs/architecture/resource-scheduling.en.md](docs/architecture/resource-scheduling.en.md) for the detailed design and implementation order.
+See [CPU/GPU Adaptive Resource Scheduling](docs/architecture/resource-scheduling.en.md) and [GPU Backend and Build Naming Roadmap](docs/architecture/gpu-backend-roadmap.en.md) for the detailed design and implementation order.
 
 > Note: 0.9.3.19 still contains the previous fixed CPU/GPU percentage policy and GPU-percentage UI. The Adaptive GPU AUTO and INI-based performance-profile design above is the approved target architecture to be implemented incrementally on the 0.9.3.x line.
 
