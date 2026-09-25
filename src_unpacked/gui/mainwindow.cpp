@@ -274,7 +274,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.7\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.7\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.8\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.8\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -545,18 +545,18 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
     // show file-type icons until a later tick. Cache hits are always free.
     thumbBudget_ = kThumbBudgetPerTick;
     shellBudget_ = kShellBudgetPerTick;
-    if (!groupsDirty_) {
-      if (scanning_) updateStatusCounts();
-      else if (thumbStarved_ && thumbFollowUps_ < 12) { ++thumbFollowUps_; refreshGroupList(); }
-    }
-    else {
+    bool refreshed = false;
+    if (groupsDirty_) {
       groupsDirty_ = false;
-      thumbFollowUps_ = 0;
       drainMatches(); // matches streamed since the last tick (also covers pause:
                       // the worker emits nothing while paused, so without this
                       // the final pre-pause matches would sit undrained)
       refreshStreaming();
+      refreshed = true;
     }
+    if (thumbStarved_ && !refreshed)
+      refreshStreaming(); // thumbnail catch-up is independent of incoming matches
+    if (scanning_) updateStatusCounts();
     if (scanning_) {
       // Recompose with live elapsed so a long single file (e.g. a big video)
       // shows activity instead of a frozen message.
@@ -614,7 +614,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.7"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.8"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -984,7 +984,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.7"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.8"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1072,7 +1072,10 @@ void MainWindow::setRunning(bool v) {
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   if (!v) scan_->setFocus(); // return the highlight to Start, as at launch
   statusProg_->setRange(0, 100); statusProg_->setValue(0);
-  if (v) uiTimer_->start(); else uiTimer_->stop();
+  // Keep the UI/thumbnail scheduler alive after scan completion. The timer
+  // stops being useful only when the process exits; refreshStreaming() itself
+  // has the pending-thumbnail condition and remains budgeted per tick.
+  uiTimer_->start();
   updateGpuLabel();
   sumValGpu_->setText(gpuStateText());
 }

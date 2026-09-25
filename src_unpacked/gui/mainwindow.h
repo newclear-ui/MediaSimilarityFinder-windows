@@ -219,7 +219,6 @@ private:
   mutable int thumbBudget_ = 0;
   mutable int shellBudget_ = 0;
   mutable bool thumbStarved_ = false;
-  int thumbFollowUps_ = 0;
   struct PendingThumb { std::string path; std::int64_t modified; std::uint64_t size; std::vector<unsigned char> jpeg; };
   mutable std::vector<PendingThumb> thumbPending_;
   void flushThumbPending();
