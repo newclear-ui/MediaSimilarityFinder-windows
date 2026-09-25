@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.2.90 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.2.91 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available" ON)
@@ -30,10 +30,11 @@ add_library(msf_core STATIC
     src/video_sampling.cpp
     src/media_search_engine.cpp
     src/monitor.cpp
+    src/benchmark.cpp
 )
 target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 if(WIN32)
-    target_link_libraries(msf_core PUBLIC windowscodecs ole32 shell32)
+    target_link_libraries(msf_core PUBLIC windowscodecs ole32 shell32 psapi)
 endif()
 find_package(SQLite3 QUIET)
 if(SQLite3_FOUND)
@@ -212,6 +213,9 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_scan_cancel_test tests/scan_cancel_test.cpp)
     target_link_libraries(msf_scan_cancel_test PRIVATE msf_core)
     add_test(NAME scan_cancel_test COMMAND msf_scan_cancel_test)
+    add_executable(msf_benchmark_test tests/benchmark_test.cpp)
+    target_link_libraries(msf_benchmark_test PRIVATE msf_core)
+    add_test(NAME benchmark_test COMMAND msf_benchmark_test)
 endif()
 
 option(MSF_ENABLE_FFMPEG "Enable FFmpeg video decoding when available" ON)

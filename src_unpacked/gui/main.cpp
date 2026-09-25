@@ -25,7 +25,7 @@ static bool attachParentConsole() { return true; }
 #endif
 
 namespace {
-constexpr const char* kVersion = "0.9.2.90";
+constexpr const char* kVersion = "0.9.2.91";
 }
 #ifdef _WIN32
 static bool platformPluginPresent() {
@@ -68,6 +68,7 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    QCoreApplication::setApplicationVersion(kVersion);
     initAppSettings(QCoreApplication::applicationDirPath());
 
     for (int i = 1; i < argc; ++i) {

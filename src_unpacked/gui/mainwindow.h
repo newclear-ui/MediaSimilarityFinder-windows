@@ -65,6 +65,7 @@ signals:
   void progress(int,QString);
   void progressCount(qulonglong,qulonglong);
   void walkedCount(qulonglong);
+  void benchmarkReady(QString);
   void listingProgress(std::size_t);
   void matchesArrived();            // throttled; call takePending()
   void quickLoaded(int);            // stored matches reloaded from the index
@@ -117,6 +118,7 @@ private slots:
   void onResults(QVector<GuiFile> files, QStringList matchRows);
   void onQuickLoaded(int);
   void onRevalidated(int,int);
+  void onBenchmark(QString);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();

@@ -22,6 +22,10 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileIconProvider>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QFileInfo>
 #include <QDirIterator>
 #include <QFormLayout>
@@ -40,6 +44,7 @@
 #include <QMetaObject>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QTextBrowser>
 #include <QProcess>
 #include <QSettings>
 #include <QShortcut>
@@ -248,7 +253,24 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.90\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.90\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"benchTitle")) return S("검색 벤치마크","Search Benchmark");
+  if (!std::strcmp(key,"benchSave")) return S("JSON 저장…","Save JSON…");
+  if (!std::strcmp(key,"benchClose")) return S("닫기","Close");
+  if (!std::strcmp(key,"benchSaved")) return S("벤치마크 저장됨: ","Benchmark saved: ");
+  if (!std::strcmp(key,"benchSaveFail")) return S("벤치마크 저장 실패","Benchmark save failed");
+  if (!std::strcmp(key,"benchDone")) return S("완료","Completed");
+  if (!std::strcmp(key,"benchStopped")) return S("중단","Stopped");
+  if (!std::strcmp(key,"benchState")) return S("상태","Status");
+  if (!std::strcmp(key,"benchWall")) return S("소요","Elapsed");
+  if (!std::strcmp(key,"benchFiles")) return S("파일","Files");
+  if (!std::strcmp(key,"benchImages")) return S("이미지","Images");
+  if (!std::strcmp(key,"benchVideos")) return S("비디오","Videos");
+  if (!std::strcmp(key,"benchCpuUse")) return S("CPU 사용률","CPU usage");
+  if (!std::strcmp(key,"benchMemMax")) return S("메모리 최대","Peak memory");
+  if (!std::strcmp(key,"benchGpuDuty")) return S("GPU 듀티","GPU duty");
+  if (!std::strcmp(key,"benchMatches")) return S("매치","Matches");
+  if (!std::strcmp(key,"benchSlow")) return S("느린 파일","Slowest files");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.2.91\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.2.91\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -304,6 +326,7 @@ void ScanWorker::run() {
     engine_.setResourcePolicy(msf::make_policy(msf::ResourceMode::Custom, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
+    control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
     {
@@ -323,9 +346,11 @@ void ScanWorker::run() {
     // Cancelled here means: stop before touching results.
     {
       int kept = 0, dropped = 0;
+      const qint64 revT0 = QDateTime::currentMSecsSinceEpoch();
       if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
         emit finished(QString("CANCELLED|0|0")); return;
       }
+      control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
       if (kept + dropped > 0) emit revalidated(kept, dropped);
     }
     // Quick load: the scan button restores the stored duplicate groups before
@@ -401,6 +426,7 @@ void ScanWorker::run() {
     // groups incrementally from onMatch and needs no retained vector.
     control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
+    const QString benchJson = engine_.hasBenchmark() ? QString::fromStdString(engine_.benchmarkJson()) : QString();
     gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
     // Flush the throttled progress display with the final counts.
     {
@@ -422,7 +448,7 @@ void ScanWorker::run() {
                 .arg(r.indexedVideos).arg(r.videoCandidatePairs)
                 .arg(r.videoTemporalChecks).arg(r.videoMatches));
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
-    if (control_.cancel.load()) { emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
+    if (control_.cancel.load()) { if (!benchJson.isEmpty()) emit benchmarkReady(benchJson); emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
     const auto& fs = engine_.files();
     QVector<GuiFile> files; files.reserve((int)fs.size());
     for (const auto& f : fs) {
@@ -438,6 +464,7 @@ void ScanWorker::run() {
       matches << (QString::fromStdString(m.leftPath) + "\t" + QString::fromStdString(m.rightPath)
                   + "\t" + QString::number(m.percent, 'f', 1));
     emit results(files, matches);
+    if (!benchJson.isEmpty()) emit benchmarkReady(benchJson);
     emit finished(QString("Scan complete: %1 files, %2 analyzed, %3 candidates, %4 groups").arg(r.scanned).arg(r.analyzed).arg(r.candidates).arg(r.groups)
                   + QString("|%1|%2|%3|%4|%5").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates));
   } catch (const std::exception& e) {
@@ -566,7 +593,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.90"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.2.91"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -931,7 +958,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.90"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.2.91"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1073,6 +1100,7 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::quickLoaded, this, &MainWindow::onQuickLoaded);
   connect(worker_, &ScanWorker::revalidated, this, &MainWindow::onRevalidated);
   connect(worker_, &ScanWorker::results, this, &MainWindow::onResults);
+  connect(worker_, &ScanWorker::benchmarkReady, this, &MainWindow::onBenchmark);
   connect(worker_, &ScanWorker::finished, this, &MainWindow::scanFinished);
   connect(worker_, &ScanWorker::failed, this, &MainWindow::scanFailed);
   connect(worker_, &ScanWorker::finished, thread_, &QThread::quit);
@@ -1156,6 +1184,89 @@ void MainWindow::onQuickLoaded(int n) {
 }
 void MainWindow::onRevalidated(int kept, int dropped) {
   statusMsg_->setText(trStr(lang(), "revalidated").arg(kept).arg(dropped));
+}
+void MainWindow::onBenchmark(QString json) {
+  QJsonParseError perr;
+  const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &perr);
+  if (perr.error != QJsonParseError::NoError || !doc.isObject()) return;
+  const QJsonObject root = doc.object();
+  const QJsonObject meta = root["meta"].toObject(), cfg = root["config"].toObject();
+  const QJsonObject sum = root["summary"].toObject(), imgs = root["images"].toObject();
+  const QJsonObject vids = root["videos"].toObject(), res = root["resources"].toObject();
+  const QJsonObject mat = root["matches"].toObject();
+  const auto f1 = [](double v) { return QString::number(v, 'f', 1); };
+  const auto f2 = [](double v) { return QString::number(v, 'f', 2); };
+  QStringList lines;
+  lines << QString("%1: %2").arg(trStr(lang(), "benchState"),
+      meta["completed"].toBool() ? trStr(lang(), "benchDone") : trStr(lang(), "benchStopped"));
+  lines << QString("%1: %2 s (walk %3 s, reval %4 s, img %5 s, vid %6 s, analyze %7 s)").arg(trStr(lang(), "benchWall"))
+      .arg(f1(sum["wallMs"].toDouble() / 1000.0)).arg(f1(sum["walkMs"].toDouble() / 1000.0))
+      .arg(f1(sum["revalidateMs"].toDouble() / 1000.0)).arg(f1(sum["imageStageMs"].toDouble() / 1000.0))
+      .arg(f1(sum["videoStageMs"].toDouble() / 1000.0)).arg(f1(sum["analyzeMs"].toDouble() / 1000.0));
+  lines << QString("%1: scan %2, analyzed %3, unchanged %4 (%5 files/s)").arg(trStr(lang(), "benchFiles"))
+      .arg((qulonglong)sum["scanned"].toDouble()).arg((qulonglong)sum["analyzed"].toDouble())
+      .arg((qulonglong)sum["unchanged"].toDouble()).arg(f1(sum["filesPerSec"].toDouble()));
+  const qulonglong imgN = (qulonglong)imgs["count"].toDouble();
+  const qulonglong imgGpu = (qulonglong)imgs["gpuHashed"].toDouble();
+  lines << QString("%1: %2 (GPU %3, CPU %4), decode avg %5 ms, hash avg %6 ms").arg(trStr(lang(), "benchImages"))
+      .arg(imgN).arg(imgGpu).arg(imgN - imgGpu)
+      .arg(f2(imgs["meanDecodeMs"].toDouble())).arg(f2(imgs["meanHashMs"].toDouble()));
+  lines << QString("%1: %2 (%3 min, build avg %4 ms, %5 s/play-min, %6 s/GB)").arg(trStr(lang(), "benchVideos"))
+      .arg((qulonglong)vids["count"].toDouble()).arg(f1(vids["playSec"].toDouble() / 60.0))
+      .arg(f1(vids["meanBuildMs"].toDouble())).arg(f1(vids["secPerPlayMin"].toDouble())).arg(f1(vids["secPerGB"].toDouble()));
+  lines << QString("%1: avg %2%, max %3%, std %4% · %5: %6 MB · %7: %8% (longest idle %9 s)").arg(trStr(lang(), "benchCpuUse"))
+      .arg(f1(res["cpuProcMean"].toDouble())).arg(f1(res["cpuProcMax"].toDouble())).arg(f2(res["cpuProcStd"].toDouble()))
+      .arg(trStr(lang(), "benchMemMax")).arg((qulonglong)res["memMBMax"].toDouble())
+      .arg(trStr(lang(), "benchGpuDuty")).arg(f1(res["gpuDutyPct"].toDouble()))
+      .arg(f1(res["gpuLongestIdleMs"].toDouble() / 1000.0));
+  lines << QString("%1: candidates %2, pairs %3, groups %4, reduction %5% (GPU imgs %6, fallback %7)").arg(trStr(lang(), "benchMatches"))
+      .arg((qulonglong)mat["candidates"].toDouble()).arg((qulonglong)mat["pairs"].toDouble())
+      .arg((qulonglong)mat["groups"].toDouble()).arg(f1(mat["reductionPct"].toDouble()))
+      .arg((qulonglong)mat["gpuImages"].toDouble()).arg((qulonglong)mat["gpuFallback"].toDouble());
+  lines << QString("%1 (img):").arg(trStr(lang(), "benchSlow"));
+  int shown = 0;
+  for (const auto& v : imgs["slowest"].toArray()) {
+    if (shown++ >= 5) break;
+    const QJsonObject o = v.toObject();
+    lines << QString("  %1 ms  %2").arg(f1(o["ms"].toDouble())).arg(o["path"].toString());
+  }
+  lines << QString("%1 (vid):").arg(trStr(lang(), "benchSlow"));
+  shown = 0;
+  for (const auto& v : vids["slowest"].toArray()) {
+    if (shown++ >= 5) break;
+    const QJsonObject o = v.toObject();
+    lines << QString("  %1 ms  %2").arg(f1(o["ms"].toDouble())).arg(o["path"].toString());
+  }
+  lines << QString("build %1 · engine %2 · db %3 · d=%4 %5GPU")
+      .arg(meta["build"].toString()).arg(meta["engine"].toString()).arg(meta["db"].toString())
+      .arg(cfg["distance"].toInt()).arg(cfg["gpuEnabled"].toBool() ? QString() : "no-");
+  QDialog dlg(this);
+  dlg.setWindowTitle(trStr(lang(), "benchTitle"));
+  auto* lay = new QVBoxLayout(&dlg);
+  auto* view = new QTextBrowser(&dlg);
+  view->setText(lines.join('\n'));
+  lay->addWidget(view);
+  auto* btns = new QHBoxLayout();
+  auto* save = new QPushButton(trStr(lang(), "benchSave"), &dlg);
+  auto* close = new QPushButton(trStr(lang(), "benchClose"), &dlg);
+  btns->addStretch();
+  btns->addWidget(save);
+  btns->addWidget(close);
+  lay->addLayout(btns);
+  connect(save, &QPushButton::clicked, this, [this, json, meta]() {
+    QString name = QString("benchmark-%1.json").arg(meta["startedAt"].toString().remove(':'));
+    const QString path = QFileDialog::getSaveFileName(this, trStr(lang(), "benchSave"),
+        QCoreApplication::applicationDirPath() + "/" + name, "JSON (*.json)");
+    if (path.isEmpty()) return;
+    QFile f(path);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(json.toUtf8()) >= 0)
+      statusMsg_->setText(trStr(lang(), "benchSaved") + path);
+    else
+      statusMsg_->setText(trStr(lang(), "benchSaveFail"));
+  });
+  connect(close, &QPushButton::clicked, &dlg, &QDialog::accept);
+  dlg.resize(620, 480);
+  dlg.exec();
 }
 void MainWindow::scanFinished(QString msg) {
   drainMatches();

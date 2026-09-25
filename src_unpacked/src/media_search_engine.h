@@ -6,6 +6,7 @@
 #include "video_fingerprint.h"
 #include "index_manager.h"
 #include "candidate_index.h"
+#include "benchmark.h"
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -43,6 +44,8 @@ struct ScanControl {
   std::unordered_set<std::string> ignoredPaths;
   // Kind selection: set false to skip images or videos entirely (GUI option).
   bool scanImages=true, scanVideos=true;
+  double revalidateMs=0;
+  std::string buildVersion;
 };
 class MediaSearchEngine {
 public:
@@ -91,10 +94,13 @@ const std::vector<MediaFile>& files() const { return files_; }
   // batches. Reset to 0 at the start of every scan().
   std::uint64_t gpuImagesProcessed() const { return gpuImagesProcessed_.load(); }
   bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
+  bool hasBenchmark() const { return bench_.hasData(); }
+  std::string benchmarkJson() const { return bench_.toJson(); }
 private:
   Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
   std::atomic<bool> gpuActive_{false};
+  BenchmarkRecorder bench_;
  std::vector<FileState> candidateStates_;
  CandidateIndex imageCandidates_;
  CandidateIndex videoCandidates_;

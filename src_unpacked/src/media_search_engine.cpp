@@ -170,14 +170,25 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
   const bool videoRegrid=(db_.samplingGeneration()!=kSamplingGeneration);
  const bool hasIgnored=control && !control->ignoredPaths.empty();
- const int workers=recommended_worker_count(policy_,static_cast<int>(std::thread::hardware_concurrency()));
- const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
+  const int workers=recommended_worker_count(policy_,static_cast<int>(std::thread::hardware_concurrency()));
+  const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
+  const auto benchT0=std::chrono::steady_clock::now();
+  auto benchMsSince=[&](){ return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchT0).count(); };
+  MediaPipeline imagePipeline;
+  BenchmarkConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable();
+  bench_.start(bcfg);
+  bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
+  if(control) bench_.addRevalidateMs(control->revalidateMs);
+  auto finishScan=[&](bool completed)->SearchReport{
+    bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
+    return r;
+  };
+  bool benchWalkTimed=false;
  const std::string excl = managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{};
  std::size_t done=0, scanned=0, nAdded=0, nModified=0, nUnchanged=0, nRemoved=0;
  std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
- std::unordered_map<std::string,FileState> currentByPath;
- MediaPipeline imagePipeline;
- ScanPipeline livePipe;
+  std::unordered_map<std::string,FileState> currentByPath;
+  ScanPipeline livePipe;
  auto liveEmit=[&](const MediaMatch& m){
   if(!control || !control->onMatch) return;
   const auto& lf=livePipe.files();
@@ -206,8 +217,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // grayscale frames, then hash them in bounded GPU batches. If CUDA is absent,
  // MediaPipeline transparently executes the same CPU pHash reference path.
  // Single DB connection: only this thread touches db_/files_/r.
- auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
-  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch,&gpuActive_);
+  auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
+  const auto bt0=std::chrono::steady_clock::now();
+  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch,&gpuActive_,&bench_);
+  bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
   for(const auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
    if(it==currentByPath.end()) continue;
@@ -223,11 +236,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){
    FileState x=changedVideos[k];
-   futs.emplace_back(std::async(std::launch::async,[x,this](){
-    AnalysisJob j{x,false,true}; VideoFingerprint vf;
-    if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; std::uint64_t h=0,mh=0; for(auto v:vf.hashes) h^=v; for(auto v:vf.mirrorHashes) mh^=v; j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=h!=0; }
-    return j;
-   }));
+    futs.emplace_back(std::async(std::launch::async,[x,this](){
+     AnalysisJob j{x,false,true}; VideoFingerprint vf;
+     const auto vt0=std::chrono::steady_clock::now();
+     if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; std::uint64_t h=0,mh=0; for(auto v:vf.hashes) h^=v; for(auto v:vf.mirrorHashes) mh^=v; j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=h!=0; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); }
+     return j;
+    }));
   }
   for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;MediaFile mf{j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
   if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
@@ -258,8 +272,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    } else {
     FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(std::move(v));
     while(!failed && changedVideos.size()-videoBase>=static_cast<std::size_t>(workers)){
+     const auto vt0=std::chrono::steady_clock::now();
      if(!processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers))) failed=true;
      else videoBase+=static_cast<std::size_t>(workers);
+     bench_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
     }
    }
    if(!failed && scanned-lastCommitScanned>=1000){ if(!checkpoint()) failed=true; }
@@ -283,32 +299,34 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(!queue.empty()){ x=std::move(queue.front()); queue.pop(); have=true; } }
   if(have) processOne(std::move(x));
   if(stopped(control)) cancelled=true;
-  else if(walkDone.load() && queue.empty()){ walkCompleted=true; break; }
+  else if(walkDone.load() && queue.empty()){ if(!benchWalkTimed){ benchWalkTimed=true; bench_.addWalkMs(benchMsSince()); } walkCompleted=true; break; }
  }
  if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
- while(!failed && !cancelled && videoBase<changedVideos.size()){
-  const std::size_t n=std::min(static_cast<std::size_t>(workers),changedVideos.size()-videoBase);
-  if(stopped(control)){ cancelled=true; break; }
-  if(!processVideoRange(videoBase,videoBase+n)) failed=true; else videoBase+=n;
- }
+  while(!failed && !cancelled && videoBase<changedVideos.size()){
+   const std::size_t n=std::min(static_cast<std::size_t>(workers),changedVideos.size()-videoBase);
+   if(stopped(control)){ cancelled=true; break; }
+   const auto vt0=std::chrono::steady_clock::now();
+   if(!processVideoRange(videoBase,videoBase+n)) failed=true; else videoBase+=n;
+   bench_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
+  }
  walker.join();
- if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return r; }
+  if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return finishScan(false); }
  // Deleted detection needs the complete seen set: only on fully walked scans.
  // Previously indexed files that no longer exist are removed then. Ignored rows
  // are retained in the database (they reappear only when unignored and rescanned).
  if(walkCompleted){
   for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ failed=true; break; } ++nRemoved; }
  }
- if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return r; }
+  if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return finishScan(false); }
  // Persist everything done so far, including on cancel: partial progress is
  // kept by design (checkpoints), so interruption never loses the file list.
- if(!checkpoint()){ r.completed=false; return r; }
+  if(!checkpoint()){ r.completed=false; return finishScan(false); }
  r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged;
  r.removed=nRemoved;
  if(cancelled||(control&&control->cancel.load())) r.completed=false;
  // Final commit also closes the trailing transaction checkpoint() reopened:
  // leaving it open would make the *next* scan's BEGIN fail and return empty.
- if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); r.completed=false; return r; }
+  if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); r.completed=false; return finishScan(false); }
  candidateStates_=db_.all(); rebuildCandidateIndexes();
  // Unchanged files must participate in every incremental search.
   files_.clear();
@@ -331,6 +349,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     return control->cancel.load();
   };
   ScanStats st;
+  const auto benchAT0=std::chrono::steady_clock::now();
   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
@@ -346,6 +365,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       }
     }
   }, stopCheck);
+  bench_.addAnalyzeMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchAT0).count());
   // A stop during analyze() aborts the pair loops above (partial matches were
   // already streamed via onMatch); mark the report incomplete like every
   // other stop path. analyze() itself never propagates. Only completed scans
@@ -353,6 +373,6 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
   else if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_);
   if(r.completed) db_.setSamplingGeneration(kSamplingGeneration);
-  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; return r;
+  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; return finishScan(r.completed);
 }
 }
