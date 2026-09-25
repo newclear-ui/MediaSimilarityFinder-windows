@@ -274,7 +274,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.5\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.5\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.6\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.6\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -614,7 +614,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.5"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.6"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -984,7 +984,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.5"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.6"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1106,6 +1106,9 @@ void MainWindow::startScan() {
     }
   }
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; thread_ = nullptr; worker_ = nullptr; }
+  flushThumbPending();
+  thumbStatMem_ = thumbStatDisk_ = thumbStatEngine_ = 0;
+  thumbStatShell_ = thumbStatDecode_ = thumbStatPlace_ = thumbStatFail_ = 0;
   groups_.clear(); pathGroup_.clear(); pathParent_.clear();
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear(); thumbFail_.clear();
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
@@ -1308,6 +1311,10 @@ void MainWindow::scanFinished(QString msg) {
   drainMatches();
   if (thumbDbOpen_) thumbDb_.pruneThumbs(); // drop thumbs of files gone from the index
   scanLog(QString("finish %1").arg(msg));
+  scanLog(QString("thumbStat mem=%1 disk=%2 engine=%3 shell=%4 decode=%5 place=%6 fail=%7 pending=%8")
+      .arg(thumbStatMem_).arg(thumbStatDisk_).arg(thumbStatEngine_).arg(thumbStatShell_)
+      .arg(thumbStatDecode_).arg(thumbStatPlace_).arg(thumbStatFail_).arg((qulonglong)thumbPending_.size()));
+  flushThumbPending();
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail();
   if (msg.startsWith(QStringLiteral("CANCELLED"))) {
     // Partial progress is kept by design (checkpoints): report what survived.
@@ -1499,7 +1506,7 @@ void MainWindow::refreshStreaming(bool force) {
   // immediately regardless of the gate.
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   const qint64 interval = std::clamp(lastFillCostMs_ * 3, (qint64)600, (qint64)3000);
-  if ((force || (matchSeq_ != lastFillSig_ && now - lastFillMs_ >= interval))) {
+  if ((force || thumbStarved_ || (matchSeq_ != lastFillSig_ && now - lastFillMs_ >= interval))) {
     rebuildGroups();
     lastFillSig_ = matchSeq_; lastFillMs_ = now;
     QElapsedTimer t; t.start();
@@ -1943,7 +1950,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // sizes would keep cells uneven.
   const QString key = path + '|' + QString::number(size.width()) + 'x' + QString::number(size.height());
   auto tc = thumbCache_.find(key);
-  if (tc != thumbCache_.cend()) return tc.value();
+  if (tc != thumbCache_.cend()) { ++thumbStatMem_; return tc.value(); }
   // Disk cache first: a fast indexed read, no budget spent. Thumbs decoded in
   // any earlier scan reappear instantly on rescan instead of re-burning the
   // per-tick budget (the reason loaded groups showed generic icons).
@@ -1957,6 +1964,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     if (thumbDb_.getThumb(path.toStdString(), mtime, fsize, bytes)) {
       const QImage disk = QImage::fromData(bytes.data(), (int)bytes.size());
       if (!disk.isNull()) {
+        ++thumbStatDisk_;
         QIcon ic = QIcon(squareFittedPixmap(QPixmap::fromImage(disk), size));
         thumbCache_[key] = ic;
         if (thumbCache_.size() > 3000) {
@@ -1970,7 +1978,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // Skip-list (Similarity-inspired): a path whose heavy decode already failed
   // returns the cheap file-type icon immediately without spending the shared
   // per-tick budget, so corrupt/undecodable files cannot starve live thumbs.
-  if (thumbFail_.contains(path)) return placeholderIcon(path);
+  if (thumbFail_.contains(path)) { ++thumbStatPlace_; return placeholderIcon(path); }
   // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
   // block the GUI thread for milliseconds-to-seconds. Over budget, return a
   // cheap file-type icon WITHOUT caching it, so the real thumb is retried on
@@ -1980,6 +1988,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   if (!bypassBudget) {
     if (thumbBudget_ <= 0) {
       thumbStarved_ = true;
+      ++thumbStatPlace_;
       return placeholderIcon(path);
     }
     --thumbBudget_;
@@ -2000,7 +2009,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
       const QImage im = gray
           ? QImage(px.data(), 48, 48, 48, QImage::Format_Grayscale8).copy()
           : QImage(px.data(), pw, ph, pw * 4, QImage::Format_ARGB32).copy();
-      if (!im.isNull()) pm = QPixmap::fromImage(im);
+      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im); }
     }
   }
   // Shell thumbnail cache is the fast lane: Explorer already stored a rendered
@@ -2012,7 +2021,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   if (bypassBudget || shellBudget_ > 0) {
     if (!bypassBudget) --shellBudget_;
     const QImage shell = shellThumbnailImage(path);
-    if (!shell.isNull()) pm = QPixmap::fromImage(shell);
+    if (!shell.isNull()) { ++thumbStatShell_; pm = QPixmap::fromImage(shell); }
   }
   if (pm.isNull()) {
     if (isVideoExt(path)) {
@@ -2023,6 +2032,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
         if (dec.frameAtColor(0.5, dim, dim, cf) && cf.rgb.size() == (size_t)cf.width * cf.height * 3 && cf.width > 0 && cf.height > 0) {
           QImage im(cf.rgb.data(), cf.width, cf.height, cf.width * 3, QImage::Format_RGB888);
           pm = QPixmap::fromImage(im.copy());
+          ++thumbStatDecode_;
         }
         dec.close();
       }
@@ -2045,7 +2055,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
           im = QImage(c.bgra.data(), c.width, c.height, c.width * 4, QImage::Format_ARGB32).copy();
         }
       }
-      if (!im.isNull()) pm = QPixmap::fromImage(im);
+      if (!im.isNull()) { ++thumbStatDecode_; pm = QPixmap::fromImage(im); }
     }
   }
   QIcon ic;
@@ -2059,13 +2069,21 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
       QImage store = squareFittedPixmap(pm, QSize(192, 192)).toImage();
       QByteArray ba; QBuffer buf(&ba); buf.open(QIODevice::WriteOnly);
       if (buf.isOpen() && store.save(&buf, "JPG", 70) && !ba.isEmpty()) {
-        std::vector<unsigned char> v(ba.cbegin(), ba.cend());
-        thumbDb_.putThumb(path.toStdString(), mtime, fsize, v);
+        if (scanning_) {
+          if (thumbPending_.size() < 1000)
+            thumbPending_.push_back({path.toStdString(), mtime, fsize,
+                                     std::vector<unsigned char>(ba.cbegin(), ba.cend())});
+        } else {
+          std::vector<unsigned char> v(ba.cbegin(), ba.cend());
+          thumbDb_.putThumb(path.toStdString(), mtime, fsize, v);
+        }
       }
     }
   } else {
     ic = placeholderIcon(path);
+    ++thumbStatPlace_;
     if (!scanning_) {
+      ++thumbStatFail_;
       if (thumbFail_.size() > 2000) {
         auto it = thumbFail_.begin();
         for (int n = 0; n < 500 && it != thumbFail_.end(); ++n) it = thumbFail_.erase(it);
@@ -2083,6 +2101,11 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   }
   thumbCache_[key] = ic;
   return ic;
+}
+void MainWindow::flushThumbPending() {
+  if (thumbPending_.empty() || !thumbDbOpen_) { thumbPending_.clear(); return; }
+  for (const auto& p : thumbPending_) thumbDb_.putThumb(p.path, p.modified, p.size, p.jpeg);
+  thumbPending_.clear();
 }
 void MainWindow::setViewMode(int i) {
   viewGrid_->setChecked(i == 0); viewList_->setChecked(i == 1);

@@ -14,6 +14,8 @@
 #include <QSet>
 #include <atomic>
 #include <memory>
+#include <string>
+#include <vector>
 #include "../src/media_search_engine.h"
 #include "../src/database.h"
 #include "../src/resource_policy.h"
@@ -218,6 +220,11 @@ private:
   mutable int shellBudget_ = 0;
   mutable bool thumbStarved_ = false;
   int thumbFollowUps_ = 0;
+  struct PendingThumb { std::string path; std::int64_t modified; std::uint64_t size; std::vector<unsigned char> jpeg; };
+  mutable std::vector<PendingThumb> thumbPending_;
+  void flushThumbPending();
+  mutable qulonglong thumbStatMem_ = 0, thumbStatDisk_ = 0, thumbStatEngine_ = 0;
+  mutable qulonglong thumbStatShell_ = 0, thumbStatDecode_ = 0, thumbStatPlace_ = 0, thumbStatFail_ = 0;
   QSet<QString> ignored_;
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar

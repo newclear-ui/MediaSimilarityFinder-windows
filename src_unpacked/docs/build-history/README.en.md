@@ -99,6 +99,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.3.3 | Progressive group thumbnails |
 | 0.9.3.4 | Always-on benchmark log, log button, scroll fix |
 | 0.9.3.5 | Engine thumbnail reuse + scroll jump fix |
+| 0.9.3.6 | Thumbnail DB contention fix + stall fills |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
