@@ -43,7 +43,7 @@ int main(){
  auto media=(d/"x.mp4").string(); std::ofstream(d/"x.mp4")<<"not a video";
  sqlite3* raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 2;
  sqlite3_stmt* info=nullptr; bool hasVersion=false; if(sqlite3_prepare_v2(raw,"PRAGMA table_info(video_fingerprint_cache)",-1,&info,nullptr)!=SQLITE_OK)return 3; while(sqlite3_step(info)==SQLITE_ROW){const unsigned char*n=sqlite3_column_text(info,1);if(n&&std::string(reinterpret_cast<const char*>(n))=="cache_version")hasVersion=true;}sqlite3_finalize(info);if(!hasVersion)return 4;
-   if(!insert_seed(raw,media,8))return 5; sqlite3_close(raw);
+   if(!insert_seed(raw,media,9))return 5; sqlite3_close(raw);
   msf::VideoFingerprint out; if(!e.build(media,out)||out.hashes.size()!=3||out.mirrorHashes.size()!=3||out.crop4x3!=11||out.crop1x1!=22||out.crop9x16!=33||out.mirrorCrop4x3!=44||out.mirrorCrop1x1!=55||out.mirrorCrop9x16!=66)return 6;
   if(out.thumb48.size()!=3*(std::size_t)48*48||out.thumb48[0]!=0||out.thumb48[48*48]!=64)return 6;
   msf::VideoFingerprint fb; msf::VideoCropFingerprint fc;

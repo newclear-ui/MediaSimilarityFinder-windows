@@ -236,11 +236,10 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
   VideoFingerprint built; auto plan=make_sample_plan(i.duration);
   std::vector<VideoFrame> frames32, frames96;
-  if(!d.framesAt(plan.timestamps,32,32,frames32)){d.close();return false;}
-  // The crop pass uses the same timestamp list but a larger decode. This remains a
-  // second resolution pass; each pass itself is a single sequential decode rather than
-  // one seek per timestamp.
-  d.framesAt(plan.timestamps,96,96,frames96);
+  // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
+  // full-file sweep cost ~50% of build time on decode-bound files (each sweep
+  // is a single sequential decode, never one seek per timestamp).
+  if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32)){d.close();return false;}
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats);
   d.close();if(built.hashes.empty())return false;
   memoryStore(p,sz,mt,built,nullptr);savePersistent(p,sz,mt,built,nullptr);o=std::move(built);return true;
@@ -255,8 +254,12 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
   const int size=std::max(32,std::min(192,decodeSize));
   auto plan=make_sample_plan(i.duration);
   std::vector<VideoFrame> frames32, framesHi;
-  if(!d.framesAt(plan.timestamps,32,32,frames32)){d.close();return false;}
-  d.framesAt(plan.timestamps,size,size,framesHi);
+  if(size==96){
+   if(!d.framesAt96Plus32(plan.timestamps,framesHi,frames32)){d.close();return false;}
+  } else {
+   if(!d.framesAt(plan.timestamps,32,32,frames32)){d.close();return false;}
+   d.framesAt(plan.timestamps,size,size,framesHi);
+  }
   d.close();
   VideoCropFingerprint cHi;
    processVideoFrames(frames32,size==96?framesHi:std::vector<VideoFrame>(),i.duration,b,size==96?&cHi:nullptr,nullptr,nullptr,nullptr);

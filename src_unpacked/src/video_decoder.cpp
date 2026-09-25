@@ -154,6 +154,24 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
 #endif
 }
 
+bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32){
+    out96.clear(); out32.clear();
+    if(!framesAt(seconds,96,96,out96)) return false;
+    out32.reserve(out96.size());
+    for(const auto& f:out96){
+        if(f.width!=96||f.height!=96||f.gray.size()!=(std::size_t)96*96) continue;
+        VideoFrame d; d.timestamp=f.timestamp; d.width=32; d.height=32;
+        d.gray.resize((std::size_t)32*32);
+        for(int y=0;y<32;++y)for(int x=0;x<32;++x){
+            unsigned s=0;
+            for(int dy=0;dy<3;++dy)for(int dx=0;dx<3;++dx) s+=f.gray[(std::size_t)(y*3+dy)*96+x*3+dx];
+            d.gray[(std::size_t)y*32+x]=(std::uint8_t)((s+4)/9);
+        }
+        out32.push_back(std::move(d));
+    }
+    return !out32.empty();
+}
+
 void VideoDecoder::close(){
 #ifdef MSF_HAS_FFMPEG
     if(codec_){auto*p=reinterpret_cast<AVCodecContext*>(codec_);avcodec_free_context(&p);codec_=nullptr;}

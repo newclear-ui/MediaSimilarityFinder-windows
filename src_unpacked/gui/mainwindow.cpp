@@ -280,7 +280,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
   if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.16\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.16\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.17\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.17\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -657,7 +657,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.16"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.17"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -1031,7 +1031,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.16"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.17"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -2364,7 +2364,17 @@ void MainWindow::refreshDetail() {
   detailForm_->addRow(trStr(lang(), "created"),
                       new QLabel(fi.birthTime().isValid() ? fi.birthTime().toString("yyyy-MM-dd hh:mm:ss") : "-", this));
   detailForm_->addRow(trStr(lang(), "resolution"), new QLabel(fileResolution(currentFile_), this));
-  const double dur = fileDur_.value(currentFile_, 0.0);
+  double dur = fileDur_.value(currentFile_, 0.0);
+  if (dur <= 0 && worker_) {
+    // Live or cancelled scans never reach onResults, so fileDur_ stays empty
+    // and the row shows "-". Fall back to the engine file list (cached).
+    for (const auto& f : worker_->scanEngine().files())
+      if (QString::fromStdString(f.path) == currentFile_ && f.duration > 0) {
+        dur = f.duration;
+        fileDur_[currentFile_] = dur;
+        break;
+      }
+  }
   detailForm_->addRow(trStr(lang(), "duration"),
                       new QLabel(dur > 0 ? QString("%1:%2").arg(int(dur) / 60, 2, 10, QChar('0')).arg(int(dur) % 60, 2, 10, QChar('0')) : "-", this));
   detailForm_->addRow(trStr(lang(), "similarity"),

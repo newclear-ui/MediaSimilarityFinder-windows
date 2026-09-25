@@ -55,7 +55,7 @@ private:
  mutable void* loadStmt_=nullptr;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
-  static constexpr int kCacheFormatVersion=8;
+   static constexpr int kCacheFormatVersion=9;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
   void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
