@@ -159,30 +159,26 @@ This marks the start of:
 
 This is an internal development minor-line transition, not the semantic-versioning 1.x major release.
 
-## 10. Implementation stages
+## 10. Relationship to the Development Roadmap
 
-### 0.9.4.0
-- clean up GPU backend naming/abstraction
-- finalize CPU/GPU Resource Modes
-- remove manual GPU utilization control
-- implement the basic Adaptive Scheduler layer
-- define INI performance-profile schema
-- rename GPU build entry points
-- reconnect the existing CUDA backend without changing its algorithm
-- CPU/GPU regression coverage
+This document defines the detailed GPU backend direction. The actual implementation order and recovery rules are governed by `docs/development-roadmap.en.md`.
 
-### Later 0.9.4.x
-- richer runtime telemetry
-- pipeline scheduling
-- adaptive video-decode planner
-- Vulkan capability/discovery pilot
-- NVDEC backend separation/integration
-- HIP/ROCm prototype where justified
-- Level Zero prototype where justified
+A Foundation
+   -> B Adaptive Scheduler
+   -> C Calibration
+   -> D Pipeline / Queue
+   -> E Adaptive Video Decode Planner
+   -> F Hardware Decode Backend (NVDEC first)
+   -> G Vulkan / HIP-ROCm / Level Zero
+   -> H Regression / Validation
 
-Every backend must be independently validated. Adding one backend must not break CPU fallback or other GPU backends.
+Each backend proceeds only after the current node exit criteria are satisfied.
+
+When problems occur, use F1/F2/F3-style recovery branches and return to the same node gate after resolution.
 
 ## 11. Prohibitions
+
+
 
 - Do not use CUDA as the generic name for the entire GPU system.
 - Do not assume Vulkan is automatically optimal on every GPU.
