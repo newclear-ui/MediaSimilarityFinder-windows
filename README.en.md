@@ -41,23 +41,15 @@ Intel and AMD integrated/discrete GPUs use the same common GPU abstraction. Actu
 
 The 0.9.4.x redesign updates benchmarking as a first-class architecture layer. It records scheduler decisions, calibration, backend/decoder selection, fallback reasons, queue/transfer costs, detailed video decode stages, and explicit measurement states. Unmeasured values are not written as zero.
 
-## Current / Next Development Line
-
-Current validated code line: **0.9.3.19**
-
-Next structural development line: **0.9.4.x**
-
-Recommended first transition build: **0.9.4.0**
-
 ## Development Documentation Model
 
-The 0.9.4 development line separates development stages from build numbers.
+The 0.9.4 development line uses the A→B→C Development Roadmap rather than assigning roadmap stages to fixed version numbers.
 
 - Development Roadmap: `src_unpacked/docs/development-roadmap.en.md`
 - Development Progress: `src_unpacked/docs/development-progress.en.md`
 - Build History: `src_unpacked/docs/build-history/`
 
-Roadmap nodes A/B/C are not version numbers. Validated code states advance according to actual progress.
+Roadmap nodes are directional stages, not version numbers. Versions advance when validated code states are actually established.
 
 ## Detailed Architecture
 
