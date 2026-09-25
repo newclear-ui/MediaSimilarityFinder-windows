@@ -164,30 +164,26 @@ build-windows-cuda에서 build-windows-gpu로 이름을 바꾸는 것은 0.9.4.x
 
 이것은 semantic versioning의 major 1.x 전환이 아니라 프로젝트 내부 개발 마이너 라인의 구조적 전환이다.
 
-## 10. 구현 단계
+## 10. Development Roadmap과의 관계
 
-### 0.9.4.0
-- GPU backend naming/abstraction 정리
-- CPU/GPU Resource Mode 확정
-- GPU usage manual control 제거
-- Adaptive Scheduler 기본 계층
-- INI performance profile schema
-- build naming 변경
-- CUDA backend를 기존 동작 그대로 연결
-- CPU/GPU regression tests
+이 문서는 GPU backend의 상세 방향을 정의하고, 실제 구현 순서와 recovery 규칙은 `docs/development-roadmap.ko.md`가 관리합니다.
 
-### 0.9.4.x 후속
-- runtime telemetry 정밀화
-- pipeline scheduling
-- adaptive video decode planner
-- Vulkan capability/discovery pilot
-- NVDEC backend 분리/연결
-- 필요 시 HIP/ROCm backend prototype
-- 필요 시 Level Zero backend prototype
+A Foundation
+   -> B Adaptive Scheduler
+   -> C Calibration
+   -> D Pipeline / Queue
+   -> E Adaptive Video Decode Planner
+   -> F Hardware Decode Backend (NVDEC first)
+   -> G Vulkan / HIP-ROCm / Level Zero
+   -> H Regression / Validation
 
-각 backend는 독립적으로 검증하며, 하나의 backend 추가 때문에 CPU fallback이나 다른 GPU backend가 깨지지 않아야 한다.
+Backend별 구현은 해당 node의 완료조건을 만족한 뒤 다음 node로 넘어갑니다.
+
+문제 발생 시 F1/F2/F3 같은 recovery branch를 사용하고 해결 후 동일 node gate로 복귀합니다.
 
 ## 11. 금지 사항
+
+
 
 - CUDA 이름을 제품 전체 GPU의 일반명처럼 사용하지 않는다.
 - Vulkan을 모든 GPU에서 자동으로 최적이라고 가정하지 않는다.
