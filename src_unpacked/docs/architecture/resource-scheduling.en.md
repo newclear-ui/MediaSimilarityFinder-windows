@@ -289,7 +289,9 @@ Measurements that are disabled or unavailable must not be encoded as numeric zer
 
 See [Benchmark and Runtime Telemetry Roadmap](benchmark-telemetry-roadmap.en.md) for the detailed benchmark design.
 
-### Additional 0.9.4.0 requirements
+### Shared benchmark conditions for the Development Roadmap
+
+These are validated as exit criteria for the corresponding roadmap node rather than being assigned to a fixed build number.
 
 - benchmark schemaVersion
 - measured / not_measured / not_available / partial / failed / fallback states
