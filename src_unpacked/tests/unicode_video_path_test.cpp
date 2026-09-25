@@ -32,14 +32,17 @@ int main() {
       "ja_\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E",
       "zh_\xE4\xB8\xAD\xE6\x96\x87",
       "ar_\xD8\xB9\xD8\xB1\xD8\xA8\xD9\x8A",
-      "ko_\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4"};
+      "ko_\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4",
+      "ru_\xD1\x82\xD0\xB5\xD1\x81\xD1\x82",
+      "he_\xD7\x91\xD7\x91\xD7\x99\xD7\xAA",
+      "th_\xE0\xB8\x97\xE0\xB8\x94\xE0\xB8\xAA\xE0\xB8\xAD\xE0\xB8\x9A"};
   msf::GpuBackend gpu;
   const bool gpuAvailable = gpu.available();
   for (const auto& label : labels) {
     const auto dir = root / u8path(label);
     fs::create_directories(dir, ec);
-    const auto a = dir / u8path(label + "_a.mp4");
-    const auto b = dir / u8path(label + "_b.mp4");
+    const auto a = dir / u8path(label + " [sample] (a).mp4");
+    const auto b = dir / u8path(label + " [sample] (b).mp4");
     fs::copy_file(source, a, fs::copy_options::overwrite_existing, ec);
     if (ec) return 2;
     fs::copy_file(source, b, fs::copy_options::overwrite_existing, ec);

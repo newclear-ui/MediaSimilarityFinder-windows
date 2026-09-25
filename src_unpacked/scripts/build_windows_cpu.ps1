@@ -1,6 +1,7 @@
 param(
     [string]$VcpkgRoot = $(if ($env:VCPKG_ROOT) { $env:VCPKG_ROOT } else { 'C:\src\vcpkg' }),
-    [string]$BuildDir = 'build-windows-cpu'
+    [string]$BuildDir = 'build-windows-cpu',
+    [int]$BuildParallelism = 1
 )
 $ErrorActionPreference = 'Stop'
 
@@ -34,7 +35,7 @@ $args = @(
 & cmake @args
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 
-& cmake --build $BuildDir --config Release --parallel
+& cmake --build $BuildDir --config Release --parallel $BuildParallelism
 if ($LASTEXITCODE -ne 0) { throw 'Windows Release build failed.' }
 
 & ctest --test-dir $BuildDir -C Release --output-on-failure

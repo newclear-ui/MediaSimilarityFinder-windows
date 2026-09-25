@@ -52,7 +52,8 @@
 
 ## 빌드/테스트
 
-- `scripts/build_windows_cuda.ps1 -VcpkgRoot C:\src\vcpkg` — CUDA 빌드.
+- `scripts/build_windows_cuda.ps1 -VcpkgRoot C:\src\vcpkg` — CUDA 빌드(기본 직렬 후처리; 필요 시 `-BuildParallelism` 지정).
+- `scripts/build_windows_cpu.ps1` — CUDA OFF CPU 빌드/CTest(기본 직렬 후처리; 필요 시 `-BuildParallelism` 지정).
 - 현재 `CMakeLists.txt`에는 **60개 CTest**가 등록되어 있다.
 - `MediaSimilarityFinder.exe --smoke` (offscreen), `--version` — GUI 스모크/버전 확인.
 - 버전 상향 파일(검색용): `CMakeLists.txt`, `vcpkg.json`, `gui/main.cpp`, `scripts/package_portable.ps1`, `src/index_manager.cpp`.

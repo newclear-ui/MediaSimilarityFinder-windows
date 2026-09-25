@@ -27,7 +27,7 @@ static bool insert_seed(sqlite3* raw,const std::string& media,int version){
   std::uint32_t thumbCount=3; std::memcpy(c,&thumbCount,sizeof(thumbCount)); c+=sizeof(thumbCount);
   for(int i=0;i<3;++i){ for(std::size_t k=0;k<kPx;++k) *c++=(char)((i*64+k)&0xFF); }
   std::uint32_t cropCount=3; std::memcpy(c,&cropCount,sizeof(cropCount)); c+=sizeof(cropCount);
-  for(int i=0;i<3;++i){const std::uint64_t ch[6]={101+i,201+i,301+i,401+i,501+i,601+i}; for(auto h:ch){std::memcpy(c,&h,sizeof(h));c+=sizeof(h);}}
+  for(int i=0;i<3;++i){const std::uint64_t n=static_cast<std::uint64_t>(i); const std::uint64_t ch[6]={101+n,201+n,301+n,401+n,501+n,601+n}; for(auto h:ch){std::memcpy(c,&h,sizeof(h));c+=sizeof(h);}}
   std::uint32_t cropTsCount=3; std::memcpy(c,&cropTsCount,sizeof(cropTsCount)); c+=sizeof(cropTsCount);
   for(int i=0;i<3;++i){double t=i*2.0;std::memcpy(c,&t,sizeof(t));c+=sizeof(t);}
  sqlite3_stmt* st=nullptr; const char*q="INSERT OR REPLACE INTO video_fingerprint_cache(path,size,modified,quick_hash,duration,step_count,cache_version,payload) VALUES(?,?,?,?,?,?,?,?)";

@@ -1,6 +1,7 @@
 param(
   [string]$VcpkgRoot = $env:VCPKG_ROOT,
-  [string]$BuildDir = "build-windows-cuda"
+  [string]$BuildDir = "build-windows-cuda",
+  [int]$BuildParallelism = 1
 )
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -39,7 +40,7 @@ cmake -S $projectRoot -B $BuildDir -G "Visual Studio 18 2026" -A x64 `
   -DMSF_ENABLE_CUDA=ON -DMSF_CUDA_ARCHITECTURES="75;86;89" `
   -DMSF_ENABLE_FFMPEG=ON -DMSF_BUILD_GUI=ON -DMSF_BUILD_TESTS=ON
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
-cmake --build $BuildDir --config Release --parallel
+cmake --build $BuildDir --config Release --parallel $BuildParallelism
 if ($LASTEXITCODE -ne 0) { throw "Release build failed: $LASTEXITCODE" }
 ctest --test-dir $BuildDir -C Release --output-on-failure
 if ($LASTEXITCODE -ne 0) { throw "CTest failed: $LASTEXITCODE" }

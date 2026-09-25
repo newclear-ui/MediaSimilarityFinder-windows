@@ -9,6 +9,8 @@
 - Last completed v0.9.3.13 build: Core + GUI Release build PASS
 - Last completed v0.9.3.13 test run: **CTest 60/60 PASS**
 - Last completed v0.9.3.13 validation: RTX 3080 Ti video CUDA probe PASS; multilingual video-path regression PASS; Portable smoke exit 0
+- CPU-only validation: Release build PASS; **CTest 59/59 PASS**; CUDA disabled and CPU fallback verified
+- Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in
 - candidatePairs exhaustive correctness regression: PASS
 - candidatePairs benchmark: PASS (environment-dependent timing; see build history)
 - Bucket-heavy benchmark: PASS ??5k / 12,497,500 pairs; streaming ScanPipeline path avoids materializing candidate-pair vectors
