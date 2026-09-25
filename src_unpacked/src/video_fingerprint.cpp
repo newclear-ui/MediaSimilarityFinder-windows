@@ -9,13 +9,15 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 namespace msf {
 static sqlite3* VDB(void* p){return reinterpret_cast<sqlite3*>(p);}
+static std::string quickIdentity(const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
 bool VideoFingerprintEngine::preparePersistentStatements() const{
  sqlite3* db=VDB(cacheDb_); if(!db)return false;
- const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND cache_version=?";
- const char* saveSql="INSERT INTO video_fingerprint_cache(path,size,modified,duration,step_count,cache_version,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET size=excluded.size,modified=excluded.modified,duration=excluded.duration,step_count=excluded.step_count,cache_version=excluded.cache_version,payload=excluded.payload";
+  const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND quick_hash=? AND cache_version=?";
+  const char* saveSql="INSERT INTO video_fingerprint_cache(path,size,modified,quick_hash,duration,step_count,cache_version,payload) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET size=excluded.size,modified=excluded.modified,quick_hash=excluded.quick_hash,duration=excluded.duration,step_count=excluded.step_count,cache_version=excluded.cache_version,payload=excluded.payload";
  sqlite3_stmt* load=nullptr; sqlite3_stmt* save=nullptr;
  if(sqlite3_prepare_v2(db,loadSql,-1,&load,nullptr)!=SQLITE_OK)return false;
  if(sqlite3_prepare_v2(db,saveSql,-1,&save,nullptr)!=SQLITE_OK){sqlite3_finalize(load);return false;}
@@ -34,7 +36,7 @@ bool VideoFingerprintEngine::openPersistentCache(const std::string& path) const{
  cacheDb_=db;
  sqlite3_busy_timeout(db,5000);
  if(sqlite3_exec(db,"PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY;",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
- const char* createSql="CREATE TABLE IF NOT EXISTS video_fingerprint_cache(path TEXT PRIMARY KEY,size INTEGER NOT NULL,modified INTEGER NOT NULL,duration REAL NOT NULL,step_count INTEGER NOT NULL,payload BLOB NOT NULL); CREATE INDEX IF NOT EXISTS idx_vfc_stamp ON video_fingerprint_cache(size,modified);";
+  const char* createSql="CREATE TABLE IF NOT EXISTS video_fingerprint_cache(path TEXT PRIMARY KEY,size INTEGER NOT NULL,modified INTEGER NOT NULL,quick_hash TEXT NOT NULL DEFAULT '',duration REAL NOT NULL,step_count INTEGER NOT NULL,payload BLOB NOT NULL); CREATE INDEX IF NOT EXISTS idx_vfc_stamp ON video_fingerprint_cache(size,modified);";
  if(sqlite3_exec(db,createSql,nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
  // 0.9.2.26 cache entries have no algorithm/version discriminator. Add it once;
  // legacy rows are deliberately invalidated below rather than trusted silently.
@@ -44,9 +46,15 @@ bool VideoFingerprintEngine::openPersistentCache(const std::string& path) const{
    while(sqlite3_step(info)==SQLITE_ROW){const unsigned char* n=sqlite3_column_text(info,1);if(n&&std::strcmp(reinterpret_cast<const char*>(n),"cache_version")==0){hasVersion=true;break;}}
    sqlite3_finalize(info);
  }
- if(!hasVersion){
-   if(sqlite3_exec(db,"ALTER TABLE video_fingerprint_cache ADD COLUMN cache_version INTEGER NOT NULL DEFAULT 0;",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
- }
+  if(!hasVersion){
+    if(sqlite3_exec(db,"ALTER TABLE video_fingerprint_cache ADD COLUMN cache_version INTEGER NOT NULL DEFAULT 0;",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
+  }
+  bool hasQuick=false;
+  if(sqlite3_prepare_v2(db,"PRAGMA table_info(video_fingerprint_cache)",-1,&info,nullptr)==SQLITE_OK){
+    while(sqlite3_step(info)==SQLITE_ROW){const unsigned char* n=sqlite3_column_text(info,1);if(n&&std::strcmp(reinterpret_cast<const char*>(n),"quick_hash")==0){hasQuick=true;break;}}
+    sqlite3_finalize(info);
+  }
+  if(!hasQuick && sqlite3_exec(db,"ALTER TABLE video_fingerprint_cache ADD COLUMN quick_hash TEXT NOT NULL DEFAULT '';",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
   const std::string purgeSql="DELETE FROM video_fingerprint_cache WHERE cache_version != "+std::to_string(kCacheFormatVersion)+";";
   if(sqlite3_exec(db,purgeSql.c_str(),nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
  return preparePersistentStatements();
@@ -55,10 +63,10 @@ void VideoFingerprintEngine::closePersistentCache() const{
  std::lock_guard<std::mutex> lock(dbMutex_); finalizePersistentStatements(); if(cacheDb_){sqlite3_close(VDB(cacheDb_));cacheDb_=nullptr;}
 }
 bool VideoFingerprintEngine::loadPersistent(const std::string&p,std::uint64_t sz,std::uint64_t mt,VideoFingerprint&o,VideoCropFingerprint* crop) const{
-  std::lock_guard<std::mutex> lock(dbMutex_); if(!cacheDb_)return false;
+   const std::string quick=quickIdentity(p); std::lock_guard<std::mutex> lock(dbMutex_); if(!cacheDb_)return false;
   sqlite3_stmt* s=reinterpret_cast<sqlite3_stmt*>(loadStmt_); if(!s)return false;
   sqlite3_reset(s); sqlite3_clear_bindings(s);
-  sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_int(s,4,kCacheFormatVersion);
+   sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int(s,5,kCacheFormatVersion);
   bool ok=false;
   if(sqlite3_step(s)==SQLITE_ROW){
    o.duration=sqlite3_column_double(s,0);const auto*n=(const unsigned char*)sqlite3_column_blob(s,1);int bytes=sqlite3_column_bytes(s,1);
@@ -127,7 +135,7 @@ bool VideoFingerprintEngine::loadPersistent(const std::string&p,std::uint64_t sz
 sqlite3_reset(s);sqlite3_clear_bindings(s);return ok;
 }
 void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz,std::uint64_t mt,const VideoFingerprint&f,const VideoCropFingerprint* crop) const{
-  std::lock_guard<std::mutex>lock(dbMutex_);if(!cacheDb_||f.hashes.empty()||f.timestamps.size()!=f.hashes.size())return;
+  const std::string quick=quickIdentity(p); std::lock_guard<std::mutex>lock(dbMutex_);if(!cacheDb_||f.hashes.empty()||f.timestamps.size()!=f.hashes.size())return;
   const std::uint32_t count=(std::uint32_t)f.hashes.size();const std::uint32_t sceneCount=(std::uint32_t)f.sceneChanges.size();
   const std::size_t thumbBytes=count*(std::size_t)VideoFingerprint::kThumbSize*VideoFingerprint::kThumbSize;
   const bool hasThumbs=(f.thumb48.size()==thumbBytes);
@@ -151,7 +159,7 @@ void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz
   const std::uint32_t cropTsCount=cropCount;
   std::memcpy(cur,&cropTsCount,sizeof(cropTsCount));cur+=sizeof(cropTsCount);
   for(std::uint32_t i=0;i<cropCount;++i){std::memcpy(cur,&crop->timestamps[i],sizeof(double));cur+=sizeof(double);}
-  sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_double(s,4,f.duration);sqlite3_bind_int(s,5,(int)count);sqlite3_bind_int(s,6,kCacheFormatVersion);sqlite3_bind_blob(s,7,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
+  sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(s,5,f.duration);sqlite3_bind_int(s,6,(int)count);sqlite3_bind_int(s,7,kCacheFormatVersion);sqlite3_bind_blob(s,8,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
 }
 VideoFingerprintEngine::~VideoFingerprintEngine(){closePersistentCache();}
 static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops){
@@ -253,11 +261,11 @@ bool VideoFingerprintEngine::peekThumb48(const std::string& p,std::vector<std::u
 }
 std::size_t VideoFingerprintEngine::memoryCacheSize()const{std::lock_guard<std::mutex>lock(cacheMutex_);return cacheMap_.size();}
 bool VideoFingerprintEngine::memoryLookup(const std::string&p,std::uint64_t sz,std::uint64_t mt,VideoFingerprint&o,VideoCropFingerprint* crop,bool needCrop) const{
-  std::lock_guard<std::mutex> lock(cacheMutex_);
+  const std::string quick=quickIdentity(p); std::lock_guard<std::mutex> lock(cacheMutex_);
   auto it=cacheMap_.find(p);
   if(it==cacheMap_.end()) return false;
   CacheEntry& e=it->second->second;
-  if(e.size!=sz||e.modified!=mt) return false;
+  if(e.size!=sz||e.modified!=mt||e.quickHash!=quick) return false;
   if(needCrop&&!e.hasCrop) return false;
   cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
   o=e.fingerprint;
@@ -265,10 +273,10 @@ bool VideoFingerprintEngine::memoryLookup(const std::string&p,std::uint64_t sz,s
   return !o.hashes.empty();
 }
 void VideoFingerprintEngine::memoryStore(const std::string&p,std::uint64_t sz,std::uint64_t mt,const VideoFingerprint&f,const VideoCropFingerprint* crop) const{
-  std::lock_guard<std::mutex> lock(cacheMutex_);
+  const std::string quick=quickIdentity(p); std::lock_guard<std::mutex> lock(cacheMutex_);
   auto it=cacheMap_.find(p);
   if(it!=cacheMap_.end()){
-    it->second->second.size=sz; it->second->second.modified=mt;
+    it->second->second.size=sz; it->second->second.modified=mt; it->second->second.quickHash=quick;
     it->second->second.fingerprint=f;
     if(crop){ it->second->second.crop=*crop; it->second->second.hasCrop=true; }
     cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
@@ -278,7 +286,7 @@ void VideoFingerprintEngine::memoryStore(const std::string&p,std::uint64_t sz,st
     cacheMap_.erase(cacheList_.back().first);
     cacheList_.pop_back();
   }
-  CacheEntry e; e.size=sz; e.modified=mt; e.fingerprint=f;
+  CacheEntry e; e.size=sz; e.modified=mt; e.quickHash=quick; e.fingerprint=f;
   if(crop){ e.crop=*crop; e.hasCrop=true; }
   cacheList_.emplace_front(p,std::move(e));
   cacheMap_[p]=cacheList_.begin();

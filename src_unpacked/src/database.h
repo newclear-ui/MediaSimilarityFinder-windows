@@ -14,7 +14,7 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
  // Internal versions, independent of the 0.9.2.x build numbers ("M.m.p"):
  // engine verdict generation (match logic) and DB schema generation.
  // Missing/malformed rows read as "0.0.0" (pre-versioning).
-  static constexpr const char* kDatabaseVersion = "1.0.2";
+   static constexpr const char* kDatabaseVersion = "1.0.3";
   std::string engineVersion() const; bool setEngineVersion(const std::string& v);
   std::string dbVersion() const; bool setDbVersion(const std::string& v);
   std::string samplingGeneration() const; bool setSamplingGeneration(const std::string& v);

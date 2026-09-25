@@ -42,7 +42,7 @@ public:
   bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&,VideoCropFingerprint*) const;
   bool peekThumb48(const std::string&,std::vector<std::uint8_t>&) const;
 private:
-  struct CacheEntry { std::uint64_t size=0, modified=0; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; };
+  struct CacheEntry { std::uint64_t size=0, modified=0; std::string quickHash; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; };
   static constexpr std::size_t kMemoryCacheMax = 64;
   mutable std::list<std::pair<std::string,CacheEntry>> cacheList_;
   mutable std::unordered_map<std::string,std::list<std::pair<std::string,CacheEntry>>::iterator> cacheMap_;
@@ -51,7 +51,7 @@ private:
  mutable void* loadStmt_=nullptr;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
-  static constexpr int kCacheFormatVersion=7;
+  static constexpr int kCacheFormatVersion=8;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
   void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
