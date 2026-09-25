@@ -224,37 +224,40 @@ Validation should include at least:
 
 Higher GPU utilization or throughput must not change search decisions.
 
-## 12. Implementation stages
+## 12. Development flow and detailed design
 
-Recommended order:
+This document defines the detailed scheduling design. The implementation order follows the top-level flow in `docs/development-roadmap.en.md`.
 
-1. **Instrumentation**
-   - measure CPU/GPU/queue/decoder stage time and throughput
-   - never encode unmeasured values as numeric zero
+A Foundation / Instrumentation
+        |
+        v
+B Adaptive Scheduler
+        |
+        v
+C Calibration / INI Profile
+        |
+        v
+D Pipeline / Queue
+        |
+        v
+E Adaptive Video Decode
+        |
+        v
+F Hardware Decode Backend
+        |
+        v
+G Additional GPU Backends
+        |
+        v
+H Regression / Validation
 
-2. **Adaptive Scheduler**
-   - separate CPU policy from GPU AUTO
-   - dynamic allocation from runtime load + throughput
-   - add hysteresis/minimum hold time
+When a problem occurs, use A1/B1/C1-style recovery branches inside the current node. Diagnose, fix, regression-test, then return to the same node gate.
 
-3. **INI Performance Profile**
-   - store hardware identity and calibration results
-   - use them as next-run initial estimates
-   - revalidate after version/driver/backend changes
-
-4. **Pipeline parallelism**
-   - remove unnecessary CPU/GPU barriers
-   - evaluate persistent worker/queue architecture
-
-5. **Adaptive video decode**
-   - choose sequential/hybrid/sparse strategy according to workload
-   - then connect NVDEC/other hardware decode backends
-
-6. **Expand GPU-side media processing**
-   - connect GPU resize/crop/hash where justified
-   - validate with CPU↔GPU transfer cost included
+Benchmark / Telemetry evolves with every node. Detailed schema and measurement states are defined by the benchmark-telemetry-roadmap document.
 
 ## 13. Simplifications explicitly rejected
+
+
 
 The target architecture does not adopt:
 
