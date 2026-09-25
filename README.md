@@ -47,6 +47,16 @@ Vulkan은 vendor-neutral GPU compute 후보이며, Intel은 Level Zero, AMD는 H
 
 0.9.4.x에서는 CPU/GPU 용어 일반화, Adaptive Scheduler, INI 성능 프로파일, multi-vendor GPU 연결점, GPU build naming 정리를 진행합니다.
 
+## Development Documentation Model
+
+The 0.9.4 development line separates development stages from build numbers.
+
+- Development Roadmap: `src_unpacked/docs/development-roadmap.ko.md`
+- Development Progress: `src_unpacked/docs/development-progress.ko.md`
+- Build History: `src_unpacked/docs/build-history/`
+
+Roadmap nodes A/B/C are not version numbers. Validated code states advance according to actual progress.
+
 ## Detailed Architecture
 
 - [CPU/GPU Adaptive Resource Scheduling](src_unpacked/docs/architecture/resource-scheduling.ko.md)
