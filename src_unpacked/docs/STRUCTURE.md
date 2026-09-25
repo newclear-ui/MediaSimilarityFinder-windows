@@ -14,9 +14,12 @@
   video_decoder.h/.cpp.
 - src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
 - tests/ — CTest 테스트(msf_*_test 컨벤션).
-- docs/ — build-history/<버전>.ko/.en.md, architecture/*.ko/.en.md, legacy/(교체 구현 스냅샷),
+- docs/ — development-roadmap.ko/.en.md(전체 개발 방향), development-progress.ko/.en.md(현재 진척도), build-history/<버전>.ko/.en.md(실제 버전 증거), architecture/*.ko/.en.md, legacy/(교체 구현 스냅샷),
   STRUCTURE.md(이 파일), llms.txt(LLM용 텍스트 인덱스).
+- docs/development-roadmap.ko/.en.md — A→B→C 개발 순서도와 recovery branch 규칙.
+- docs/development-progress.ko/.en.md — 현재 node/version/substep/blocker/validation 상태.
 - docs/architecture/resource-scheduling.ko/.en.md — CPU 정책 + Adaptive GPU AUTO + INI calibration + 실시간 부하 기반 자원관리 목표 아키텍처.
+- docs/architecture/benchmark-telemetry-roadmap.ko/.en.md — benchmark/telemetry 상세 설계.
 
 ## src/ 핵심 계층
 
