@@ -80,6 +80,11 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   `--version`/`--smoke` on both, extended `benchmark_test` and
   `gpu_backend_policy_test`. Search semantics unchanged (engine 1.5.0,
   DB 1.0.3, cache v9).
+- Evidence split (post-0.9.4.0 check): automated build/CTest/CLI-smoke =
+  PASS; real windowed launch = PASS (OS handle + version title observed);
+  interactive search workflow (folder select → scan → results → close) =
+  NOT_VALIDATED — reserved for a Windows interactive session, never
+  recorded as PASS without running it.
 
 ## Node A — Foundation / Terminology / Instrumentation
 

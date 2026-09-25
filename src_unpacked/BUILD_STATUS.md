@@ -8,7 +8,8 @@
 - Last completed Windows build/test line: **0.9.4.0**
 - Last completed v0.9.4.0 build: Core + GUI Release build PASS (CPU and GPU trees)
 - Last completed v0.9.4.0 test run: **CTest 63/63 PASS (GPU)**
-- Last completed v0.9.4.0 validation: Node A exit gate PASS; CUDA backend discovery through the GPU abstraction; Portable deferred to release packaging
+- Last completed v0.9.4.0 validation: Node A exit gate PASS; CUDA backend discovery through the GPU abstraction; Portable v0.9.4.0 created from build-windows-gpu
+- GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + `Media Similarity Finder 0.9.4.0` title observed, process terminated cleanly); interactive search workflow (folder select → scan → results → close) NOT_VALIDATED in automation — pending a Windows interactive session before Node B closes
 - CPU-only validation: Release build PASS; **CTest 62/62 PASS**; CUDA disabled and CPU fallback verified
 - Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in
 - Build entry points: `scripts/build_windows_gpu.ps1` (canonical, clean `build-windows-gpu` tree) and `scripts/build_windows_cpu.ps1`; `scripts/build_windows_cuda.ps1` remains a deprecated alias path

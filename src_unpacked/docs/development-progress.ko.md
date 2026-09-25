@@ -79,6 +79,11 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - 검증: CPU 62/62, GPU 63/63(clean 트리, CUDA discovery 포함),
   양쪽 `--version`/`--smoke`, 확장된 `benchmark_test`·
   `gpu_backend_policy_test`. 검색 의미 불변(엔진 1.5.0·DB 1.0.3·캐시 v9).
+- 증거 구분(0.9.4.0 완료 후 점검): 자동 빌드/CTest/CLI-smoke = PASS,
+  실제 windowed 실행 = PASS(OS 핸들 + 버전 타이틀 확인),
+  대화식 검색 workflow(폴더 선택 → 스캔 → 결과 → 종료) =
+  NOT_VALIDATED — Windows 대화식 세션용으로 남기며, 실행 없이 PASS로
+  기록하지 않는다.
 
 ## Node A — Foundation / Terminology / Instrumentation
 
