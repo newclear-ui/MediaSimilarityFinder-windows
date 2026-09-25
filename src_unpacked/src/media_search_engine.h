@@ -50,7 +50,8 @@ public:
   // "M.m.p": patch = threshold/weight/gate tuning; minor = new stage or rule;
   // major = verdict architecture change. Any bump revalidates stored pairs on
   // the next scan (no rescan). Stored in the index DB (meta.engine_version).
-  static constexpr const char* kEngineVersion = "1.0.1";
+  static constexpr const char* kEngineVersion = "1.1.0";
+  static constexpr const char* kSamplingGeneration = "2";
   bool openIndex(const std::string& dbPath);
   bool openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory);
  // Persist the current duplicate-pair set so a later session can reload it.

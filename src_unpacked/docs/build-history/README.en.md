@@ -93,6 +93,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.87 | CUDA kernel 1e-7 snap (CPU/GPU flat-image agreement) |
 | 0.9.2.88 | Reveal root fix (CLSCTX_ALL) |
 | 0.9.2.89 | Right-click selection (reveal misfire fix) |
+| 0.9.2.90 | External report follow-ups (sampling, verify, index, 2nd stage) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

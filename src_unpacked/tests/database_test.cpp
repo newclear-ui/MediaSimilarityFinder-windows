@@ -25,6 +25,9 @@ int main(){
     if(!db.upsert(transient) || !db.commitTransaction()) return 12;
     bool committed=false; for(const auto& x : db.all()) if(x.path == "transient.jpg") committed=true;
     if(!committed) return 13;
+    if(db.samplingGeneration()!="0") return 14;
+    if(!db.setSamplingGeneration("2")) return 15;
+    if(db.samplingGeneration()!="2") return 16;
     std::cout<<"database=ok\nincremental=ok\ntransaction=ok\n";
     db.close(); // Windows cannot remove an open database file; close first.
     std::filesystem::remove(p);

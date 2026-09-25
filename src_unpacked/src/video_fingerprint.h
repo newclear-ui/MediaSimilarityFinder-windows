@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <list>
 #include <unordered_map>
 #include <mutex>
 namespace msf {
@@ -30,27 +31,31 @@ struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=
 class VideoFingerprintEngine{
 public:
  ~VideoFingerprintEngine();
- bool build(const std::string&,VideoFingerprint&) const;
- bool buildCropAware(const std::string&, const VideoFingerprint&, VideoCropFingerprint&, int decodeSize=96) const;
+  bool build(const std::string&,VideoFingerprint&) const;
+  bool buildFull(const std::string&,VideoFingerprint&,VideoCropFingerprint&,int decodeSize=96) const;
  bool openPersistentCache(const std::string& sqlitePath) const;
  void closePersistentCache() const;
  void clearCache() const;
  std::size_t memoryCacheSize() const;
  // Read-only cache lookup (no decode on miss): lets callers attach cached
  // per-frame data (e.g. candidate anchors) without re-analyzing files.
- bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&) const;
+  bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&,VideoCropFingerprint*) const;
 private:
- struct CacheEntry { std::uint64_t size=0, modified=0; VideoFingerprint fingerprint; };
- mutable std::unordered_map<std::string,CacheEntry> cache_;
- mutable std::mutex cacheMutex_;
+  struct CacheEntry { std::uint64_t size=0, modified=0; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; };
+  static constexpr std::size_t kMemoryCacheMax = 64;
+  mutable std::list<std::pair<std::string,CacheEntry>> cacheList_;
+  mutable std::unordered_map<std::string,std::list<std::pair<std::string,CacheEntry>>::iterator> cacheMap_;
+  mutable std::mutex cacheMutex_;
  mutable void* cacheDb_=nullptr;
  mutable void* loadStmt_=nullptr;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
- static constexpr int kCacheFormatVersion=5;
+  static constexpr int kCacheFormatVersion=7;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
- void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&) const;
+  void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
+  bool memoryLookup(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&,VideoCropFingerprint*,bool) const;
+  void memoryStore(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
 };
 double video_similarity(const VideoFingerprint&,const VideoFingerprint&,const VideoSimilarityOptions& options={});
 double video_crop_similarity(const VideoFingerprint&, const VideoCropFingerprint&, const VideoFingerprint&, const VideoCropFingerprint&, const VideoSimilarityOptions& options={});

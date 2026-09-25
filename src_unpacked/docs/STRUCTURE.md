@@ -28,7 +28,7 @@
 | `media_pipeline.*` | 이미지 분석 파이프라인(CPU/GPU 선택) |
 | `video_sampling.*` | 동영상 샘플 플랜(`sampling_interval`) |
 | `video_decoder.h` | FFmpeg(MSF_HAS_FFMPEG) 디코더 인터페이스 |
-| `video_fingerprint.*` | 동영상 지문: timestamps+hashes+mirror, SQLite 캐시(v4), 저분산 프레임 필터 + 장면전환, `video_similarity`(DTW, sceneBonus) |
+| `video_fingerprint.*` | 동영상 지문: timestamps+hashes+mirror, SQLite 캐시(v7, base+crop 프레임), 저분산 프레임 필터 + 장면전환, `video_similarity`(DTW, sceneBonus, 다이아딕 격자 정렬) |
 | `similarity.*` | 해시 유사도 / 이미지 매칭 |
 | `candidate_index.*` | 유사 후보 색인(9-part Multi-Index Hash) |
 | `scan_pipeline.*` | 중복 검색 엔진: duration 게이트 + temporal 동영상 검증(스캔 경로) |

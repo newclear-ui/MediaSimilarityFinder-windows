@@ -7,9 +7,9 @@
 #include <fstream>
 #include <iostream>
 // Minimal 8x8 24-bit BMP. mode 0 = solid color, 1 = checker, 2 = inverse checker.
-static void bmp(const std::filesystem::path& p, int mode, unsigned char r, unsigned char g, unsigned char b) {
+static void bmp(const std::filesystem::path& p, int mode, unsigned char r, unsigned char g, unsigned char b, int w = 8, int h = 8) {
   std::ofstream f(p, std::ios::binary);
-  const int w = 8, h = 8, img = w * h * 3, fs = 54 + img;
+  const int row = ((w * 3 + 3) / 4) * 4, img = row * h, fs = 54 + img;
   unsigned char hd[54] = {0};
   hd[0] = 'B'; hd[1] = 'M';
   hd[2] = (unsigned char)(fs & 0xFF); hd[3] = (unsigned char)((fs >> 8) & 0xFF);
@@ -17,14 +17,18 @@ static void bmp(const std::filesystem::path& p, int mode, unsigned char r, unsig
   hd[26] = 1; hd[28] = 24;
   hd[34] = (unsigned char)(img & 0xFF); hd[35] = (unsigned char)((img >> 8) & 0xFF);
   f.write((const char*)hd, 54);
-  for (int y = 0; y < h; ++y)
+  for (int y = 0; y < h; ++y) {
     for (int x = 0; x < w; ++x) {
       unsigned char v = 0;
       if (mode == 0) v = 0;
       else if (mode == 1) v = ((x + y) % 2) ? 200 : 50;
-      else v = ((x + y) % 2) ? 50 : 200;
+      else if (mode == 2) v = ((x + y) % 2) ? 50 : 200;
+      else if (mode == 3) v = (x < 4 || x >= 12) ? 128 : (((x + y) % 2) ? 200 : 50);
+      else v = ((x + y) % 2) ? 200 : 50;
       f.put((char)(mode == 0 ? b : v)); f.put((char)(mode == 0 ? g : v)); f.put((char)(mode == 0 ? r : v));
     }
+    for (int k = w * 3; k < row; ++k) f.put(0);
+  }
 }
 int main() {
   namespace fs = std::filesystem;
@@ -51,6 +55,11 @@ int main() {
   if (msf::verifyImagePair(red, red2, false, 90.0, kThr) != 90.0) return 6;
   // 6. Empty paths pass through (adhoc/monitor queries without a query file).
   if (msf::verifyImagePair("", red2, true, 90.0, kThr) != 90.0) return 7;
+  // 7. True crop duplicate in the grey zone: wide photo with a checker center
+  //    vs the center alone. Crop-vs-full SSIM must keep it passing.
+  const std::string wide = (d / "wide.bmp").string(), center = (d / "center.bmp").string();
+  bmp(d / "wide.bmp", 3, 0, 0, 0, 16, 8); bmp(d / "center.bmp", 1, 0, 0, 0, 8, 8);
+  if (msf::verifyImagePair(wide, center, true, 90.0, kThr) < kThr) return 8;
   fs::remove_all(d, ec);
   std::cout << "image_verify=ok\n";
   return 0;

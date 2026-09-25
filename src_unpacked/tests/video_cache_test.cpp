@@ -8,17 +8,19 @@
 #include <string>
 
 static bool insert_seed(sqlite3* raw,const std::string& media,int version){
- // v5 layout: frameCount, (timestamp,hash,mirrorHash)*n, 6 crops, sceneCount,
- // scene timestamps, thumbCount, thumbs (48x48 gray per frame).
- constexpr int kT=48; constexpr std::size_t kPx=(std::size_t)kT*kT;
- std::vector<unsigned char> blob(sizeof(std::uint32_t)+3*(sizeof(double)+2*sizeof(std::uint64_t))+6*sizeof(std::uint64_t)+sizeof(std::uint32_t)+sizeof(std::uint32_t)+3*kPx);
- std::uint32_t n=3; std::memcpy(blob.data(),&n,sizeof(n)); char* c=(char*)blob.data()+sizeof(n);
- const std::uint64_t hashes[3]={1,3,7};
- for(int i=0;i<3;++i){double t=i*2.0;std::uint64_t h=hashes[i];std::memcpy(c,&t,sizeof(t));c+=sizeof(t);std::memcpy(c,&h,sizeof(h));c+=sizeof(h);std::uint64_t mh=h^0xffffULL;std::memcpy(c,&mh,sizeof(mh));c+=sizeof(mh);}
- const std::uint64_t crops[6]={11,22,33,44,55,66}; for(auto h:crops){std::memcpy(c,&h,sizeof(h));c+=sizeof(h);}
- std::uint32_t sceneCount=0; std::memcpy(c,&sceneCount,sizeof(sceneCount)); c+=sizeof(sceneCount);
- std::uint32_t thumbCount=3; std::memcpy(c,&thumbCount,sizeof(thumbCount)); c+=sizeof(thumbCount);
- for(int i=0;i<3;++i){ for(std::size_t k=0;k<kPx;++k) *c++=(char)((i*64+k)&0xFF); }
+  constexpr int kT=48; constexpr std::size_t kPx=(std::size_t)kT*kT;
+  std::vector<unsigned char> blob(sizeof(std::uint32_t)+3*(sizeof(double)+2*sizeof(std::uint64_t))+6*sizeof(std::uint64_t)+sizeof(std::uint32_t)+sizeof(std::uint32_t)+3*kPx+sizeof(std::uint32_t)+3*6*sizeof(std::uint64_t)+sizeof(std::uint32_t)+3*sizeof(double));
+  std::uint32_t n=3; std::memcpy(blob.data(),&n,sizeof(n)); char* c=(char*)blob.data()+sizeof(n);
+  const std::uint64_t hashes[3]={1,3,7};
+  for(int i=0;i<3;++i){double t=i*2.0;std::uint64_t h=hashes[i];std::memcpy(c,&t,sizeof(t));c+=sizeof(t);std::memcpy(c,&h,sizeof(h));c+=sizeof(h);std::uint64_t mh=h^0xffffULL;std::memcpy(c,&mh,sizeof(mh));c+=sizeof(mh);}
+  const std::uint64_t crops[6]={11,22,33,44,55,66}; for(auto h:crops){std::memcpy(c,&h,sizeof(h));c+=sizeof(h);}
+  std::uint32_t sceneCount=0; std::memcpy(c,&sceneCount,sizeof(sceneCount)); c+=sizeof(sceneCount);
+  std::uint32_t thumbCount=3; std::memcpy(c,&thumbCount,sizeof(thumbCount)); c+=sizeof(thumbCount);
+  for(int i=0;i<3;++i){ for(std::size_t k=0;k<kPx;++k) *c++=(char)((i*64+k)&0xFF); }
+  std::uint32_t cropCount=3; std::memcpy(c,&cropCount,sizeof(cropCount)); c+=sizeof(cropCount);
+  for(int i=0;i<3;++i){const std::uint64_t ch[6]={101+i,201+i,301+i,401+i,501+i,601+i}; for(auto h:ch){std::memcpy(c,&h,sizeof(h));c+=sizeof(h);}}
+  std::uint32_t cropTsCount=3; std::memcpy(c,&cropTsCount,sizeof(cropTsCount)); c+=sizeof(cropTsCount);
+  for(int i=0;i<3;++i){double t=i*2.0;std::memcpy(c,&t,sizeof(t));c+=sizeof(t);}
  sqlite3_stmt* st=nullptr; const char*q="INSERT OR REPLACE INTO video_fingerprint_cache(path,size,modified,duration,step_count,cache_version,payload) VALUES(?,?,?,?,?,?,?)";
  if(sqlite3_prepare_v2(raw,q,-1,&st,nullptr)!=SQLITE_OK)return false;
  sqlite3_bind_text(st,1,media.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(st,2,(sqlite3_int64)std::filesystem::file_size(media));sqlite3_bind_int64(st,3,(sqlite3_int64)std::filesystem::last_write_time(media).time_since_epoch().count());sqlite3_bind_double(st,4,12.0);sqlite3_bind_int(st,5,3);sqlite3_bind_int(st,6,version);sqlite3_bind_blob(st,7,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);
@@ -31,13 +33,16 @@ int main(){
  auto media=(d/"x.mp4").string(); std::ofstream(d/"x.mp4")<<"not a video";
  sqlite3* raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 2;
  sqlite3_stmt* info=nullptr; bool hasVersion=false; if(sqlite3_prepare_v2(raw,"PRAGMA table_info(video_fingerprint_cache)",-1,&info,nullptr)!=SQLITE_OK)return 3; while(sqlite3_step(info)==SQLITE_ROW){const unsigned char*n=sqlite3_column_text(info,1);if(n&&std::string(reinterpret_cast<const char*>(n))=="cache_version")hasVersion=true;}sqlite3_finalize(info);if(!hasVersion)return 4;
- if(!insert_seed(raw,media,5))return 5; sqlite3_close(raw);
- msf::VideoFingerprint out; if(!e.build(media,out)||out.hashes.size()!=3||out.mirrorHashes.size()!=3||out.crop4x3!=11||out.crop1x1!=22||out.crop9x16!=33||out.mirrorCrop4x3!=44||out.mirrorCrop1x1!=55||out.mirrorCrop9x16!=66)return 6;
- if(out.thumb48.size()!=3*(std::size_t)48*48||out.thumb48[0]!=0||out.thumb48[48*48]!=64)return 6;
+  if(!insert_seed(raw,media,7))return 5; sqlite3_close(raw);
+  msf::VideoFingerprint out; if(!e.build(media,out)||out.hashes.size()!=3||out.mirrorHashes.size()!=3||out.crop4x3!=11||out.crop1x1!=22||out.crop9x16!=33||out.mirrorCrop4x3!=44||out.mirrorCrop1x1!=55||out.mirrorCrop9x16!=66)return 6;
+  if(out.thumb48.size()!=3*(std::size_t)48*48||out.thumb48[0]!=0||out.thumb48[48*48]!=64)return 6;
+  msf::VideoFingerprint fb; msf::VideoCropFingerprint fc;
+  if(!e.buildFull(media,fb,fc,96))return 11;
+  if(fc.a4x3.size()!=3||fc.a4x3[1]!=102||fc.mirrorA9x16[2]!=603||fc.timestamps.size()!=3||fc.timestamps[2]!=4.0)return 12;
  // A stale algorithm-version entry must be rejected before a build can reuse it.
  e.clearCache(); e.closePersistentCache();
  if(!e.openPersistentCache(db))return 7;
- raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 8; if(!insert_seed(raw,media,4))return 9; sqlite3_close(raw);
- msf::VideoFingerprint stale; if(e.build(media,stale))return 10; // no valid v5 row remains, and x.mp4 is intentionally not decodable
+  raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 8; if(!insert_seed(raw,media,6))return 9; sqlite3_close(raw);
+  msf::VideoFingerprint stale; if(e.build(media,stale))return 10; // no valid v7 row remains, and x.mp4 is intentionally not decodable
  e.closePersistentCache(); std::filesystem::remove_all(d); std::cout<<"video_cache_api=ok\n";return 0;
 }

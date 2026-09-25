@@ -10,9 +10,9 @@ int main() {
     if(msf::hash_similarity(ha,hb)<99.9) return 1;
     if(msf::sampling_interval(10)!=1) return 2;
     if(msf::sampling_interval(60)!=2) return 3;
-    if(msf::sampling_interval(300)!=5) return 4;
-    if(msf::sampling_interval(301)!=10) return 5;
-    if(msf::sampling_interval(1801)!=15) return 6;
+    if(msf::sampling_interval(300)!=8) return 4;
+    if(msf::sampling_interval(301)!=8) return 5;
+    if(msf::sampling_interval(1801)!=16) return 6;
     std::cout<<"fingerprint=ok\nsimilarity=ok\nsampling=ok\n";
     return 0;
 }

@@ -115,11 +115,9 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
    for(int i=0;i<3;++i) if(mirrors[i]){auto a=cis[i]->query(mirrors[i],maxDistance);candidates.insert(candidates.end(),a.begin(),a.end());}
  }
  std::sort(candidates.begin(),candidates.end(),[](const Candidate&a,const Candidate&b){return a.index==b.index?a.distance<b.distance:a.index<b.index;}); candidates.erase(std::unique(candidates.begin(),candidates.end(),[](const Candidate&a,const Candidate&b){return a.index==b.index;}),candidates.end());
- std::unordered_map<std::string,VideoFingerprint> temporalBaseCache; std::unordered_map<std::string,VideoCropFingerprint> temporalCropCache;
- auto loadTemporal=[&](const std::string& path, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
-   auto it=temporalBaseCache.find(path); if(it==temporalBaseCache.end()){VideoFingerprint b;if(!videoEngine_.build(path,b))return false;it=temporalBaseCache.emplace(path,std::move(b)).first;} vf=it->second;
-   auto ic=temporalCropCache.find(path); if(ic==temporalCropCache.end()){VideoCropFingerprint c;if(!videoEngine_.buildCropAware(path,vf,c,96))return false;ic=temporalCropCache.emplace(path,std::move(c)).first;} cf=ic->second; return true;
- };
+  auto loadTemporal=[&](const std::string& path, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
+    return videoEngine_.buildFull(path, vf, cf, 96);
+  };
  auto bestAgainst=[&](const FileState& x){
    double best=0; const std::uint64_t qFull[]={fingerprint,mirrorFingerprint}; const std::uint64_t tFull[]={x.fingerprint,x.mirrorFingerprint};
    for(auto a:qFull)if(a)for(auto b:tFull)if(b)best=std::max(best,hash_similarity(a,b));
@@ -160,7 +158,7 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
 static constexpr std::size_t kMaxAnchors = 16;
 static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf){
   VideoFingerprint vf;
-  if(!engine.loadPersistent(mf.path, mf.size, mf.modified, vf) || vf.hashes.empty()) return;
+  if(!engine.loadPersistent(mf.path, mf.size, mf.modified, vf, nullptr) || vf.hashes.empty()) return;
   const std::size_t n = vf.hashes.size();
   const std::size_t stride = (n + kMaxAnchors - 1) / kMaxAnchors;
   mf.anchors.reserve(std::min(n, kMaxAnchors));
@@ -168,8 +166,9 @@ static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf
     if(vf.hashes[i]) mf.anchors.push_back(vf.hashes[i]);
 }
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
- auto old=db_.all();
- std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
+  auto old=db_.all();
+  std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
+  const bool videoRegrid=(db_.samplingGeneration()!=kSamplingGeneration);
  const bool hasIgnored=control && !control->ignoredPaths.empty();
  const int workers=recommended_worker_count(policy_,static_cast<int>(std::thread::hardware_concurrency()));
  const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
@@ -240,7 +239,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
    ++scanned;
    if(control && control->walked) control->walked(scanned);
-  auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.fingerprint==0);
+  auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.fingerprint==0||(isVid&&videoRegrid));
   if(!changed){ ++nUnchanged; seen.insert(x.path); return; }
   if(it==oldByPath.end()) ++nAdded; else ++nModified;
   // Remove the previous record before re-analysis. If decoding/analysis fails,
@@ -353,6 +352,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // refresh the last-scan marker (a cancelled run must not claim freshness).
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
   else if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_);
+  if(r.completed) db_.setSamplingGeneration(kSamplingGeneration);
   r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; return r;
 }
 }

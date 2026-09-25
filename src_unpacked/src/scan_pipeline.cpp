@@ -4,6 +4,8 @@
 #include "image_verify.h"
 #include "video_fingerprint.h"
 #include <algorithm>
+#include <future>
+#include <thread>
 #include <unordered_set>
 #include <unordered_map>
 namespace msf {
@@ -114,10 +116,8 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   // Shared cache-backed engine when provided (same verdicts, skips re-decode
   // on cache hits); otherwise a local engine that always decodes.
   const VideoFingerprintEngine& te = temporalEngine_ ? *temporalEngine_ : temporalEngine;
-  std::unordered_map<std::string,VideoFingerprint> baseCache; std::unordered_map<std::string,VideoCropFingerprint> cropCache;
   auto temporal=[&](const MediaFile& f, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
-    auto it=baseCache.find(f.path); if(it==baseCache.end()){VideoFingerprint b;if(!te.build(f.path,b))return false;it=baseCache.emplace(f.path,std::move(b)).first;} vf=it->second;
-    auto ic=cropCache.find(f.path); if(ic==cropCache.end()){VideoCropFingerprint c;if(!te.buildCropAware(f.path,vf,c,96))return false;ic=cropCache.emplace(f.path,std::move(c)).first;} cf=ic->second; return true;
+    return te.buildFull(f.path, vf, cf, 96);
   };
   std::unordered_set<std::uint64_t> seen;
   std::size_t imageFullCandidates=0,videoFullCandidates=0;
@@ -128,9 +128,50 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   // to force-quit — losing every match streamed so far. The throw is caught
   // below; analyze() always returns partial stats, never propagates.
   struct LocalCancel {};
+  struct VideoTask { std::size_t i=0, j=0; };
+  struct VideoResult { std::size_t i=0, j=0; bool verified=false, matched=false; double percent=0; };
+  std::vector<VideoTask> pendingVideo;
   std::size_t sincePoll=0;
   const auto poll=[&]{
     if(stop && ((++sincePoll & 1023)==0) && stop()) throw LocalCancel{};
+  };
+  auto emitVideo=[&](const VideoResult& vr){
+    if(vr.verified) ++s.videoTemporalChecks;
+    if(vr.matched){ MediaMatch match{vr.i,vr.j,vr.percent}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups; }
+  };
+  auto flushVideo=[&](){
+    if(pendingVideo.empty()) return;
+    unsigned hw=std::thread::hardware_concurrency(); if(hw<2)hw=2; if(hw>16)hw=16;
+    const std::size_t chunk=64;
+    for(std::size_t b=0;b<pendingVideo.size();b+=chunk){
+      poll();
+      const std::size_t e=std::min(pendingVideo.size(),b+chunk);
+      const std::size_t n=e-b;
+      const unsigned w=std::min<unsigned>(hw,static_cast<unsigned>(n));
+      const std::size_t per=(n+w-1)/w;
+      std::vector<std::future<std::vector<VideoResult>>> futs; futs.reserve(w);
+      for(unsigned k=0;k<w;++k){
+        const std::size_t sb=b+k*per, se=std::min(e,sb+per);
+        if(sb>=se) break;
+        futs.emplace_back(std::async(std::launch::async,[&,sb,se](){
+          std::vector<VideoResult> out; out.reserve(se-sb);
+          for(std::size_t t=sb;t<se;++t){
+            const auto tk=pendingVideo[t];
+            VideoResult vr; vr.i=tk.i; vr.j=tk.j;
+            VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
+            if(temporal(files_[tk.i],ai,ac)&&temporal(files_[tk.j],bi,bc)){
+              vr.verified=true;
+              const double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2,2.0});
+              if(ts>=threshold){ vr.matched=true; vr.percent=ts; }
+            }
+            out.push_back(vr);
+          }
+          return out;
+        }));
+      }
+      for(auto& fu:futs) for(const auto& vr:fu.get()) emitVideo(vr);
+    }
+    pendingVideo.clear();
   };
   const auto process=[&](std::size_t rawA,const Candidate& c){
     poll();
@@ -154,8 +195,8 @@ if(isVideo){
       double gate=sim;
       if(gate<trigger) gate=std::max(gate,anchorSim(files_[i],files_[j]));
       if(gate>=trigger&&durationGate(files_[i],files_[j])){
-        VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
-        if(temporal(files_[i],ai,ac)&&temporal(files_[j],bi,bc)){++s.videoTemporalChecks;double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2,2.0});if(ts>=threshold){MediaMatch match{i,j,ts}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}}
+        pendingVideo.push_back({i,j});
+        if(pendingVideo.size()>=4096) flushVideo();
       }
     }
  };
@@ -180,6 +221,7 @@ if(isVideo){
     if(!imageComplete){consume(c4_);consume(c1_);consume(c916_);}
     if(!videoComplete){consume(vc4_);consume(vc1_);consume(vc916_);}
   }
+  flushVideo();
   } catch (const LocalCancel&) {
     // Partial stats (and every match already streamed via onMatch) survive;
     // the caller observes the stop through its own control flag.

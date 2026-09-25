@@ -4,8 +4,8 @@ int main(){
  msf::CandidateIndex x;x.add(10,0xFFFF);x.add(20,0xFFF0);x.add(30,0);
  auto r=x.query(0xFFFF,4);
  if(x.size()!=3||r.size()!=2||r[0].index!=10||r[1].index!=20)return 1;
- // Pigeonhole regression: eight changed bits distributed across eight of
- // nine partitions must still be found by the exact multi-index candidate stage.
+  // Pigeonhole regression: eight changed bits spread so every 16-bit slice
+  // carries at most two must still be found by the radius-2 candidate stage.
  const std::uint64_t base=0;
  std::uint64_t eight=0;
  for(unsigned bit: {0u,8u,15u,22u,29u,36u,43u,50u}) eight|=(1ULL<<bit);
