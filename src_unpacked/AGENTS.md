@@ -33,3 +33,15 @@
    - 빌드 이름은 build-windows-cpu / build-windows-gpu로 전환. build-windows-cuda는 0.9.4.x GPU build가 검증될 때까지 보존
    - CMake 상위 옵션은 MSF_ENABLE_GPU, backend 선택은 MSF_GPU_BACKEND 계열을 목표로 한다. 실제 구현 파일의 CUDA/Vulkan/HIP/Level Zero 이름은 기술명으로 유지
    - 0.9.4.0의 구조 변경 후 build-history를 ko/en 쌍으로 기록
+
+ 
+5. **벤치마크 / Telemetry**
+   - 0.9.4.x에서는 benchmark를 scheduler와 동급의 핵심 설계 계층으로 취급한다.
+   - Adaptive Scheduler, calibration, backend 선택, fallback, queue, transfer, decoder 단계의 실제 근거를 benchmark가 기록해야 한다.
+   - 측정되지 않은 값은 0으로 기록하지 않는다. measured / not_measured / not_available / partial / failed / fallback 상태를 구분한다.
+   - benchmark JSON에는 독립적인 schemaVersion을 둔다.
+   - decodedFrames와 sampledFrames는 반드시 분리한다.
+   - CPU-only, GPU OFF, GPU ON/AUTO, low-end simulation, external CPU/GPU load, decoder success/fallback, cancellation/partial scan을 회귀 benchmark 시나리오로 유지한다.
+   - human-readable 요약과 machine-readable 상세 JSON을 분리한다.
+   - benchmark instrumentation은 검색의 정합성과 판정 결과를 변경하면 안 된다.
+   - 상세 설계는 docs/architecture/benchmark-telemetry-roadmap.ko.md + .en.md를 기준으로 한다.
