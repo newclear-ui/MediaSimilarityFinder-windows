@@ -271,7 +271,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"benchSlow")) return S("느린 파일","Slowest files");
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.2\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.2\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.3\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.3\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -530,9 +530,13 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
     // show file-type icons until a later tick. Cache hits are always free.
     thumbBudget_ = kThumbBudgetPerTick;
     shellBudget_ = kShellBudgetPerTick;
-    if (!groupsDirty_) { if (scanning_) updateStatusCounts(); }
+    if (!groupsDirty_) {
+      if (scanning_) updateStatusCounts();
+      else if (thumbStarved_ && thumbFollowUps_ < 12) { ++thumbFollowUps_; refreshGroupList(); }
+    }
     else {
       groupsDirty_ = false;
+      thumbFollowUps_ = 0;
       drainMatches(); // matches streamed since the last tick (also covers pause:
                       // the worker emits nothing while paused, so without this
                       // the final pre-pause matches would sit undrained)
@@ -595,7 +599,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.2"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.3"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -961,7 +965,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.2"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.3"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1667,13 +1671,6 @@ void MainWindow::setGroupMarked(int gi, bool on) {
 void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel) {
   tree->blockSignals(true); grid->blockSignals(true);
   tree->clear(); grid->clear();
-  // During a live scan, decoding/file-DB hits for every group each fill would
-  // re-freeze the tick the budgets were meant to protect (11k SQLite reads per
-  // fill). Only the first rows get real thumbs mid-scan; the rest show cheap
-  // file-type icons until pause/finish triggers a full refresh. The list
-  // itself (names/counts) always renders — that is the intermediate result.
-  int thumbSeen = 0;
-  constexpr int kScanThumbRows = 60;
   const QString f = groupSearch_->text().trimmed().toLower();
   for (int i = 0; i < groups_.size(); ++i) {
     const auto& g = groups_[i];
@@ -1701,12 +1698,7 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     it->setData(0, Qt::UserRole, i);
     if (syncSel && i == currentGroup_) tree->setCurrentItem(it);
     const QString rep = g.paths.isEmpty() ? QString() : g.paths[0];
-    // Request the view's own icon size so cells stay uniform; fileThumb
-    // normalizes every icon to that exact square (see squareFittedPixmap).
-    QIcon repIcon;
-    if (!scanning_ || thumbSeen < kScanThumbRows) { repIcon = fileThumb(rep, grid->iconSize()); ++thumbSeen; }
-    else repIcon = placeholderIcon(rep);
-    auto* li = new QListWidgetItem(repIcon,
+    auto* li = new QListWidgetItem(fileThumb(rep, grid->iconSize()),
                                    QString("%1 %2\n%3 %4 · %5 %6 · %7%\n%8")
                                        .arg(trStr(lang(), "group")).arg(i + 1)
                                        .arg(g.paths.size()).arg(trStr(lang(), "files"))
@@ -1723,6 +1715,7 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   tree->blockSignals(false); grid->blockSignals(false);
 }
 void MainWindow::refreshGroupList() {
+  thumbStarved_ = false;
   int ni = 0, nv = 0;
   for (const auto& g : groups_) { if (g.kind == 2) ++nv; else ++ni; }
   groupTitle_->setText(trStr(lang(), "groups") + QString(" (%1)").arg(groups_.size()));
@@ -1954,8 +1947,10 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // Shell thumbnails (cheap COM) get a wider lane than heavy decodes so
   // Explorer-cached thumbs fill ~10x faster.
   if (!bypassBudget) {
-    if (thumbBudget_ <= 0)
+    if (thumbBudget_ <= 0) {
+      thumbStarved_ = true;
       return placeholderIcon(path);
+    }
     --thumbBudget_;
   }
   QPixmap pm;
@@ -2021,11 +2016,13 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
     }
   } else {
     ic = placeholderIcon(path);
-    if (thumbFail_.size() > 2000) {
-      auto it = thumbFail_.begin();
-      for (int n = 0; n < 500 && it != thumbFail_.end(); ++n) it = thumbFail_.erase(it);
+    if (!scanning_) {
+      if (thumbFail_.size() > 2000) {
+        auto it = thumbFail_.begin();
+        for (int n = 0; n < 500 && it != thumbFail_.end(); ++n) it = thumbFail_.erase(it);
+      }
+      thumbFail_.insert(path);
     }
-    thumbFail_.insert(path);
   }
   // Bound the cache: group-list refreshes re-request the same representatives,
   // but an unbounded cache over a 100k+ scan would cost gigabytes. Evict a

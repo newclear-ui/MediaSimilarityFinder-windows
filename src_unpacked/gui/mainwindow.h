@@ -214,6 +214,8 @@ private:
   // Shell thumbnails (cheap COM) get their own wider lane.
   mutable int thumbBudget_ = 0;
   mutable int shellBudget_ = 0;
+  mutable bool thumbStarved_ = false;
+  int thumbFollowUps_ = 0;
   QSet<QString> ignored_;
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar
