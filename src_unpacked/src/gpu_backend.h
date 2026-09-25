@@ -26,6 +26,8 @@ public:
     std::size_t recommendedBatchSize(std::size_t requested=256) const;
     bool hashBatch(const std::uint8_t* grayscale,std::uint64_t count,
                    std::uint64_t* hashes) const;
+    bool ssimBatch(const std::uint8_t* a,const std::uint8_t* b,
+                   std::uint64_t count,double* scores) const;
 private:
     struct Impl;
     Impl* impl_=nullptr;

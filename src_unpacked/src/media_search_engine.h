@@ -106,7 +106,7 @@ const std::vector<MediaFile>& files() const { return files_; }
   bool getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const;
   private:
   Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
-  GpuBackend videoGpu_;
+  mutable GpuBackend videoGpu_;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
   std::atomic<bool> gpuActive_{false};
   BenchmarkRecorder bench_;

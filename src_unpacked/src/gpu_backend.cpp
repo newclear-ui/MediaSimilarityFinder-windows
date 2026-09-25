@@ -6,6 +6,7 @@
 extern "C" void* msf_cuda_backend_create();
 extern "C" void msf_cuda_backend_destroy(void*);
 extern "C" bool msf_cuda_backend_hash_batch(void*,const std::uint8_t*,std::uint64_t,std::uint64_t*);
+extern "C" bool msf_cuda_backend_ssim_batch(void*,const std::uint8_t*,const std::uint8_t*,std::uint64_t,double*);
 #endif
 
 namespace msf {
@@ -69,6 +70,15 @@ bool GpuBackend::hashBatch(const std::uint8_t* g,std::uint64_t n,std::uint64_t* 
     if(!g||!out||n==0||!available()) return false;
 #ifdef MSF_HAS_CUDA
     return msf_cuda_backend_hash_batch(impl_->cuda,g,n,out);
+#else
+    return false;
+#endif
+}
+bool GpuBackend::ssimBatch(const std::uint8_t* a,const std::uint8_t* b,std::uint64_t n,double* out) const {
+    std::lock_guard<std::mutex> lock(hashMutex_);
+    if(!a||!b||!out||n==0||!available()) return false;
+#ifdef MSF_HAS_CUDA
+    return msf_cuda_backend_ssim_batch(impl_->cuda,a,b,n,out);
 #else
     return false;
 #endif

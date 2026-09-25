@@ -1,6 +1,8 @@
 // L3 SSIM cell verification: frame_ssim() behavior plus the Hamming-gate
 // fallback contract of video_similarity() (no thumbs == legacy scoring).
 #include "video_fingerprint.h"
+#include "gpu_backend.h"
+#include <cmath>
 #include <iostream>
 #include <vector>
 int main(){
@@ -39,7 +41,17 @@ int main(){
  for(std::size_t k=0;k<fd.thumb48.size();++k) fd.thumb48[k]=(std::uint8_t)((k*2654435761ULL>>16)&0xFF);
  msf::VideoFingerprint fe=fa, ff=fb; fe.thumb48.clear(); ff.thumb48.clear();
  const double noThumb=msf::video_similarity(fe,ff,o);
- const double noisy=msf::video_similarity(fc,fd,o);
- if(!(noisy<noThumb)) return 8;
- std::cout<<"video_ssim=ok id=1 flat<0.05 detail="<<s<<" legacy="<<noThumb<<" noisy="<<noisy<<"\n";return 0;
+  const double noisy=msf::video_similarity(fc,fd,o);
+  if(!(noisy<noThumb)) return 8;
+  // GPU batch path: use enough passing cells to cross the batch threshold and
+  // compare the CUDA result with the CPU reference.
+  msf::GpuBackend gpu; const bool available=gpu.available();
+  msf::VideoFingerprint fg,fh; fg.timestamps.resize(8); fh.timestamps.resize(8);
+  for(int i=0;i<8;++i){ fg.hashes.push_back(0x1111111111111111ULL+static_cast<std::uint64_t>(i)); fh.hashes.push_back(fg.hashes.back()); fg.mirrorHashes.push_back(0); fh.mirrorHashes.push_back(0); fg.thumb48.insert(fg.thumb48.end(),a.begin(),a.end()); fh.thumb48.insert(fh.thumb48.end(),a.begin(),a.end()); }
+  const double cpuScore=msf::video_similarity(fg,fh,o);
+  msf::VideoSimilarityStats gst; auto go=o; go.gpu=available?&gpu:nullptr; go.stats=&gst;
+  const double gpuScore=msf::video_similarity(fg,fh,go);
+  if(std::abs(cpuScore-gpuScore)>0.2){ std::cerr<<"ssim_gpu_mismatch cpu="<<cpuScore<<" gpu="<<gpuScore<<" diff="<<std::abs(cpuScore-gpuScore)<<"\n"; return 9; }
+  if(available&&(!gst.gpuUsed||gst.gpuPairs==0)) return 10;
+  std::cout<<"video_ssim=ok id=1 flat<0.05 detail="<<s<<" legacy="<<noThumb<<" noisy="<<noisy<<" gpu="<<(available?"yes":"no")<<" gpuMs="<<gst.gpuMs<<"\n";return 0;
 }

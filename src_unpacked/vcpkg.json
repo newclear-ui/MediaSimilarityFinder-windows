@@ -1,6 +1,6 @@
 ﻿{
   "name": "media-similarity-finder",
-  "version-string": "0.9.3.13",
+  "version-string": "0.9.3.14",
   "dependencies": [
     "sqlite3",
     {

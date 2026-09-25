@@ -6,6 +6,7 @@
 #include <functional>
 namespace msf {
 class VideoFingerprintEngine; // cache-backed temporal source (optional, see below)
+class GpuBackend;
 enum class MediaKind { Unknown, Image, Video };
 struct MediaFile { std::string path; MediaKind kind=MediaKind::Unknown; std::uint64_t size=0,modified=0,fingerprint=0,mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0,mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0; double duration=0; std::vector<std::uint64_t> anchors; };
 struct MediaMatch { std::size_t left=0,right=0; double percent=0; };
@@ -38,8 +39,10 @@ public:
   // Same verdicts either way — build() output is content-determined. The
   // pointed engine must outlive the analyze() call; not owned.
   void setSharedTemporalEngine(const VideoFingerprintEngine* e) { temporalEngine_ = e; }
+  void setVideoGpuBackend(GpuBackend* g) { videoGpu_ = g; }
   const std::vector<MediaFile>& files() const;
  private:
   const VideoFingerprintEngine* temporalEngine_ = nullptr;
+  GpuBackend* videoGpu_ = nullptr;
 };
 }

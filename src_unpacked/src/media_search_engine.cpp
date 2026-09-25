@@ -82,7 +82,7 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
     if(!a.fingerprint||!b.fingerprint){ if(dropped)++*dropped; continue; }
     // Exact pipeline verdict on the two files (L1 + anchors + temporal + SSIM
     // gates, same code as scans). Pair-bounded and one-time per engine bump.
-    ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_);
+    ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); pipe.setVideoGpuBackend(&videoGpu_);
     pipe.add(toMedia(a)); pipe.add(toMedia(b));
     auto st=pipe.analyze(8);
     if(!st.matches.empty()){ survivors.push_back({m.left,m.right,st.matches.front().percent}); if(kept)++*kept; }
@@ -141,7 +141,7 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
    }
    if(kind==(int)MediaKind::Video && !excludePath.empty() && best < threshold && best >= std::max(0.0,threshold-12.0) && (!expensiveStageGuard_ || expensiveStageGuard_())){
      VideoFingerprint qa,ta; VideoCropFingerprint qc,tc;
-     if(loadTemporal(excludePath,qa,qc) && loadTemporal(x.path,ta,tc)) best=std::max(best,video_crop_similarity(qa,qc,ta,tc,{threshold,8,2}));
+      if(loadTemporal(excludePath,qa,qc) && loadTemporal(x.path,ta,tc)){ VideoSimilarityOptions options{threshold,8,2}; options.gpu=&videoGpu_; best=std::max(best,video_crop_similarity(qa,qc,ta,tc,options)); }
    }
    return best;
  };
@@ -378,7 +378,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration});
    if(video){ loadVideoAnchors(videoEngine_, files_.back()); ++r.indexedVideos; }
   }
-  ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); for(auto&f:files_)pipe.add(f);
+  ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); pipe.setVideoGpuBackend(&videoGpu_); for(auto&f:files_)pipe.add(f);
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause
   // during this phase did nothing until it finished — the force-quit path

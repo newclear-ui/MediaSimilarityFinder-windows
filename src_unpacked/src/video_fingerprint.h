@@ -11,6 +11,7 @@
 namespace msf {
 class GpuBackend;
 struct VideoBuildStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; };
+struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; std::size_t gpuPairs=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;
  std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0;
@@ -30,7 +31,7 @@ struct VideoCropFingerprint {
  std::vector<std::uint64_t> mirrorA4x3, mirrorA1x1, mirrorA9x16;
  std::vector<double> timestamps;
 };
-struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; double sceneBonus=0; };
+struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; double sceneBonus=0; GpuBackend* gpu=nullptr; VideoSimilarityStats* stats=nullptr; };
 class VideoFingerprintEngine{
 public:
  ~VideoFingerprintEngine();

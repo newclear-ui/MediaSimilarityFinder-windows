@@ -161,7 +161,8 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
             VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
             if(temporal(files_[tk.i],ai,ac)&&temporal(files_[tk.j],bi,bc)){
               vr.verified=true;
-              const double ts=video_crop_similarity(ai,ac,bi,bc,{threshold,8,2,2.0});
+              VideoSimilarityOptions options{threshold,8,2,2.0}; options.gpu=videoGpu_;
+              const double ts=video_crop_similarity(ai,ac,bi,bc,options);
               if(ts>=threshold){ vr.matched=true; vr.percent=ts; }
             }
             out.push_back(vr);

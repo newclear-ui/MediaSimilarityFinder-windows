@@ -428,23 +428,48 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
    auto* f=&yFlip[j*kPx]; for(int yy=0;yy<kT;++yy)for(int xx=0;xx<kT;++xx) f[(std::size_t)yy*kT+xx]=p[(std::size_t)yy*kT+(kT-1-xx)];
   }
  }
- for(std::size_t i=1;i<=n;++i){cur[0]=0;for(std::size_t j=1;j<=m;++j){double sim=hash_similarity(x.hashes[i-1],y.hashes[j-1]);
- std::uint64_t xm=(i-1<x.mirrorHashes.size()?x.mirrorHashes[i-1]:0), ym=(j-1<y.mirrorHashes.size()?y.mirrorHashes[j-1]:0);
- if(xm) sim=std::max(sim,hash_similarity(xm,y.hashes[j-1]));
- if(ym) sim=std::max(sim,hash_similarity(x.hashes[i-1],ym));
- if(xm&&ym) sim=std::max(sim,hash_similarity(xm,ym));
-  // L3 gate (not replacement): only cells the Hamming stage already passes
-  // pay for SSIM. Failing cells keep the cheap reject path below, so SSIM can
-  // never promote a Hamming reject, and costs nothing on misses. Passing cells
-  // are re-scored 0.4*Hamming + 0.6*SSIM, so a same-low-frequency false
-  // positive (high H, low S) drops while true re-encodes (high H, high S)
-  // hold. Missing/flat thumbs skip to Hamming.
-  if(sim>=threshold&&useSsim&&xHas[i-1]&&yHas[j-1]){
-   const double s1=frame_ssim(&x.thumb48[(i-1)*kPx],&y.thumb48[(j-1)*kPx],kT,kT);
-   const double s2=frame_ssim(&x.thumb48[(i-1)*kPx],&yFlip[(j-1)*kPx],kT,kT);
-   sim=0.4*sim+0.6*(100.0*std::max(s1,s2));
+  for(std::size_t i=1;i<=n;++i){
+   cur[0]=0;
+   std::vector<double> hamming(m,0), ssim(m,-1);
+   for(std::size_t j=1;j<=m;++j){
+    double sim=hash_similarity(x.hashes[i-1],y.hashes[j-1]);
+    std::uint64_t xm=(i-1<x.mirrorHashes.size()?x.mirrorHashes[i-1]:0), ym=(j-1<y.mirrorHashes.size()?y.mirrorHashes[j-1]:0);
+    if(xm) sim=std::max(sim,hash_similarity(xm,y.hashes[j-1]));
+    if(ym) sim=std::max(sim,hash_similarity(x.hashes[i-1],ym));
+    if(xm&&ym) sim=std::max(sim,hash_similarity(xm,ym));
+    hamming[j-1]=sim;
+   }
+   if(useSsim&&options.gpu){
+    std::vector<std::uint8_t> pa,pb; std::vector<std::size_t> map;
+    for(std::size_t j=0;j<m;++j) if(hamming[j]>=threshold&&xHas[i-1]&&yHas[j]){
+      map.push_back(j);
+      pa.insert(pa.end(),&x.thumb48[(i-1)*kPx],&x.thumb48[i*kPx]);
+      pb.insert(pb.end(),&y.thumb48[j*kPx],&y.thumb48[(j+1)*kPx]);
+      pa.insert(pa.end(),&x.thumb48[(i-1)*kPx],&x.thumb48[i*kPx]);
+      pb.insert(pb.end(),&yFlip[j*kPx],&yFlip[(j+1)*kPx]);
+    }
+    if(!map.empty()){
+      if(options.stats) options.stats->gpuPairs+=map.size();
+      const auto t0=std::chrono::steady_clock::now();
+      std::vector<double> out(map.size()*2);
+      const bool ok=map.size()>=8&&options.gpu->ssimBatch(pa.data(),pb.data(),map.size()*2,out.data());
+      if(options.stats) options.stats->gpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
+      if(ok){
+       if(options.stats) options.stats->gpuUsed=true;
+       for(std::size_t k=0;k<map.size();++k) ssim[map[k]]=100.0*std::max(out[k*2],out[k*2+1]);
+      } else if(options.stats) options.stats->gpuFallback=true;
+    }
+   }
+   for(std::size_t j=1;j<=m;++j){
+    double sim=hamming[j-1];
+    if(sim>=threshold&&useSsim&&xHas[i-1]&&yHas[j-1]){
+      const double s=ssim[j-1]>=0?ssim[j-1]:100.0*std::max(frame_ssim(&x.thumb48[(i-1)*kPx],&y.thumb48[(j-1)*kPx],kT,kT),frame_ssim(&x.thumb48[(i-1)*kPx],&yFlip[(j-1)*kPx],kT,kT));
+      sim=0.4*sim+0.6*s;
+    }
+    double timePenalty=0;if(i-1<x.timestamps.size()&&j-1<y.timestamps.size()&&tol>0){if(i>1&&j>1){double dx=x.timestamps[i-1]-x.timestamps[i-2];double dy=y.timestamps[j-1]-y.timestamps[j-2];double dt=std::abs(dx-dy);timePenalty=std::min(20.0,20.0*dt/tol);}}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;if(bonus>0&&xa[i-1]&&yb[j-1])match+=bonus;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);
+   }
+   std::swap(prev,cur);
   }
-  double timePenalty=0;if(i-1<x.timestamps.size()&&j-1<y.timestamps.size()&&tol>0){if(i>1&&j>1){double dx=x.timestamps[i-1]-x.timestamps[i-2];double dy=y.timestamps[j-1]-y.timestamps[j-2];double dt=std::abs(dx-dy);timePenalty=std::min(20.0,20.0*dt/tol);}}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;if(bonus>0&&xa[i-1]&&yb[j-1])match+=bonus;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);}std::swap(prev,cur);}
  return std::clamp(100.0*best/(100.0*n),0.0,100.0);
 }
 

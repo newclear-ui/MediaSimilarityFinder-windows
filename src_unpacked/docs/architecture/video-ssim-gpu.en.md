@@ -1,23 +1,24 @@
-# Review of GPU Expansion for 48x48 Video MSSIM
+# 48x48 Video MSSIM GPU Batch Architecture
 
-## Current bottleneck
+## Current structure
 
-`video_similarity()` runs `frame_ssim()` on the CPU for frame pairs that pass the Hamming gate. `thumb48` is already stored as contiguous per-frame arrays, so this stage can become CPU-bound when candidate counts reach tens of thousands.
+`video_similarity()` selects only Hamming-passing frame pairs per DTW row and scores them through `GpuBackend::ssimBatch()` on 48x48 MSSIM. The full DTW matrix is never materialized on the GPU, so device memory scales with one row batch.
 
-## Recommended architecture
+## Execution flow
 
-- Add `GpuBackend::ssimBatch()` accepting paired 48x48 grayscale arrays and an output array.
-- The CUDA kernel should calculate per-pair 8x8-window MSSIM using the same C1/C2 constants and averaging rule as the CPU implementation.
-- Preserve DTW row dependencies: do not materialize the full matrix on the GPU; pack only Hamming-passing pairs from each DTW row.
-- Fall back to `frame_ssim()` on batch failure, unsupported CUDA, or small batches.
-- Pack normal and mirrored directions into one batch to reduce GPU call and transfer overhead.
+1. Hamming similarity is computed first for each DTW row.
+2. Normal and mirrored `thumb48` pairs passing the gate are packed into contiguous batch arrays.
+3. Row batches of 8 or more go to the CUDA kernel, which computes 36 8x8-window MSSIM values per pair and averages them.
+4. Batch failure, unsupported CUDA, or rows smaller than 8 use the CPU `frame_ssim()` path.
+5. SSIM never promotes a Hamming reject; the existing `0.4*Hamming + 0.6*SSIM` blend rule is unchanged.
 
-## Validation requirements
+## Concurrency and semantic preservation
 
-- Add tolerance and threshold-boundary regressions comparing GPU and CPU results.
-- Cover identical, re-encoded, low-contrast/flat, mirrored, and no-thumb legacy-cache frames.
-- Measure CPU/GPU wall time by candidate count, host/device transfer time, and VRAM usage.
+- `ssimBatch()` calls are serialized by the `GpuBackend` mutex so concurrent temporal workers share one backend.
+- Identical C1/C2 constants and window-averaging rules keep threshold semantics unchanged.
+- The `ScanPipeline` temporal stage and the `compareFingerprint()` live path share the same GPU backend.
 
-## Assessment
+## Limits
 
-The design is feasible, but `10x or more` cannot be guaranteed yet. Per-row DTW calls and transfer overhead may erase gains for small candidate sets, so activation should follow a large real-corpus benchmark.
+- Per-row DTW calls plus host/device transfer bound the gain on small candidate sets.
+- The engine verdict version is unchanged; this is an additive acceleration with no stored-pair revalidation.

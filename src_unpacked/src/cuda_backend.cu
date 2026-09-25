@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cmath>
 #include <algorithm>
+#include <vector>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -13,6 +14,36 @@ __constant__ double c_cos[8][32];
 __constant__ double c_norm[8];
 
 __global__ void msf_init_dummy() {}
+
+__global__ void msf_ssim_kernel(const std::uint8_t* a,const std::uint8_t* b,
+                                std::uint64_t count,double* out){
+    const std::uint64_t pair=blockIdx.x;
+    const int window=blockIdx.y;
+    if(pair>=count||window>=36) return;
+    const int tid=threadIdx.x;
+    const int wx=(window%6)*8, wy=(window/6)*8;
+    __shared__ double sums[5][64];
+    const std::size_t base=static_cast<std::size_t>(pair)*2304u;
+    const int y=wy+tid/8, x=wx+tid%8;
+    const double av=static_cast<double>(a[base+y*48+x]);
+    const double bv=static_cast<double>(b[base+y*48+x]);
+    sums[0][tid]=av; sums[1][tid]=bv; sums[2][tid]=av*av;
+    sums[3][tid]=bv*bv; sums[4][tid]=av*bv;
+    __syncthreads();
+    for(int stride=32;stride>0;stride>>=1){
+        if(tid<stride) for(int k=0;k<5;++k) sums[k][tid]+=sums[k][tid+stride];
+        __syncthreads();
+    }
+    if(tid==0){
+        constexpr double C1=6.5025,C2=58.5225;
+        const double mx=sums[0][0]/64.0,my=sums[1][0]/64.0;
+        const double vx=sums[2][0]/64.0-mx*mx,vy=sums[3][0]/64.0-my*my;
+        const double cv=sums[4][0]/64.0-mx*my;
+        const double num=(2*mx*my+C1)*(2*cv+C2);
+        const double den=(mx*mx+my*my+C1)*(vx+vy+C2);
+        out[pair*36u+static_cast<std::size_t>(window)]=den>0?num/den:1.0;
+    }
+}
 
 __global__ void msf_phash_kernel(const std::uint8_t* in,std::uint64_t count,std::uint64_t* out){
     const std::uint64_t i=blockIdx.x;
@@ -74,6 +105,10 @@ struct CudaBackendState {
     std::size_t outputCapacity=0;
     cudaStream_t stream=nullptr;
     bool tablesReady=false;
+    std::uint8_t* ssimA=nullptr;
+    std::uint8_t* ssimB=nullptr;
+    double* ssimOut=nullptr;
+    std::size_t ssimCapacity=0;
 };
 
 static bool ensure_tables(CudaBackendState* s){
@@ -104,7 +139,33 @@ extern "C" void msf_cuda_backend_destroy(void* p){
     auto* s=static_cast<CudaBackendState*>(p); if(!s) return;
     if(s->stream) cudaStreamSynchronize(s->stream);
     if(s->di) cudaFree(s->di); if(s->do_) cudaFree(s->do_);
+    if(s->ssimA) cudaFree(s->ssimA); if(s->ssimB) cudaFree(s->ssimB); if(s->ssimOut) cudaFree(s->ssimOut);
     if(s->stream) cudaStreamDestroy(s->stream); delete s;
+}
+
+extern "C" bool msf_cuda_backend_ssim_batch(void* p,const std::uint8_t* a,const std::uint8_t* b,std::uint64_t count,double* out){
+    auto* s=static_cast<CudaBackendState*>(p);
+    if(!s||!a||!b||!out||!count||count>static_cast<std::uint64_t>(SIZE_MAX/2304)) return false;
+    const std::size_t bytes=static_cast<std::size_t>(count)*2304u;
+    const std::size_t outBytes=static_cast<std::size_t>(count)*36u*sizeof(double);
+    if(bytes>s->ssimCapacity){
+        if(cudaStreamSynchronize(s->stream)!=cudaSuccess) return false;
+        if(s->ssimA) cudaFree(s->ssimA); if(s->ssimB) cudaFree(s->ssimB); if(s->ssimOut) cudaFree(s->ssimOut);
+        s->ssimA=nullptr;s->ssimB=nullptr;s->ssimOut=nullptr;s->ssimCapacity=0;
+        if(cudaMalloc(reinterpret_cast<void**>(&s->ssimA),bytes)!=cudaSuccess) return false;
+        if(cudaMalloc(reinterpret_cast<void**>(&s->ssimB),bytes)!=cudaSuccess) return false;
+        if(cudaMalloc(reinterpret_cast<void**>(&s->ssimOut),outBytes)!=cudaSuccess) return false;
+        s->ssimCapacity=bytes;
+    }
+    if(cudaMemcpyAsync(s->ssimA,a,bytes,cudaMemcpyHostToDevice,s->stream)!=cudaSuccess) return false;
+    if(cudaMemcpyAsync(s->ssimB,b,bytes,cudaMemcpyHostToDevice,s->stream)!=cudaSuccess) return false;
+    msf_ssim_kernel<<<dim3(static_cast<unsigned>(count),36,1),64,0,s->stream>>>(s->ssimA,s->ssimB,count,s->ssimOut);
+    if(cudaGetLastError()!=cudaSuccess) return false;
+    std::vector<double> windows(static_cast<std::size_t>(count)*36u);
+    if(cudaMemcpyAsync(windows.data(),s->ssimOut,outBytes,cudaMemcpyDeviceToHost,s->stream)!=cudaSuccess) return false;
+    if(cudaStreamSynchronize(s->stream)!=cudaSuccess) return false;
+    for(std::size_t i=0;i<static_cast<std::size_t>(count);++i){ double sum=0; for(int w=0;w<36;++w) sum+=windows[i*36u+w]; out[i]=std::clamp(sum/36.0,0.0,1.0); }
+    return true;
 }
 extern "C" bool msf_cuda_backend_hash_batch(void* p,const std::uint8_t* in,std::uint64_t count,std::uint64_t* out){
     auto* s=static_cast<CudaBackendState*>(p);
