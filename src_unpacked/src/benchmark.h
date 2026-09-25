@@ -34,6 +34,8 @@ struct ResourceSample {
   double cpuSys = 0;
   double memMB = 0;
   bool gpu = false;
+  double ioReadBps = 0;
+  double ioWriteBps = 0;
 };
 class BenchmarkRecorder {
 public:
@@ -85,6 +87,18 @@ private:
   std::thread sampler_;
   mutable std::mutex sampleMutex_;
   std::vector<ResourceSample> samples_;
+  // Disk I/O of the scanned volume (PDH LogicalDisk, drive-wide) plus
+  // process-attributed cumulative totals. Lets slow-file buildMs be compared
+  // against drive saturation instead of guessing CPU vs I/O bound.
+  void* diskQuery_ = nullptr;
+  void* diskReadCounter_ = nullptr;
+  void* diskWriteCounter_ = nullptr;
+  std::string diskVolume_;
+  bool diskAvailable_ = false;
+  std::atomic<unsigned long long> procIoReadBytes_{0}, procIoWriteBytes_{0};
+  std::atomic<unsigned long long> procIoReadOps_{0}, procIoWriteOps_{0};
+  void openDiskCounters();
+  void closeDiskCounters();
   bool samplesTruncated_ = false;
   long long prevProcK_ = -1, prevProcU_ = -1, prevSysI_ = -1, prevSysK_ = -1, prevSysU_ = -1, prevTick_ = -1;
   int cpuCount_ = 1;

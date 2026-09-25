@@ -11,6 +11,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
+#include <pdh.h>
 #endif
 namespace msf {
 namespace {
@@ -61,6 +62,50 @@ std::string BenchmarkRecorder::escapeJson(const std::string& s) {
   }
   return o;
 }
+void BenchmarkRecorder::openDiskCounters() {
+#ifdef _WIN32
+  closeDiskCounters();
+  diskVolume_.clear();
+  diskAvailable_ = false;
+  // Locale-safe: English counter names work on any Windows display language.
+  if (cfg_.root.size() >= 2 && cfg_.root[1] == ':' &&
+      ((cfg_.root[0] >= 'A' && cfg_.root[0] <= 'Z') ||
+       (cfg_.root[0] >= 'a' && cfg_.root[0] <= 'z'))) {
+    diskVolume_.assign(1, (char)std::toupper(cfg_.root[0]));
+    diskVolume_ += ':';
+    PDH_HQUERY q = nullptr;
+    if (PdhOpenQueryA(nullptr, 0, &q) == ERROR_SUCCESS) {
+      PDH_HCOUNTER rd = nullptr, wr = nullptr;
+      const std::string base = "\\\\LogicalDisk(" + diskVolume_ + ")\\";
+      bool ok = PdhAddEnglishCounterA(q, (base + "Disk Read Bytes/sec").c_str(), 0, &rd) == ERROR_SUCCESS &&
+                PdhAddEnglishCounterA(q, (base + "Disk Write Bytes/sec").c_str(), 0, &wr) == ERROR_SUCCESS &&
+                PdhCollectQueryData(q) == ERROR_SUCCESS;
+      if (ok) {
+        diskQuery_ = q;
+        diskReadCounter_ = rd;
+        diskWriteCounter_ = wr;
+        diskAvailable_ = true;
+      } else {
+        if (q) PdhCloseQuery(q);
+      }
+    }
+  }
+#else
+  diskVolume_.clear();
+  diskAvailable_ = false;
+#endif
+}
+void BenchmarkRecorder::closeDiskCounters() {
+#ifdef _WIN32
+  if (diskQuery_) {
+    PdhCloseQuery(static_cast<PDH_HQUERY>(diskQuery_));
+    diskQuery_ = nullptr;
+    diskReadCounter_ = nullptr;
+    diskWriteCounter_ = nullptr;
+  }
+#endif
+  diskAvailable_ = false;
+}
 void BenchmarkRecorder::reset() {
   stopSampler();
   started_ = false;
@@ -98,6 +143,11 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
 #endif
   scanned_ = analyzed_ = unchanged_ = candidates_ = matches_ = groups_ = 0;
   streamedMatches_.store(0, std::memory_order_relaxed);
+  procIoReadBytes_.store(0, std::memory_order_relaxed);
+  procIoWriteBytes_.store(0, std::memory_order_relaxed);
+  procIoReadOps_.store(0, std::memory_order_relaxed);
+  procIoWriteOps_.store(0, std::memory_order_relaxed);
+  openDiskCounters();
   reductionPct_ = 0;
   gpuImages_ = gpuFallback_ = 0;
   vidGpu_.store(0, std::memory_order_relaxed); vidGpuFallback_.store(0, std::memory_order_relaxed); vidGpuNs_.store(0, std::memory_order_relaxed);
@@ -172,6 +222,24 @@ void BenchmarkRecorder::sampleOnce(double tMs) {
   PROCESS_MEMORY_COUNTERS pm{};
   if (GetProcessMemoryInfo(GetCurrentProcess(), &pm, sizeof(pm)))
     s.memMB = (double)pm.WorkingSetSize / (1024.0 * 1024.0);
+  if (diskQuery_) {
+    if (PdhCollectQueryData(static_cast<PDH_HQUERY>(diskQuery_)) == ERROR_SUCCESS) {
+      PDH_FMT_COUNTERVALUE v{};
+      if (PdhGetFormattedCounterValue(static_cast<PDH_HCOUNTER>(diskReadCounter_), PDH_FMT_DOUBLE, nullptr, &v) == ERROR_SUCCESS &&
+          v.CStatus == ERROR_SUCCESS)
+        s.ioReadBps = v.doubleValue;
+      if (PdhGetFormattedCounterValue(static_cast<PDH_HCOUNTER>(diskWriteCounter_), PDH_FMT_DOUBLE, nullptr, &v) == ERROR_SUCCESS &&
+          v.CStatus == ERROR_SUCCESS)
+        s.ioWriteBps = v.doubleValue;
+    }
+  }
+  IO_COUNTERS io{};
+  if (GetProcessIoCounters(GetCurrentProcess(), &io)) {
+    procIoReadBytes_.store(io.ReadTransferCount, std::memory_order_relaxed);
+    procIoWriteBytes_.store(io.WriteTransferCount, std::memory_order_relaxed);
+    procIoReadOps_.store(io.ReadOperationCount, std::memory_order_relaxed);
+    procIoWriteOps_.store(io.WriteOperationCount, std::memory_order_relaxed);
+  }
 #else
   (void)tMs;
 #endif
@@ -199,6 +267,7 @@ void BenchmarkRecorder::stopSampler() {
   sampling_.store(false, std::memory_order_relaxed);
   if (sampler_.joinable()) sampler_.join();
   gpuActiveFn_ = nullptr;
+  closeDiskCounters();
 }
 void BenchmarkRecorder::finalize(bool completed, std::size_t scanned, std::size_t analyzed, std::size_t unchanged,
                                  std::size_t candidates, std::size_t matches, std::size_t groups, double reductionPct,
@@ -222,6 +291,7 @@ std::string BenchmarkRecorder::toJson() const {
   const double vidGpuMs = (double)vidGpuNs_.load() / 1e6;
   const double playSec = vidPlaySec_.load();
   double cpuMean = 0, cpuMax = 0, cpuVar = 0, sysMean = 0, memMax = 0, gpuDuty = 0;
+  double ioReadMax = 0, ioWriteMax = 0, ioReadSum = 0, ioWriteSum = 0;
   long long idleRun = 0, idleMax = 0;
   std::size_t nS = 0, gpuOn = 0;
   bool truncated = false;
@@ -235,6 +305,10 @@ std::string BenchmarkRecorder::toJson() const {
       sysSum += s.cpuSys;
       cpuMax = std::max(cpuMax, s.cpuProc);
       memMax = std::max(memMax, s.memMB);
+      ioReadMax = std::max(ioReadMax, s.ioReadBps);
+      ioWriteMax = std::max(ioWriteMax, s.ioWriteBps);
+      ioReadSum += s.ioReadBps;
+      ioWriteSum += s.ioWriteBps;
       if (s.gpu) { ++gpuOn; idleRun = 0; }
       else { ++idleRun; idleMax = std::max(idleMax, idleRun); }
     }
@@ -298,14 +372,21 @@ std::string BenchmarkRecorder::toJson() const {
     << ",\"truncated\":" << (truncated ? "true" : "false") << ",\"cpuProcMean\":" << cpuMean
     << ",\"cpuProcMax\":" << cpuMax << ",\"cpuProcStd\":" << cpuStd << ",\"cpuSysMean\":" << sysMean
     << ",\"memMBMax\":" << memMax << ",\"gpuDutyPct\":" << gpuDuty
-    << ",\"gpuLongestIdleMs\":" << (double)idleMax * kSampleMs << ",\"series\":[";
+    << ",\"gpuLongestIdleMs\":" << (double)idleMax * kSampleMs
+    << ",\"diskVolume\":\"" << escapeJson(diskVolume_) << "\""
+    << ",\"diskAvailable\":" << (diskAvailable_ ? "true" : "false")
+    << ",\"ioReadBpsMax\":" << ioReadMax << ",\"ioReadBpsMean\":" << (nS ? ioReadSum / nS : 0)
+    << ",\"ioWriteBpsMax\":" << ioWriteMax << ",\"ioWriteBpsMean\":" << (nS ? ioWriteSum / nS : 0)
+    << ",\"procIoReadBytes\":" << procIoReadBytes_.load() << ",\"procIoWriteBytes\":" << procIoWriteBytes_.load()
+    << ",\"procIoReadOps\":" << procIoReadOps_.load() << ",\"procIoWriteOps\":" << procIoWriteOps_.load()
+    << ",\"series\":[";
   {
     std::lock_guard<std::mutex> g(sampleMutex_);
     bool first = true;
     for (const auto& s : samples_) {
       if (!first) o << ",";
       first = false;
-      o << "[" << s.tMs << "," << s.cpuProc << "," << s.cpuSys << "," << s.memMB << "," << (s.gpu ? 1 : 0) << "]";
+      o << "[" << s.tMs << "," << s.cpuProc << "," << s.cpuSys << "," << s.memMB << "," << (s.gpu ? 1 : 0) << "," << s.ioReadBps << "," << s.ioWriteBps << "]";
     }
   }
   o << "]},";

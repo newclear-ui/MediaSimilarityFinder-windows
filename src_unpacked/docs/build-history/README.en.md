@@ -111,6 +111,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.3.15 | Degenerate-hash false-positive fix, report-wait UI, video GPU activity wiring |
 | 0.9.3.16 | Crop-only verdict split, stop responsiveness, color previews |
 | 0.9.3.17 | Single-sweep video decode, duration fallback |
+| 0.9.3.18 | Benchmark disk I/O, duration direct fallback, popup readability |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

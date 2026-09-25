@@ -271,6 +271,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchCpuUse")) return S("CPU 사용률","CPU usage");
   if (!std::strcmp(key,"benchMemMax")) return S("메모리 최대","Peak memory");
   if (!std::strcmp(key,"benchGpuDuty")) return S("GPU 듀티","GPU duty");
+  if (!std::strcmp(key,"benchIo")) return S("디스크 I/O","Disk I/O");
   if (!std::strcmp(key,"benchMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"benchSlow")) return S("느린 파일","Slowest files");
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
@@ -280,7 +281,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
   if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.17\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.17\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.18\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.18\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -302,10 +303,16 @@ static QDialog* showReportWaitPopup(QWidget* parent, UiLang lang, const char* te
   dlg->setWindowTitle(trStr(lang, "repWaitTitle"));
   dlg->setModal(false);
   auto* lay = new QVBoxLayout(dlg);
+  lay->setContentsMargins(24, 18, 24, 18);
   auto* lab = new QLabel(trStr(lang, textKey), dlg);
+  // Two-line wrapped text sized to content: single-line fixed boxes clipped
+  // CJK glyphs (the stop-wait notice lost its tail at 360px).
   lab->setAlignment(Qt::AlignCenter);
+  lab->setWordWrap(true);
   lay->addWidget(lab);
-  dlg->setFixedSize(360, 90);
+  dlg->setMinimumWidth(460);
+  dlg->adjustSize();
+  dlg->setFixedSize(dlg->size());
   dlg->show();
   QApplication::processEvents();
   return dlg;
@@ -657,7 +664,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.17"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.18"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -1031,7 +1038,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.17"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.18"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1314,6 +1321,16 @@ void MainWindow::showBenchmarkDialog(const QString& json) {
       .arg(trStr(lang(), "benchMemMax")).arg((qulonglong)res["memMBMax"].toDouble())
       .arg(trStr(lang(), "benchGpuDuty")).arg(f1(res["gpuDutyPct"].toDouble()))
       .arg(f1(res["gpuLongestIdleMs"].toDouble() / 1000.0));
+  {
+    const QString vol = res["diskVolume"].toString();
+    const double rMax = res["ioReadBpsMax"].toDouble() / 1e6, rMean = res["ioReadBpsMean"].toDouble() / 1e6;
+    const double wMax = res["ioWriteBpsMax"].toDouble() / 1e6, wMean = res["ioWriteBpsMean"].toDouble() / 1e6;
+    const double pR = res["procIoReadBytes"].toDouble() / 1e9, pW = res["procIoWriteBytes"].toDouble() / 1e9;
+    lines << QString("%1%2: read max %3 MB/s, mean %4 · write max %5, mean %6 · process total read %7 GB, write %8 GB%9")
+        .arg(trStr(lang(), "benchIo")).arg(vol.isEmpty() ? QString() : QString(" (%1)").arg(vol))
+        .arg(f1(rMax)).arg(f1(rMean)).arg(f1(wMax)).arg(f1(wMean)).arg(f1(pR)).arg(f1(pW))
+        .arg(res["diskAvailable"].toBool(true) ? QString() : QString(" (n/a)"));
+  }
   lines << QString("%1: candidates %2, pairs %3, groups %4, reduction %5% (GPU imgs %6, fallback %7)").arg(trStr(lang(), "benchMatches"))
       .arg((qulonglong)mat["candidates"].toDouble()).arg((qulonglong)mat["pairs"].toDouble())
       .arg((qulonglong)mat["groups"].toDouble()).arg(f1(mat["reductionPct"].toDouble()))
@@ -2375,6 +2392,19 @@ void MainWindow::refreshDetail() {
         break;
       }
   }
+  if (dur <= 0 && isVideoExt(currentFile_)) {
+    // Last resort: read the container duration directly (~30ms, cached).
+    // Covers files whose scan record never carried a duration.
+    msf::VideoDecoder dec;
+    if (dec.open(currentFile_.toStdString())) {
+      msf::VideoInfo vi;
+      if (dec.info(vi) && vi.duration > 0) {
+        dur = vi.duration;
+        fileDur_[currentFile_] = dur;
+      }
+      dec.close();
+    }
+  }
   detailForm_->addRow(trStr(lang(), "duration"),
                       new QLabel(dur > 0 ? QString("%1:%2").arg(int(dur) / 60, 2, 10, QChar('0')).arg(int(dur) % 60, 2, 10, QChar('0')) : "-", this));
   detailForm_->addRow(trStr(lang(), "similarity"),
@@ -2860,7 +2890,7 @@ void MainWindow::renameSelected() {
   if (ps.size() != 1) return;
   QFileInfo fi(ps.first());
   bool ok = false;
-  const QString n = QInputDialog::getText(this, trStr(lang(), "rename"), trStr(lang(), "newName:"),
+  const QString n = QInputDialog::getText(this, trStr(lang(), "rename"), trStr(lang(), "newName"),
                                           QLineEdit::Normal, fi.fileName(), &ok);
   if (ok && !n.isEmpty() && n != fi.fileName()) {
     if (!QFile::rename(fi.filePath(), fi.dir().filePath(n)))
