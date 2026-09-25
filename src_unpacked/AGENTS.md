@@ -20,28 +20,33 @@
    - 빌드 번호와 무관하게 필요할 때만 상향. 상향한 빌드는 build-history에 명시
 3. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.3.19, 마이너 라인 0.9.3.x) 구분 유지. 판정 의미 불변, additive CUDA 커널·호출 병합 허용, CPU fallback 유지
 
-4. **다음 개발선 0.9.4.x**
-   - 권장 첫 빌드 번호: 0.9.4.0
-   - 사용자/상위 아키텍처 명칭은 CPU/GPU로 통일
-   - GPU는 ON/OFF만 사용자에게 노출하며 GPU 사용률 수동 설정은 제거
-   - Resource Mode는 Maximum/High/Balanced/Gaming/Manual 유지. CPU 정책은 기존 의미를 유지하고 GPU는 AUTO Adaptive Scheduler로 관리
-   - CPU/GPU 작업 배분은 고정 50:50 금지. 하드웨어 capability + calibration + 실시간 부하 + throughput + queue + transfer cost를 기반으로 동적 조정
-   - 성능 프로파일은 INI에 기록하여 다음 실행의 초기값으로 사용하되 live runtime state가 항상 우선
-   - 상위 GPU abstraction은 vendor-neutral. NVIDIA CUDA, NVDEC, Vulkan, AMD HIP/ROCm, Intel Level Zero를 독립 backend 후보로 연결
-   - Intel/AMD iGPU 및 dGPU는 동일 GPU abstraction으로 취급
-   - 상위 계층에서 CUDA API를 직접 확산시키지 않으며 CPU fallback은 항상 유지
-   - 빌드 이름은 build-windows-cpu / build-windows-gpu로 전환. build-windows-cuda는 0.9.4.x GPU build가 검증될 때까지 보존
-   - CMake 상위 옵션은 MSF_ENABLE_GPU, backend 선택은 MSF_GPU_BACKEND 계열을 목표로 한다. 실제 구현 파일의 CUDA/Vulkan/HIP/Level Zero 이름은 기술명으로 유지
-   - 0.9.4.0의 구조 변경 후 build-history를 ko/en 쌍으로 기록
+4. **0.9.4 개발선 작업 규칙**
 
- 
+- 상위 개발 방향은 `docs/development-roadmap.ko.md` / `.en.md`가 기준이다.
+- 현재 실제 상태는 `docs/development-progress.ko.md` / `.en.md`가 기준이다.
+- Roadmap 노드 A/B/C는 버전 번호가 아니다.
+- 검증된 코드 상태에 따라 버전을 `0.9.4.0 → 0.9.4.1 → 0.9.4.2 → ...`로 진행한다.
+- 문제 발생 시 A1/B1/C1 같은 하위 작업으로 기록하고 진단 → 수정 → 회귀검증 후 같은 node gate로 복귀한다.
+- 구조 방향을 바꿔야 하면 Roadmap과 Progress를 함께 갱신한다.
+- 사용자/상위 아키텍처 명칭은 CPU/GPU로 통일한다.
+- GPU는 ON/OFF만 사용자에게 노출한다. GPU 사용률 수동 설정은 제거한다.
+- Resource Mode는 Maximum/High/Balanced/Gaming/Manual을 유지한다.
+- GPU 작업 배분은 고정 50:50이 아니라 capability + calibration + 실시간 부하 + throughput + queue + transfer cost에 의해 동적으로 결정한다.
+- 성능 profile은 INI에 저장하고 live runtime state가 항상 우선한다.
+- 상위 GPU abstraction은 vendor-neutral이며 NVIDIA CUDA/NVDEC, Vulkan, AMD HIP/ROCm, Intel Level Zero는 독립 backend 후보로 취급한다.
+- CPU fallback은 항상 유지한다.
+- Build entry point는 build-windows-cpu / build-windows-gpu 명칭을 사용한다.
+- 버전별 예정표를 다른 문서에 중복 작성하지 않고 Development Roadmap에서 통합 관리한다.
+- Benchmark/Telemetry는 각 development node의 완료조건과 함께 구현한다.
+
 5. **벤치마크 / Telemetry**
-   - 0.9.4.x에서는 benchmark를 scheduler와 동급의 핵심 설계 계층으로 취급한다.
-   - Adaptive Scheduler, calibration, backend 선택, fallback, queue, transfer, decoder 단계의 실제 근거를 benchmark가 기록해야 한다.
-   - 측정되지 않은 값은 0으로 기록하지 않는다. measured / not_measured / not_available / partial / failed / fallback 상태를 구분한다.
-   - benchmark JSON에는 독립적인 schemaVersion을 둔다.
-   - decodedFrames와 sampledFrames는 반드시 분리한다.
-   - CPU-only, GPU OFF, GPU ON/AUTO, low-end simulation, external CPU/GPU load, decoder success/fallback, cancellation/partial scan을 회귀 benchmark 시나리오로 유지한다.
-   - human-readable 요약과 machine-readable 상세 JSON을 분리한다.
-   - benchmark instrumentation은 검색의 정합성과 판정 결과를 변경하면 안 된다.
-   - 상세 설계는 docs/architecture/benchmark-telemetry-roadmap.ko.md + .en.md를 기준으로 한다.
+
+- Benchmark / Telemetry는 모든 development node의 핵심 계층이다.
+- 상세 설계는 `docs/architecture/benchmark-telemetry-roadmap.ko.md` + `.en.md`를 따른다.
+- 측정되지 않은 값은 0으로 기록하지 않는다.
+- measured / not_measured / not_available / partial / failed / fallback 상태를 구분한다.
+- scheduler decision, calibration, backend, decoder, queue, transfer, fallback을 기록한다.
+- decodedFrames와 sampledFrames를 분리한다.
+- human-readable summary와 machine-readable JSON을 구분한다.
+- instrumentation이 검색 정합성이나 결과를 변경해서는 안 된다.
+- 실제 버전의 변경과 검증은 `docs/build-history/<version>.ko.md` + `.en.md`에 기록한다.
