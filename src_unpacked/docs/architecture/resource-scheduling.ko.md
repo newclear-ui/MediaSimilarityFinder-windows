@@ -289,7 +289,9 @@ Adaptive Scheduler는 benchmark 없이는 충분히 검증할 수 없으므로 b
 
 상세 benchmark 설계는 [Benchmark and Runtime Telemetry Roadmap](benchmark-telemetry-roadmap.ko.md)을 따른다.
 
-### 0.9.4.0 추가 필수 항목
+### Development Roadmap 공통 benchmark 조건
+
+다음 항목은 특정 빌드 번호에 고정하지 않고 각 Roadmap node의 완료조건으로 검증한다.
 
 - benchmark schemaVersion
 - measured / not_measured / not_available / partial / failed / fallback 상태
