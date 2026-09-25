@@ -271,7 +271,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"benchSlow")) return S("느린 파일","Slowest files");
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.3\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.3\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
+  if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.4\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.4\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -348,11 +350,23 @@ void ScanWorker::run() {
     // Cancelled here means: stop before touching results.
     {
       int kept = 0, dropped = 0;
-      const qint64 revT0 = benchmark_ ? QDateTime::currentMSecsSinceEpoch() : 0;
+      msf::BenchmarkConfig bcfg;
+      bcfg.root = root_.toStdString();
+      bcfg.build = QCoreApplication::applicationVersion().toStdString();
+      bcfg.engine = msf::MediaSearchEngine::kEngineVersion;
+      bcfg.db = msf::Database::kDatabaseVersion;
+      bcfg.distance = (unsigned)distance_;
+      bcfg.scanImages = scanImages_; bcfg.scanVideos = scanVideos_;
+      bcfg.gpuEnabled = gpuEnabled_; bcfg.detail = benchmark_;
+      engine_.beginBenchmark(bcfg, benchmark_);
+      const qint64 revT0 = QDateTime::currentMSecsSinceEpoch();
       if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
+        engine_.abortBenchmark();
+        if (benchmark_ && engine_.hasBenchmark())
+          emit benchmarkReady(QString::fromStdString(engine_.benchmarkJson()));
         emit finished(QString("CANCELLED|0|0")); return;
       }
-      if (benchmark_) control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
+      control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
       if (kept + dropped > 0) emit revalidated(kept, dropped);
     }
     // Quick load: the scan button restores the stored duplicate groups before
@@ -599,7 +613,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.3"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.4"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -681,6 +695,8 @@ void MainWindow::buildToolbar() {
   }
   monBtn_ = new QPushButton(toolBar_); monBtn_->setCheckable(true);
   connect(monBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitor);
+  logBtn_ = new QPushButton(toolBar_); logBtn_->setEnabled(false);
+  connect(logBtn_, &QPushButton::clicked, this, [this] { if (!lastBenchJson_.isEmpty()) showBenchmarkDialog(lastBenchJson_); });
   // Merged settings/help menu, docked at the far right (after the spacer):
   // monitor detail settings + help in one place.
   auto* utilBtn_ = new QToolButton(toolBar_);
@@ -701,7 +717,7 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(scan_); toolBar_->addWidget(benchTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
   toolBar_->addWidget(kindBtn_);
-  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_);
+  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
   toolBar_->addWidget(utilBtn_); // far-right menu
@@ -833,6 +849,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   imgGrid_ = new QListWidget(imgTab);
   imgGrid_->setViewMode(QListView::IconMode); imgGrid_->setResizeMode(QListView::Adjust);
   imgGrid_->setMovement(QListView::Static); imgGrid_->setSpacing(8);
+  imgGrid_->setUniformItemSizes(true); imgGrid_->setLayoutMode(QListView::Batched);
   imgLay->addWidget(imgTree_); imgLay->addWidget(imgGrid_);
   midTabs_->addTab(imgTab, QString());
   auto* vidTab = new QWidget(midTabs_);
@@ -841,6 +858,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   vidGrid_ = new QListWidget(vidTab);
   vidGrid_->setViewMode(QListView::IconMode); vidGrid_->setResizeMode(QListView::Adjust);
   vidGrid_->setMovement(QListView::Static); vidGrid_->setSpacing(8);
+  vidGrid_->setUniformItemSizes(true); vidGrid_->setLayoutMode(QListView::Batched);
   vidLay->addWidget(vidTree_); vidLay->addWidget(vidGrid_);
   midTabs_->addTab(vidTab, QString());
   connectResView(imgTree_, imgGrid_);
@@ -965,7 +983,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.3"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.4"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -976,6 +994,7 @@ void MainWindow::applyStaticTexts() {
   gpuEnabled_->setToolTip(trStr(l, "allowGpu"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
   monBtn_->setChecked(monitorEnabled_);
+  logBtn_->setText(trStr(l, "benchLog"));
   auto* leftTitle = findChild<QLabel*>("leftTitle"); if (leftTitle) leftTitle->setText(trStr(l, "explorer"));
   auto* sumTitle = findChild<QLabel*>("sumTitle"); if (sumTitle) sumTitle->setText(trStr(l, "summary"));
   sumTotal_->setText(trStr(l, "total")); sumDone_->setText(trStr(l, "scanned")); sumGroups_->setText(trStr(l, "groups"));
@@ -1195,6 +1214,12 @@ void MainWindow::onRevalidated(int kept, int dropped) {
   statusMsg_->setText(trStr(lang(), "revalidated").arg(kept).arg(dropped));
 }
 void MainWindow::onBenchmark(QString json) {
+  lastBenchJson_ = json;
+  logBtn_->setEnabled(true);
+  logBtn_->setStyleSheet(QStringLiteral("background:#ebf4ff; border:1px solid #2b6cb0; color:#2b6cb0; font-weight:bold;"));
+  showBenchmarkDialog(json);
+}
+void MainWindow::showBenchmarkDialog(const QString& json) {
   QJsonParseError perr;
   const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &perr);
   if (perr.error != QJsonParseError::NoError || !doc.isObject()) return;
@@ -1208,6 +1233,7 @@ void MainWindow::onBenchmark(QString json) {
   QStringList lines;
   lines << QString("%1: %2").arg(trStr(lang(), "benchState"),
       meta["completed"].toBool() ? trStr(lang(), "benchDone") : trStr(lang(), "benchStopped"));
+  if (!cfg["detail"].toBool(true)) lines << trStr(lang(), "benchDetailOff");
   lines << QString("%1: %2 s (walk %3 s, reval %4 s, img %5 s, vid %6 s, analyze %7 s)").arg(trStr(lang(), "benchWall"))
       .arg(f1(sum["wallMs"].toDouble() / 1000.0)).arg(f1(sum["walkMs"].toDouble() / 1000.0))
       .arg(f1(sum["revalidateMs"].toDouble() / 1000.0)).arg(f1(sum["imageStageMs"].toDouble() / 1000.0))

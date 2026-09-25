@@ -97,6 +97,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.3.1 | Search benchmark log (JSON, renumbered from 0.9.2.91) |
 | 0.9.3.2 | Benchmark toggle (temporary, remove in 1.0) |
 | 0.9.3.3 | Progressive group thumbnails |
+| 0.9.3.4 | Always-on benchmark log, log button, scroll fix |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

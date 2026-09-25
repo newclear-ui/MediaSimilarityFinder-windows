@@ -121,6 +121,7 @@ private slots:
   void onQuickLoaded(int);
   void onRevalidated(int,int);
   void onBenchmark(QString);
+  void showBenchmarkDialog(const QString& json);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
@@ -220,8 +221,9 @@ private:
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar
   QToolBar* toolBar_=nullptr;
-  QLineEdit* folder_=nullptr; QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
-    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr;
+  QLineEdit* folder_=nullptr;   QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
+    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr;
+  QString lastBenchJson_;
   QComboBox* preset_=nullptr; QSpinBox *cpu_=nullptr,*gpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* benchTgl_=nullptr;
   // left

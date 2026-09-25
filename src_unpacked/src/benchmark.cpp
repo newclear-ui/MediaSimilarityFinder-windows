@@ -64,6 +64,11 @@ std::string BenchmarkRecorder::escapeJson(const std::string& s) {
 void BenchmarkRecorder::reset() {
   stopSampler();
   started_ = false;
+  finished_ = false;
+}
+void BenchmarkRecorder::abortUnfinished() {
+  if (started_ && !finished_)
+    finalize(false, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
 }
 void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   stopSampler();
@@ -95,6 +100,7 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   reductionPct_ = 0;
   gpuImages_ = gpuFallback_ = 0;
   completed_ = false;
+  finished_ = false;
   started_ = true;
 }
 void BenchmarkRecorder::addImageStageMs(double ms) { imageStageMs_ += ms; }
@@ -190,6 +196,7 @@ void BenchmarkRecorder::stopSampler() {
 void BenchmarkRecorder::finalize(bool completed, std::size_t scanned, std::size_t analyzed, std::size_t unchanged,
                                  std::size_t candidates, std::size_t matches, std::size_t groups, double reductionPct,
                                  std::uint64_t gpuImages, std::uint64_t gpuFallback) {
+  if (finished_) return;
   stopSampler();
   wallMs_ = (double)(nowNs() - startTick_) / 1e6;
   completed_ = completed;
@@ -197,6 +204,7 @@ void BenchmarkRecorder::finalize(bool completed, std::size_t scanned, std::size_
   candidates_ = candidates; matches_ = matches; groups_ = groups;
   reductionPct_ = reductionPct;
   gpuImages_ = gpuImages; gpuFallback_ = gpuFallback;
+  finished_ = true;
 }
 std::string BenchmarkRecorder::toJson() const {
   const auto imgN = imgCount_.load(), vidN = vidCount_.load();
@@ -236,6 +244,7 @@ std::string BenchmarkRecorder::toJson() const {
     << "\"startedAt\":\"" << startedAt_ << "\",\"completed\":" << (completed_ ? "true" : "false") << ","
     << "\"root\":\"" << escapeJson(cfg_.root) << "\"},";
   o << "\"config\":{\"distance\":" << cfg_.distance << ",\"cpuWorkers\":" << cfg_.cpuWorkers
+    << ",\"detail\":" << (cfg_.detail ? "true" : "false")
     << ",\"gpuEnabled\":" << (cfg_.gpuEnabled ? "true" : "false") << ",\"gpuBatch\":" << cfg_.gpuBatch
     << ",\"scanImages\":" << (cfg_.scanImages ? "true" : "false") << ",\"scanVideos\":" << (cfg_.scanVideos ? "true" : "false")
     << ",\"cudaAvailable\":" << (cfg_.cudaAvailable ? "true" : "false") << "},";

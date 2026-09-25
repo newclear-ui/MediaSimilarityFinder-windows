@@ -52,6 +52,10 @@ int main() {
   if (!need("\"videos\":{\"count\":25")) return 19;
   if (!need("\"cpuProcStd\"")) return 20;
   if (!need("\"gpuLongestIdleMs\"")) return 21;
+  rec.abortUnfinished();
+  if (!rec.hasData()) return 22;
+  rec.reset();
+  if (rec.hasData()) return 23;
   std::cout << "benchmark=ok\n";
   return 0;
 }

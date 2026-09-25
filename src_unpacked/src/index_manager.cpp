@@ -10,7 +10,7 @@
 
 namespace msf {
 namespace fs = std::filesystem;
-static constexpr const char* kApplicationVersion = "0.9.3.3";
+static constexpr const char* kApplicationVersion = "0.9.3.4";
 
 static std::uint64_t fnv1a64(const std::string& s, std::uint64_t seed) {
     std::uint64_t h = 14695981039346656037ull ^ seed;

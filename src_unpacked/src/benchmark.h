@@ -12,6 +12,7 @@ struct BenchmarkConfig {
   std::string build;
   std::string engine;
   std::string db;
+  bool detail = true;
   unsigned distance = 8;
   int cpuWorkers = 0;
   bool gpuEnabled = true;
@@ -41,6 +42,8 @@ public:
   static constexpr std::size_t kMaxSamples = 50000;
   void start(const BenchmarkConfig& cfg);
   void reset();
+  bool sampling() const { return sampling_.load(std::memory_order_relaxed); }
+  bool finished() const { return finished_; }
   void addImageStageMs(double ms);
   void addVideoStageMs(double ms);
   void addAnalyzeMs(double ms);
@@ -51,6 +54,7 @@ public:
   void addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path);
   void startSampler(std::function<bool()> gpuActive);
   void stopSampler();
+  void abortUnfinished();
   void finalize(bool completed, std::size_t scanned, std::size_t analyzed, std::size_t unchanged,
                 std::size_t candidates, std::size_t matches, std::size_t groups, double reductionPct,
                 std::uint64_t gpuImages, std::uint64_t gpuFallback);
@@ -81,6 +85,7 @@ private:
   long long prevProcK_ = -1, prevProcU_ = -1, prevSysI_ = -1, prevSysK_ = -1, prevSysU_ = -1, prevTick_ = -1;
   int cpuCount_ = 1;
   bool completed_ = false;
+  bool finished_ = false;
   std::size_t scanned_ = 0, analyzed_ = 0, unchanged_ = 0, candidates_ = 0, matches_ = 0, groups_ = 0;
   double reductionPct_ = 0;
   std::uint64_t gpuImages_ = 0, gpuFallback_ = 0;

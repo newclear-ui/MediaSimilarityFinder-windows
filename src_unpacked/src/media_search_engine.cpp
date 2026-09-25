@@ -165,6 +165,10 @@ static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf
   for(std::size_t i = 0; i < n && mf.anchors.size() < kMaxAnchors; i += stride)
     if(vf.hashes[i]) mf.anchors.push_back(vf.hashes[i]);
 }
+void MediaSearchEngine::beginBenchmark(const BenchmarkConfig& cfg, bool withSampler) {
+  bench_.start(cfg);
+  if (withSampler) bench_.startSampler([this]() { return gpuActive_.load(std::memory_order_relaxed); });
+}
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
   auto old=db_.all();
   std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
@@ -177,15 +181,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   MediaPipeline imagePipeline;
   BenchmarkConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable();
   const bool benchOn = !control || control->benchmarkEnabled;
-  if(benchOn){
-    bench_.start(bcfg);
-    bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
-    if(control) bench_.addRevalidateMs(control->revalidateMs);
-  } else {
-    bench_.reset();
-  }
+  bcfg.detail = benchOn;
+  bench_.start(bcfg);
+  if(benchOn) bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
+  if(control) bench_.addRevalidateMs(control->revalidateMs);
   auto finishScan=[&](bool completed)->SearchReport{
-    if(benchOn) bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
+    bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
     return r;
   };
   bool benchWalkTimed=false;
