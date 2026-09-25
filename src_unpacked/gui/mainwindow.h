@@ -26,7 +26,7 @@ class QListWidget; class QListWidgetItem; class QPushButton; class QProgressBar;
 class QLabel; class QComboBox; class QSpinBox; class QStackedWidget; class QSlider;
 class QToolButton; class QSplitter; class QCheckBox; class QTimer; class QStatusBar;
 class QTabWidget; class QFormLayout; class QToolBar; class QMenu; class QAction;
-class QStyledItemDelegate; class QCloseEvent;
+class QStyledItemDelegate; class QCloseEvent; class QDialog;
 
 // ---------------------------------------------------------------- language
 enum class UiLang { Ko, En };
@@ -181,7 +181,7 @@ private:
   void addMatch(const QString&, const QString&, double, int kind);
   QString findRoot(const QString&); // union-find over pathParent_
   // scan state
-  QThread* thread_=nullptr; ScanWorker* worker_=nullptr; msf::ResourcePolicy policy_;
+  QThread* thread_=nullptr; ScanWorker* worker_=nullptr; QDialog* cancelWait_=nullptr; msf::ResourcePolicy policy_;
   QVector<DupGroup> groups_;                   // built incrementally from streamed matches
   QHash<QString,int> pathGroup_;               // path -> group index
   QHash<QString,QString> pathParent_;           // union-find parent

@@ -121,9 +121,14 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
   auto loadTemporal=[&](const std::string& path, VideoFingerprint& vf, VideoCropFingerprint& cf)->bool{
     return videoEngine_.buildFull(path, vf, cf, 96);
   };
+  auto bestFullAgainst=[&](const FileState& x){
+   double z=0; const std::uint64_t qFull[]={fingerprint,mirrorFingerprint}; const std::uint64_t tFull[]={x.fingerprint,x.mirrorFingerprint};
+   for(auto a:qFull)if(hash_usable(a))for(auto b:tFull)if(hash_usable(b))z=std::max(z,hash_similarity(a,b));
+   return z;
+  };
   auto bestAgainst=[&](const FileState& x){
-   double best=0; const std::uint64_t qFull[]={fingerprint,mirrorFingerprint}; const std::uint64_t tFull[]={x.fingerprint,x.mirrorFingerprint};
-   for(auto a:qFull)if(hash_usable(a))for(auto b:tFull)if(hash_usable(b))best=std::max(best,hash_similarity(a,b));
+   double best=bestFullAgainst(x);
+   const std::uint64_t qFull[]={fingerprint,mirrorFingerprint}; const std::uint64_t tFull[]={x.fingerprint,x.mirrorFingerprint};
    if(kind==(int)MediaKind::Image){
      const std::uint64_t qc[]={crop4x3,crop1x1,crop9x16,mirrorCrop4x3,mirrorCrop1x1,mirrorCrop9x16};
      const std::uint64_t tc[]={x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16};
@@ -133,15 +138,23 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
      const std::uint64_t tSame[][2]={{x.crop4x3,x.mirrorCrop4x3},{x.crop1x1,x.mirrorCrop1x1},{x.crop9x16,x.mirrorCrop9x16}};
      for(int r=0;r<3;++r) for(auto a:qSame[r]) if(hash_usable(a)) for(auto b:tSame[r]) if(hash_usable(b)) best=std::max(best,hash_similarity(a,b));
    } else if(kind==(int)MediaKind::Video){
+     const double full = best;
+     double cropBest = full;
      const std::uint64_t qc[][2]={{crop4x3,mirrorCrop4x3},{crop1x1,mirrorCrop1x1},{crop9x16,mirrorCrop9x16}};
      const std::uint64_t tc[][2]={{x.crop4x3,x.mirrorCrop4x3},{x.crop1x1,x.mirrorCrop1x1},{x.crop9x16,x.mirrorCrop9x16}};
-     for(int r=0;r<3;++r) for(auto a:qc[r]) if(hash_usable(a)) for(auto b:tc[r]) if(hash_usable(b)) best=std::max(best,hash_similarity(a,b));
-     for(int r=0;r<3;++r) for(auto a:qc[r]) if(hash_usable(a)) for(auto b:tFull) if(hash_usable(b)) best=std::max(best,hash_similarity(a,b));
-     for(int r=0;r<3;++r) for(auto a:qFull) if(hash_usable(a)) for(auto b:tc[r]) if(hash_usable(b)) best=std::max(best,hash_similarity(a,b));
-   }
-   if(kind==(int)MediaKind::Video && !excludePath.empty() && best < threshold && best >= std::max(0.0,threshold-12.0) && (!expensiveStageGuard_ || expensiveStageGuard_())){
-     VideoFingerprint qa,ta; VideoCropFingerprint qc,tc;
-      if(loadTemporal(excludePath,qa,qc) && loadTemporal(x.path,ta,tc)){ VideoSimilarityOptions options{threshold,8,2}; options.gpu=&videoGpu_; options.gpuActivity=&gpuActive_; best=std::max(best,video_crop_similarity(qa,qc,ta,tc,options)); }
+     for(int r=0;r<3;++r) for(auto a:qc[r]) if(hash_usable(a)) for(auto b:tc[r]) if(hash_usable(b)) cropBest=std::max(cropBest,hash_similarity(a,b));
+     for(int r=0;r<3;++r) for(auto a:qc[r]) if(hash_usable(a)) for(auto b:tFull) if(hash_usable(b)) cropBest=std::max(cropBest,hash_similarity(a,b));
+     for(int r=0;r<3;++r) for(auto a:qFull) if(hash_usable(a)) for(auto b:tc[r]) if(hash_usable(b)) cropBest=std::max(cropBest,hash_similarity(a,b));
+     // Crop-only video hits earn temporal confirmation instead of matching
+     // outright (same rule as the batch analyze path): full-frame hits match
+     // immediately, crop-only pairs must survive DTW+SSIM verification.
+     // Empty excludePath (adhoc queries) keeps the legacy raw verdict.
+     if(full >= threshold || excludePath.empty()){ best = std::max(full,cropBest); }
+     else if(cropBest >= std::max(0.0,threshold-12.0) && (!expensiveStageGuard_ || expensiveStageGuard_())){
+      VideoFingerprint qa,ta; VideoCropFingerprint qc,tc;
+      best = full;
+       if(loadTemporal(excludePath,qa,qc) && loadTemporal(x.path,ta,tc)){ VideoSimilarityOptions options{threshold,8,2}; options.gpu=&videoGpu_; options.gpuActivity=&gpuActive_; best=std::max(best,video_crop_similarity(qa,qc,ta,tc,options)); }
+     } else best = cropBest;
    }
    return best;
  };
@@ -283,7 +296,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      return j;
     }));
   }
-  for(auto&f:futs){auto j=f.get(); if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;MediaFile mf{j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+   bool stopSeen=false;
+   for(auto&f:futs){auto j=f.get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue; if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;MediaFile mf{j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+   // Prompt stop: in-flight analyses must still join, but their results are
+   // discarded and no new range starts, so the scan winds down instead of
+   // grinding on. Checkpoints keep completed work; the worker maps cancel.
+   if(stopSeen) return false;
   if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
   return true;
  };

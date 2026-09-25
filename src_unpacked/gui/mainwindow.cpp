@@ -147,7 +147,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"cpu")) return S("CPU 사용","CPU usage");
   if (!std::strcmp(key,"ram")) return S("RAM 사용","RAM usage");
   if (!std::strcmp(key,"monitor")) return S("모니터","Monitor");
-  if (!std::strcmp(key,"monitorGpu")) return S("모니터 GPU","Monitor GPU");
+  if (!std::strcmp(key,"monitorGpu")) return S("GPU 가속","GPU");
   if (!std::strcmp(key,"general")) return S("일반","General");
   if (!std::strcmp(key,"tabFolder")) return S("폴더","Folders");
   if (!std::strcmp(key,"tabImages")) return S("결과: 이미지","Results: Images");
@@ -243,6 +243,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"stable")) return S("안정화 대기:","Stable-file delay:");
   if (!std::strcmp(key,"poll")) return S("폴백 폴링 간격:","Fallback poll interval:");
   if (!std::strcmp(key,"allowGpu")) return S("모니터 분석에 GPU 허용","Allow GPU acceleration for monitor analysis");
+  if (!std::strcmp(key,"scanGpuTip")) return S("검색 분석에 GPU 사용 (이미지 배치·영상 pHash/SSIM)","Use GPU for scan analysis (image batches, video pHash/SSIM)");
   if (!std::strcmp(key,"monSaved")) return S("모니터 설정 저장됨","Monitor settings saved");
   if (!std::strcmp(key,"monRun")) return S("실시간 모니터 실행 중","Real-time monitor running");
   if (!std::strcmp(key,"monStop")) return S("실시간 모니터 중지됨","Real-time monitor stopped");
@@ -278,7 +279,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWaitTitle")) return S("검색 리포트 작성 중","Writing search report");
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.15\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.15\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.16\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.16\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -290,6 +292,23 @@ static void applySelectionStyle(QWidget* w) {
       "QListWidget::item:selected:!active { background:#7aa7d9; color:#ffffff; }"
       "QTreeWidget::item:selected { background:#2b6cb0; color:#ffffff; }"
       "QTreeWidget::item:selected:!active { background:#7aa7d9; color:#ffffff; }");
+}
+// Small non-modal notice shown while the finished-scan report views rebuild
+// (or while a stop request winds down in-flight analyses). It is closed as
+// soon as the real results are on screen, so users wait instead of closing
+// the program mid-rebuild.
+static QDialog* showReportWaitPopup(QWidget* parent, UiLang lang, const char* textKey = "repWait") {
+  auto* dlg = new QDialog(parent);
+  dlg->setWindowTitle(trStr(lang, "repWaitTitle"));
+  dlg->setModal(false);
+  auto* lay = new QVBoxLayout(dlg);
+  auto* lab = new QLabel(trStr(lang, textKey), dlg);
+  lab->setAlignment(Qt::AlignCenter);
+  lay->addWidget(lab);
+  dlg->setFixedSize(360, 90);
+  dlg->show();
+  QApplication::processEvents();
+  return dlg;
 }
 
 #ifdef _WIN32
@@ -638,7 +657,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.15"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.16"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -1012,7 +1031,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.15"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.16"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1020,7 +1039,7 @@ void MainWindow::applyStaticTexts() {
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
   benchTgl_->setText(trStr(l, "benchToggle"));
   gpuEnabled_->setText(trStr(l, "monitorGpu"));
-  gpuEnabled_->setToolTip(trStr(l, "allowGpu"));
+  gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
   monBtn_->setChecked(monitorEnabled_);
   logBtn_->setText(trStr(l, "benchLog"));
@@ -1137,6 +1156,7 @@ void MainWindow::startScan() {
     }
   }
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; thread_ = nullptr; worker_ = nullptr; }
+  if (cancelWait_) { cancelWait_->close(); cancelWait_->deleteLater(); cancelWait_ = nullptr; }
   flushThumbPending();
   thumbStatMem_ = thumbStatDisk_ = thumbStatEngine_ = 0;
   thumbStatShell_ = thumbStatDecode_ = thumbStatPlace_ = thumbStatFail_ = 0;
@@ -1199,6 +1219,11 @@ void MainWindow::cancelScan() {
   // Direct call (see togglePauseScan): a queued cancel slot would only run
   // after run() returns, i.e. never in time to stop the scan.
   worker_->cancel();
+  // Immediate feedback: the worker still needs a moment to wind down
+  // in-flight analyses, so the wait notice appears on the click itself —
+  // not seconds later when scanFinished arrives. scanFinished/onResults
+  // take over (and close) this popup.
+  if (!cancelWait_) cancelWait_ = showReportWaitPopup(this, lang(), "stopWait");
   statusMsg_->setText(trStr(lang(), "scanCancel"));
 }
 void MainWindow::onScanCounts(qulonglong done, qulonglong total) {
@@ -1338,24 +1363,12 @@ void MainWindow::showBenchmarkDialog(const QString& json) {
   dlg.resize(620, 480);
   dlg.exec();
 }
-// Small non-modal notice shown while the finished-scan report views rebuild.
-// It is closed as soon as the real results are on screen, so users wait
-// instead of closing the program mid-rebuild.
-static QDialog* showReportWaitPopup(QWidget* parent, UiLang lang) {
-  auto* dlg = new QDialog(parent);
-  dlg->setWindowTitle(trStr(lang, "repWaitTitle"));
-  dlg->setModal(false);
-  auto* lay = new QVBoxLayout(dlg);
-  auto* lab = new QLabel(trStr(lang, "repWait"), dlg);
-  lab->setAlignment(Qt::AlignCenter);
-  lay->addWidget(lab);
-  dlg->setFixedSize(340, 90);
-  dlg->show();
-  QApplication::processEvents();
-  return dlg;
-}
 void MainWindow::scanFinished(QString msg) {
-  QDialog* wait = showReportWaitPopup(this, lang());
+  // A stop request already shows this popup from cancelScan(): keep it for
+  // the rebuild instead of flashing a second one.
+  QDialog* wait = cancelWait_;
+  cancelWait_ = nullptr;
+  if (!wait) wait = showReportWaitPopup(this, lang());
   drainMatches();
   if (thumbDbOpen_) thumbDb_.pruneThumbs(); // drop thumbs of files gone from the index
   scanLog(QString("finish %1").arg(msg));
@@ -1406,7 +1419,9 @@ void MainWindow::scanFailed(QString msg) {
   setRunning(false);
 }
 void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
-  QDialog* wait = showReportWaitPopup(this, lang());
+  QDialog* wait = cancelWait_;
+  cancelWait_ = nullptr;
+  if (!wait) wait = showReportWaitPopup(this, lang());
   drainMatches();
   allPaths_.clear(); matchRows_ = matchRows;
   fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
@@ -2100,22 +2115,16 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   QPixmap pm;
   bool grayOnly = false; // engine fingerprint thumb: display fallback only,
                          // never persisted (a gray disk entry would stick)
-  if (worker_) {
+  const bool isVid = isVideoExt(path);
+  // Color engine thumb for images (unchanged fast path: fingerprint decode
+  // is already color and must not leak gray into display).
+  if (worker_ && !isVid) {
     std::vector<unsigned char> px; int pw = 0, ph = 0;
-    bool gray = false;
-    if (isVideoExt(path)) {
-      gray = true;
-      if (!worker_->scanEngine().getVideoThumb(path.toStdString(), px)
-          || px.size() < (std::size_t)48 * 48) px.clear();
-    } else {
-      if (!worker_->scanEngine().getColorThumb(path.toStdString(), pw, ph, px)
-          || pw <= 0 || ph <= 0 || px.size() != (std::size_t)pw * ph * 4) px.clear();
-    }
+    if (!worker_->scanEngine().getColorThumb(path.toStdString(), pw, ph, px)
+        || pw <= 0 || ph <= 0 || px.size() != (std::size_t)pw * ph * 4) px.clear();
     if (!px.empty()) {
-      const QImage im = gray
-          ? QImage(px.data(), 48, 48, 48, QImage::Format_Grayscale8).copy()
-          : QImage(px.data(), pw, ph, pw * 4, QImage::Format_ARGB32).copy();
-      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im); grayOnly = gray; }
+      const QImage im(px.data(), pw, ph, pw * 4, QImage::Format_ARGB32);
+      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im.copy()); }
     }
   }
   // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
@@ -2136,8 +2145,11 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   if (bypassBudget || shellBudget_ > 0) {
     if (!bypassBudget) --shellBudget_;
     const QImage shell = shellThumbnailImage(path);
-    if (!shell.isNull()) { ++thumbStatShell_; pm = QPixmap::fromImage(shell); grayOnly = false; }
+    if (!shell.isNull()) { ++thumbStatShell_; pm = QPixmap::fromImage(shell); }
   }
+  // Video color decode (FFmpeg) runs before the gray engine thumb: the gray
+  // 48x48 fingerprint used to fill pm first and the `isNull` gate below then
+  // skipped the color decode entirely, pinning previews to black and white.
   if (pm.isNull()) {
     if (isVideoExt(path)) {
       msf::VideoDecoder dec;
@@ -2172,6 +2184,17 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
         }
       }
       if (!im.isNull()) { ++thumbStatDecode_; pm = QPixmap::fromImage(im); }
+    }
+  }
+  // Last resort for video: the gray 48x48 engine fingerprint thumb. It is
+  // free (no budget spent) and always available after a scan, but it only
+  // fills pm when every color source above missed — never ahead of them.
+  if (pm.isNull() && isVid && worker_) {
+    std::vector<unsigned char> px;
+    if (worker_->scanEngine().getVideoThumb(path.toStdString(), px)
+        && px.size() >= (std::size_t)48 * 48) {
+      const QImage im(px.data(), 48, 48, 48, QImage::Format_Grayscale8);
+      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im.copy()); grayOnly = true; }
     }
   }
   QIcon ic;

@@ -59,6 +59,22 @@ int main() {
       return 8;
     }
   }
+  // Crop-only video hits need temporal confirmation: full frames far apart
+  // (24 bits) but usable 1:1 crops identical. Must not short-circuit to a
+  // match; temporal has no real files here, so the pair stays unmatched.
+  {
+    msf::ScanPipeline p;
+    msf::MediaFile a = video("co_a.mp4", ~0ULL, 0);
+    msf::MediaFile b = video("co_b.mp4", ~0ULL ^ 0xFFFFFFULL, 0);
+    a.crop1x1 = b.crop1x1 = 0x800088040482040ULL;
+    p.add(a);
+    p.add(b);
+    auto s = p.analyze(8);
+    if (s.groups != 0) {
+      std::cerr << "crop-only pair matched groups=" << s.groups << "\n";
+      return 9;
+    }
+  }
   std::cout << "video_degenerate_hash=ok\n";
   return 0;
 }

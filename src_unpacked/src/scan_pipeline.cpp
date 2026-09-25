@@ -41,6 +41,17 @@ static double bestMatch(const MediaFile&a,const MediaFile&b){
   for(int r=0;r<3;++r){for(auto u:xCrop[r])if(hash_usable(u))for(auto v:yFull)if(hash_usable(v))z=std::max(z,hash_similarity(u,v));for(auto u:xFull)if(hash_usable(u))for(auto v:yCrop[r])if(hash_usable(v))z=std::max(z,hash_similarity(u,v));for(auto u:xCrop[r])if(hash_usable(u))for(auto v:yCrop[r])if(hash_usable(v))z=std::max(z,hash_similarity(u,v));}
  } return z;
 }
+// Full-frame-only verdict (normal+mirror). Crop-only similarities must earn
+// temporal confirmation instead of short-circuiting: center crops of unrelated
+// videos routinely score at the match line while full frames disagree
+// (temporal 0), so a crop-only L1 hit is evidence for verification, not a
+// verdict. Mirror full-frame hits keep short-circuit rights (mirrored
+// same-framing duplicates are high-confidence).
+static double bestFull(const MediaFile&a,const MediaFile&b){
+ double z=0; const std::uint64_t xFull[]={a.fingerprint,a.mirrorFingerprint}; const std::uint64_t yFull[]={b.fingerprint,b.mirrorFingerprint};
+ for(auto u:xFull) if(hash_usable(u)) for(auto v:yFull) if(hash_usable(v)) z=std::max(z,hash_similarity(u,v));
+ return z;
+}
 static void indexFile(CandidateIndex& full,CandidateIndex& c4,CandidateIndex& c1,CandidateIndex& c916,std::size_t idx,const MediaFile& f){
  full.add(idx,f.fingerprint); if(f.mirrorFingerprint)full.add(idx,f.mirrorFingerprint);
  if(f.crop4x3)c4.add(idx,f.crop4x3); if(f.crop1x1)c1.add(idx,f.crop1x1); if(f.crop9x16)c916.add(idx,f.crop9x16);
@@ -59,6 +70,11 @@ void ScanPipeline::addAndMatch(const MediaFile& f,unsigned maxDistance,const Mat
      const MediaFile& o=files_[c.index];
      if(!o.fingerprint||o.kind!=f.kind) continue;
      const double sim=bestMatch(f,o);
+     // Live video path is Hamming-only by design (temporal stays exclusive to
+     // the final analyze pass). Never stream an unverified crop-only video
+     // hit: full-frame hits stream immediately, crop-only pairs wait for the
+     // final temporal verdict instead of flashing as duplicates in the UI.
+     if(f.kind==MediaKind::Video&&bestFull(f,o)<threshold) return;
      // Image second stage: Hamming-only verdicts let same-low-frequency false
      // positives through (dark smooth photos within D<=8). verifyImagePair
      // re-scores grey-zone pairs with SSIM; near-identical and video pairs
@@ -145,6 +161,9 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     const std::size_t chunk=64;
     for(std::size_t b=0;b<pendingVideo.size();b+=chunk){
       poll();
+      // Prompt stop: abandon not-yet-started chunks instead of grinding
+      // through thousands of re-decodes after the user hit stop.
+      if(stop && stop()){ pendingVideo.clear(); return; }
       const std::size_t e=std::min(pendingVideo.size(),b+chunk);
       const std::size_t n=e-b;
       const unsigned w=std::min<unsigned>(hw,static_cast<unsigned>(n));
@@ -156,6 +175,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
         futs.emplace_back(std::async(std::launch::async,[&,sb,se](){
           std::vector<VideoResult> out; out.reserve(se-sb);
           for(std::size_t t=sb;t<se;++t){
+            if(stop && stop()) break;
             const auto tk=pendingVideo[t];
             VideoResult vr; vr.i=tk.i; vr.j=tk.j;
             VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
@@ -186,10 +206,22 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     const bool isVideo=(files_[i].kind==MediaKind::Video);
     if(isVideo) ++s.videoCandidates;
     double sim=best(files_[i],files_[j]);
-    if(sim>=threshold){
-     const double v=verifyImagePair(files_[i].path,files_[j].path,!isVideo,sim,threshold);
-     if(v>=threshold){MediaMatch match{i,j,v}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
-     return;
+    if(!isVideo){
+     if(sim>=threshold){
+      const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold);
+      if(v>=threshold){MediaMatch match{i,j,v}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
+      return;
+     }
+    } else {
+     // Video short-circuit needs a full-frame hit. Crop-only hits fall through
+     // to the trigger/temporal path below, where duration, anchors, DTW, and
+     // SSIM decide (crop_temporal_score still catches true cropped duplicates).
+     const double full=bestFull(files_[i],files_[j]);
+     if(full>=threshold){
+      const double v=verifyImagePair(files_[i].path,files_[j].path,false,full,threshold);
+      if(v>=threshold){MediaMatch match{i,j,full}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
+      return;
+     }
     }
 if(isVideo){
       const double trigger=std::max(0.0,threshold-12.0);
