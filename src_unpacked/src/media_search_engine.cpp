@@ -176,11 +176,16 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   auto benchMsSince=[&](){ return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchT0).count(); };
   MediaPipeline imagePipeline;
   BenchmarkConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable();
-  bench_.start(bcfg);
-  bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
-  if(control) bench_.addRevalidateMs(control->revalidateMs);
+  const bool benchOn = !control || control->benchmarkEnabled;
+  if(benchOn){
+    bench_.start(bcfg);
+    bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
+    if(control) bench_.addRevalidateMs(control->revalidateMs);
+  } else {
+    bench_.reset();
+  }
   auto finishScan=[&](bool completed)->SearchReport{
-    bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
+    if(benchOn) bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
     return r;
   };
   bool benchWalkTimed=false;
@@ -219,7 +224,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // Single DB connection: only this thread touches db_/files_/r.
   auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
   const auto bt0=std::chrono::steady_clock::now();
-  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch,&gpuActive_,&bench_);
+  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
   bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
   for(const auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
@@ -236,10 +241,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){
    FileState x=changedVideos[k];
-    futs.emplace_back(std::async(std::launch::async,[x,this](){
+    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
-     if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; std::uint64_t h=0,mh=0; for(auto v:vf.hashes) h^=v; for(auto v:vf.mirrorHashes) mh^=v; j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=h!=0; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); }
+     if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; std::uint64_t h=0,mh=0; for(auto v:vf.hashes) h^=v; for(auto v:vf.mirrorHashes) mh^=v; j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=h!=0; if(benchOn) bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); }
      return j;
     }));
   }

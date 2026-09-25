@@ -95,6 +95,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.2.89 | Right-click selection (reveal misfire fix) |
 | 0.9.2.90 | External report follow-ups (sampling, verify, index, 2nd stage) |
 | 0.9.3.1 | Search benchmark log (JSON, renumbered from 0.9.2.91) |
+| 0.9.3.2 | Benchmark toggle (temporary, remove in 1.0) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

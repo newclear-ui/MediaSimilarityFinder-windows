@@ -270,7 +270,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchGpuDuty")) return S("GPU 듀티","GPU duty");
   if (!std::strcmp(key,"benchMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"benchSlow")) return S("느린 파일","Slowest files");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.1\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.1\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.2\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.2\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -326,6 +327,7 @@ void ScanWorker::run() {
     engine_.setResourcePolicy(msf::make_policy(msf::ResourceMode::Custom, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
+    control_.benchmarkEnabled = benchmark_;
     control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
@@ -346,11 +348,11 @@ void ScanWorker::run() {
     // Cancelled here means: stop before touching results.
     {
       int kept = 0, dropped = 0;
-      const qint64 revT0 = QDateTime::currentMSecsSinceEpoch();
+      const qint64 revT0 = benchmark_ ? QDateTime::currentMSecsSinceEpoch() : 0;
       if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
         emit finished(QString("CANCELLED|0|0")); return;
       }
-      control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
+      if (benchmark_) control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
       if (kept + dropped > 0) emit revalidated(kept, dropped);
     }
     // Quick load: the scan button restores the stored duplicate groups before
@@ -593,7 +595,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.1"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.2"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -654,6 +656,7 @@ void MainWindow::buildToolbar() {
   connect(cpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   connect(gpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
+  benchTgl_ = new QCheckBox(toolBar_); benchTgl_->setChecked(true);
   kindBtn_ = new QToolButton(toolBar_);
   kindBtn_->setText(trStr(lang(), "kindMenu"));
   // Combo-style arrow on the side (same look as the preset/view combos):
@@ -691,7 +694,7 @@ void MainWindow::buildToolbar() {
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
-  toolBar_->addWidget(scan_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
+  toolBar_->addWidget(scan_); toolBar_->addWidget(benchTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
   toolBar_->addWidget(kindBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_);
@@ -958,12 +961,13 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.1"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.2"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
   pause_->setChecked(scanPaused_);
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
+  benchTgl_->setText(trStr(l, "benchToggle"));
   gpuEnabled_->setText(trStr(l, "monitorGpu"));
   gpuEnabled_->setToolTip(trStr(l, "allowGpu"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
@@ -1087,8 +1091,9 @@ void MainWindow::startScan() {
   thread_ = new QThread(this);
   const int dist = 8;
   worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), gpu_->value(), gpuEnabled_->isChecked(),
-                          kindImgAct_->isChecked(), kindVidAct_->isChecked());
+                           kindImgAct_->isChecked(), kindVidAct_->isChecked());
   worker_->setIgnored(ignored_);
+  worker_->setBenchmark(benchTgl_->isChecked());
   worker_->moveToThread(thread_);
   connect(thread_, &QThread::started, worker_, &ScanWorker::run);
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);

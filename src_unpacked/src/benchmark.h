@@ -40,6 +40,7 @@ public:
   static constexpr int kSampleMs = 250;
   static constexpr std::size_t kMaxSamples = 50000;
   void start(const BenchmarkConfig& cfg);
+  void reset();
   void addImageStageMs(double ms);
   void addVideoStageMs(double ms);
   void addAnalyzeMs(double ms);

@@ -44,6 +44,7 @@ struct ScanControl {
   std::unordered_set<std::string> ignoredPaths;
   // Kind selection: set false to skip images or videos entirely (GUI option).
   bool scanImages=true, scanVideos=true;
+  bool benchmarkEnabled=true;
   double revalidateMs=0;
   std::string buildVersion;
 };

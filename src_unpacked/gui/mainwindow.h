@@ -57,6 +57,7 @@ public:
 public slots:
   void run(); void pause(); void resume(); void cancel();
   void setIgnored(const QSet<QString>& s);
+  void setBenchmark(bool b) { benchmark_ = b; }
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
   qulonglong gpuDone() const { return gpuDone_.load(); }
   bool gpuAvailable() const { return gpuAvail_; }
@@ -91,6 +92,7 @@ private:
   qint64 lastWalkedMs_=0; std::size_t lastWalkedN_=0;
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction
+  bool benchmark_=true;
 };
 
 // A duplicate group built incrementally from streamed matches.
@@ -219,6 +221,7 @@ private:
   QLineEdit* folder_=nullptr; QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
     *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr;
   QComboBox* preset_=nullptr; QSpinBox *cpu_=nullptr,*gpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
+  QCheckBox* benchTgl_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
     *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;

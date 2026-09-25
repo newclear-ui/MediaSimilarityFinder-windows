@@ -61,6 +61,10 @@ std::string BenchmarkRecorder::escapeJson(const std::string& s) {
   }
   return o;
 }
+void BenchmarkRecorder::reset() {
+  stopSampler();
+  started_ = false;
+}
 void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   stopSampler();
   cfg_ = cfg;
