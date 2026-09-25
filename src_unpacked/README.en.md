@@ -5,7 +5,7 @@
 Windows 11 x64 media duplicate/similarity search engine under active CPU/CUDA development.
 
 ### Current capabilities
-- Incremental SQLite index with program-owned `Index` storage.
+- Incremental SQLite index with program-owned Index storage.
 - Image/video fingerprinting and CandidateIndex acceleration.
 - Fast CPU pHash (cached cosine tables, separable DCT, one-DCT normal+mirror pair) with NVIDIA CUDA backend and CPU fallback; the CUDA kernel carries the same 1e-7 near-zero snap, so CPU and GPU agree bit-exactly.
 - Resident real-time folder monitor with foreground-workload protection.
@@ -19,10 +19,31 @@ Windows 11 x64 media duplicate/similarity search engine under active CPU/CUDA de
 - Portable Windows deployment: Qt platform plugins, FFmpeg tools, and matching VC++ runtime bundled beside the executable.
 - Reveal in Explorer: reuses an already-open folder window when possible, otherwise opens a new one; group reference files keep highest similarity first and break ties by resolution, then size.
 
-### Development numbering
-- `0.9.1.x`: CPU baseline
-- `0.9.2.x`: GPU and advanced search development
-- `0.9.3.x`: benchmark, packaging, and accuracy follow-ups (current minor line)
-- `1.0.0`: CPU + GPU complete target
+### CPU + GPU cooperative execution
 
-Build history is maintained under `docs/build-history/` in Korean and English (59 CTest tests). Architecture documents are under `docs/architecture/`.
+MediaSimilarityFinder is explicitly designed to use CPU and GPU together. The GPU is an accelerator, not a replacement for the CPU path. CPU execution remains the stable reference/fallback path.
+
+The approved resource-management direction is:
+
+- Resource Mode remains Maximum / High / Balanced / Gaming / Manual.
+- Maximum/High/Balanced/Gaming define CPU resource policy.
+- Manual lets the user define the CPU resource limit.
+- GPU is controlled only by ON/OFF.
+- When GPU is ON, the user does not choose a GPU utilization percentage; the Adaptive GPU Scheduler determines GPU workload automatically.
+- CPU/GPU work is not fixed at 50:50. Allocation follows measured capability, current system load, queue pressure, and data-transfer cost.
+- CPU/GPU load caused by other applications is monitored at runtime and reflected in workload allocation.
+- Initial hardware calibration/performance profiles are stored in INI for the next scan's starting estimate, while live runtime conditions take precedence.
+- Low-end or inefficient GPUs can automatically converge toward CPU-heavy or CPU-only execution.
+- Hardware video decode/NVDEC is an optional backend; failures must fall back safely to Software FFmpeg.
+
+See [docs/architecture/resource-scheduling.ko.md](docs/architecture/resource-scheduling.ko.md) and [docs/architecture/resource-scheduling.en.md](docs/architecture/resource-scheduling.en.md) for the detailed design and implementation order.
+
+> Note: 0.9.3.19 still contains the previous fixed CPU/GPU percentage policy and GPU-percentage UI. The Adaptive GPU AUTO and INI-based performance-profile design above is the approved target architecture to be implemented incrementally on the 0.9.3.x line.
+
+### Development numbering
+- 0.9.1.x: CPU baseline
+- 0.9.2.x: GPU and advanced search development
+- 0.9.3.x: benchmark, packaging, and accuracy follow-ups (current minor line)
+- 1.0.0: CPU + GPU complete target
+
+Build history is maintained under docs/build-history/ in Korean and English (59 CTest tests). Architecture documents are under docs/architecture/.
