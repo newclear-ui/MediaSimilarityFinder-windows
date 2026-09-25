@@ -67,6 +67,7 @@ void BenchmarkRecorder::openDiskCounters() {
   closeDiskCounters();
   diskVolume_.clear();
   diskAvailable_ = false;
+  diskWasAvailable_ = false;
   // Locale-safe: English counter names work on any Windows display language.
   if (cfg_.root.size() >= 2 && cfg_.root[1] == ':' &&
       ((cfg_.root[0] >= 'A' && cfg_.root[0] <= 'Z') ||
@@ -91,6 +92,7 @@ void BenchmarkRecorder::openDiskCounters() {
         diskReadCounter_ = rd;
         diskWriteCounter_ = wr;
         diskAvailable_ = true;
+        diskWasAvailable_ = true;
       } else {
         if (q) PdhCloseQuery(q);
       }
@@ -117,19 +119,47 @@ void BenchmarkRecorder::reset() {
   started_ = false;
   finished_ = false;
 }
+void BenchmarkRecorder::setCancelled(const std::string& reason) {
+  cancelled_ = true;
+  if (!reason.empty()) completionReason_ = reason;
+}
+void BenchmarkRecorder::setPaused(bool paused) { paused_ = paused; }
+void BenchmarkRecorder::setFailed(const std::string& stage, const std::string& reason) {
+  failed_ = true;
+  failedStage_ = stage;
+  if (!reason.empty()) completionReason_ = reason;
+}
+void BenchmarkRecorder::setCompletionReason(const std::string& reason) { completionReason_ = reason; }
+void BenchmarkRecorder::setFileProgress(std::size_t started, std::size_t completed, std::size_t remaining) {
+  filesStarted_ = started; filesCompleted_ = completed; filesRemaining_ = remaining;
+  fileProgressRecorded_ = true;
+}
 void BenchmarkRecorder::abortUnfinished() {
-  if (started_ && !finished_)
+  if (started_ && !finished_) {
+    setCancelled("aborted");
     finalize(false, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
+  }
 }
 void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   stopSampler();
   cfg_ = cfg;
   startedAt_ = localTimeStr();
+  static std::atomic<std::uint64_t> runCounter{0};
+  runId_ = startedAt_ + "-" + std::to_string(runCounter.fetch_add(1, std::memory_order_relaxed) + 1);
   startTick_ = nowNs();
   wallMs_ = walkMs_ = imageStageMs_ = videoStageMs_ = analyzeMs_ = revalidateMs_ = 0;
+  incrementalMs_ = candidateIndexMs_ = similarityMs_ = persistenceMs_ = 0;
+  walkRecorded_ = imageStageRecorded_ = videoStageRecorded_ = false;
+  analyzeRecorded_ = revalidateRecorded_ = incrementalRecorded_ = false;
+  candidateIndexRecorded_ = similarityRecorded_ = persistenceRecorded_ = false;
   imgCount_ = 0; imgBytes_ = 0; imgGpu_ = 0;
   imgDecodeNs_ = 0; imgHashNs_ = 0; imgCropNs_ = 0; imgGpuNs_ = 0;
+  imgQueueWaitNs_ = 0; imgTransferNs_ = 0; imgExecNs_ = 0;
+  imgDecodeRecorded_ = imgHashRecorded_ = imgCropRecorded_ = imgGpuRecorded_ = false;
+  imgQueueWaitRecorded_ = imgTransferRecorded_ = imgExecRecorded_ = false;
   vidCount_ = 0; vidBytes_ = 0; vidFrames_ = 0; vidBuildNs_ = 0;
+  vidDecodedFrames_ = 0; vidSampledFrames_ = 0;
+  vidDecodedRecorded_ = vidSampledRecorded_ = false;
   vidPlaySec_ = 0;
   {
     std::lock_guard<std::mutex> g(slowMutex_);
@@ -158,14 +188,25 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   gpuImages_ = gpuFallback_ = 0;
   vidGpu_.store(0, std::memory_order_relaxed); vidGpuFallback_.store(0, std::memory_order_relaxed); vidGpuNs_.store(0, std::memory_order_relaxed);
   completed_ = false;
+  cancelled_ = paused_ = failed_ = false;
+  failedStage_.clear(); completionReason_.clear();
+  filesStarted_ = filesCompleted_ = filesRemaining_ = 0;
+  fileProgressRecorded_ = false;
+  scheduler_ = SchedulerTelemetry{};
+  calibration_ = CalibrationTelemetry{};
+  samplerStarted_ = false;
   finished_ = false;
   started_ = true;
 }
-void BenchmarkRecorder::addImageStageMs(double ms) { imageStageMs_ += ms; }
-void BenchmarkRecorder::addVideoStageMs(double ms) { videoStageMs_ += ms; }
-void BenchmarkRecorder::addAnalyzeMs(double ms) { analyzeMs_ += ms; }
-void BenchmarkRecorder::addWalkMs(double ms) { walkMs_ += ms; }
-void BenchmarkRecorder::addRevalidateMs(double ms) { revalidateMs_ += ms; }
+void BenchmarkRecorder::addImageStageMs(double ms) { imageStageMs_ += ms; imageStageRecorded_ = true; }
+void BenchmarkRecorder::addVideoStageMs(double ms) { videoStageMs_ += ms; videoStageRecorded_ = true; }
+void BenchmarkRecorder::addAnalyzeMs(double ms) { analyzeMs_ += ms; analyzeRecorded_ = true; }
+void BenchmarkRecorder::addWalkMs(double ms) { walkMs_ += ms; walkRecorded_ = true; }
+void BenchmarkRecorder::addRevalidateMs(double ms) { revalidateMs_ += ms; revalidateRecorded_ = true; }
+void BenchmarkRecorder::addIncrementalMs(double ms) { incrementalMs_ += ms; incrementalRecorded_ = true; }
+void BenchmarkRecorder::addCandidateIndexMs(double ms) { candidateIndexMs_ += ms; candidateIndexRecorded_ = true; }
+void BenchmarkRecorder::addSimilarityMs(double ms) { similarityMs_ += ms; similarityRecorded_ = true; }
+void BenchmarkRecorder::addPersistenceMs(double ms) { persistenceMs_ += ms; persistenceRecorded_ = true; }
 void BenchmarkRecorder::addImage(std::uint64_t bytes, double decodeMs, double hashMs, double cropMs, bool usedGpu, const std::string& path) {
   imgCount_.fetch_add(1, std::memory_order_relaxed);
   imgBytes_.fetch_add(bytes, std::memory_order_relaxed);
@@ -173,17 +214,43 @@ void BenchmarkRecorder::addImage(std::uint64_t bytes, double decodeMs, double ha
   imgDecodeNs_.fetch_add((long long)(decodeMs * 1e6), std::memory_order_relaxed);
   imgHashNs_.fetch_add((long long)(hashMs * 1e6), std::memory_order_relaxed);
   imgCropNs_.fetch_add((long long)(cropMs * 1e6), std::memory_order_relaxed);
+  imgDecodeRecorded_ = imgHashRecorded_ = imgCropRecorded_ = true;
   SlowFile item{path, decodeMs + hashMs + cropMs, bytes, 0, 0};
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowImages_, std::move(item));
 }
 void BenchmarkRecorder::addGpuBatchMs(double ms) {
   imgGpuNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
+  imgGpuRecorded_ = true;
 }
-void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path) {
+void BenchmarkRecorder::addImageGpuQueueMs(double ms) {
+  imgQueueWaitNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
+  imgQueueWaitRecorded_ = true;
+}
+void BenchmarkRecorder::addImageTransferMs(double ms) {
+  imgTransferNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
+  imgTransferRecorded_ = true;
+}
+void BenchmarkRecorder::addImageExecMs(double ms) {
+  imgExecNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
+  imgExecRecorded_ = true;
+}
+void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
+                                 std::size_t decodedFrames, std::size_t sampledFrames) {
   vidCount_.fetch_add(1, std::memory_order_relaxed);
   vidBytes_.fetch_add(bytes, std::memory_order_relaxed);
   vidFrames_.fetch_add(frames, std::memory_order_relaxed);
+  // decodedFrames/sampledFrames stay separate counts (Node A): a cache hit
+  // decodes nothing (decoded 0 is measured), while an unknown sample plan is
+  // NotMeasured, never numeric zero.
+  if (decodedFrames != kFramesNotProvided) {
+    vidDecodedFrames_.fetch_add(decodedFrames, std::memory_order_relaxed);
+    vidDecodedRecorded_ = true;
+  }
+  if (sampledFrames != kFramesNotProvided) {
+    vidSampledFrames_.fetch_add(sampledFrames, std::memory_order_relaxed);
+    vidSampledRecorded_ = true;
+  }
   vidBuildNs_.fetch_add((long long)(buildMs * 1e6), std::memory_order_relaxed);
   double prev = vidPlaySec_.load(std::memory_order_relaxed);
   while (!vidPlaySec_.compare_exchange_weak(prev, prev + durationSec, std::memory_order_relaxed)) {}
@@ -257,6 +324,7 @@ void BenchmarkRecorder::startSampler(std::function<bool()> gpuActive) {
   stopSampler();
   gpuActiveFn_ = std::move(gpuActive);
   sampling_.store(true, std::memory_order_relaxed);
+  samplerStarted_ = true;
   const long long t0 = nowNs();
   sampler_ = std::thread([this, t0]() {
     for (;;) {
@@ -282,11 +350,40 @@ void BenchmarkRecorder::finalize(bool completed, std::size_t scanned, std::size_
   stopSampler();
   wallMs_ = (double)(nowNs() - startTick_) / 1e6;
   completed_ = completed;
+  if (completionReason_.empty()) completionReason_ = completed ? "completed" : "cancelled";
   scanned_ = scanned; analyzed_ = analyzed; unchanged_ = unchanged;
   candidates_ = candidates; matches_ = matches; groups_ = groups;
   reductionPct_ = reductionPct;
   gpuImages_ = gpuImages; gpuFallback_ = gpuFallback;
   finished_ = true;
+}
+std::string SchedulerTelemetry::toJson() const {
+  std::ostringstream o;
+  o << std::fixed << std::setprecision(3);
+  o << "{\"state\":\"" << measureStateName(state) << "\""
+    << ",\"initialCpuCapacity\":" << initialCpuCapacity << ",\"initialGpuCapacity\":" << initialGpuCapacity
+    << ",\"currentCpuCapacity\":" << currentCpuCapacity << ",\"currentGpuCapacity\":" << currentGpuCapacity
+    << ",\"cpuWorkShare\":" << cpuWorkShare << ",\"gpuWorkShare\":" << gpuWorkShare
+    << ",\"cpuQueueDepth\":" << cpuQueueDepth << ",\"gpuQueueDepth\":" << gpuQueueDepth
+    << ",\"cpuQueueWaitMs\":" << cpuQueueWaitMs << ",\"gpuQueueWaitMs\":" << gpuQueueWaitMs
+    << ",\"adjustmentCount\":" << adjustmentCount << ",\"throttlingEvents\":" << throttlingEvents
+    << ",\"externalLoadThrottling\":" << externalLoadThrottling
+    << ",\"selectedBackend\":\"" << BenchmarkRecorder::escapeJson(selectedBackend) << "\""
+    << ",\"backendFallbacks\":" << backendFallbacks << "}";
+  return o.str();
+}
+std::string CalibrationTelemetry::toJson() const {
+  std::ostringstream o;
+  o << std::fixed << std::setprecision(3);
+  o << "{\"state\":\"" << measureStateName(state) << "\""
+    << ",\"started\":" << (started ? "true" : "false") << ",\"completed\":" << (completed ? "true" : "false")
+    << ",\"durationMs\":" << durationMs << ",\"confidence\":" << confidence
+    << ",\"cpuThroughput\":" << cpuThroughput << ",\"gpuThroughput\":" << gpuThroughput
+    << ",\"resizeThroughput\":" << resizeThroughput << ",\"decodeThroughput\":" << decodeThroughput
+    << ",\"transferCostMs\":" << transferCostMs << ",\"queueLatencyMs\":" << queueLatencyMs
+    << ",\"profileId\":\"" << BenchmarkRecorder::escapeJson(profileId) << "\""
+    << ",\"profileVersion\":\"" << BenchmarkRecorder::escapeJson(profileVersion) << "\"}";
+  return o.str();
 }
 std::string BenchmarkRecorder::toJson() const {
   const auto imgN = imgCount_.load(), vidN = vidCount_.load();
@@ -330,10 +427,15 @@ std::string BenchmarkRecorder::toJson() const {
   o << "{\"meta\":{\"app\":\"MediaSimilarityFinder\",\"build\":\"" << escapeJson(cfg_.build) << "\","
     << "\"engine\":\"" << escapeJson(cfg_.engine) << "\",\"db\":\"" << escapeJson(cfg_.db) << "\","
     << "\"startedAt\":\"" << startedAt_ << "\",\"completed\":" << (completed_ ? "true" : "false") << ","
-    << "\"root\":\"" << escapeJson(cfg_.root) << "\"},";
+    << "\"root\":\"" << escapeJson(cfg_.root) << "\""
+    << ",\"schemaVersion\":" << kBenchmarkSchemaVersion << ",\"runId\":\"" << escapeJson(runId_) << "\""
+    << ",\"cancelled\":" << (cancelled_ ? "true" : "false") << ",\"paused\":" << (paused_ ? "true" : "false")
+    << ",\"failed\":" << (failed_ ? "true" : "false") << ",\"failedStage\":\"" << escapeJson(failedStage_) << "\""
+    << ",\"completionReason\":\"" << escapeJson(completionReason_) << "\"},";
   o << "\"config\":{\"distance\":" << cfg_.distance << ",\"cpuWorkers\":" << cfg_.cpuWorkers
     << ",\"detail\":" << (cfg_.detail ? "true" : "false")
     << ",\"gpuEnabled\":" << (cfg_.gpuEnabled ? "true" : "false") << ",\"gpuBatch\":" << cfg_.gpuBatch
+    << ",\"gpuBackend\":\"" << escapeJson(cfg_.gpuBackend) << "\""
     << ",\"scanImages\":" << (cfg_.scanImages ? "true" : "false") << ",\"scanVideos\":" << (cfg_.scanVideos ? "true" : "false")
     << ",\"cudaAvailable\":" << (cfg_.cudaAvailable ? "true" : "false") << "},";
   o << "\"summary\":{\"wallMs\":" << wallMs_ << ",\"walkMs\":" << walkMs_ << ",\"revalidateMs\":" << revalidateMs_
@@ -344,6 +446,14 @@ std::string BenchmarkRecorder::toJson() const {
     << ",\"gpuHashed\":" << imgGpu_.load() << ",\"cpuHashed\":" << (imgN - imgGpu_.load())
     << ",\"decodeMs\":" << imgDecodeMs << ",\"hashMs\":" << imgHashMs << ",\"cropMs\":" << imgCropMs
     << ",\"gpuBatchMs\":" << (double)imgGpuNs_.load() / 1e6
+    << ",\"gpuQueueWaitMs\":" << (double)imgQueueWaitNs_.load() / 1e6
+    << ",\"gpuTransferMs\":" << (double)imgTransferNs_.load() / 1e6
+    << ",\"gpuExecMs\":" << (double)imgExecNs_.load() / 1e6
+    << ",\"decodeState\":\"" << measureStateName(imgDecodeRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"hashState\":\"" << measureStateName(imgHashRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"gpuQueueWaitState\":\"" << measureStateName(imgQueueWaitRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"gpuTransferState\":\"" << measureStateName(imgTransferRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"gpuExecState\":\"" << measureStateName(imgExecRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"meanDecodeMs\":" << (imgN ? imgDecodeMs / imgN : 0) << ",\"meanHashMs\":" << (imgN ? imgHashMs / imgN : 0)
     << ",\"slowest\":[";
   {
@@ -357,6 +467,10 @@ std::string BenchmarkRecorder::toJson() const {
   }
   o << "]},";
   o << "\"videos\":{\"count\":" << vidN << ",\"bytes\":" << vidBytes_.load() << ",\"frames\":" << vidFrames_.load()
+     << ",\"decodedFrames\":" << (vidDecodedRecorded_ ? std::to_string(vidDecodedFrames_.load()) : std::string("null"))
+     << ",\"decodedFramesState\":\"" << measureStateName(vidDecodedRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+     << ",\"sampledFrames\":" << (vidSampledRecorded_ ? std::to_string(vidSampledFrames_.load()) : std::string("null"))
+     << ",\"sampledFramesState\":\"" << measureStateName(vidSampledRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
      << ",\"playSec\":" << playSec << ",\"buildMs\":" << vidBuildMs
      << ",\"gpuVideos\":" << vidGpu_.load() << ",\"gpuFallbackVideos\":" << vidGpuFallback_.load() << ",\"gpuHashMs\":" << vidGpuMs
     << ",\"meanBuildMs\":" << (vidN ? vidBuildMs / vidN : 0)
@@ -374,13 +488,19 @@ std::string BenchmarkRecorder::toJson() const {
     }
   }
   o << "]},";
+  const MeasureState sampleState = samplerStarted_ ? MeasureState::Measured : MeasureState::NotMeasured;
+  const MeasureState diskState = diskWasAvailable_ ? MeasureState::Measured : MeasureState::NotAvailable;
   o << "\"resources\":{\"sampleMs\":" << kSampleMs << ",\"samples\":" << nS
+    << ",\"sampleState\":\"" << measureStateName(sampleState) << "\""
+    << ",\"cpuState\":\"" << measureStateName(sampleState) << "\""
+    << ",\"gpuDutyState\":\"" << measureStateName(sampleState) << "\""
+    << ",\"diskState\":\"" << measureStateName(diskState) << "\""
     << ",\"truncated\":" << (truncated ? "true" : "false") << ",\"cpuProcMean\":" << cpuMean
     << ",\"cpuProcMax\":" << cpuMax << ",\"cpuProcStd\":" << cpuStd << ",\"cpuSysMean\":" << sysMean
     << ",\"memMBMax\":" << memMax << ",\"gpuDutyPct\":" << gpuDuty
     << ",\"gpuLongestIdleMs\":" << (double)idleMax * kSampleMs
     << ",\"diskVolume\":\"" << escapeJson(diskVolume_) << "\""
-    << ",\"diskAvailable\":" << (diskAvailable_ ? "true" : "false")
+    << ",\"diskAvailable\":" << (diskWasAvailable_ ? "true" : "false")
     << ",\"ioReadBpsMax\":" << ioReadMax << ",\"ioReadBpsMean\":" << (nS ? ioReadSum / nS : 0)
     << ",\"ioWriteBpsMax\":" << ioWriteMax << ",\"ioWriteBpsMean\":" << (nS ? ioWriteSum / nS : 0)
     << ",\"procIoReadBytes\":" << procIoReadBytes_.load() << ",\"procIoWriteBytes\":" << procIoWriteBytes_.load()
@@ -398,7 +518,25 @@ std::string BenchmarkRecorder::toJson() const {
   o << "]},";
   o << "\"matches\":{\"candidates\":" << candidates_ << ",\"pairs\":" << streamedMatches_.load(std::memory_order_relaxed)
     << ",\"retainedPairs\":" << matches_ << ",\"groups\":" << groups_
-    << ",\"reductionPct\":" << reductionPct_ << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_ << "}}";
+    << ",\"reductionPct\":" << reductionPct_ << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_ << "},";
+  auto stageObj = [&](const char* name, double ms, bool recorded) {
+    o << "\"" << name << "\":{\"ms\":" << ms << ",\"state\":\"" << measureStateName(recorded ? MeasureState::Measured : MeasureState::NotMeasured) << "\"},";
+  };
+  o << "\"stages\":{";
+  stageObj("enumeration", walkMs_, walkRecorded_);
+  stageObj("incremental", incrementalMs_, incrementalRecorded_);
+  stageObj("imageAnalysis", imageStageMs_, imageStageRecorded_);
+  stageObj("videoAnalysis", videoStageMs_, videoStageRecorded_);
+  stageObj("candidateIndex", candidateIndexMs_, candidateIndexRecorded_);
+  stageObj("similarity", similarityMs_, similarityRecorded_);
+  stageObj("persistence", persistenceMs_, persistenceRecorded_);
+  stageObj("revalidation", revalidateMs_, revalidateRecorded_);
+  o << "\"total\":{\"ms\":" << wallMs_ << ",\"state\":\"measured\"}},";
+  o << "\"files\":{\"started\":" << filesStarted_ << ",\"completed\":" << filesCompleted_
+    << ",\"remaining\":" << filesRemaining_
+    << ",\"state\":\"" << measureStateName(fileProgressRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\"},";
+  o << "\"scheduler\":" << scheduler_.toJson() << ",";
+  o << "\"calibration\":" << calibration_.toJson() << "}";
   return o.str();
 }
 }

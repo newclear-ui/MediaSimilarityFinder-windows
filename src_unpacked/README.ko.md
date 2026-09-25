@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## 현재 개발 버전: 0.9.3.19 (엔진 1.5.0, DB 1.0.3, 공식 기준선 0.9.2.32)
+## 현재 개발 버전: 0.9.4.0 (엔진 1.5.0, DB 1.0.3, 공식 기준선 0.9.2.32, 개발선 0.9.4 Node A 검증됨)
 
 Windows 11 x64 미디어 중복/유사 검색 엔진. CPU/CUDA 병행 개발 중.
 
@@ -10,7 +10,7 @@ Windows 11 x64 미디어 중복/유사 검색 엔진. CPU/CUDA 병행 개발 중
 - 고속 CPU pHash(캐시된 코사인 테이블, 분리형 DCT, 1회 DCT로 normal+mirror 동시 산출)와 NVIDIA CUDA 백엔드 및 CPU 폴백. CUDA 커널이 동일한 1e-7 근사 0 스냅을 적용해 CPU와 GPU가 비트 단위로 일치.
 - 전경 작업 보호 기능이 있는 상주 실시간 폴더 모니터.
 - 좌우 반전 이미지/비디오 유사도 검출.
-- 영속 비디오 지문 캐시(v7: 기본 프레임 + 프레임별 crop 해시, 64항목 메모리 LRU).
+- 영속 비디오 지문 캐시(v9: 기본 프레임 + 프레임별 crop 해시, 64항목 메모리 LRU).
 - 중앙 crop(4:3, 1:1, 9:16) 변환 대응 2차 매칭(미러 변형 포함)과 SSIM 그레이존 검증.
 - 병렬 검증, 다이아딕 샘플링 격자, 비교 시 격자 솎기를 적용한 비디오 temporal 2차 crop 비교.
 - 일반 D<=8 구간의 4분할 16비트 multi-index + 반경 2 열거를 쓰는 대용량 exact CandidateIndex 가속.
@@ -38,15 +38,16 @@ MediaSimilarityFinder는 CPU와 GPU를 함께 활용하는 프로그램이며, G
 
 세부 설계와 구현 순서는 [CPU/GPU Adaptive Resource Scheduling](docs/architecture/resource-scheduling.ko.md) 및 [GPU Backend and Build Naming Roadmap](docs/architecture/gpu-backend-roadmap.ko.md)에 기록한다.
 
-> 참고: 0.9.3.19 현재 코드에는 기존 CPU/GPU 고정 퍼센트 정책과 GPU 퍼센트 UI가 남아 있다. 위 Adaptive GPU AUTO와 INI 기반 성능 프로파일은 승인된 다음 단계의 목표 아키텍처이며, 이후 0.9.3.x에서 단계적으로 구현한다.
+> 참고: 0.9.4.0은 Node A 기반(GPU 용어/추상화, GPU ON/OFF UI, 빌드 명명, 벤치마크 계측)을 구현했다. 내부 GPU cap은 Node B Adaptive Scheduler가 대체할 때까지 deprecated 상태로 유지하며, INI 성능 프로파일은 Node C에서 온다.
 
 ### 개발 넘버링
 - 0.9.1.x: CPU 베이스라인
 - 0.9.2.x: GPU 및 고급 검색 개발
-- 0.9.3.x: 벤치마크·패키징·정확도 후속 (현재 마이너 라인)
+- 0.9.3.x: 벤치마크·패키징·정확도 후속
+- 0.9.4.x: Node A 기반/계측 (현재 개발선)
 - 1.0.0: CPU + GPU 완성 목표
 
-빌드 기록은 docs/build-history/에 한글/영문으로 관리(CTest 59개). 아키텍처 문서는 docs/architecture/ 참조.
+빌드 기록은 docs/build-history/에 한글/영문으로 관리(CTest GPU 63개 / CPU 62개). 아키텍처 문서는 docs/architecture/ 참조.
 
 
 ### Benchmark / Telemetry 방향

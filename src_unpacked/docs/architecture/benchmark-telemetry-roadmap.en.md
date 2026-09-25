@@ -10,7 +10,7 @@ Therefore Benchmark / Telemetry / Scheduler Diagnostics become one coherent meas
 
 ## 2. Current benchmark limitations
 
-0.9.3.19 currently records wall/stage time, image/video counts, GPU hash count, GPU batch time, resource sampling, and video GPU/fallback counts.
+0.9.3.19 recorded wall/stage time, image/video counts, GPU hash count, GPU batch time, resource sampling, and video GPU/fallback counts. 0.9.4.0 (Node A) adds benchmark schemaVersion 1, runId, measurement states, stage objects, decoded/sampled frame separation, scheduler/calibration structures, and cancellation/partial/file-progress records while keeping all existing keys.
 
 When detailed benchmarking is disabled, some video and resource measurements may not run. Therefore a numeric 0 does not necessarily mean zero work or zero utilization.
 

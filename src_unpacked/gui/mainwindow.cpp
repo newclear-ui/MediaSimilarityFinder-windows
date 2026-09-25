@@ -281,7 +281,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
   if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.19\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.19\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.0\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.0\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -664,7 +664,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.19"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.0"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -717,13 +717,15 @@ void MainWindow::buildToolbar() {
                      QStringLiteral("Gaming 25%"), QStringLiteral("Custom")});
   preset_->setCurrentIndex(2);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
-  cpu_ = new QSpinBox(toolBar_); gpu_ = new QSpinBox(toolBar_);
-  cpu_->setRange(1, 100); gpu_->setRange(1, 100);
-  cpu_->setPrefix(QStringLiteral("CPU ")); gpu_->setPrefix(QStringLiteral("GPU "));
-  cpu_->setSuffix(QStringLiteral("%")); gpu_->setSuffix(QStringLiteral("%"));
-  cpu_->setValue(policy_.cpuPercent); gpu_->setValue(policy_.gpuPercent);
+  cpu_ = new QSpinBox(toolBar_);
+  cpu_->setRange(1, 100);
+  cpu_->setPrefix(QStringLiteral("CPU "));
+  cpu_->setSuffix(QStringLiteral("%"));
+  // Node A: no manual GPU utilization control. GPU is ON/OFF only
+  // (gpuEnabled_ checkbox = Adaptive/AUTO when ON); the deprecated internal
+  // gpuPercent cap stays untouched until the Node B scheduler replaces it.
+  cpu_->setValue(policy_.cpuPercent);
   connect(cpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
-  connect(gpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
   benchTgl_ = new QCheckBox(toolBar_); benchTgl_->setChecked(true);
   kindBtn_ = new QToolButton(toolBar_);
@@ -766,7 +768,7 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); toolBar_->addWidget(benchTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
-  toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_); toolBar_->addWidget(gpu_);
+  toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
   toolBar_->addWidget(kindBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -1038,7 +1040,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.19"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.0"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1175,7 +1177,7 @@ void MainWindow::startScan() {
   QString appDir = QApplication::applicationDirPath();
   thread_ = new QThread(this);
   const int dist = 8;
-  worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), gpu_->value(), gpuEnabled_->isChecked(),
+  worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), policy_.gpuPercent, gpuEnabled_->isChecked(),
                            kindImgAct_->isChecked(), kindVidAct_->isChecked());
   worker_->setIgnored(ignored_);
   worker_->setBenchmark(benchTgl_->isChecked());
@@ -1460,15 +1462,15 @@ void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
 }
 void MainWindow::resourceChanged(int i) {
   auto m = static_cast<msf::ResourceMode>(i + 1);
-  policy_ = msf::make_policy(m, cpu_->value(), gpu_->value());
+  policy_ = msf::make_policy(m, cpu_->value(), policy_.gpuPercent);
   if (monitor_) monitor_->setPolicy(policy_);
-  cpu_->blockSignals(true); gpu_->blockSignals(true);
-  cpu_->setValue(policy_.cpuPercent); gpu_->setValue(policy_.gpuPercent);
-  cpu_->blockSignals(false); gpu_->blockSignals(false);
+  cpu_->blockSignals(true);
+  cpu_->setValue(policy_.cpuPercent);
+  cpu_->blockSignals(false);
 }
 void MainWindow::customResourceChanged() {
   if (preset_->currentIndex() != 4) preset_->setCurrentIndex(4);
-  policy_ = msf::make_policy(msf::ResourceMode::Custom, cpu_->value(), gpu_->value());
+  policy_ = msf::make_policy(msf::ResourceMode::Custom, cpu_->value(), policy_.gpuPercent);
   if (monitor_) monitor_->setPolicy(policy_);
 }
 

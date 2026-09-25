@@ -3,10 +3,10 @@
 ## Document status
 
 - Status: **Approved target architecture**
-- Reference code line: 0.9.3.19
+- Reference code line: 0.9.4.0
 - Official preserved baseline: 0.9.2.32
 - This document defines the development direction rather than claiming that every item is already implemented.
-- The 0.9.3.19 implementation still contains fixed CPU/GPU percentage policies and GPU percentage UI. Those parts are to be migrated incrementally to this target architecture.
+- As of 0.9.4.0 (Node A) the manual GPU percentage UI is removed; CPU preset semantics are unchanged and the internal GPU cap stays deprecated until the Node B scheduler replaces it.
 
 ## 1. Core principles
 

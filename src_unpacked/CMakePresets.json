@@ -29,6 +29,21 @@
       }
     },
     {
+      "name": "windows-gpu",
+      "displayName": "Windows x64 GPU Build (canonical, AUTO backend)",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build-windows-gpu",
+      "cacheVariables": {
+        "MSF_ENABLE_GPU": "ON",
+        "MSF_GPU_BACKEND": "AUTO",
+        "MSF_CUDA_ARCHITECTURES": "75;86;89",
+        "MSF_ENABLE_FFMPEG": "ON",
+        "MSF_BUILD_GUI": "ON",
+        "MSF_BUILD_TESTS": "ON"
+      }
+    },
+    {
       "name": "windows-cpu",
       "displayName": "Windows x64 CPU Initial Build",
       "generator": "Visual Studio 18 2026",
@@ -44,6 +59,11 @@
   ],
   "buildPresets": [
     {
+      "name": "windows-gpu-release",
+      "configurePreset": "windows-gpu",
+      "configuration": "Release"
+    },
+    {
       "name": "windows-cuda-release",
       "configurePreset": "windows-cuda",
       "configuration": "Release"
@@ -55,6 +75,12 @@
     }
   ],
   "testPresets": [
+    {
+      "name": "windows-gpu-release",
+      "configurePreset": "windows-gpu",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
     {
       "name": "windows-cuda-release",
       "configurePreset": "windows-cuda",

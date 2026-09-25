@@ -27,13 +27,13 @@ GpuBackend::~GpuBackend() {
 #endif
     delete impl_;
 }
-GpuBackend::GpuBackend(GpuBackend&& o) noexcept : impl_(std::exchange(o.impl_,nullptr)) {}
+GpuBackend::GpuBackend(GpuBackend&& o) noexcept : impl_(std::exchange(o.impl_,nullptr)), kind_(o.kind_) {}
 GpuBackend& GpuBackend::operator=(GpuBackend&& o) noexcept {
     if(this==&o) return *this;
 #ifdef MSF_HAS_CUDA
     if(impl_) msf_cuda_backend_destroy(impl_->cuda);
 #endif
-    delete impl_; impl_=std::exchange(o.impl_,nullptr); return *this;
+    delete impl_; impl_=std::exchange(o.impl_,nullptr); kind_=o.kind_; return *this;
 }
 
 GpuInfo GpuBackend::detect() const {
@@ -50,10 +50,21 @@ GpuInfo GpuBackend::detect() const {
 #endif
 }
 bool GpuBackend::available() const {
+    if(kind_==GpuBackendKind::Cpu) return false;
 #ifdef MSF_HAS_CUDA
     return impl_ && impl_->cuda && detect().available;
 #else
     return false;
+#endif
+}
+std::string GpuBackend::backendName() const {
+    // Canonical resolved name: what actually executes, not what was asked.
+    if(kind_==GpuBackendKind::Cpu) return "CPU";
+#ifdef MSF_HAS_CUDA
+    if(kind_==GpuBackendKind::Cuda) return detect().available ? "CUDA" : "CPU";
+    return detect().available ? "CUDA" : "CPU";
+#else
+    return "CPU";
 #endif
 }
 std::size_t GpuBackend::recommendedBatchSize(std::size_t requested) const {

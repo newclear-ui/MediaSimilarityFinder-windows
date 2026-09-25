@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## Current development version: 0.9.3.19 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32)
+## Current development version: 0.9.4.0 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, Node A validated)
 
 Windows 11 x64 media duplicate/similarity search engine under active CPU/CUDA development.
 
@@ -10,7 +10,7 @@ Windows 11 x64 media duplicate/similarity search engine under active CPU/CUDA de
 - Fast CPU pHash (cached cosine tables, separable DCT, one-DCT normal+mirror pair) with NVIDIA CUDA backend and CPU fallback; the CUDA kernel carries the same 1e-7 near-zero snap, so CPU and GPU agree bit-exactly.
 - Resident real-time folder monitor with foreground-workload protection.
 - Horizontally mirrored image/video similarity detection.
-- Persistent video fingerprint cache (v7: base frames plus per-frame crop hashes, 64-entry memory LRU).
+- Persistent video fingerprint cache (v9: base frames plus per-frame crop hashes, 64-entry memory LRU).
 - Image transformation-aware second-stage matching for center crops (4:3, 1:1, 9:16), including mirror variants, with SSIM grey-zone verification.
 - Video temporal second-stage crop-aware comparison with parallel verification, dyadic sampling grids, and compare-time grid thinning.
 - Large-scale exact CandidateIndex acceleration using a 4-part 16-bit multi-index with radius-2 enumeration for the normal D<=8 search range.
@@ -38,15 +38,16 @@ The approved resource-management direction is:
 
 See [CPU/GPU Adaptive Resource Scheduling](docs/architecture/resource-scheduling.en.md) and [GPU Backend and Build Naming Roadmap](docs/architecture/gpu-backend-roadmap.en.md) for the detailed design and implementation order.
 
-> Note: 0.9.3.19 still contains the previous fixed CPU/GPU percentage policy and GPU-percentage UI. The Adaptive GPU AUTO and INI-based performance-profile design above is the approved target architecture to be implemented incrementally on the 0.9.3.x line.
+> Note: 0.9.4.0 implements the Node A foundation (GPU terminology/abstraction, GPU ON/OFF UI, build naming, benchmark instrumentation). The internal GPU cap is kept deprecated until the Node B Adaptive Scheduler replaces it; the INI performance profile arrives with Node C.
 
 ### Development numbering
 - 0.9.1.x: CPU baseline
 - 0.9.2.x: GPU and advanced search development
-- 0.9.3.x: benchmark, packaging, and accuracy follow-ups (current minor line)
+- 0.9.3.x: benchmark, packaging, and accuracy follow-ups
+- 0.9.4.x: Node A foundation/instrumentation (current development line)
 - 1.0.0: CPU + GPU complete target
 
-Build history is maintained under docs/build-history/ in Korean and English (59 CTest tests). Architecture documents are under docs/architecture/.
+Build history is maintained under docs/build-history/ in Korean and English (63 GPU / 62 CPU CTest tests). Architecture documents are under docs/architecture/.
 
 
 ### Benchmark / Telemetry direction

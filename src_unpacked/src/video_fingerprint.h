@@ -10,7 +10,14 @@
 #include <atomic>
 namespace msf {
 class GpuBackend;
-struct VideoBuildStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; };
+struct VideoBuildStats {
+  bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0;
+  // Node A: decoded vs sampled stay separate. decodedFrames = frames actually
+  // decoded this run (0 on cache hit is measured, not missing); sampledFrames
+  // = sample-plan intent (unknown on cache hit); keptFrames = final hashes.
+  std::size_t decodedFrames=0, sampledFrames=0, keptFrames=0;
+  bool cacheHit=false;
+};
 struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; std::size_t gpuPairs=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;

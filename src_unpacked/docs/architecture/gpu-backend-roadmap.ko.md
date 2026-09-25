@@ -8,7 +8,7 @@ MediaSimilarityFinder의 상위 아키텍처와 사용자 문서에서는 특정
 - 공통 엔진 계층: GPU backend
 - 실제 구현 계층: CUDA / Vulkan / HIP(ROCm) / Level Zero 등
 
-현재 0.9.3.19는 NVIDIA CUDA 구현을 사용하지만, 앞으로 Intel/AMD iGPU와 dGPU를 연결할 수 있는 구조를 처음부터 유지한다.
+현재 0.9.4.0은 `GpuBackendKind` 추상화(`Auto`/`Cuda`/`Cpu`, `backendName()`이 귀결된 backend 보고) 뒤에서 NVIDIA CUDA 구현을 사용하지만, 앞으로 Intel/AMD iGPU와 dGPU를 연결할 수 있는 구조를 처음부터 유지한다.
 
 ## 1. GPU backend 계층
 

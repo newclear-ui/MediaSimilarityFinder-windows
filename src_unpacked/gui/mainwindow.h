@@ -54,6 +54,8 @@ Q_DECLARE_METATYPE(GuiFile)
 class ScanWorker : public QObject {
   Q_OBJECT
 public:
+  // Node A: gpu ctor param is deprecated (kept for signature compatibility;
+  // the GPU % UI is removed — GPU is ON/OFF only, internal cap unchanged).
   ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled,
              bool scanImages=true, bool scanVideos=true);
 public slots:
@@ -232,7 +234,7 @@ private:
   QLineEdit* folder_=nullptr;   QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
     *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr;
   QString lastBenchJson_;
-  QComboBox* preset_=nullptr; QSpinBox *cpu_=nullptr,*gpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
+  QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* benchTgl_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,

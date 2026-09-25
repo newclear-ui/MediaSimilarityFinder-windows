@@ -14,7 +14,8 @@ class MediaPipeline {
 public:
  bool image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint=nullptr) const;
  std::vector<ImageFingerprintResult> imageBatch(const std::vector<std::string>& paths,bool preferGpu=true,std::size_t gpuBatchSize=256,std::atomic<bool>* activity=nullptr,BenchmarkRecorder* bench=nullptr) const;
- bool gpuAvailable() const { return gpu_.available(); }
+  bool gpuAvailable() const { return gpu_.available(); }
+  std::string gpuBackendName() const { return gpu_.backendName(); }
 private:
  mutable GpuBackend gpu_;
 };

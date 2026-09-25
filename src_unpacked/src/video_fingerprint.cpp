@@ -229,10 +229,17 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // filenames), even when an error_code is supplied.
   std::error_code ec; const fs::path fp=path_from_utf8(p);
   if(!std::filesystem::exists(fp,ec))return false; const auto sz=std::filesystem::file_size(fp,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();if(ec)return false;
-  if(memoryLookup(p,sz,mt,o,nullptr,false))return true;
+  auto noteCacheHit = [&](const VideoFingerprint& cached){
+    // Cache hit: nothing was decoded this run (decoded 0 is measured), the
+    // sample-plan intent is unknown (engine reports it as not provided), and
+    // kept equals the cached hash count.
+    if(stats){ stats->cacheHit=true; stats->decodedFrames=0;
+      stats->keptFrames=cached.hashes.size(); stats->sampledFrames=0; }
+  };
+  if(memoryLookup(p,sz,mt,o,nullptr,false)){ noteCacheHit(o); return true; }
   VideoCropFingerprint preservedCrop;
-  if(loadPersistent(p,sz,mt,o,&preservedCrop)){memoryStore(p,sz,mt,o,&preservedCrop);return true;}
-  if(loadPersistent(p,sz,mt,o,nullptr)){memoryStore(p,sz,mt,o,nullptr);return true;}
+  if(loadPersistent(p,sz,mt,o,&preservedCrop)){memoryStore(p,sz,mt,o,&preservedCrop); noteCacheHit(o); return true;}
+  if(loadPersistent(p,sz,mt,o,nullptr)){memoryStore(p,sz,mt,o,nullptr); noteCacheHit(o); return true;}
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
   VideoFingerprint built; auto plan=make_sample_plan(i.duration);
   std::vector<VideoFrame> frames32, frames96;
@@ -241,6 +248,8 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // is a single sequential decode, never one seek per timestamp).
   if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32)){d.close();return false;}
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats);
+  if(stats){ stats->cacheHit=false; stats->decodedFrames=frames32.size();
+    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); }
   d.close();if(built.hashes.empty())return false;
   memoryStore(p,sz,mt,built,nullptr);savePersistent(p,sz,mt,built,nullptr);o=std::move(built);return true;
 }

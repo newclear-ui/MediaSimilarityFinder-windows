@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$BuildDir = "build-windows-cuda",
   [string]$Configuration = "Release",
   [string]$OutputDir = "portable-release"
@@ -78,10 +78,10 @@ $smoke = Start-Process -FilePath (Join-Path $OutputDir "MediaSimilarityFinder.ex
 if ($smoke.ExitCode -ne 0) { throw "Portable smoke failed: $($smoke.ExitCode)" }
 @{
   product = "MediaSimilarityFinder"
-  version = "0.9.3.19"
+  version = "0.9.4.0"
   mode = "portable"
   indexRoot = "Index"
 } | ConvertTo-Json | Set-Content (Join-Path $OutputDir "portable.json") -Encoding UTF8
-$zip = "MediaSimilarityFinder-v0.9.3.19-Portable-Windows-x64.zip"
+$zip = "MediaSimilarityFinder-v0.9.4.0-Portable-Windows-x64.zip"
 Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $zip -Force
 Write-Host "Portable package created: $zip"

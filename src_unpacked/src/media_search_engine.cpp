@@ -224,13 +224,20 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const auto benchT0=std::chrono::steady_clock::now();
   auto benchMsSince=[&](){ return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchT0).count(); };
   MediaPipeline imagePipeline;
-  BenchmarkConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable();
+  BenchmarkConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.gpuBackend=imagePipeline.gpuBackendName(); bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable();
   const bool benchOn = !control || control->benchmarkEnabled;
   bcfg.detail = benchOn;
   bench_.start(bcfg);
   if(benchOn) bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
   if(control) bench_.addRevalidateMs(control->revalidateMs);
   auto finishScan=[&](bool completed)->SearchReport{
+    // Node A: cancelled/partial benchmarks stay distinguishable from clean
+    // completions; file progress separates started/completed/remaining.
+    if(!completed){
+      if(control && control->cancel.load(std::memory_order_relaxed)) bench_.setCancelled("cancelled");
+      else bench_.setFailed("", "failed");
+    }
+    bench_.setFileProgress(r.scanned, r.analyzed, r.scanned > r.analyzed ? r.scanned - r.analyzed : 0);
     bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
     return r;
   };
@@ -292,7 +299,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,policy_.gpuEnabled?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
+       if(videoEngine_.build(x.path,vf,policy_.gpuEnabled?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
      return j;
     }));
   }

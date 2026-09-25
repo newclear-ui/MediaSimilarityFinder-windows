@@ -8,7 +8,7 @@ The MediaSimilarityFinder top-level architecture and user documentation must not
 - Common engine layer: GPU backend
 - Concrete implementation layer: CUDA / Vulkan / HIP (ROCm) / Level Zero, etc.
 
-The 0.9.3.19 implementation currently uses NVIDIA CUDA, but the architecture must remain ready for Intel/AMD integrated and discrete GPUs.
+The 0.9.4.0 implementation uses NVIDIA CUDA behind the `GpuBackendKind` abstraction (`Auto`/`Cuda`/`Cpu` with `backendName()` reporting the resolved backend), but the architecture must remain ready for Intel/AMD integrated and discrete GPUs.
 
 ## 1. GPU backend layer
 

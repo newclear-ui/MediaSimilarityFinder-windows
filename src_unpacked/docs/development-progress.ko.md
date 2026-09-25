@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.3.19 |
+| 기준 코드 | 0.9.4.0 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | A — Foundation / Terminology / Instrumentation |
-| 현재 단계 | 설계/문서 기준선 정리 완료 → 소스 구현 진입 |
-| 현재 버전 | 0.9.3.19 |
+| 현재 노드 | A — Foundation / Terminology / Instrumentation (종료 게이트 통과 → 다음 게이트 B) |
+| 현재 단계 | Node A 구현·검증 완료 → B 진입 가능 |
+| 현재 버전 | 0.9.4.0 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -45,7 +45,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
  v
 [H] Regression / Stability / Performance Validation
 
-현재 문서 작업은 A의 기준선을 만든 것이며, 현재 0.9.3.19 소스가 0.9.4 구조로 완전히 전환되었다는 뜻은 아닙니다.
+현재 문서 작업은 A의 기준선을 만든 것이며, 0.9.4.0에서 Node A 소스 구현과 검증을 완료했다(상세: docs/build-history/0.9.4.0.ko.md).
 
 ## 완료된 준비 작업
 
@@ -61,6 +61,24 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - STRUCTURE.md / llms.txt / README 계열에서 새 문서 체계 반영
 
 이 변경은 문서 구조 변경이며 0.9.3.19의 scheduler/backend 소스 자체를 변경한 것은 아닙니다.
+
+### A1 — Node A 소스 구현 (→ 0.9.4.0, 검증됨)
+
+- `GpuBackendKind { Auto, Cuda, Cpu }` + `backendName()`. Auto는 CUDA 장치
+  존재 시 CUDA, 아니면 CPU fallback으로 귀결. 미구현 backend 없음.
+- `MSF_ENABLE_GPU` / `MSF_GPU_BACKEND` 정식화. `MSF_ENABLE_CUDA`는
+  deprecated 별칭 유지. `windows-gpu` 프리셋 + `build_windows_gpu.ps1`
+  신설, `build-windows-gpu` clean configure(기존 `build-windows-cuda` 보존).
+- 툴바 `GPU %` 스핀박스 제거, GPU ON/OFF 체크박스만 잔류. CPU 프리셋
+  의미와 deprecated 내부 `gpuPercent` cap은 동결.
+- Benchmark `schemaVersion: 1` + `runId`, `MeasureState`
+  (measured/not_measured/not_available/partial/failed/fallback),
+  `decodedFrames`/`sampledFrames` 분리, `stages`·`scheduler`·
+  `calibration`·취소/부분/파일 진행 기록, 디스크 가용성 샘플링 기간
+  래치. 기존 키 전부 유지.
+- 검증: CPU 62/62, GPU 63/63(clean 트리, CUDA discovery 포함),
+  양쪽 `--version`/`--smoke`, 확장된 `benchmark_test`·
+  `gpu_backend_policy_test`. 검색 의미 불변(엔진 1.5.0·DB 1.0.3·캐시 v9).
 
 ## Node A — Foundation / Terminology / Instrumentation
 
@@ -79,17 +97,20 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - cancellation / partial 상태
 - 기존 검색 정합성 보존
 
-### Node A 종료 조건
+### Node A 종료 조건 (0.9.4.0에서 전부 검증 → 다음 게이트 B)
 
-- CPU-only 정상
-- GPU OFF 정상
-- GPU ON에서 기존 CUDA 경로가 backend abstraction을 통해 실행
-- 수동 GPU utilization UI 제거
-- benchmark의 unmeasured=0 문제 제거
-- benchmark instrumentation이 검색 결과를 변경하지 않음
-- 기본 regression tests 통과
-- build tree / CMake naming 정리
-- 문서/코드/테스트 버전 일치
+- CPU-only 정상 — Release 빌드 PASS, CTest 62/62 PASS
+- GPU OFF 정상 — CPU fallback 경로 무변경, 모니터/CPU 스위트 통과
+- GPU ON에서 기존 CUDA 경로가 backend abstraction을 통해 실행 —
+  clean `build-windows-gpu` 트리에서 `cuda_backend_test` 통과
+- 수동 GPU utilization UI 제거 — 툴바 `GPU %` 스핀박스 삭제
+- benchmark의 unmeasured=0 문제 제거 — `MeasureState`, `null` + 상태, 래치
+- benchmark instrumentation이 검색 결과를 변경하지 않음 — 판정 경로
+  무변경, 양쪽 트리에서 parity 스위트 통과
+- 기본 regression tests 통과 — CPU 62/62, GPU 63/63
+- build tree / CMake naming 정리 — `MSF_ENABLE_GPU`/`MSF_GPU_BACKEND`,
+  `windows-gpu` 프리셋, `build_windows_gpu.ps1`, clean 트리
+- 문서/코드/테스트 버전 일치 — 전부 0.9.4.0
 
 ## Recovery branch 기록
 
@@ -123,6 +144,23 @@ A
 - 실패했던 시도
 - 해결 후 결과
 - 다음 gate 영향
+
+### Node A 구현 과정의 A1 기록
+
+- A1 (빌드 깨짐): 신규 `gpuExecState` JSON 행에서
+  `C2001: 문자열 리터럴 내 줄 바꿈` — 편집 중 닫는 따옴표 누락.
+  `<< "\""` 종결 복원으로 해결, 이후 CPU 빌드 통과.
+- A1 (테스트 환경): `benchmark_test`가 `"diskState":"measured"`를
+  기대했으나 이 머신에 PDH LogicalDisk 카운터가 없어 `not_available`이
+  정답이다. 테스트를 단일 환경값 단언에서 상태/플래그 정합 단언으로
+  변경. 게이트 영향 없음.
+- A1 (인코딩): PowerShell 일괄 버전 치환이
+  `gui/main.cpp`/`mainwindow.cpp`의 UTF-8 BOM/한글 리터럴을 깨뜨림.
+  되돌린 뒤 수술식 편집으로 재적용하고 diff 최소화를 확인. 교훈:
+  비ASCII 소스에 plain `Set-Content` 일괄 쓰기 금지.
+- A1 (스크립트 기본값): 신규 `build_windows_gpu.ps1`이 `VCPKG_ROOT`를
+  요구한 반면 `build_windows_cpu.ps1`은 `C:\src\vcpkg` 기본값을 둠.
+  기존 관례에 맞춤. 게이트 영향 없음.
 
 ## 버전 진행 규칙
 

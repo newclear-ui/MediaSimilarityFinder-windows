@@ -15,7 +15,7 @@
 
 ## 2. 현재 benchmark의 한계
 
-현재 0.9.3.19 benchmark는 wall/stage time, image/video count, GPU hash count, GPU batch time, resource sampling, video GPU/fallback count 등에 의존한다.
+0.9.3.19 benchmark는 wall/stage time, image/video count, GPU hash count, GPU batch time, resource sampling, video GPU/fallback count 등에 의존했다. 0.9.4.0(Node A)은 기존 키를 유지하면서 benchmark schemaVersion 1, runId, 측정 상태, stage 객체, decoded/sampled 프레임 분리, scheduler/calibration 구조, 취소/부분/파일 진행 기록을 추가한다.
 
 상세 benchmark가 비활성화된 실행에서는 영상 상세 계측이나 resource sampling이 실행되지 않을 수 있다. 따라서 JSON의 0은 실제로 0건 처리 또는 0% 사용을 의미하지 않을 수 있다.
 
