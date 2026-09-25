@@ -6,6 +6,10 @@
 
 Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing on CUDA, incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 
+## GPU backend direction
+
+The top-level architecture uses GPU as the generic accelerator term. NVIDIA CUDA is one concrete backend, not the generic GPU name. The 0.9.4.x roadmap leaves explicit connection points for NVIDIA CUDA/NVDEC, Vulkan, AMD HIP/ROCm, and Intel Level Zero, covering both integrated and discrete Intel/AMD GPUs. Vulkan is a vendor-neutral candidate; real availability and performance require capability and workload measurement.
+
 ## CPU + GPU execution model
 
 The project is explicitly a CPU+GPU cooperative application.
