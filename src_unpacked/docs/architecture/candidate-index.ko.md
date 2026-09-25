@@ -52,6 +52,11 @@ mirror-aware 검색 도입 후 별도의 mirror-only BK-tree를 두는 대신 no
 
 주의: 위 benchmark의 indexed/linear 비교는 후보 검색 workload 정의가 완전히 동일한 1회 query 비교가 아니라 기존 benchmark의 전체 query workload 비교를 포함한다. 따라서 speedup 수치는 절대적인 알고리즘 배수로 해석하지 않고 버전 간 추세 판단용으로 사용한다.
 
+## 비디오 fold 해시의 위치
+
+`foldVideoHashes()`로 접은 영상 대표 해시는 저장·색인용 **식별자**이며 Hamming 유사도 키가 아니다.
+유사도 판단은 per-frame 해시·anchor·temporal 검증이 담당하고, fold 간 Hamming 거리를 단독 근거로 쓰지 않는다.
+
 ## 향후 최적화 대상
 
 - bucket 조회와 reserve 경로의 중복 작업 축소

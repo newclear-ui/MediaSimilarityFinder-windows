@@ -52,6 +52,11 @@ For `D > 8`, the pigeonhole guarantee no longer applies, so the implementation c
 
 Note: the benchmark's indexed/linear comparison includes the existing full-query workload rather than a strictly identical single-query operation count. The speedup figure should therefore be treated as a version-trend indicator rather than a universal algorithmic multiplier.
 
+## Role of the folded video hash
+
+The `foldVideoHashes()` video representative hash is a storage/indexing **identifier**, not a Hamming similarity key.
+Similarity verdicts rest on per-frame hashes, anchors, and temporal verification; folded-hash Hamming distance is never used alone as verdict evidence.
+
 ## Future optimization targets
 
 - Reduce duplicate bucket lookup/reservation work

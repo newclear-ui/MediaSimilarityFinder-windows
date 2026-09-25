@@ -2,7 +2,7 @@
 
 ## Scope
 
-Only the 32x32 sampled-frame pHash stage in `VideoFingerprintEngine::build()` uses CUDA batches. FFmpeg decoding, 96x96 crop fingerprints, and temporal verification remain on the CPU path.
+Only the 32x32 sampled-frame pHash stage in `VideoFingerprintEngine::build()` uses CUDA batches. FFmpeg decoding and 96x96 crop fingerprints remain on the CPU path. The MSSIM stage of temporal verification has used a GPU row batch since 0.9.3.14 (see `video-ssim-gpu.en.md`); crop temporal scoring itself is CPU.
 
 ## Execution flow
 

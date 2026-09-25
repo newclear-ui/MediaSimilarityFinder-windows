@@ -2,7 +2,7 @@
 
 ## 범위
 
-`VideoFingerprintEngine::build()`의 32x32 샘플 프레임 pHash만 CUDA batch로 처리한다. FFmpeg 디코드, 96x96 crop fingerprint, temporal verification은 CPU 경로를 유지한다.
+`VideoFingerprintEngine::build()`의 32x32 샘플 프레임 pHash만 CUDA batch로 처리한다. FFmpeg 디코드와 96x96 crop fingerprint는 CPU 경로를 유지한다. temporal 검증의 MSSIM 단계는 0.9.3.14부터 GPU row-batch이며(`video-ssim-gpu.ko.md` 참조), crop temporal 점수 자체는 CPU다.
 
 ## 실행 흐름
 

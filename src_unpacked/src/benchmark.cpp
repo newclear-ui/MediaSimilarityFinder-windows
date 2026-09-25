@@ -77,9 +77,15 @@ void BenchmarkRecorder::openDiskCounters() {
     if (PdhOpenQueryA(nullptr, 0, &q) == ERROR_SUCCESS) {
       PDH_HCOUNTER rd = nullptr, wr = nullptr;
       const std::string base = "\\\\LogicalDisk(" + diskVolume_ + ")\\";
-      bool ok = PdhAddEnglishCounterA(q, (base + "Disk Read Bytes/sec").c_str(), 0, &rd) == ERROR_SUCCESS &&
-                PdhAddEnglishCounterA(q, (base + "Disk Write Bytes/sec").c_str(), 0, &wr) == ERROR_SUCCESS &&
-                PdhCollectQueryData(q) == ERROR_SUCCESS;
+      // NOTE: no first-collect requirement here. The first
+      // PdhCollectQueryData right after adding rate counters commonly
+      // returns PDH_NO_DATA (needs two samples); treating that as fatal
+      // disabled disk monitoring for the whole run (observed as
+      // diskAvailable:false with a valid volume). Baseline collection is
+      // best-effort; per-tick sampling tolerates failures.
+      const bool ok = PdhAddEnglishCounterA(q, (base + "Disk Read Bytes/sec").c_str(), 0, &rd) == ERROR_SUCCESS &&
+                      PdhAddEnglishCounterA(q, (base + "Disk Write Bytes/sec").c_str(), 0, &wr) == ERROR_SUCCESS;
+      PdhCollectQueryData(q);
       if (ok) {
         diskQuery_ = q;
         diskReadCounter_ = rd;
