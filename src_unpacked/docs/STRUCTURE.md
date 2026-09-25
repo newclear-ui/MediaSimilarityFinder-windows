@@ -29,6 +29,7 @@
 | `video_sampling.*` | 동영상 샘플 플랜(`sampling_interval`) |
 | `video_decoder.h` | FFmpeg(MSF_HAS_FFMPEG) 디코더 인터페이스 |
 | `video_fingerprint.*` | 동영상 지문: timestamps+hashes+mirror, SQLite 캐시(v7, base+crop 프레임), 저분산 프레임 필터 + 장면전환, `video_similarity`(DTW, sceneBonus, 다이아딕 격자 정렬) |
+| `docs/architecture/video-gpu-hash.ko.md` / `.en.md` | 영상 32x32 pHash CUDA batch 경로와 CPU fallback 설계 |
 | `similarity.*` | 해시 유사도 / 이미지 매칭 |
 | `candidate_index.*` | 유사 후보 색인(9-part Multi-Index Hash) |
 | `scan_pipeline.*` | 중복 검색 엔진: duration 게이트 + temporal 동영상 검증(스캔 경로) |
@@ -52,7 +53,7 @@
 ## 빌드/테스트
 
 - `scripts/build_windows_cuda.ps1 -VcpkgRoot C:\src\vcpkg` — CUDA 빌드.
-- 현재 `CMakeLists.txt`에는 **59개 CTest**가 등록되어 있다.
+- 현재 `CMakeLists.txt`에는 **60개 CTest**가 등록되어 있다.
 - `MediaSimilarityFinder.exe --smoke` (offscreen), `--version` — GUI 스모크/버전 확인.
 - 버전 상향 파일(검색용): `CMakeLists.txt`, `vcpkg.json`, `gui/main.cpp`, `scripts/package_portable.ps1`, `src/index_manager.cpp`.
 

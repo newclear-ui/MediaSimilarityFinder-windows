@@ -8,7 +8,7 @@ int main() {
   if (rec.hasData()) return 1;
   msf::BenchmarkConfig cfg;
   cfg.root = "C:/media";
-   cfg.build = "0.9.3.12"; cfg.engine = "1.2.0"; cfg.db = "1.0.3";
+   cfg.build = "0.9.3.13"; cfg.engine = "1.2.0"; cfg.db = "1.0.3";
   cfg.distance = 8; cfg.cpuWorkers = 4; cfg.gpuBatch = 64;
   cfg.scanImages = true; cfg.scanVideos = true; cfg.cudaAvailable = false;
   rec.start(cfg);
@@ -23,6 +23,7 @@ int main() {
     rec.addImage(1000ULL * (i + 1), 1.0 + i, 0.5, 0.25, i % 3 == 0, "img" + std::to_string(i) + ".jpg");
   for (int i = 0; i < 25; ++i)
     rec.addVideo(1000000ULL * (i + 1), 60.0 * (i + 1), 10.0 * (i + 1), 30 * (i + 1), "vid" + std::to_string(i) + ".mp4");
+  rec.addVideoGpu(true, false, 3.0);
   bool gpu = false;
   rec.startSampler([&gpu]() { return gpu; });
   std::this_thread::sleep_for(std::chrono::milliseconds(650));
@@ -34,7 +35,7 @@ int main() {
     if (js.find(s) == std::string::npos) { std::cerr << "missing: " << s << "\n"; return false; }
     return true;
   };
-   if (!need("\"build\":\"0.9.3.12\"")) return 3;
+   if (!need("\"build\":\"0.9.3.13\"")) return 3;
   if (!need("\"completed\":true")) return 4;
   if (!need("\"count\":30")) return 5;
   if (!need("\"gpuHashed\":10")) return 6;
@@ -53,12 +54,13 @@ int main() {
    if (!need("\"config\":{\"distance\":8")) return 19;
    if (!need("\"resources\":{\"sampleMs\":250")) return 20;
    if (!need("\"videos\":{\"count\":25")) return 21;
-   if (!need("\"cpuProcStd\"")) return 22;
-   if (!need("\"gpuLongestIdleMs\"")) return 23;
+   if (!need("\"gpuVideos\":1")) return 22;
+   if (!need("\"cpuProcStd\"")) return 23;
+   if (!need("\"gpuLongestIdleMs\"")) return 24;
   rec.abortUnfinished();
-   if (!rec.hasData()) return 24;
+   if (!rec.hasData()) return 25;
   rec.reset();
-   if (rec.hasData()) return 25;
+    if (rec.hasData()) return 26;
   std::cout << "benchmark=ok\n";
   return 0;
 }

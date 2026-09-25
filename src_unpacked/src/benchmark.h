@@ -52,6 +52,7 @@ public:
   void addImage(std::uint64_t bytes, double decodeMs, double hashMs, double cropMs, bool usedGpu, const std::string& path);
   void addGpuBatchMs(double ms);
   void addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path);
+  void addVideoGpu(bool used, bool fallback, double gpuMs);
   void addStreamedMatch() { streamedMatches_.fetch_add(1, std::memory_order_relaxed); }
   void startSampler(std::function<bool()> gpuActive);
   void stopSampler();
@@ -74,6 +75,8 @@ private:
   std::atomic<long long> imgDecodeNs_{0}, imgHashNs_{0}, imgCropNs_{0}, imgGpuNs_{0};
   std::atomic<std::uint64_t> vidCount_{0}, vidBytes_{0}, vidFrames_{0};
   std::atomic<long long> vidBuildNs_{0};
+  std::atomic<std::uint64_t> vidGpu_{0}, vidGpuFallback_{0};
+  std::atomic<long long> vidGpuNs_{0};
   std::atomic<double> vidPlaySec_{0};
   mutable std::mutex slowMutex_;
   std::vector<SlowFile> slowImages_, slowVideos_;

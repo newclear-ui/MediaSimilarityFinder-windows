@@ -7,7 +7,10 @@
 #include <list>
 #include <unordered_map>
 #include <mutex>
+#include <atomic>
 namespace msf {
+class GpuBackend;
+struct VideoBuildStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;
  std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0;
@@ -31,7 +34,7 @@ struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=
 class VideoFingerprintEngine{
 public:
  ~VideoFingerprintEngine();
-  bool build(const std::string&,VideoFingerprint&) const;
+   bool build(const std::string&,VideoFingerprint&,GpuBackend* gpu=nullptr,std::atomic<bool>* gpuActivity=nullptr,VideoBuildStats* stats=nullptr) const;
   bool buildFull(const std::string&,VideoFingerprint&,VideoCropFingerprint&,int decodeSize=96) const;
  bool openPersistentCache(const std::string& sqlitePath) const;
  void closePersistentCache() const;

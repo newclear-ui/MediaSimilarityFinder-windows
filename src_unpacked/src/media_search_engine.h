@@ -4,6 +4,7 @@
 #include "scan_pipeline.h"
 #include "resource_policy.h"
 #include "video_fingerprint.h"
+#include "gpu_backend.h"
 #include "index_manager.h"
 #include "candidate_index.h"
 #include "benchmark.h"
@@ -103,8 +104,9 @@ const std::vector<MediaFile>& files() const { return files_; }
   void abortBenchmark() { bench_.abortUnfinished(); }
   bool getColorThumb(const std::string& path, int& w, int& h, std::vector<unsigned char>& bgra) const;
   bool getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const;
-private:
+  private:
   Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
+  GpuBackend videoGpu_;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
   std::atomic<bool> gpuActive_{false};
   BenchmarkRecorder bench_;

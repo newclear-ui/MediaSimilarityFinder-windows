@@ -100,6 +100,7 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   streamedMatches_.store(0, std::memory_order_relaxed);
   reductionPct_ = 0;
   gpuImages_ = gpuFallback_ = 0;
+  vidGpu_.store(0, std::memory_order_relaxed); vidGpuFallback_.store(0, std::memory_order_relaxed); vidGpuNs_.store(0, std::memory_order_relaxed);
   completed_ = false;
   finished_ = false;
   started_ = true;
@@ -133,6 +134,11 @@ void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double
   SlowFile item{path, buildMs, bytes, durationSec, frames};
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowVideos_, std::move(item));
+}
+void BenchmarkRecorder::addVideoGpu(bool used, bool fallback, double gpuMs) {
+  if (used) vidGpu_.fetch_add(1, std::memory_order_relaxed);
+  if (fallback) vidGpuFallback_.fetch_add(1, std::memory_order_relaxed);
+  vidGpuNs_.fetch_add((long long)(gpuMs * 1e6), std::memory_order_relaxed);
 }
 void BenchmarkRecorder::sampleOnce(double tMs) {
   ResourceSample s;
@@ -213,6 +219,7 @@ std::string BenchmarkRecorder::toJson() const {
   const double imgHashMs = (double)imgHashNs_.load() / 1e6;
   const double imgCropMs = (double)imgCropNs_.load() / 1e6;
   const double vidBuildMs = (double)vidBuildNs_.load() / 1e6;
+  const double vidGpuMs = (double)vidGpuNs_.load() / 1e6;
   const double playSec = vidPlaySec_.load();
   double cpuMean = 0, cpuMax = 0, cpuVar = 0, sysMean = 0, memMax = 0, gpuDuty = 0;
   long long idleRun = 0, idleMax = 0;
@@ -270,7 +277,8 @@ std::string BenchmarkRecorder::toJson() const {
   }
   o << "]},";
   o << "\"videos\":{\"count\":" << vidN << ",\"bytes\":" << vidBytes_.load() << ",\"frames\":" << vidFrames_.load()
-    << ",\"playSec\":" << playSec << ",\"buildMs\":" << vidBuildMs
+     << ",\"playSec\":" << playSec << ",\"buildMs\":" << vidBuildMs
+     << ",\"gpuVideos\":" << vidGpu_.load() << ",\"gpuFallbackVideos\":" << vidGpuFallback_.load() << ",\"gpuHashMs\":" << vidGpuMs
     << ",\"meanBuildMs\":" << (vidN ? vidBuildMs / vidN : 0)
     << ",\"secPerPlayMin\":" << (playSec > 0 ? (vidBuildMs / 1000.0) / (playSec / 60.0) : 0)
     << ",\"secPerGB\":" << (vidBytes_.load() > 0 ? (vidBuildMs / 1000.0) / ((double)vidBytes_.load() / 1e9) : 0)

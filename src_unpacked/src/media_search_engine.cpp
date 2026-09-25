@@ -278,7 +278,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     futs.emplace_back(std::async(std::launch::async,[x,this,benchOn](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
-      if(videoEngine_.build(x.path,vf)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn) bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); }
+       VideoBuildStats videoStats;
+       if(videoEngine_.build(x.path,vf,policy_.gpuEnabled?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
      return j;
     }));
   }

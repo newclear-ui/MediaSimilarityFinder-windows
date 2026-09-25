@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <string>
 #include <cstddef>
+#include <mutex>
 
 namespace msf {
 struct GpuInfo {
@@ -28,5 +29,6 @@ public:
 private:
     struct Impl;
     Impl* impl_=nullptr;
+    mutable std::mutex hashMutex_;
 };
 }

@@ -65,6 +65,7 @@ std::size_t GpuBackend::recommendedBatchSize(std::size_t requested) const {
     return std::min(requested,byMemory);
 }
 bool GpuBackend::hashBatch(const std::uint8_t* g,std::uint64_t n,std::uint64_t* out) const {
+    std::lock_guard<std::mutex> lock(hashMutex_);
     if(!g||!out||n==0||!available()) return false;
 #ifdef MSF_HAS_CUDA
     return msf_cuda_backend_hash_batch(impl_->cuda,g,n,out);

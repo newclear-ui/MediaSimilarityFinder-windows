@@ -3,6 +3,7 @@
 #include "fingerprint.h"
 #include "similarity.h"
 #include "path_utils.h"
+#include "gpu_backend.h"
 #include <sqlite3.h>
 #include <cstring>
 #include <string>
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <chrono>
 namespace msf {
 static sqlite3* VDB(void* p){return reinterpret_cast<sqlite3*>(p);}
 static std::string quickIdentity(const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
@@ -162,16 +164,46 @@ void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz
   sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(s,5,f.duration);sqlite3_bind_int(s,6,(int)count);sqlite3_bind_int(s,7,kCacheFormatVersion);sqlite3_bind_blob(s,8,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
 }
 VideoFingerprintEngine::~VideoFingerprintEngine(){closePersistentCache();}
-static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops){
+static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops, GpuBackend* gpu, std::atomic<bool>* gpuActivity, VideoBuildStats* stats){
   built.duration=duration;
   constexpr double kMinVariance=6.0; constexpr std::size_t kFloorRatio=30;
   std::vector<char> keep(frames32.size(),1);
   std::size_t nVar=0;for(const auto&f:frames32){double s=0;for(unsigned char v:f.gray)s+=v;const double m=s/(f.gray.empty()?1:(double)f.gray.size());double sq=0;for(unsigned char v:f.gray){double dv=(double)v-m;sq+=dv*dv;}const double sd=f.gray.empty()?0.0:std::sqrt(sq/f.gray.size());if(sd<kMinVariance)keep[nVar]=0;++nVar;}
   std::size_t kept=0;for(char k:keep)if(k)++kept;
   if(frames32.size()&&kept*100/frames32.size()<kFloorRatio) keep.assign(frames32.size(),1);
-  std::vector<double> ts; std::vector<std::uint64_t> hs, mhs; std::vector<std::uint8_t> thumbs;
+   std::vector<double> ts; std::vector<std::uint64_t> hs, mhs; std::vector<std::uint8_t> thumbs;
+   std::vector<PerceptualHashPair> pairs(frames32.size()); std::vector<char> pairReady(frames32.size(),0);
+   const bool gpuRequested=gpu!=nullptr;
+   if(gpuRequested){
+     std::vector<std::size_t> map; std::vector<std::uint8_t> packed, mirrored;
+     for(std::size_t i=0;i<frames32.size();++i){
+       const auto& f=frames32[i];
+       if(!keep[i]||f.width!=32||f.height!=32||f.gray.size()!=1024) continue;
+       map.push_back(i); packed.insert(packed.end(),f.gray.begin(),f.gray.end());
+       const std::size_t base=mirrored.size(); mirrored.resize(base+1024);
+       for(int y=0;y<32;++y) for(int x=0;x<32;++x) mirrored[base+(std::size_t)y*32+x]=f.gray[(std::size_t)y*32+(31-x)];
+     }
+     const std::size_t requested=256;
+     std::size_t batch=requested; const auto safe=gpu->recommendedBatchSize(requested); if(safe>0) batch=safe;
+     for(std::size_t base=0;base<map.size();base+=batch){
+       const std::size_t n=std::min(batch,map.size()-base); std::vector<std::uint64_t> normal(n), mirror(n);
+       const auto t0=std::chrono::steady_clock::now();
+       if(gpuActivity) gpuActivity->store(true,std::memory_order_relaxed);
+       const bool normalOk=gpu->hashBatch(packed.data()+base*1024,n,normal.data());
+       const bool mirrorOk=gpu->hashBatch(mirrored.data()+base*1024,n,mirror.data());
+       if(gpuActivity) gpuActivity->store(false,std::memory_order_relaxed);
+       const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
+       if(stats) stats->gpuMs+=ms;
+       for(std::size_t k=0;k<n;++k){
+         const auto i=map[base+k];
+         if(normalOk&&mirrorOk){ pairs[i]={normal[k],mirror[k]}; pairReady[i]=1; }
+       }
+       if(stats){ if(normalOk&&mirrorOk) stats->gpuUsed=true; else stats->gpuFallback=true; }
+     }
+     if(stats && map.empty()) stats->gpuFallback=true;
+   }
   constexpr int kT = VideoFingerprint::kThumbSize;
-  for(std::size_t i=0;i<frames32.size();++i){if(!keep[i])continue;const auto&f=frames32[i];ts.push_back(f.timestamp);{const auto hp=perceptual_hash_pair(f.gray,f.width,f.height);hs.push_back(hp.normal);mhs.push_back(hp.mirrored);}
+   for(std::size_t i=0;i<frames32.size();++i){if(!keep[i])continue;const auto&f=frames32[i];ts.push_back(f.timestamp);{const auto hp=pairReady[i]?pairs[i]:perceptual_hash_pair(f.gray,f.width,f.height);hs.push_back(hp.normal);mhs.push_back(hp.mirrored);}
     const std::size_t base=thumbs.size(); thumbs.resize(base+(std::size_t)kT*kT,0);
     if(i<frames96.size()){const auto&cf=frames96[i];
       if(cf.width==96&&cf.height==96&&(int)cf.gray.size()==96*96){
@@ -190,7 +222,7 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
     if(crops){ crops->timestamps.push_back(i<frames32.size()?frames32[i].timestamp:cf.timestamp); crops->a4x3.push_back(c.a4x3); crops->a1x1.push_back(c.a1x1); crops->a9x16.push_back(c.a9x16); crops->mirrorA4x3.push_back(c.mirrorA4x3); crops->mirrorA1x1.push_back(c.mirrorA1x1); crops->mirrorA9x16.push_back(c.mirrorA9x16); }
   }
 }
-bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o)const{
+bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBackend* gpu,std::atomic<bool>* gpuActivity,VideoBuildStats* stats)const{
   // NOTE: p is UTF-8. Build the path with path_from_utf8 first: constructing
   // fs::path from a narrow string throws on Windows when the name holds
   // characters outside the ANSI code page (observed terminate() on Korean
@@ -209,7 +241,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o)const{
   // second resolution pass; each pass itself is a single sequential decode rather than
   // one seek per timestamp.
   d.framesAt(plan.timestamps,96,96,frames96);
-  processVideoFrames(frames32,frames96,i.duration,built,nullptr);
+   processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats);
   d.close();if(built.hashes.empty())return false;
   memoryStore(p,sz,mt,built,nullptr);savePersistent(p,sz,mt,built,nullptr);o=std::move(built);return true;
 }
@@ -227,7 +259,7 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
   d.framesAt(plan.timestamps,size,size,framesHi);
   d.close();
   VideoCropFingerprint cHi;
-  processVideoFrames(frames32,size==96?framesHi:std::vector<VideoFrame>(),i.duration,b,size==96?&cHi:nullptr);
+   processVideoFrames(frames32,size==96?framesHi:std::vector<VideoFrame>(),i.duration,b,size==96?&cHi:nullptr,nullptr,nullptr,nullptr);
   if(size!=96){
     VideoDecoder d2;
     if(d2.open(p)){ std::vector<VideoFrame> frames96; d2.framesAt(plan.timestamps,96,96,frames96); d2.close();
