@@ -274,3 +274,27 @@ GPU 사용량이나 처리속도가 높아지는 대신 검색 판정이 달라�
 구현은 현재 개발선 0.9.3.x에서 단계적으로 진행한다.
 
 CPU fallback은 항상 유지하며, hardware acceleration은 선택 가능한 backend로 취급한다.
+
+ 
+## 15. Benchmark / Telemetry 연계
+
+Adaptive Scheduler는 benchmark 없이는 충분히 검증할 수 없으므로 benchmark를 독립적인 핵심 개발 단계로 취급한다.
+
+0.9.4.x에서는 scheduler가 결정한 CPU/GPU 배분, calibration 결과, backend 선택, queue 상태, fallback 이유, 실제 throughput을 benchmark가 기록해야 한다.
+
+특히 benchmark가 꺼져 있거나 측정할 수 없는 항목을 0으로 기록하여 실제 사용량이 0인 것처럼 보이게 하지 않는다.
+
+상세 benchmark 설계는 [Benchmark and Runtime Telemetry Roadmap](benchmark-telemetry-roadmap.ko.md)을 따른다.
+
+### 0.9.4.0 추가 필수 항목
+
+- benchmark schemaVersion
+- measured / not_measured / not_available / partial / failed / fallback 상태
+- scheduler decision telemetry
+- calibration telemetry
+- GPU backend capability 및 selected backend
+- video decoder/backend/fallback reason
+- decodedFrames와 sampledFrames 분리
+- queue wait / transfer time
+- cancellation / partial-result 상태
+- human-readable 요약과 machine-readable JSON의 분리
