@@ -274,3 +274,27 @@ This architecture does not modify or overwrite the official GPU baseline 0.9.2.3
 Implementation proceeds incrementally on the 0.9.3.x development line.
 
 CPU fallback remains mandatory, and hardware acceleration is treated as an optional backend.
+
+ 
+## 15. Benchmark / Telemetry integration
+
+The Adaptive Scheduler cannot be validated adequately without detailed benchmark telemetry, so benchmark redesign is a first-class development stage.
+
+In 0.9.4.x, benchmark output must record scheduler CPU/GPU allocation, calibration results, backend selection, queue state, fallback reasons, and measured throughput.
+
+Measurements that are disabled or unavailable must not be encoded as numeric zero.
+
+See [Benchmark and Runtime Telemetry Roadmap](benchmark-telemetry-roadmap.en.md) for the detailed benchmark design.
+
+### Additional 0.9.4.0 requirements
+
+- benchmark schemaVersion
+- measured / not_measured / not_available / partial / failed / fallback states
+- scheduler decision telemetry
+- calibration telemetry
+- GPU backend capability and selected backend
+- video decoder/backend/fallback reason
+- separate decodedFrames and sampledFrames
+- queue wait / transfer time
+- cancellation / partial-result state
+- separate human-readable summary and machine-readable JSON
