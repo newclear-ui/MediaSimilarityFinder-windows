@@ -15,6 +15,11 @@ int main(){
         {"c.png",300,30,"q"}};
     msf::IncrementalScanner s; auto d=s.classify(cur,old);
     if(d.unchanged.size()!=1||d.modified.size()!=1||d.added.size()!=1||d.deleted.size()!=0) return 3;
+    msf::FileState replaced{"a.jpg",100,10,"changed"};
+    if(db.containsUnchanged(replaced)) return 4;
+    auto sameMeta=cur; sameMeta[0].quickHash="changed";
+    auto freshness=s.classify(sameMeta,old);
+    if(freshness.modified.size()!=2||freshness.unchanged.size()!=0) return 5;
     if(!db.remove("a.jpg")) return 6;
     if(!db.beginTransaction()) return 7;
     msf::FileState transient{"transient.jpg",10,40,"t",123,1,0};

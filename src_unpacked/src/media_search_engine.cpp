@@ -349,14 +349,14 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    bench_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
   }
  walker.join();
-  if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return finishScan(false); }
+  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.completed=false; return finishScan(false); }
  // Deleted detection needs the complete seen set: only on fully walked scans.
  // Previously indexed files that no longer exist are removed then. Ignored rows
  // are retained in the database (they reappear only when unignored and rescanned).
  if(walkCompleted){
   for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ failed=true; break; } ++nRemoved; }
  }
-  if(failed){ if(tx) db_.rollbackTransaction(); r.completed=false; return finishScan(false); }
+   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.completed=false; return finishScan(false); }
  // Persist everything done so far, including on cancel: partial progress is
  // kept by design (checkpoints), so interruption never loses the file list.
   if(!checkpoint()){ r.completed=false; return finishScan(false); }

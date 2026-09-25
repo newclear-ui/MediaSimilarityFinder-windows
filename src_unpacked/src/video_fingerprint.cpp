@@ -198,6 +198,8 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o)const{
   std::error_code ec; const fs::path fp=path_from_utf8(p);
   if(!std::filesystem::exists(fp,ec))return false; const auto sz=std::filesystem::file_size(fp,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();if(ec)return false;
   if(memoryLookup(p,sz,mt,o,nullptr,false))return true;
+  VideoCropFingerprint preservedCrop;
+  if(loadPersistent(p,sz,mt,o,&preservedCrop)){memoryStore(p,sz,mt,o,&preservedCrop);return true;}
   if(loadPersistent(p,sz,mt,o,nullptr)){memoryStore(p,sz,mt,o,nullptr);return true;}
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
   VideoFingerprint built; auto plan=make_sample_plan(i.duration);
@@ -241,12 +243,13 @@ bool VideoFingerprintEngine::peekThumb48(const std::string& p,std::vector<std::u
   constexpr std::size_t kPx=(std::size_t)VideoFingerprint::kThumbSize*VideoFingerprint::kThumbSize;
   std::error_code ec; const fs::path fp=path_from_utf8(p);
   if(!std::filesystem::exists(fp,ec))return false; const auto sz=std::filesystem::file_size(fp,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();if(ec)return false;
+  const std::string quick=quickIdentity(p);
   {
     std::lock_guard<std::mutex> lock(cacheMutex_);
     auto it=cacheMap_.find(p);
     if(it!=cacheMap_.end()){
       const CacheEntry& e=it->second->second;
-      if(e.size==sz&&e.modified==mt&&e.fingerprint.thumb48.size()>=kPx){
+      if(e.size==sz&&e.modified==mt&&e.quickHash==quick&&e.fingerprint.thumb48.size()>=kPx){
         gray48.assign(e.fingerprint.thumb48.begin(),e.fingerprint.thumb48.begin()+kPx);
         cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
         return true;

@@ -274,7 +274,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.11\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.11\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.12\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.12\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -614,7 +614,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.11"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.12"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -984,7 +984,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.11"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.12"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1530,6 +1530,9 @@ void MainWindow::updateGroupFoot() {
                                                  .arg(trStr(lang(), "groupSel")).arg(sel));
 }
 void MainWindow::rebuildGroups() {
+  QString selectedPath;
+  if (currentGroup_ >= 0 && currentGroup_ < groups_.size() && !groups_[currentGroup_].paths.isEmpty())
+    selectedPath = groups_[currentGroup_].paths.front();
   QHash<QString, QStringList> buckets;
   for (auto it = pathParent_.cbegin(); it != pathParent_.cend(); ++it) buckets[findRoot(it.key())] << it.key();
   groups_.clear(); pathGroup_.clear();
@@ -1565,7 +1568,12 @@ void MainWindow::rebuildGroups() {
     });
   for (int i = 0; i < groups_.size(); ++i)
     for (const auto& p : groups_[i].paths) pathGroup_[p] = i;
-  if (currentGroup_ >= groups_.size()) { currentGroup_ = -1; currentFile_.clear(); }
+  if (!selectedPath.isEmpty()) {
+    currentGroup_ = pathGroup_.value(selectedPath, -1);
+    if (currentGroup_ < 0) currentFile_.clear();
+  } else if (currentGroup_ >= groups_.size()) {
+    currentGroup_ = -1; currentFile_.clear();
+  }
 }
 QString MainWindow::fmtSize(qulonglong n) const {
   if (n < 1024) return QString("%1 B").arg(n);
@@ -1721,12 +1729,18 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   // Rebuilding the widgets can make setCurrentItem() scroll to the selected
   // group (usually group 1) after the old pixel offset was captured. Preserve
   // the group at the viewport's top edge as a semantic anchor instead.
-  int treeAnchor = -1;
-  if (auto* top = tree->itemAt(QPoint(2, 2)))
-    treeAnchor = top->data(0, Qt::UserRole).toInt();
-  int gridAnchor = -1;
-  if (auto* top = grid->itemAt(QPoint(2, 2)))
-    gridAnchor = top->data(Qt::UserRole).toInt();
+  QString treeAnchorPath;
+  if (auto* top = tree->itemAt(QPoint(2, 2))) {
+    const int index = top->data(0, Qt::UserRole).toInt();
+    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty())
+      treeAnchorPath = groups_[index].paths.front();
+  }
+  QString gridAnchorPath;
+  if (auto* top = grid->itemAt(QPoint(2, 2))) {
+    const int index = top->data(Qt::UserRole).toInt();
+    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty())
+      gridAnchorPath = groups_[index].paths.front();
+  }
   tree->clear(); grid->clear();
   const QString f = groupSearch_->text().trimmed().toLower();
   for (int i = 0; i < groups_.size(); ++i) {
@@ -1770,10 +1784,11 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   }
   tree->resizeColumnToContents(0);
   bool restoredTree = false;
-  if (treeAnchor >= 0) {
+  if (!treeAnchorPath.isEmpty()) {
     for (int row = 0; row < tree->topLevelItemCount(); ++row) {
       auto* item = tree->topLevelItem(row);
-      if (item->data(0, Qt::UserRole).toInt() == treeAnchor) {
+      const int index = item->data(0, Qt::UserRole).toInt();
+      if (index >= 0 && index < groups_.size() && groups_[index].paths.contains(treeAnchorPath)) {
         tree->scrollToItem(item, QAbstractItemView::PositionAtTop);
         restoredTree = true;
         break;
@@ -1781,10 +1796,11 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     }
   }
   bool restoredGrid = false;
-  if (gridAnchor >= 0) {
+  if (!gridAnchorPath.isEmpty()) {
     for (int row = 0; row < grid->count(); ++row) {
       auto* item = grid->item(row);
-      if (item->data(Qt::UserRole).toInt() == gridAnchor) {
+      const int index = item->data(Qt::UserRole).toInt();
+      if (index >= 0 && index < groups_.size() && groups_[index].paths.contains(gridAnchorPath)) {
         grid->scrollToItem(item, QAbstractItemView::PositionAtTop);
         restoredGrid = true;
         break;
@@ -2586,6 +2602,37 @@ static bool sameExplorerFolder(const QString& a, const QString& b) {
   if (a.isEmpty() || b.isEmpty()) return false;
   return QString::compare(QDir::cleanPath(a), QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
 }
+static bool selectExplorerFile(IFolderView* folderView, IShellView* shellView,
+                               PIDLIST_ABSOLUTE basePidl, const QString& targetFile) {
+  if (!folderView || !shellView || !basePidl) return false;
+  int count = 0;
+  if (FAILED(folderView->ItemCount(SVGIO_ALLVIEW, &count))) return false;
+  const QString target = QDir::cleanPath(targetFile);
+  for (int i = 0; i < count; ++i) {
+    PITEMID_CHILD child = nullptr;
+    if (FAILED(folderView->Item(i, &child)) || !child) continue;
+    PIDLIST_ABSOLUTE absolute = ILCombine(basePidl, child);
+    PWSTR raw = nullptr;
+    QString itemPath;
+    if (absolute && SUCCEEDED(SHGetNameFromIDList(absolute, SIGDN_FILESYSPATH, &raw)) && raw)
+      itemPath = QDir::cleanPath(QString::fromWCharArray(raw));
+    if (raw) CoTaskMemFree(raw);
+    const bool match = !itemPath.isEmpty() &&
+                       QString::compare(itemPath, target, Qt::CaseInsensitive) == 0;
+    bool selected = false;
+    if (match) {
+      selected = SUCCEEDED(shellView->SelectItem(
+          child, static_cast<SVSIF>(SVSI_SELECT | SVSI_DESELECTOTHERS |
+                                     SVSI_ENSUREVISIBLE | SVSI_FOCUSED))) ||
+                 SUCCEEDED(shellView->SelectItem(
+          child, static_cast<SVSIF>(SVSI_SELECT | SVSI_ENSUREVISIBLE)));
+    }
+    if (absolute) ILFree(absolute);
+    ILFree(child);
+    if (selected) return true;
+  }
+  return false;
+}
 static ExplorerReveal revealInOpenExplorer(const QString& file) {
   const QFileInfo fi(file);
   if (!fi.exists()) return ExplorerReveal::Failed;
@@ -2637,18 +2684,22 @@ static ExplorerReveal revealInOpenExplorer(const QString& file) {
       if (!basePidl) basePidl = ILCreateFromPathW(reinterpret_cast<LPCWSTR>(targetDir.utf16()));
       PIDLIST_ABSOLUTE filePidl = nullptr;
       IShellItem* fileItem = nullptr;
-      if (SUCCEEDED(SHCreateItemFromParsingName(reinterpret_cast<LPCWSTR>(fi.absoluteFilePath().utf16()),
-                                                nullptr, IID_PPV_ARGS(&fileItem))) && fileItem)
-        SHGetIDListFromObject(fileItem, &filePidl);
-      bool selected = false;
+       const QString nativeFile = QDir::toNativeSeparators(fi.absoluteFilePath());
+       if (SUCCEEDED(SHCreateItemFromParsingName(reinterpret_cast<LPCWSTR>(nativeFile.utf16()),
+                                                 nullptr, IID_PPV_ARGS(&fileItem))) && fileItem)
+         SHGetIDListFromObject(fileItem, &filePidl);
+       bool selected = false;
       if (basePidl && filePidl) {
         PUIDLIST_RELATIVE child = ILFindChild(basePidl, filePidl);
         if (child) {
-          selected = SUCCEEDED(shellView->SelectItem(child, static_cast<SVSIF>(SVSI_SELECT | SVSI_DESELECTOTHERS | SVSI_ENSUREVISIBLE | SVSI_FOCUSED)))
-                     || SUCCEEDED(shellView->SelectItem(child, static_cast<SVSIF>(SVSI_SELECT | SVSI_ENSUREVISIBLE)));
-        }
-      }
-      if (filePidl) ILFree(filePidl);
+           selected = SUCCEEDED(shellView->SelectItem(child, static_cast<SVSIF>(SVSI_SELECT | SVSI_DESELECTOTHERS | SVSI_ENSUREVISIBLE | SVSI_FOCUSED)))
+                      || SUCCEEDED(shellView->SelectItem(child, static_cast<SVSIF>(SVSI_SELECT | SVSI_ENSUREVISIBLE)));
+         }
+       }
+       if (!selected) {
+         selected = selectExplorerFile(folderView, shellView, basePidl, nativeFile);
+       }
+       if (filePidl) ILFree(filePidl);
       if (basePidl) ILFree(basePidl);
       if (fileItem) fileItem->Release();
       result = selected ? ExplorerReveal::Selected : ExplorerReveal::FocusOnly;

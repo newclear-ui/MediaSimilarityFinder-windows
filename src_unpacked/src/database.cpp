@@ -56,7 +56,7 @@ bool Database::prepareStatements(){
       "mirror_crop_4x3=excluded.mirror_crop_4x3,mirror_crop_1x1=excluded.mirror_crop_1x1,"
       "mirror_crop_9x16=excluded.mirror_crop_9x16";
     const char* remove="DELETE FROM files WHERE path=?";
-    const char* contains="SELECT 1 FROM files WHERE path=? AND size=? AND modified=? LIMIT 1";
+    const char* contains="SELECT 1 FROM files WHERE path=? AND size=? AND modified=? AND quick_hash=? LIMIT 1";
     sqlite3_stmt* a=nullptr;
     if(sqlite3_prepare_v2(D(db_),upsert,-1,&a,nullptr)!=SQLITE_OK) return false; upsertStmt_=a;
     if(sqlite3_prepare_v2(D(db_),remove,-1,&a,nullptr)!=SQLITE_OK){finalizeStatements();return false;} removeStmt_=a;
@@ -133,7 +133,7 @@ bool Database::containsUnchanged(const FileState& x) const{
  if(!db_) return false;
  auto* self=const_cast<Database*>(this); if(!self->containsStmt_ && !self->prepareStatements()) return false;
  sqlite3_stmt* s=S(self->containsStmt_); sqlite3_reset(s); sqlite3_clear_bindings(s);
- sqlite3_bind_text(s,1,x.path.c_str(),-1,SQLITE_TRANSIENT); sqlite3_bind_int64(s,2,(sqlite3_int64)x.size); sqlite3_bind_int64(s,3,(sqlite3_int64)x.modified);
+  sqlite3_bind_text(s,1,x.path.c_str(),-1,SQLITE_TRANSIENT); sqlite3_bind_int64(s,2,(sqlite3_int64)x.size); sqlite3_bind_int64(s,3,(sqlite3_int64)x.modified); sqlite3_bind_text(s,4,x.quickHash.c_str(),-1,SQLITE_TRANSIENT);
  return sqlite3_step(s)==SQLITE_ROW;
 }
 

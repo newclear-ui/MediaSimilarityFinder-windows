@@ -105,6 +105,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.3.9 | Search freshness, video fingerprint, benchmark, and monitor hardening |
 | 0.9.3.10 | Group-list scroll anchor restoration |
 | 0.9.3.11 | Video, image, and thumbnail cache quick-identity validation |
+| 0.9.3.12 | Explorer reuse, cache freshness, and group-identity follow-ups |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

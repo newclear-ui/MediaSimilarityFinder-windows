@@ -105,6 +105,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.3.9 | 검색 신선도·영상 fingerprint·Benchmark·Monitor 안정성 개선 |
 | 0.9.3.10 | 그룹 목록 스크롤 anchor 복원 |
 | 0.9.3.11 | Video/Image/Thumbnail cache quick identity 검증 |
+| 0.9.3.12 | 탐색기 재사용·캐시 freshness·그룹 identity 후속 수정 |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

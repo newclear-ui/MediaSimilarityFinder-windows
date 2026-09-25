@@ -11,7 +11,8 @@ ChangeSet IncrementalScanner::classify(const std::vector<FileState>& cur,
         seen[x.path]=true;
         auto it=old.find(x.path);
         if(it==old.end()) c.added.push_back(x);
-        else if(it->second.size==x.size && it->second.modified==x.modified)
+        else if(it->second.size==x.size && it->second.modified==x.modified &&
+                it->second.quickHash==x.quickHash)
             c.unchanged.push_back(x);
         else c.modified.push_back(x);
     }
