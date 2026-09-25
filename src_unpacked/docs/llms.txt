@@ -6,6 +6,13 @@
 
 Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing (currently NVIDIA CUDA backend), incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 
+## Development control documents
+
+- docs/development-roadmap.ko.md / .en.md — authoritative A→B→C development flow; roadmap nodes are not version numbers.
+- docs/development-progress.ko.md / .en.md — current node, substep, blocker, validation, and next gate.
+- docs/build-history/<version>.ko.md / .en.md — per-version implementation and validation evidence.
+- Version progression is evidence-driven: validated states may advance 0.9.4.0 → 0.9.4.1 → 0.9.4.2 without fixed version assignments to roadmap nodes.
+
 ## GPU backend direction
 
 The top-level architecture uses GPU as the generic accelerator term. NVIDIA CUDA is one concrete backend, not the generic GPU name. The 0.9.4.x roadmap leaves explicit connection points for NVIDIA CUDA/NVDEC, Vulkan, AMD HIP/ROCm, and Intel Level Zero, covering both integrated and discrete Intel/AMD GPUs. Vulkan is a vendor-neutral candidate; real availability and performance require capability and workload measurement.
@@ -35,7 +42,7 @@ The project is explicitly a CPU+GPU cooperative application.
 
 Detailed target architecture: docs/architecture/resource-scheduling.ko.md and docs/architecture/resource-scheduling.en.md. Multi-vendor backend roadmap: docs/architecture/gpu-backend-roadmap.ko.md and docs/architecture/gpu-backend-roadmap.en.md.
 
-Important status: 0.9.3.19 still contains the legacy fixed CPU/GPU percentage policy and GPU-percentage UI. The resource-scheduling documents define the approved next architecture, not a claim that the migration is already complete.
+Important status: 0.9.3.19 still contains the legacy fixed CPU/GPU percentage policy and GPU-percentage UI. Architecture documents define the target; development-roadmap/progress documents define implementation order and actual current state.
 
 ## Repository layout
 
