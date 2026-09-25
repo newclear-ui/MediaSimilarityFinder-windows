@@ -4,7 +4,7 @@
 
 0.9.3.19 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; minor line 0.9.3.x)
 
-Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing on CUDA, incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
+Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing (currently NVIDIA CUDA backend), incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 
 ## GPU backend direction
 
@@ -29,17 +29,17 @@ The project is explicitly a CPU+GPU cooperative application.
 - Gaming mode is a conservative adaptive policy for coexistence with external foreground workloads.
 - Manual mode constrains CPU resource use while GPU remains AUTO.
 
-Detailed target architecture: docs/architecture/resource-scheduling.ko.md and docs/architecture/resource-scheduling.en.md.
+Detailed target architecture: docs/architecture/resource-scheduling.ko.md and docs/architecture/resource-scheduling.en.md. Multi-vendor backend roadmap: docs/architecture/gpu-backend-roadmap.ko.md and docs/architecture/gpu-backend-roadmap.en.md.
 
 Important status: 0.9.3.19 still contains the legacy fixed CPU/GPU percentage policy and GPU-percentage UI. The resource-scheduling documents define the approved next architecture, not a claim that the migration is already complete.
 
 ## Repository layout
 
 - The real source tree is src_unpacked/.
-- src_unpacked/src/ - engine, pure-C++ common layer (CUDA is a compile-time optional layer behind gpu_backend.h).
+- src_unpacked/src/ - engine, pure-C++ common layer (GPU backends are optional behind gpu_backend.h; current concrete backend is NVIDIA CUDA).
 - src_unpacked/gui/ - Qt widget application (mainwindow.cpp contains Korean UI string literals).
 - src_unpacked/tests/ - CTest tests, named msf_*_test.
-- src_unpacked/scripts/ - build_windows_cuda.ps1, build_windows_cpu.ps1, package_portable.ps1.
+- src_unpacked/scripts/ - build_windows_gpu.ps1 (0.9.4.x target), build_windows_cpu.ps1, package_portable.ps1. The 0.9.3.19 build_windows_cuda.ps1 remains a temporary legacy entry point.
 - src_unpacked/docs/ - per-build history, architecture notes, STRUCTURE.md, and this file.
 - src_unpacked/AGENTS.md - working rules (docs policy, build baseline 0.9.2.32, working validation line 0.9.3.19, CUDA invariance, release procedure).
 
@@ -47,7 +47,7 @@ Important status: 0.9.3.19 still contains the legacy fixed CPU/GPU percentage po
 
 - src/media_search_engine.cpp - MediaSearchEngine::scan() orchestrates listing, analysis, candidate indexing, similarity, live streaming of matches, checkpoints, persistence, and the GPU counters (gpuImagesProcessed(), gpuActive()).
 - src/scan_pipeline.cpp - duplicate detection. Image pairs via bestMatch/thresholdFor; video full-frame hits match immediately while crop-only hits must pass a duration gate then temporal() + video_crop_similarity({threshold,8,2,2.0}); degenerate hashes (hash_usable) never match.
-- src/video_fingerprint.cpp - VideoFingerprintEngine::build() (low-variance frame exclusion, scene-change detection, CUDA-batched 32x32 pHash with CPU fallback, crop fingerprints), video_similarity()/video_crop_similarity() DTW with sceneBonus and dyadic-grid thinning, CUDA row-batched 48x48 MSSIM with CPU fallback; versioned SQLite cache.
+- src/video_fingerprint.cpp - VideoFingerprintEngine::build() (low-variance frame exclusion, scene-change detection, GPU-batched 32x32 pHash with CPU fallback, currently backed by CUDA, crop fingerprints), video_similarity()/video_crop_similarity() DTW with sceneBonus and dyadic-grid thinning, CUDA row-batched 48x48 MSSIM with CPU fallback; versioned SQLite cache.
 - src/database.cpp - primary SQLite index: file fingerprints, persistent matches, and GUI thumbs cache.
 - src/video_sampling.cpp - make_sample_plan() sample timestamps by duration; sampling_interval().
 - src/image_decoder.cpp / src/media_pipeline.cpp / src/gpu_backend.cpp - image decode and CPU/CUDA hashing.
