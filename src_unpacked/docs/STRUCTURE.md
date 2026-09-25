@@ -40,7 +40,8 @@
 | database.* | SQLite 파일 상태/지문, 영속 Match, GUI 썸네일 캐시(thumbs) 저장 |
 | index_manager.* | 앱 데이터 인덱스(경로/버전 관리) |
 | monitor.* | 실시간 감시(폴더 변경 → 매칭), CPU/GPU 시스템 부하 확인 |
-| resource_policy.* | CPU Resource Mode 정책과 향후 Adaptive GPU Scheduler 연결 계층 |
+| resource_policy.* | CPU Resource Mode 정책과 Adaptive GPU Scheduler 연결 계층
+| benchmark.* | CPU/GPU/decoder stage, scheduler decision, calibration, resource sampling, fallback 상태의 benchmark/telemetry 기록 |
 | scanner.*, incremental_* | 파일 스캔/증분 스캔 |
 | sampling.* | 동영상 샘플 타이밍 헬퍼 |
 
