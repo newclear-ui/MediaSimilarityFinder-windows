@@ -195,8 +195,8 @@ bool MediaSearchEngine::getColorThumb(const std::string& path, int& w, int& h, s
   w = it->second->second.w; h = it->second->second.h; bgra = it->second->second.bgra;
   return w > 0 && h > 0 && bgra.size() == (std::size_t)w * h * 4;
 }
-bool MediaSearchEngine::getVideoThumb(const std::string& path, std::uint64_t size, std::uint64_t modified, std::vector<unsigned char>& gray48) const {
-  return videoEngine_.peekThumb48(path, size, modified, gray48);
+bool MediaSearchEngine::getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const {
+  return videoEngine_.peekThumb48(path, gray48);
 }
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
   auto old=db_.all();

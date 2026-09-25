@@ -274,7 +274,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.6\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.6\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.3.7\n미디어 중복/유사 검색 (CPU/CUDA)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.3.7\nMedia duplicate/similarity search (CPU/CUDA)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 
@@ -614,7 +614,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.6"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.3.7"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -984,7 +984,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.6"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.3.7"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1979,6 +1979,25 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // returns the cheap file-type icon immediately without spending the shared
   // per-tick budget, so corrupt/undecodable files cannot starve live thumbs.
   if (thumbFail_.contains(path)) { ++thumbStatPlace_; return placeholderIcon(path); }
+  QPixmap pm;
+  if (worker_) {
+    std::vector<unsigned char> px; int pw = 0, ph = 0;
+    bool gray = false;
+    if (isVideoExt(path)) {
+      gray = true;
+      if (!worker_->scanEngine().getVideoThumb(path.toStdString(), px)
+          || px.size() < (std::size_t)48 * 48) px.clear();
+    } else {
+      if (!worker_->scanEngine().getColorThumb(path.toStdString(), pw, ph, px)
+          || pw <= 0 || ph <= 0 || px.size() != (std::size_t)pw * ph * 4) px.clear();
+    }
+    if (!px.empty()) {
+      const QImage im = gray
+          ? QImage(px.data(), 48, 48, 48, QImage::Format_Grayscale8).copy()
+          : QImage(px.data(), pw, ph, pw * 4, QImage::Format_ARGB32).copy();
+      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im); }
+    }
+  }
   // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
   // block the GUI thread for milliseconds-to-seconds. Over budget, return a
   // cheap file-type icon WITHOUT caching it, so the real thumb is retried on
@@ -1992,25 +2011,6 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
       return placeholderIcon(path);
     }
     --thumbBudget_;
-  }
-  QPixmap pm;
-  if (worker_) {
-    std::vector<unsigned char> px; int pw = 0, ph = 0;
-    bool gray = false;
-    if (isVideoExt(path)) {
-      gray = true;
-      if (!worker_->scanEngine().getVideoThumb(path.toStdString(), fsize, (std::uint64_t)mtime, px)
-          || px.size() < (std::size_t)48 * 48) px.clear();
-    } else {
-      if (!worker_->scanEngine().getColorThumb(path.toStdString(), pw, ph, px)
-          || pw <= 0 || ph <= 0 || px.size() != (std::size_t)pw * ph * 4) px.clear();
-    }
-    if (!px.empty()) {
-      const QImage im = gray
-          ? QImage(px.data(), 48, 48, 48, QImage::Format_Grayscale8).copy()
-          : QImage(px.data(), pw, ph, pw * 4, QImage::Format_ARGB32).copy();
-      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im); }
-    }
   }
   // Shell thumbnail cache is the fast lane: Explorer already stored a rendered
   // thumb for most media (video frames, Office documents, HEIC/WebP). Using it

@@ -229,8 +229,10 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
 }
 
 void VideoFingerprintEngine::clearCache()const{std::lock_guard<std::mutex>lock(cacheMutex_);cacheMap_.clear();cacheList_.clear();}
-bool VideoFingerprintEngine::peekThumb48(const std::string& p,std::uint64_t sz,std::uint64_t mt,std::vector<std::uint8_t>& gray48) const{
+bool VideoFingerprintEngine::peekThumb48(const std::string& p,std::vector<std::uint8_t>& gray48) const{
   constexpr std::size_t kPx=(std::size_t)VideoFingerprint::kThumbSize*VideoFingerprint::kThumbSize;
+  std::error_code ec; const fs::path fp=path_from_utf8(p);
+  if(!std::filesystem::exists(fp,ec))return false; const auto sz=std::filesystem::file_size(fp,ec);if(ec)return false;const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();if(ec)return false;
   {
     std::lock_guard<std::mutex> lock(cacheMutex_);
     auto it=cacheMap_.find(p);
