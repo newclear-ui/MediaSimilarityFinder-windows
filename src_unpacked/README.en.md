@@ -47,3 +47,10 @@ See [CPU/GPU Adaptive Resource Scheduling](docs/architecture/resource-scheduling
 - 1.0.0: CPU + GPU complete target
 
 Build history is maintained under docs/build-history/ in Korean and English (59 CTest tests). Architecture documents are under docs/architecture/.
+
+
+### Benchmark / Telemetry direction
+
+0.9.4.x will redesign benchmarking together with the Adaptive Scheduler. The benchmark will record end-to-end time plus CPU/GPU/decoder throughput, scheduler decisions, calibration, backend selection, fallbacks, queue/transfer costs, and video-decode bottlenecks. Unmeasured values will not be encoded as zero.
+
+See [Benchmark and Runtime Telemetry Roadmap](docs/architecture/benchmark-telemetry-roadmap.en.md).
