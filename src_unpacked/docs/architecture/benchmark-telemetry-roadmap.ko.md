@@ -345,23 +345,39 @@ G. INI profile이 다음 실행에서 유용했는가?
 
 우선순위는 단일 GPU utilization이 아니라 end-to-end throughput, accuracy parity, fallback correctness, system stability다.
 
-## 18. 0.9.4.0 필수 benchmark 변경
+## 18. Development Roadmap 게이트에서의 benchmark 역할
 
-0.9.4.0은 scheduler 변경과 동시에 benchmark 개편을 시작한다.
+Benchmark redesign은 특정 빌드 번호에 묶지 않습니다. Roadmap 각 node가 종료되기 위해 필요한 관측값을 해당 node와 함께 구현합니다.
 
-필수:
-1. benchmark schemaVersion
-2. measurement states
-3. scheduler decision telemetry
-4. calibration 결과
-5. backend capability / selected backend
-6. decoder/backend/fallback reason
-7. video decode 상세 단계
-8. queue/transfer 계측
-9. cancellation/partial result 명시
-10. compact human summary + detailed JSON
+A Foundation
+  └─ schema / measurement state / stage instrumentation
+        ↓
+B Adaptive Scheduler
+  └─ scheduler decisions / work share / throttling
+        ↓
+C Calibration
+  └─ calibration / profile confidence / baseline-vs-observed
+        ↓
+D Pipeline / Queue
+  └─ queue depth / wait / batch / transfer / overlap
+        ↓
+E Adaptive Video Decode
+  └─ decoded-vs-sampled / seek / planner decision
+        ↓
+F Hardware Decode
+  └─ backend capability / success / fallback reason
+        ↓
+G Additional Backends
+  └─ capability / parity / fallback / availability
+        ↓
+H Validation
+  └─ end-to-end regression evidence
+
+하나의 benchmark 구조 변경이 여러 개발 버전에 걸쳐 이어질 수 있습니다. 중요한 것은 버전 숫자가 아니라 현재 Roadmap node의 검증 가능성입니다.
 
 ## 19. 구현 원칙
+
+
 
 벤치마크는 장식 기능이 아니다.
 
