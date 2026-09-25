@@ -8,11 +8,11 @@
 - vcpkg.json — 의존성 선언의 유일 기준(project-local vcpkg_installed).
 - CMakeLists.txt — 빌드/테스트 정의, 버전(project(... VERSION ...))은 여기서 시작.
 - CMakePresets.json — x64 MSVC 프리셋.
-- scripts/ — build_windows_cuda.ps1(CUDA 빌드), build_windows_cpu.ps1(CPU 빌드),
+- scripts/ — build_windows_cpu.ps1(CPU 빌드), build_windows_gpu.ps1(GPU 빌드, 0.9.4.x 목표),
   package_portable.ps1(포터블 패키징, 버전 문자열을 여기서도 상향).
 - gui/ — Qt 위젯 앱. main.cpp(kVersion 포함), mainwindow.h/.cpp(한글 포함),
   video_decoder.h/.cpp.
-- src/ — 엔진(순수 C++ 공통 계층). CUDA는 컴파일 시간 활성화된 옵션 계층.
+- src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
 - tests/ — CTest 테스트(msf_*_test 컨벤션).
 - docs/ — build-history/<버전>.ko/.en.md, architecture/*.ko/.en.md, legacy/(교체 구현 스냅샷),
   STRUCTURE.md(이 파일), llms.txt(LLM용 텍스트 인덱스).
@@ -25,7 +25,7 @@
 | fingerprint.* | 지각 해시(pHash) 기반 64비트 지문 |
 | crop_fingerprint.* | 4:3/1:1/9:16 크롭 지문(이미지·동영상 공통) |
 | image_decoder.* | 이미지 디코드(+ GPU 해시 배치 통합) |
-| gpu_backend.* | CUDA 백엔드(공통 계층에서 명시적 비활성화 가능, GpuBackend::available()로 검출) |
+| gpu_backend.* | vendor-neutral GPU 공통 계층(현재 NVIDIA CUDA backend 연결, 향후 Vulkan/HIP/Level Zero 확장점) |
 | media_pipeline.* | 이미지 분석 파이프라인(CPU/GPU 선택) |
 | video_sampling.* | 동영상 샘플 플랜(sampling_interval) |
 | video_decoder.h | FFmpeg(MSF_HAS_FFMPEG) 디코더 인터페이스 |
@@ -55,8 +55,8 @@
 
 ## 빌드/테스트
 
-- scripts/build_windows_cuda.ps1 -VcpkgRoot C:\src\vcpkg — CUDA 빌드(기본 직렬 후처리; 필요 시 -BuildParallelism 지정).
-- scripts/build_windows_cpu.ps1 — CUDA OFF CPU 빌드/CTest(기본 직렬 후처리; 필요 시 -BuildParallelism 지정).
+- scripts/build_windows_gpu.ps1 -VcpkgRoot C:\src\vcpkg — GPU 빌드 진입점(0.9.4.x 목표; 현재 backend는 NVIDIA CUDA).
+- scripts/build_windows_cpu.ps1 -VcpkgRoot C:\src\vcpkg — CPU 빌드/CTest.
 - 현재 CMakeLists.txt에는 63개 CTest가 등록되어 있다.
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - 버전 상향 파일(검색용): CMakeLists.txt, vcpkg.json, gui/main.cpp, scripts/package_portable.ps1, src/index_manager.cpp.
@@ -65,4 +65,4 @@
 
 - 빌드마다 docs/build-history/<버전>.ko.md + .en.md 쌍, README.ko/.en.md 버전표.
 - 변경은 "변경 필요성 → 기존 구조 → 변경 구조 → 해결된 상황 → 검증 → 향후 영향" 형식.
-- CUDA 알고리즘 불변: GPU 계층을 바꾸지 않고 공통 계층만 수정.
+- GPU backend별 알고리즘은 독립적으로 유지하며 CPU fallback을 보존한다. 상위 engine에 vendor-specific GPU API를 직접 확산하지 않는다.
