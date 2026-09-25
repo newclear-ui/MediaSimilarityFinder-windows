@@ -326,23 +326,39 @@ Maintain scenarios for:
 
 Prioritize end-to-end throughput, accuracy parity, fallback correctness, and system stability over a single GPU-utilization number.
 
-## 18. Required benchmark changes for 0.9.4.0
+## 18. Benchmark gates within the Development Roadmap
 
-0.9.4.0 begins the benchmark redesign together with the scheduler redesign.
+Benchmark redesign is not tied to a fixed build number. Each roadmap node implements the observations needed to prove that node's exit criteria.
 
-Required:
-1. benchmark schemaVersion
-2. measurement states
-3. scheduler decision telemetry
-4. calibration results
-5. backend capability / selected backend
-6. decoder/backend/fallback reason
-7. detailed video decode stages
-8. queue/transfer telemetry
-9. explicit cancellation/partial result state
-10. compact human summary plus detailed JSON
+A Foundation
+  └─ schema / measurement state / stage instrumentation
+        ↓
+B Adaptive Scheduler
+  └─ scheduler decisions / work share / throttling
+        ↓
+C Calibration
+  └─ calibration / profile confidence / baseline-vs-observed
+        ↓
+D Pipeline / Queue
+  └─ queue depth / wait / batch / transfer / overlap
+        ↓
+E Adaptive Video Decode
+  └─ decoded-vs-sampled / seek / planner decision
+        ↓
+F Hardware Decode
+  └─ backend capability / success / fallback reason
+        ↓
+G Additional Backends
+  └─ capability / parity / fallback / availability
+        ↓
+H Validation
+  └─ end-to-end regression evidence
+
+A benchmark redesign may span several build versions. What matters is whether the current roadmap node is measurable and verifiable, not which patch number happens to contain it.
 
 ## 19. Implementation principles
+
+
 
 Benchmarking is not decoration.
 
