@@ -59,6 +59,7 @@ public slots:
   void setIgnored(const QSet<QString>& s);
   void setBenchmark(bool b) { benchmark_ = b; }
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
+  const msf::MediaSearchEngine& scanEngine() const { return engine_; }
   qulonglong gpuDone() const { return gpuDone_.load(); }
   bool gpuAvailable() const { return gpuAvail_; }
   bool gpuActive() const { return engine_.gpuActive(); }

@@ -92,6 +92,11 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         const auto t0=std::chrono::steady_clock::now();
         auto oi=map[m]; ImageDecoder cd; GrayImage original;
         if(cd.decodePreserveAspect(paths[oi],128,original)) out[oi].crops=cropFingerprints(original);
+        ColorImage color;
+        if(cd.decodeColorAspect(paths[oi],128,color) && color.width>0 && color.height>0
+           && color.bgra.size()==(std::size_t)color.width*color.height*4){
+          out[oi].colorThumb=std::move(color); out[oi].hasColorThumb=true;
+        }
         if(bench) bench->addImage(dec[oi].bytes, dec[oi].decodeMs, hMs[m], msSince(t0), usedF[m]!=0, paths[oi]);
     });
     return out;

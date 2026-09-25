@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 namespace msf {
-struct ImageFingerprintResult { std::string path; std::uint64_t fingerprint=0, mirrorFingerprint=0; bool ok=false; bool usedGpu=false; bool gpuFallback=false; CropFingerprints crops{}; };
+struct ImageFingerprintResult { std::string path; std::uint64_t fingerprint=0, mirrorFingerprint=0; bool ok=false; bool usedGpu=false; bool gpuFallback=false; CropFingerprints crops{}; ColorImage colorThumb; bool hasColorThumb=false; };
 class MediaPipeline {
 public:
  bool image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint=nullptr) const;

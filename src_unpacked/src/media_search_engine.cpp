@@ -169,6 +169,35 @@ void MediaSearchEngine::beginBenchmark(const BenchmarkConfig& cfg, bool withSamp
   bench_.start(cfg);
   if (withSampler) bench_.startSampler([this]() { return gpuActive_.load(std::memory_order_relaxed); });
 }
+void MediaSearchEngine::putColorThumb(const std::string& path, int w, int h, std::vector<unsigned char>&& bgra) const {
+  if (w <= 0 || h <= 0 || bgra.size() != (std::size_t)w * h * 4) return;
+  std::lock_guard<std::mutex> lock(thumbMutex_);
+  auto it = thumbMap_.find(path);
+  if (it != thumbMap_.end()) {
+    it->second->second.w = w; it->second->second.h = h;
+    it->second->second.bgra = std::move(bgra);
+    thumbList_.splice(thumbList_.begin(), thumbList_, it->second);
+    return;
+  }
+  while (thumbMap_.size() >= kColorThumbMax) {
+    thumbMap_.erase(thumbList_.back().first);
+    thumbList_.pop_back();
+  }
+  ColorThumb t; t.w = w; t.h = h; t.bgra = std::move(bgra);
+  thumbList_.emplace_front(path, std::move(t));
+  thumbMap_[path] = thumbList_.begin();
+}
+bool MediaSearchEngine::getColorThumb(const std::string& path, int& w, int& h, std::vector<unsigned char>& bgra) const {
+  std::lock_guard<std::mutex> lock(thumbMutex_);
+  auto it = thumbMap_.find(path);
+  if (it == thumbMap_.end()) return false;
+  thumbList_.splice(thumbList_.begin(), thumbList_, it->second);
+  w = it->second->second.w; h = it->second->second.h; bgra = it->second->second.bgra;
+  return w > 0 && h > 0 && bgra.size() == (std::size_t)w * h * 4;
+}
+bool MediaSearchEngine::getVideoThumb(const std::string& path, std::uint64_t size, std::uint64_t modified, std::vector<unsigned char>& gray48) const {
+  return videoEngine_.peekThumb48(path, size, modified, gray48);
+}
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
   auto old=db_.all();
   std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
@@ -227,11 +256,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const auto bt0=std::chrono::steady_clock::now();
   auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
   bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
-  for(const auto& ir:results){
+  for(auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
    if(it==currentByPath.end()) continue;
    x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(ir.usedGpu) gpuImagesProcessed_.fetch_add(1,std::memory_order_relaxed); if(!db_.upsert(x)){ return false; } ++r.analyzed; MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);}
    ++done; if(control&&control->progress)control->progress(done,scanned,x.path);
+   if(ir.hasColorThumb) putColorThumb(ir.path, ir.colorThumb.width, ir.colorThumb.height, std::move(ir.colorThumb.bgra));
   }
   if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
   return true;

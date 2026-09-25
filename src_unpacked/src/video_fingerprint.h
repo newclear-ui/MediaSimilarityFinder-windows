@@ -40,6 +40,7 @@ public:
  // Read-only cache lookup (no decode on miss): lets callers attach cached
  // per-frame data (e.g. candidate anchors) without re-analyzing files.
   bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&,VideoCropFingerprint*) const;
+  bool peekThumb48(const std::string&,std::uint64_t,std::uint64_t,std::vector<std::uint8_t>&) const;
 private:
   struct CacheEntry { std::uint64_t size=0, modified=0; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; };
   static constexpr std::size_t kMemoryCacheMax = 64;

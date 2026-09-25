@@ -9,8 +9,10 @@
 #include "benchmark.h"
 #include <atomic>
 #include <functional>
+#include <list>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <cstddef>
@@ -99,11 +101,19 @@ const std::vector<MediaFile>& files() const { return files_; }
   std::string benchmarkJson() const { return bench_.toJson(); }
   void beginBenchmark(const BenchmarkConfig& cfg, bool withSampler);
   void abortBenchmark() { bench_.abortUnfinished(); }
+  bool getColorThumb(const std::string& path, int& w, int& h, std::vector<unsigned char>& bgra) const;
+  bool getVideoThumb(const std::string& path, std::uint64_t size, std::uint64_t modified, std::vector<unsigned char>& gray48) const;
 private:
   Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
   std::atomic<bool> gpuActive_{false};
   BenchmarkRecorder bench_;
+  struct ColorThumb { int w=0, h=0; std::vector<unsigned char> bgra; };
+  static constexpr std::size_t kColorThumbMax = 512;
+  mutable std::mutex thumbMutex_;
+  mutable std::list<std::pair<std::string,ColorThumb>> thumbList_;
+  mutable std::unordered_map<std::string,std::list<std::pair<std::string,ColorThumb>>::iterator> thumbMap_;
+  void putColorThumb(const std::string& path, int w, int h, std::vector<unsigned char>&& bgra) const;
  std::vector<FileState> candidateStates_;
  CandidateIndex imageCandidates_;
  CandidateIndex videoCandidates_;

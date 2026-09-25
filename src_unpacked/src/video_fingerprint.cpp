@@ -229,6 +229,26 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
 }
 
 void VideoFingerprintEngine::clearCache()const{std::lock_guard<std::mutex>lock(cacheMutex_);cacheMap_.clear();cacheList_.clear();}
+bool VideoFingerprintEngine::peekThumb48(const std::string& p,std::uint64_t sz,std::uint64_t mt,std::vector<std::uint8_t>& gray48) const{
+  constexpr std::size_t kPx=(std::size_t)VideoFingerprint::kThumbSize*VideoFingerprint::kThumbSize;
+  {
+    std::lock_guard<std::mutex> lock(cacheMutex_);
+    auto it=cacheMap_.find(p);
+    if(it!=cacheMap_.end()){
+      const CacheEntry& e=it->second->second;
+      if(e.size==sz&&e.modified==mt&&e.fingerprint.thumb48.size()>=kPx){
+        gray48.assign(e.fingerprint.thumb48.begin(),e.fingerprint.thumb48.begin()+kPx);
+        cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
+        return true;
+      }
+    }
+  }
+  VideoFingerprint vf;
+  if(!loadPersistent(p,sz,mt,vf,nullptr)) return false;
+  if(vf.thumb48.size()<kPx) return false;
+  gray48.assign(vf.thumb48.begin(),vf.thumb48.begin()+kPx);
+  return true;
+}
 std::size_t VideoFingerprintEngine::memoryCacheSize()const{std::lock_guard<std::mutex>lock(cacheMutex_);return cacheMap_.size();}
 bool VideoFingerprintEngine::memoryLookup(const std::string&p,std::uint64_t sz,std::uint64_t mt,VideoFingerprint&o,VideoCropFingerprint* crop,bool needCrop) const{
   std::lock_guard<std::mutex> lock(cacheMutex_);
