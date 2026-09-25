@@ -224,37 +224,40 @@ CPU와 GPU는 서로 다른 결과를 내기 위한 별도 알고리즘이 아�
 
 GPU 사용량이나 처리속도가 높아지는 대신 검색 판정이 달라지는 것은 허용하지 않는다.
 
-## 12. 구현 단계
+## 12. 개발 순서도와 상세 구현의 관계
 
-권장 순서:
+이 문서는 자원관리의 상세 설계를 설명합니다. 실제 구현 순서는 `docs/development-roadmap.ko.md`의 상위 순서도를 따릅니다.
 
-1. **Instrumentation**
-   - CPU/GPU/queue/decoder 단계별 실제 처리시간과 throughput 측정
-   - 측정되지 않은 값은 0으로 기록하지 않고 명확한 상태로 기록
+A Foundation / Instrumentation
+        |
+        v
+B Adaptive Scheduler
+        |
+        v
+C Calibration / INI Profile
+        |
+        v
+D Pipeline / Queue
+        |
+        v
+E Adaptive Video Decode
+        |
+        v
+F Hardware Decode Backend
+        |
+        v
+G Additional GPU Backends
+        |
+        v
+H Regression / Validation
 
-2. **Adaptive Scheduler**
-   - CPU policy와 GPU AUTO를 분리
-   - runtime load + throughput 기반 동적 배분
-   - hysteresis/최소 유지시간 적용
+문제가 발생하면 현재 node 안에서 A1/B1/C1 같은 recovery branch를 사용합니다. 진단 → 수정 → 회귀검증 후 같은 node gate로 돌아갑니다.
 
-3. **INI Performance Profile**
-   - hardware identity와 calibration 결과 저장
-   - 다음 실행의 초기 추정값으로 사용
-   - 버전/driver/backend 변경 시 재검증
-
-4. **Pipeline parallelism**
-   - CPU/GPU 작업간 불필요한 barrier 감소
-   - persistent worker/queue 구조 검토
-
-5. **Adaptive Video Decode**
-   - sequential/hybrid/sparse strategy를 workload에 맞게 선택
-   - 이후 NVDEC/기타 hardware decode backend 연결
-
-6. **GPU-side media processing 확대**
-   - 필요한 경우 GPU resize/crop/hash 등을 decode와 연결
-   - CPU↔GPU 왕복 비용까지 포함하여 검증
+Benchmark / Telemetry는 모든 node에서 함께 발전하는 계층입니다. 상세 schema와 측정 상태는 benchmark-telemetry-roadmap 문서를 따릅니다.
 
 ## 13. 금지할 단순화
+
+
 
 다음 방식은 목표 아키텍처로 채택하지 않는다.
 
