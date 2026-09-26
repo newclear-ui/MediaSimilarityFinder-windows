@@ -114,6 +114,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.3.18 | Benchmark 디스크 I/O·재생시간 직접 폴백·팝업 가독성 |
 | 0.9.3.19 | PDH 디스크 카운터 수정·통합 프롬프트 검토 반영 |
 | 0.9.4.0 | Node A 기반: GPU 용어/추상화, GPU ON/OFF UI, 빌드 명명, 벤치마크 계측 |
+| 0.9.4.1 | MainWindow 스캔 workflow 회귀 테스트 (offscreen 슬롯 경로 드라이버, 모달 closer, UI CPU/GPU parity) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

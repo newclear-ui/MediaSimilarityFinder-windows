@@ -114,6 +114,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.3.18 | Benchmark disk I/O, duration direct fallback, popup readability |
 | 0.9.3.19 | PDH disk counter fix, integrated prompt review |
 | 0.9.4.0 | Node A foundation: GPU terminology/abstraction, GPU ON/OFF UI, build naming, benchmark instrumentation |
+| 0.9.4.1 | MainWindow scan-workflow regression test (offscreen slot-path driver, modal closer, UI CPU/GPU parity) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

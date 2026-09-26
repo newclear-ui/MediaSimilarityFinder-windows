@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.0 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -342,6 +342,14 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_scan_streaming_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_streaming_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_streaming_test COMMAND msf_scan_streaming_test)
+      # MainWindow scan-workflow regression: real MainWindow slot path
+      # (folder -> startScan -> worker -> drainMatches -> group render),
+      # offscreen with isolated QSettings. Covers what --smoke (window only)
+      # and ScanWorker-level tests leave open.
+      add_executable(msf_scan_workflow_test tests/scan_workflow_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
+      target_link_libraries(msf_scan_workflow_test PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_scan_workflow_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME scan_workflow_test COMMAND msf_scan_workflow_test)
       # E2E video probe: copy + libx264 re-encode + trim + stranger through a
       # real scan (full XOR -> CandidateIndex incl. L1 anchors -> temporal).
       add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
@@ -369,7 +377,7 @@ if(MSF_BUILD_GUI)
         add_test(NAME reveal_window_test COMMAND msf_reveal_window_test)
         set_tests_properties(reveal_window_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
       endif()
-      set_tests_properties(ui_settings_write ui_settings_verify ui_reference_order_test scan_streaming_test video_scan_e2e_test view_mode_probe thumb_layout_test quicklook_pipe_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
+      set_tests_properties(ui_settings_write ui_settings_verify ui_reference_order_test scan_streaming_test scan_workflow_test video_scan_e2e_test view_mode_probe thumb_layout_test quicklook_pipe_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
     endif()
   else()
     message(STATUS "Qt6 not found; GUI target skipped")

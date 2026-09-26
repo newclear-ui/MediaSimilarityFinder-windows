@@ -281,7 +281,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
   if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.0\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.0\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.1\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.1\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -664,7 +664,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.0"));
+  setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.1"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -696,6 +696,9 @@ void MainWindow::buildToolbar() {
   toolBar_ = new QToolBar(this); toolBar_->setMovable(false);
   centralWidget()->layout()->addWidget(toolBar_);
   folder_ = new QLineEdit(toolBar_);
+  // Automation hook (scan workflow regression test): stable lookup name.
+  // No behavior change; the name is only used by findChild().
+  folder_->setObjectName("folder");
   folder_->setPlaceholderText(QStringLiteral("D:\\MediaLibrary"));
   folder_->setMinimumWidth(200);
   QSettings st; folder_->setText(st.value("ui/lastFolder", "").toString());
@@ -727,7 +730,9 @@ void MainWindow::buildToolbar() {
   cpu_->setValue(policy_.cpuPercent);
   connect(cpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
+  gpuEnabled_->setObjectName("gpuToggle"); // automation hook, see folder_
   benchTgl_ = new QCheckBox(toolBar_); benchTgl_->setChecked(true);
+  benchTgl_->setObjectName("benchTgl"); // automation hook, see folder_
   kindBtn_ = new QToolButton(toolBar_);
   kindBtn_->setText(trStr(lang(), "kindMenu"));
   // Combo-style arrow on the side (same look as the preset/view combos):
@@ -875,6 +880,7 @@ public:
 void MainWindow::buildMiddle(QWidget* w) {
   auto* lay = new QVBoxLayout(w); lay->setContentsMargins(0, 0, 0, 0);
   groupTitle_ = new QLabel(w); groupTitle_->setStyleSheet("font-weight:bold;");
+  groupTitle_->setObjectName("groupTitle"); // automation hook, see folder_
   lay->addWidget(groupTitle_);
   auto* bar = new QHBoxLayout;
   sortBox_ = new QComboBox(w);
@@ -899,6 +905,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   auto* imgTab = new QWidget(midTabs_);
   auto* imgLay = new QVBoxLayout(imgTab); imgLay->setContentsMargins(0, 0, 0, 0);
   imgTree_ = new QTreeWidget(imgTab); imgTree_->setColumnCount(5); imgTree_->setRootIsDecorated(false);
+  imgTree_->setObjectName("imgTree"); // automation hook, see folder_
   imgGrid_ = new QListWidget(imgTab);
   imgGrid_->setViewMode(QListView::IconMode); imgGrid_->setResizeMode(QListView::Adjust);
   imgGrid_->setMovement(QListView::Static); imgGrid_->setSpacing(8);
@@ -1040,7 +1047,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.0"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.1"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));

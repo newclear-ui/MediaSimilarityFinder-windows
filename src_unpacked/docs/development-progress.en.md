@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.0 |
+| Reference code | 0.9.4.1 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
 | Current node | A — Foundation / Terminology / Instrumentation (exit gate PASS → next gate B) |
 | Current phase | Node A implementation and validation complete → B entry ready |
-| Current version | 0.9.4.0 |
+| Current version | 0.9.4.1 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -80,11 +80,13 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   `--version`/`--smoke` on both, extended `benchmark_test` and
   `gpu_backend_policy_test`. Search semantics unchanged (engine 1.5.0,
   DB 1.0.3, cache v9).
-- Evidence split (post-0.9.4.0 check): automated build/CTest/CLI-smoke =
-  PASS; real windowed launch = PASS (OS handle + version title observed);
-  interactive search workflow (folder select → scan → results → close) =
-  NOT_VALIDATED — reserved for a Windows interactive session, never
-  recorded as PASS without running it.
+- Evidence split (post-0.9.4.0 check, extended in 0.9.4.1): automated
+  build/CTest/CLI-smoke = PASS; real windowed launch = PASS (OS handle +
+  version title observed); slot-path workflow = automated PASS
+  (`scan_workflow_test`: real MainWindow slot path offscreen, modal
+  benchmark closer, 1-group render asserted on both trees); human operation
+  (real clicks, screen reading) = NOT_VALIDATED — reserved for a Windows
+  interactive session, never recorded as PASS without running it.
 
 ## Node A — Foundation / Terminology / Instrumentation
 
