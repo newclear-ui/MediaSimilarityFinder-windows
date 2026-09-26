@@ -80,6 +80,14 @@ struct CalibrationTelemetry {
   double cpuThroughput = 0, gpuThroughput = 0;
   double resizeThroughput = 0, decodeThroughput = 0;
   double transferCostMs = 0, queueLatencyMs = 0;
+  // C2: per-metric states. Unmeasured values are never bare zeros anymore
+  // (schema v2); readers must check states, not magnitudes.
+  MeasureState cpuState = MeasureState::NotMeasured;
+  MeasureState gpuState = MeasureState::NotMeasured;
+  MeasureState resizeState = MeasureState::NotMeasured;
+  MeasureState decodeState = MeasureState::NotMeasured;
+  MeasureState transferState = MeasureState::NotMeasured;
+  MeasureState queueState = MeasureState::NotMeasured;
   std::string profileId, profileVersion;
   void markMeasured() { state = MeasureState::Measured; }
   std::string toJson() const;
@@ -90,7 +98,8 @@ public:
   static constexpr int kSampleMs = 250;
   static constexpr std::size_t kMaxSamples = 50000;
   // Independent of app/engine/db versions; bump only on benchmark schema change.
-  static constexpr int kBenchmarkSchemaVersion = 1;
+  // v2: calibration metric states (C2 first fills CalibrationTelemetry).
+  static constexpr int kBenchmarkSchemaVersion = 2;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);

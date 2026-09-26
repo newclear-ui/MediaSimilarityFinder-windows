@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.9 |
+| 기준 코드 | 0.9.4.10 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | C — Calibration / INI Performance Profile (활성 substep C1, C2 미착수) |
-| 현재 단계 | C1 구현·검증 완료 → C2 진입은 C brief 기준 |
-| 현재 버전 | 0.9.4.9 |
+| 현재 노드 | C — Calibration / INI Performance Profile (활성 substep C2, C3 미착수) |
+| 현재 단계 | C2 구현·검증 완료 → C3 진입은 C brief 기준 |
+| 현재 버전 | 0.9.4.10 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -99,6 +99,22 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - Profile은 initial estimate이며 live runtime state가 항상 우선한다.
 - D queue/worker topology와 F hardware decode는 C에서 선행하지 않는다.
 - queue latency와 hardware decode가 아직 측정 불가능한 경우 explicit measurement state로 기록한다.
+
+### C2 — Initial Calibration (→ 0.9.4.10, 검증됨)
+
+- Bounded `Calibrator::run`(`src/calibration.h/.cpp`): 합성 CPU 해시,
+  웜업 폐기 GPU 배치. resize/decode/transfer/queue/HW-decode는 명시
+  상태(사용자 파일 금지, phase budget, 8초 guard). 실패는 스캔에
+  전파되지 않는다.
+- 엔진: Missing/Hard 판정 시 1회 calibration → 저장 → 당 스캔 적용.
+  Exact/Soft 재사용. 정책-off와 무장치를 `videoGpu_`로 구분.
+  telemetry 초기 tier는 profile pair 보고.
+- schema v2(calibration metric 상태). 스케줄러 우선순위
+  live > profile을 `scheduler_test`에 단언.
+- 검증: CPU 66/66, GPU 67/67(신규 `calibration_test`, 실기 GPU 측정
+  포함), `scan_workflow_test`로 UI parity, 양쪽 `--version`/`--smoke`.
+  검색 의미 불변.
+- C3 blocker: 대역폭 실측 미해결, resize/decode는 기회관측 설계 필요.
 
 ### C1 — Profile Foundation (→ 0.9.4.9, 검증됨)
 

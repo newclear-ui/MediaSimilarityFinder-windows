@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.9 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.10 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -43,6 +43,7 @@ add_library(msf_core STATIC
     src/benchmark.cpp
     src/scheduler.cpp
     src/profile.cpp
+    src/calibration.cpp
 )
 target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 if(WIN32)
@@ -117,6 +118,10 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_profile_test tests/profile_test.cpp)
     target_link_libraries(msf_profile_test PRIVATE msf_core)
     add_test(NAME profile_test COMMAND msf_profile_test)
+    # Node C2: Initial Calibration bounded-probe regression.
+    add_executable(msf_calibration_test tests/calibration_test.cpp)
+    target_link_libraries(msf_calibration_test PRIVATE msf_core)
+    add_test(NAME calibration_test COMMAND msf_calibration_test)
     target_link_libraries(msf_similarity_engine_test PRIVATE msf_core)
     add_test(NAME similarity_engine_test COMMAND msf_similarity_engine_test)
     target_link_libraries(msf_similarity_parallel_test PRIVATE msf_core)

@@ -94,6 +94,10 @@ public:
   // Effective hold: explicit setHoldMs() wins (tests, diagnostics);
   // otherwise the mode default. Default member -1 means "auto".
   void setHoldMs(long long ms) { holdMs_ = ms; }
+  // Baseline tier actually in force (live rates excluded): profile pair
+  // when known, else hardware proxies. Telemetry initial* uses this so a
+  // profile-fed scan reports profile numbers, not thread/SM counts.
+  static void baseCapacities(const SchedulerHardware& hw, double& cpu, double& gpu);
   SchedulerDecision decide(const SchedulerHardware& hw);
   // Returns true when a (re)evaluation ran. Counts adjustments only when
   // the decision actually changed (share delta or backend flip).

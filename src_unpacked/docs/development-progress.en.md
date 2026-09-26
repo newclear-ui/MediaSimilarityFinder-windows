@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.9 |
+| Reference code | 0.9.4.10 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | C — Calibration / INI Performance Profile (active substep C1, C2 not started) |
-| Current phase | C1 implementation and validation complete → C2 entry per C brief |
-| Current version | 0.9.4.9 |
+| Current node | C — Calibration / INI Performance Profile (active substep C2, C3 not started) |
+| Current phase | C2 implementation and validation complete → C3 entry per C brief |
+| Current version | 0.9.4.10 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -102,6 +102,23 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
 - Profile is an initial estimate; live runtime state always has precedence.
 - D queue/worker topology and F hardware decode are not pulled into C.
 - Metrics not yet measurable are recorded with explicit measurement states.
+
+### C2 — Initial Calibration (→ 0.9.4.10, validated)
+
+- Bounded `Calibrator::run` (`src/calibration.h/.cpp`): synthetic CPU
+  hashes, GPU batches with discarded warmup; resize/decode/transfer/
+  queue/HW-decode carry explicit states (no user files, per-phase
+  budgets, 8 s guard). Failures never reach scans.
+- Engine: Missing/Hard verdicts calibrate once, save, and apply to the
+  same scan; Exact/Soft reuse. Policy-off vs no-device distinguished
+  via `videoGpu_`. Telemetry initial tier reports the profile pair.
+- Schema v2 (calibration metric states). Scheduler precedence
+  live > profile asserted in `scheduler_test`.
+- Validation: CPU 66/66, GPU 67/67 (new `calibration_test`, incl. real
+  GPU measurement); UI parity via `scan_workflow_test`;
+  `--version`/`--smoke` on both. Search semantics unchanged.
+- C3 blockers: measured bandwidth unresolved; resize/decode need an
+  opportunistic design.
 
 ### C1 — Profile Foundation (→ 0.9.4.9, validated)
 

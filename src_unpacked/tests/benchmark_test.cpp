@@ -8,7 +8,7 @@ int main() {
   if (rec.hasData()) return 1;
   msf::BenchmarkConfig cfg;
   cfg.root = "C:/media";
-   cfg.build = "0.9.4.9"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
+   cfg.build = "0.9.4.10"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
   cfg.distance = 8; cfg.cpuWorkers = 4; cfg.gpuBatch = 64; cfg.gpuBackend = "CUDA";
   cfg.scanImages = true; cfg.scanVideos = true; cfg.cudaAvailable = false;
   rec.start(cfg);
@@ -35,7 +35,7 @@ int main() {
     if (js.find(s) == std::string::npos) { std::cerr << "missing: " << s << "\n"; return false; }
     return true;
   };
-   if (!need("\"build\":\"0.9.4.9\"")) return 3;
+   if (!need("\"build\":\"0.9.4.10\"")) return 3;
   if (!need("\"completed\":true")) return 4;
   if (!need("\"count\":30")) return 5;
   if (!need("\"gpuHashed\":10")) return 6;
@@ -61,7 +61,8 @@ int main() {
    if (!need("\"cpuProcStd\"")) return 26;
    if (!need("\"gpuLongestIdleMs\"")) return 27;
    // Node A: schema version is independent of app/engine/db versions.
-   if (!need("\"schemaVersion\":1")) return 30;
+   // C2: schema 2 adds calibration metric states.
+   if (!need("\"schemaVersion\":2")) return 30;
    if (!need("\"runId\":\"")) return 31;
    if (!need("\"completionReason\":\"completed\"")) return 32;
    if (!need("\"cancelled\":false")) return 33;
@@ -89,6 +90,8 @@ int main() {
    // Node A: scheduler/calibration placeholders default to not_measured.
    if (!need("\"scheduler\":{\"state\":\"not_measured\"")) return 44;
    if (!need("\"calibration\":{\"state\":\"not_measured\"")) return 45;
+   if (!need("\"cpuState\":\"not_measured\"")) return 60;
+   if (!need("\"gpuState\":\"not_measured\"")) return 61;
    if (!need("\"files\":{\"started\":0,\"completed\":0,\"remaining\":0,\"state\":\"not_measured\"}")) return 46;
   rec.abortUnfinished();
    if (!rec.hasData()) return 28;
@@ -97,7 +100,7 @@ int main() {
   {
     msf::BenchmarkRecorder r2;
     msf::BenchmarkConfig c2;
-    c2.root = "C:/media"; c2.build = "0.9.4.9"; c2.engine = "1.5.0"; c2.db = "1.0.3";
+    c2.root = "C:/media"; c2.build = "0.9.4.10"; c2.engine = "1.5.0"; c2.db = "1.0.3";
     c2.distance = 8; c2.cpuWorkers = 2; c2.gpuBatch = 32; c2.gpuBackend = "CPU";
     r2.start(c2);
     r2.addVideo(1000ULL, 10.0, 5.0, 8, "v.mp4", 10, 12);
@@ -132,7 +135,7 @@ int main() {
   {
     msf::BenchmarkRecorder r3;
     msf::BenchmarkConfig c3;
-    c3.root = "relative/path"; c3.build = "0.9.4.9"; c3.engine = "1.5.0"; c3.db = "1.0.3";
+    c3.root = "relative/path"; c3.build = "0.9.4.10"; c3.engine = "1.5.0"; c3.db = "1.0.3";
     r3.start(c3);
     r3.finalize(true, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
     const std::string j3 = r3.toJson();

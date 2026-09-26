@@ -123,6 +123,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.4.7 | Node B6 Resource Mode Integration (모드별 floor/hold/kill band, Manual == Balanced) |
 | 0.9.4.8 | Execution binding + Node B7 게이트 (fresh 발표 읽기, 엔진 scheduler 단언, 커버리지 감사) |
 | 0.9.4.9 | Node C1 Profile Foundation (PerformanceProfile, INI 저장소, 판정, initial-estimate 전달) |
+| 0.9.4.10 | Node C2 Initial Calibration (bounded probe, writer, telemetry, 우선순위) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

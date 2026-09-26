@@ -381,6 +381,12 @@ std::string CalibrationTelemetry::toJson() const {
     << ",\"cpuThroughput\":" << cpuThroughput << ",\"gpuThroughput\":" << gpuThroughput
     << ",\"resizeThroughput\":" << resizeThroughput << ",\"decodeThroughput\":" << decodeThroughput
     << ",\"transferCostMs\":" << transferCostMs << ",\"queueLatencyMs\":" << queueLatencyMs
+    << ",\"cpuState\":\"" << measureStateName(cpuState) << "\""
+    << ",\"gpuState\":\"" << measureStateName(gpuState) << "\""
+    << ",\"resizeState\":\"" << measureStateName(resizeState) << "\""
+    << ",\"decodeState\":\"" << measureStateName(decodeState) << "\""
+    << ",\"transferState\":\"" << measureStateName(transferState) << "\""
+    << ",\"queueState\":\"" << measureStateName(queueState) << "\""
     << ",\"profileId\":\"" << BenchmarkRecorder::escapeJson(profileId) << "\""
     << ",\"profileVersion\":\"" << BenchmarkRecorder::escapeJson(profileVersion) << "\"}";
   return o.str();

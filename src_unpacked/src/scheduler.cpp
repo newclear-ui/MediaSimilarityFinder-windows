@@ -87,11 +87,20 @@ long long CpuGpuScheduler::effectiveHoldMs(long long explicitHold, ResourceMode 
 //   gpuAvail = (100 - sysGpu)/100 with no floor — system GPU% is
 //     external-dominated (our batches are sub-ms), so full contention may
 //     legitimately converge to CPU. memPressure is recorded, not scaled.
+void CpuGpuScheduler::baseCapacities(const SchedulerHardware& hw, double& cpu, double& gpu) {
+  if (hw.profileBaselineKnown && hw.profileBaselineCpu > 0 && hw.profileBaselineGpu > 0) {
+    cpu = hw.profileBaselineCpu;
+    gpu = hw.profileBaselineGpu;
+    return;
+  }
+  cpu = hw.cpuThreads > 0 ? (double)hw.cpuThreads : 1.0;
+  gpu = hw.gpuComputeUnits > 0 ? hw.gpuComputeUnits : 0.0;
+}
 void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrottled,
                                     double& cpu, double& gpu,
                                     std::string& reason, bool& throttled) {
-  double baseCpu = hw.cpuThreads > 0 ? (double)hw.cpuThreads : 1.0;
-  double baseGpu = hw.gpuComputeUnits > 0 ? hw.gpuComputeUnits : 0.0;
+  double baseCpu = 0, baseGpu = 0;
+  baseCapacities(hw, baseCpu, baseGpu);
   bool observed = false, fromProfile = false;
   if (hw.cpuRateKnown && hw.gpuRateKnown && hw.cpuRate > 0 && hw.gpuRate > 0) {
     baseCpu = hw.cpuRate;

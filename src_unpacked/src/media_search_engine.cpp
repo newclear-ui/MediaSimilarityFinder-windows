@@ -7,6 +7,7 @@
 #include "media_pipeline.h"
 #include "video_fingerprint.h"
 #include "monitor.h"
+#include "calibration.h"
 #include "similarity.h"
 #include <filesystem>
 #include <unordered_map>
@@ -250,6 +251,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // managed indexes; dormant until C2 writes the first profile (store
   // empty or unusable -> hardware baselines, behavior identical).
   // maxAge: never-stale in C1 (C3 owns the default age policy).
+  // C2: Missing/Hard verdicts trigger one bounded calibration whose fresh
+  // estimate applies to THIS scan (plus a re-decide); Exact/Soft reuse the
+  // stored estimate without recalibrating (drift is C3's domain).
+  bool profCalibrated = false;
+  CalibrationResult profCalib;
   {
     ProfileIdentity profCur;
     profCur.cpuThreads = schedHw.cpuThreads;
@@ -262,7 +268,35 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     std::string profPath;
     if (managedIndexActive_)
       profPath = path_to_utf8(managedIndex_.directory.parent_path() / "PerformanceProfile.ini");
-    if (!profPath.empty() && profStore.load(profPath)) {
+    ProfileMatch profVerdict = ProfileMatch::Missing;
+    if (!profPath.empty() && profStore.load(profPath))
+      profVerdict = profStore.classify(profCur, -1, nowSec);
+    if ((profVerdict == ProfileMatch::Missing || profVerdict == ProfileMatch::Hard) && !profPath.empty()) {
+      // Bounded first-time calibration. Any throw or failure falls through
+      // to hardware baselines: a profile must never fail a search.
+      try {
+        CalibrationConfig ccfg;
+        ccfg.identity = profCur;
+        ccfg.gpuAllowed = policy_.gpuEnabled;
+        Calibrator calibrator;
+        // videoGpu_ always wraps the hardware handle (policy-independent),
+        // so the calibrator can tell no-device (not_available) apart from
+        // user-off (not_measured) via gpuAllowed.
+        profCalib = calibrator.run(ccfg, &videoGpu_);
+        profCalibrated = true;
+        ProfileStore writer;
+        writer.setProfile(profCalib.profile);
+        writer.save(profPath); // result ignored: loss affects future runs only
+        const InitialEstimate est = writer.initialEstimate(profCur, -1, nowSec);
+        if (est.cpuKnown && est.gpuKnown) {
+          schedHw.profileBaselineKnown = true;
+          schedHw.profileBaselineCpu = est.cpu;
+          schedHw.profileBaselineGpu = est.gpu;
+        }
+      } catch (...) {
+        profCalibrated = false;
+      }
+    } else if (!profPath.empty()) {
       const InitialEstimate est = profStore.initialEstimate(profCur, -1, nowSec);
       if (est.cpuKnown && est.gpuKnown) {
         schedHw.profileBaselineKnown = true;
@@ -298,6 +332,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   bench_.start(bcfg);
   if(benchOn) bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
   if(control) bench_.addRevalidateMs(control->revalidateMs);
+  // C2: record the calibration run that fed this scan (if any). Skipped
+  // runs leave the section not_measured, which is the honest record.
+  if (profCalibrated) bench_.calibration() = profCalib.telemetry;
   auto finishScan=[&](bool completed)->SearchReport{
     // Node A: cancelled/partial benchmarks stay distinguishable from clean
     // completions; file progress separates started/completed/remaining.
@@ -310,12 +347,13 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // arrives in B2+). Fallbacks accumulate image + video backend fallbacks.
     // B2: current capacities are the observed image/sec rates when both
     // backends reported recently, else the baselines.
+    // C2: initial capacities are the baseline tier in force (profile pair
+    // when a usable profile fed this scan, else hardware proxies).
     {
       const SchedulerDecision sd = scheduler_.lastDecision();
       SchedulerTelemetry& st = bench_.scheduler();
       st.markMeasured();
-      st.initialCpuCapacity = (double)schedHw.cpuThreads;
-      st.initialGpuCapacity = schedHw.gpuComputeUnits;
+      CpuGpuScheduler::baseCapacities(schedHw, st.initialCpuCapacity, st.initialGpuCapacity);
       scheduler_.currentCapacities(st.currentCpuCapacity, st.currentGpuCapacity);
       st.cpuWorkShare = sd.cpuShare;
       st.gpuWorkShare = sd.gpuShare;

@@ -509,5 +509,24 @@ int b6checks() {
     const auto dB = s.decide(hw);
     check(near(dM.gpuShare, dB.gpuShare) && dM.reason == dB.reason, "manual-balanced");
   }
+  // 6. C2 precedence: live measured rates override a usable profile.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    SchedulerHardware hw;
+    hw.cpuThreads = 8; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
+    hw.profileBaselineKnown = true;
+    hw.profileBaselineCpu = 200.0; hw.profileBaselineGpu = 800.0;
+    const auto dP = s.decide(hw);
+    check(dP.reason == "profile_baseline", "precedence-profile");
+    hw.cpuRateKnown = hw.gpuRateKnown = true;
+    hw.cpuRate = 10.0; hw.gpuRate = 90.0;
+    s.maybeReevaluate(hw, 1000);
+    const auto dL = s.lastDecision();
+    check(dL.reason == "observed_throughput", "precedence-live");
+    check(near(dL.gpuShare, 90.0), "precedence-shares");
+  }
   return 0;
 }
