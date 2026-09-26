@@ -37,6 +37,8 @@
 - CPU fallback은 항상 유지한다.
 - Build entry point는 build-windows-cpu / build-windows-gpu 명칭을 사용한다.
 - 버전별 예정표를 다른 문서에 중복 작성하지 않고 Development Roadmap에서 통합 관리한다.
+- 활성 development node의 세부 구현은 `docs/implementation-briefs/`의 KO/EN 문서를 따른다. Roadmap에는 방향과 경계만 두고 상세 구현 단계를 중복 작성하지 않는다.
+- Node B와 D는 신규 설계, Node C는 기존 profile/benchmark 개념의 부분 재사용 + 확장으로 취급한다.
 - Benchmark/Telemetry는 각 development node의 완료조건과 함께 구현한다.
 
 5. **벤치마크 / Telemetry**
