@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.11 |
+| 기준 코드 | 0.9.4.12 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | C — Calibration / INI Performance Profile (활성 substep C3, C4 미착수) |
-| 현재 단계 | C3 구현·검증 완료 → C4 진입은 C brief 기준 |
-| 현재 버전 | 0.9.4.11 |
+| 현재 노드 | C — Calibration / INI Performance Profile (C4 게이트 통과 → 다음 게이트 D) |
+| 현재 단계 | Node C 완료 → D 착수는 D brief 기준 (D1 관측성 우선) |
+| 현재 버전 | 0.9.4.12 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -99,6 +99,17 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - Profile은 initial estimate이며 live runtime state가 항상 우선한다.
 - D queue/worker topology와 F hardware decode는 C에서 선행하지 않는다.
 - queue latency와 hardware decode가 아직 측정 불가능한 경우 explicit measurement state로 기록한다.
+
+### C4 — Calibration Gate (→ 0.9.4.12, 통과)
+
+- 기능 추가 없음: 프롬프트 17조합을 증거에 연결(매핑은
+  `docs/build-history/0.9.4.12.ko.md`).
+- 최소 추출 1건: `calibrationUsableForUpdate()` — 엔진이 쓰던 동일식,
+  이제 단위 테스트 가능. 엔진 람다는 호출로 교체(동작 동일).
+- C4 단언: Exact 10연속 무발화, 실패/부분 불가 판정, 실패 후 파일
+  무수정 reload, usable 후보 통과.
+- 검증: CPU 66/66, GPU 67/67, `scan_workflow_test`로 UI parity, 양쪽
+  `--version`/`--smoke`. 검색 의미 불변. Node C 완료, 다음 게이트 D.
 
 ### C3 — Opportunistic Recalibration (→ 0.9.4.11, 검증됨)
 

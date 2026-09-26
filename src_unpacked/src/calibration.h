@@ -44,6 +44,11 @@ class Calibrator {
 public:
   CalibrationResult run(const CalibrationConfig& cfg, GpuBackend* gpu);
 };
+// C4: the exact predicate the engine uses to accept a fresh candidate for
+// a profile update. Extracted (not inlined in the scan lambda) so the
+// "failed calibration keeps the existing profile" rule is unit-testable:
+// anything false here means no write happens, existing file untouched.
+bool calibrationUsableForUpdate(const CalibrationResult& cand);
 // Node C3: Opportunistic Recalibration trigger.
 //
 // A single outlier must never replace a profile: only K consecutive scans

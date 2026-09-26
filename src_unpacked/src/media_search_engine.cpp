@@ -365,10 +365,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
             ccfg.gpuAllowed = policy_.gpuEnabled;
             Calibrator rc;
             const CalibrationResult cand = rc.run(ccfg, &videoGpu_);
-            const bool candOk =
-                cand.attempted && cand.failedStage.empty() &&
-                cand.profile.cpuThroughput.state == MeasureState::Measured &&
-                cand.profile.gpuThroughput.state == MeasureState::Measured;
+            const bool candOk = calibrationUsableForUpdate(cand);
             if (candOk) {
               PerformanceProfile upd = rs.profile();
               const double oldConf = upd.confidence;

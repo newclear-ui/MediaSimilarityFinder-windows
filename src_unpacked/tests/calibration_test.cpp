@@ -34,6 +34,7 @@ std::string tmpIni(const char* name) {
   return (d / name).string();
 }
 } // namespace
+int c4checks(); // C4 gate coverage, defined below main
 int main() {
   using msf::Calibrator;
   using msf::CalibrationConfig;
@@ -153,8 +154,7 @@ int main() {
   // 9. C3 candidate consistency + update record round-trip.
   {
     check(msf::DeviationTracker::candidateConsistent(115.0, 470.0, 120.0, 480.0, 0.40),
-          "cand-consistent");
-    check(!msf::DeviationTracker::candidateConsistent(300.0, 480.0, 120.0, 480.0, 0.40),
+          "cand-consistent");    check(!msf::DeviationTracker::candidateConsistent(300.0, 480.0, 120.0, 480.0, 0.40),
           "cand-inconsistent");
     check(!msf::DeviationTracker::candidateConsistent(0.0, 480.0, 120.0, 480.0, 0.40),
           "cand-invalid");
@@ -204,10 +204,71 @@ int main() {
     check(r3.profile().confidence < kc, "keep-conf");
     check(r3.profile().lastUpdate.reason == "recalibration_inconsistent", "keep-reason");
   }
+  c4checks();
   if (failures) {
     std::cerr << "calibration failures=" << failures << "\n";
     return 1;
   }
   std::cout << "calibration=ok\n";
+  return 0;
+}
+// C4 gate coverage (called from main above).
+namespace {
+void checkC4(bool ok, const char* name) { check(ok, name); }
+} // namespace
+int c4checks() {
+  // 1. Exact reuse stays silent over a long agreeing run (10 scans).
+  {
+    msf::DeviationTracker t;
+    for (int i = 0; i < 10; ++i)
+      checkC4(!t.feed(120.0 + (i % 3), 480.0 - (i % 5), 120.0, 480.0, "id1"), "c4-long-quiet");
+    checkC4(t.consecutive() == 0, "c4-long-count");
+  }
+  // 2. Failed calibration is unusable: the engine keeps the existing file.
+  {
+    msf::CalibrationResult neverRan;
+    checkC4(!msf::calibrationUsableForUpdate(neverRan), "c4-never-usable");
+    msf::CalibrationResult failed;
+    failed.attempted = true;
+    failed.failedStage = "gpu";
+    failed.profile.cpuThroughput = {100.0, msf::MeasureState::Measured};
+    failed.profile.gpuThroughput = {200.0, msf::MeasureState::Measured};
+    checkC4(!msf::calibrationUsableForUpdate(failed), "c4-failed-unusable");
+    msf::CalibrationResult partial;
+    partial.attempted = true;
+    partial.profile.cpuThroughput = {100.0, msf::MeasureState::Measured};
+    partial.profile.gpuThroughput = {0.0, msf::MeasureState::NotMeasured};
+    checkC4(!msf::calibrationUsableForUpdate(partial), "c4-partial-unusable");
+    // Existing file untouched through a failed update: save, run the
+    // no-write rule, reload identical.
+    const std::string path = tmpIni("calib-keep.ini");
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    msf::ProfileStore s;
+    msf::PerformanceProfile p;
+    p.identity = testIdentity();
+    p.confidence = 0.7;
+    p.cpuThroughput = {120.0, msf::MeasureState::Measured};
+    p.gpuThroughput = {480.0, msf::MeasureState::Measured};
+    s.setProfile(p);
+    checkC4(s.save(path), "c4-keep-save");
+    msf::ProfileStore before;
+    checkC4(before.load(path), "c4-keep-load");
+    const double keptCpu = before.profile().cpuThroughput.value;
+    const double keptConf = before.profile().confidence;
+    // Engine rule: !usable -> no write. Nothing happens here by construction.
+    checkC4(!msf::calibrationUsableForUpdate(failed), "c4-keep-gate");
+    msf::ProfileStore after;
+    checkC4(after.load(path), "c4-keep-reload");
+    checkC4(after.profile().cpuThroughput.value == keptCpu, "c4-keep-values");
+    checkC4(after.profile().confidence == keptConf, "c4-keep-conf");
+    checkC4(!after.profile().lastUpdate.present, "c4-keep-no-record");
+    // A usable candidate passes the same gate.
+    msf::CalibrationResult good;
+    good.attempted = true;
+    good.profile.cpuThroughput = {110.0, msf::MeasureState::Measured};
+    good.profile.gpuThroughput = {450.0, msf::MeasureState::Measured};
+    checkC4(msf::calibrationUsableForUpdate(good), "c4-good-usable");
+  }
   return 0;
 }

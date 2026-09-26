@@ -125,6 +125,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.4.9 | Node C1 Profile Foundation (PerformanceProfile, INI 저장소, 판정, initial-estimate 전달) |
 | 0.9.4.10 | Node C2 Initial Calibration (bounded probe, writer, telemetry, 우선순위) |
 | 0.9.4.11 | Node C3 Opportunistic Recalibration (deviation trigger, 후보 검사, confidence 스텝) |
+| 0.9.4.12 | Node C4 Calibration Gate (17조합 증거, usability 헬퍼, 게이트 종료) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.11 |
+| Reference code | 0.9.4.12 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | C — Calibration / INI Performance Profile (active substep C3, C4 not started) |
-| Current phase | C3 implementation and validation complete → C4 entry per C brief |
-| Current version | 0.9.4.11 |
+| Current node | C — Calibration / INI Performance Profile (C4 gate PASS → next gate D) |
+| Current phase | Node C done → D kickoff per D brief (D1 observability first) |
+| Current version | 0.9.4.12 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -102,6 +102,19 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
 - Profile is an initial estimate; live runtime state always has precedence.
 - D queue/worker topology and F hardware decode are not pulled into C.
 - Metrics not yet measurable are recorded with explicit measurement states.
+
+### C4 — Calibration Gate (→ 0.9.4.12, PASS)
+
+- No new features: the prompt's 17 combinations tied to evidence
+  (mapping in `docs/build-history/0.9.4.12.en.md`).
+- One minimal extraction: `calibrationUsableForUpdate()` — the exact
+  rule the engine used, now unit-testable. Engine lambda calls it
+  (behavior identical).
+- C4 assertions: 10-run Exact silence, failed/partial rejection,
+  file-untouched reload after failure, usable-candidate pass.
+- Validation: CPU 66/66, GPU 67/67; UI parity via
+  `scan_workflow_test`; `--version`/`--smoke` on both. Search semantics
+  unchanged. Node C done; next gate D.
 
 ### C3 — Opportunistic Recalibration (→ 0.9.4.11, validated)
 

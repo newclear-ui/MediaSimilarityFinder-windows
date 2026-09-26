@@ -125,6 +125,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.4.9 | Node C1 Profile Foundation (PerformanceProfile, INI store, verdicts, initial-estimate delivery) |
 | 0.9.4.10 | Node C2 Initial Calibration (bounded probes, writer, telemetry, precedence) |
 | 0.9.4.11 | Node C3 Opportunistic Recalibration (deviation trigger, candidate check, confidence steps) |
+| 0.9.4.12 | Node C4 Calibration Gate (17-combination evidence, usability helper, gate close) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

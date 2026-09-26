@@ -143,6 +143,11 @@ CalibrationResult Calibrator::run(const CalibrationConfig& cfg, GpuBackend* gpu)
   r.telemetry.profileVersion = std::to_string(PerformanceProfile::kProfileVersion);
   return r;
 }
+bool calibrationUsableForUpdate(const CalibrationResult& cand) {
+  return cand.attempted && cand.failedStage.empty() &&
+         cand.profile.cpuThroughput.state == MeasureState::Measured &&
+         cand.profile.gpuThroughput.state == MeasureState::Measured;
+}
 void DeviationTracker::reset() {
   consecutive_ = 0;
   lastProfileId_.clear();
