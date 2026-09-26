@@ -81,10 +81,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
   `gpu_backend_policy_test`. 검색 의미 불변(엔진 1.5.0·DB 1.0.3·캐시 v9).
 - 증거 구분(0.9.4.0 완료 후 점검, 0.9.4.1에서 확장): 자동 빌드/CTest/CLI-smoke
   = PASS, 실제 windowed 실행 = PASS(OS 핸들 + 버전 타이틀 확인),
-  슬롯 경로 workflow = 자동 PASS(`scan_workflow_test`: 실제 MainWindow
-  슬롯 경로 offscreen 구동, 모달 벤치마크 closer, 양쪽 트리 1그룹 렌더
-  단언), 인간 조작(실제 클릭·화면 판독) = NOT_VALIDATED — Windows
-  대화식 세션용으로 남기며, 실행 없이 PASS로 기록하지 않는다.
+   슬롯 경로 workflow = 자동 PASS(`scan_workflow_test`: 실제 MainWindow
+   슬롯 경로 offscreen 구동, 모달 벤치마크 closer, 양쪽 트리 1그룹 렌더
+   단언), 인간 조작(실제 클릭·화면 판독)의 자동화 검증 = NOT_VALIDATED
+   (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
+   실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
+   미검증과 사용자 직접 확인은 구분해서 기록한다.
 
 ## Node B/C/D 상세 설계 상태
 

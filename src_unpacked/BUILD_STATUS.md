@@ -10,7 +10,7 @@
 - Last completed v0.9.4.1 test run: **CTest 64/64 PASS (GPU)**
 - Last completed v0.9.4.1 validation: scan_workflow_test PASS on both trees (offscreen slot-path driver, modal benchmark closer, UI CPU/GPU parity); `--version` 0.9.4.1
 - CPU-only validation: Release build PASS; **CTest 63/63 PASS**; CUDA disabled and CPU fallback verified
-- GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + version title observed, process terminated cleanly); slot-path workflow automated PASS (`scan_workflow_test`); human operation (real clicks, screen reading) NOT_VALIDATED — pending a Windows interactive session before Node B closes
+- GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + version title observed, process terminated cleanly); slot-path workflow automated PASS (`scan_workflow_test`); automated validation of human operation NOT_VALIDATED (environment limit) — development lead user-reports direct confirmation of run → search → report display in a real Windows session
 - Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in
 - Build entry points: `scripts/build_windows_gpu.ps1` (canonical, clean `build-windows-gpu` tree) and `scripts/build_windows_cpu.ps1`; `scripts/build_windows_cuda.ps1` remains a deprecated alias path
 - candidatePairs exhaustive correctness regression: PASS

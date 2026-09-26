@@ -84,9 +84,12 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   build/CTest/CLI-smoke = PASS; real windowed launch = PASS (OS handle +
   version title observed); slot-path workflow = automated PASS
   (`scan_workflow_test`: real MainWindow slot path offscreen, modal
-  benchmark closer, 1-group render asserted on both trees); human operation
-  (real clicks, screen reading) = NOT_VALIDATED — reserved for a Windows
-  interactive session, never recorded as PASS without running it.
+  benchmark closer, 1-group render asserted on both trees); automated
+  validation of human operation (real clicks, screen reading) =
+  NOT_VALIDATED (automation-environment limit) — however, the development
+  lead reports having directly confirmed run → search → report display
+  working normally in a real Windows session. Automation non-validation
+  and user-direct confirmation are recorded separately.
 
 ## Node B/C/D detailed-design state
 
