@@ -13,8 +13,8 @@ The Roadmap is the structural direction. Progress records the actual position, p
 | Reference code | 0.9.4.8 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | B — Adaptive Scheduler (B7 gate PASS → next gate C) |
-| Current phase | Node B done → C kickoff needs stage decomposition (C brief has no B-style staging) |
+| Current node | C — Calibration / INI Performance Profile (C0 design review complete → C1 ready) |
+| Current phase | C design contract defined → documentation review before C1 Profile Foundation implementation |
 | Current version | 0.9.4.8 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
@@ -90,6 +90,19 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### C — Calibration / INI Performance Profile (ready to start)
+
+- The C brief is now concretized into C1–C4 stages.
+- C1 covers Profile Foundation only; actual calibration execution is excluded.
+- C2 covers short initial calibration and Profile → Scheduler initial-estimate integration.
+- C3 covers repeated runtime deviation, opportunistic recalibration, and confidence updates.
+- C4 validates the full Profile lifecycle, live precedence, CPU/GPU parity, failure/partial state, and persistence.
+- Portable Profile location is defined as Index/PerformanceProfile.ini.
+- Profile is an initial estimate; live runtime state always has precedence.
+- D queue/worker topology and F hardware decode are not pulled into C.
+- Metrics not yet measurable are recorded with explicit measurement states.
+- Current work is documentation/design only; C++ implementation has not started.
 
 ### B7 — Final Scheduler Gate (→ 0.9.4.8, PASS)
 
