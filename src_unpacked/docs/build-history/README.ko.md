@@ -118,6 +118,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.4.2 | Node B1 Minimal Adaptive Allocation (CpuGpuScheduler, 비례 배분, 재평가 주기, scheduler telemetry) |
 | 0.9.4.3 | Node B2 Runtime Throughput Feedback (ThroughputWindow, 관측 비율 배분, effective 용량) |
 | 0.9.4.4 | Node B3 Live Load Awareness (시스템 부하 headroom, 외부 부하 throttle, D1 예약 queue 필드) |
+| 0.9.4.5 | Node B4 Stability Control (SMA 스무딩, kill-band hysteresis, minimum hold) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

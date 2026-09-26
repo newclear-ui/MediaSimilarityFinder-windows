@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.4 |
+| Reference code | 0.9.4.5 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | B — Adaptive Scheduler (active substep B3, B4 not started) |
-| Current phase | B3 implementation and validation complete → B4 entry pending brief review |
-| Current version | 0.9.4.4 |
+| Current node | B — Adaptive Scheduler (active substep B4, B5 not started) |
+| Current phase | B4 implementation and validation complete → B5 entry pending brief review |
+| Current version | 0.9.4.5 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -90,6 +90,19 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### B4 — Stability Control (→ 0.9.4.5, validated)
+
+- SMA-4 on observed rates + loads (feed-if-known-else-clear; baselines
+  static). Kill-band hysteresis (kill ≤ 0.02, relieve > 0.05, keep
+  previous between). Minimum hold 10 s default on published decisions;
+  first change after `decide()` exempt; adjustments counts publishes.
+- Scheduler-internal only: engine gating reads the published decision,
+  so execution stability is inherited with zero engine changes.
+- Validation: CPU 64/64, GPU 65/65 (B4 additions: SMA glide, hold
+  freeze/release, 5-step kill band, unknown-lane clear); UI parity via
+  `scan_workflow_test`; `--version`/`--smoke` on both. Search semantics
+  unchanged.
 
 ### B3 — Live Load Awareness (→ 0.9.4.4, validated)
 
@@ -210,6 +223,15 @@ Each substep records:
 - failed attempts
 - result after the fix
 - impact on the next gate
+
+### B4 records from the implementation
+
+- B4 (test setup): the kill-band test armed `gpuLoadKnown=true` with value
+  0 at `decide()`, injecting a phantom 0 into the SMA lane (averages never
+  reached the band). Fixed by arming known-flags only with real readings —
+  the same unknown-vs-zero principle as Node A telemetry. Test-only.
+- B3 kill test now pins `setHoldMs(0)` (it exercises the kill rule, not
+  stability), proving hold and kill rules independent.
 
 ### B3 records from the implementation
 

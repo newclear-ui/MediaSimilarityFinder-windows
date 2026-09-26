@@ -1,15 +1,15 @@
 # Build Status
 
-- Current development version: **0.9.4.4**
+- Current development version: **0.9.4.5**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.4.4 — Node B3 Live Load Awareness (engine 1.5.0, video cache v9)
-- Active Node B substep: B3 (B4 not started)
-- Last completed Windows build/test line: **0.9.4.4**
-- Last completed v0.9.4.4 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.4 test run: **CTest 65/65 PASS (GPU)**
-- Last completed v0.9.4.4 validation: B3 scheduler_test additions PASS on both trees (load scaling, GPU kill + edge, unknown fallback, mem no-effect); `--version` 0.9.4.4
+- Current: 0.9.4.5 — Node B4 Stability Control (engine 1.5.0, video cache v9)
+- Active Node B substep: B4 (B5 not started)
+- Last completed Windows build/test line: **0.9.4.5**
+- Last completed v0.9.4.5 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.5 test run: **CTest 65/65 PASS (GPU)**
+- Last completed v0.9.4.5 validation: B4 scheduler_test additions PASS on both trees (SMA glide, hold freeze/release, 5-step kill band, unknown-lane clear); `--version` 0.9.4.5
 - CPU-only validation: Release build PASS; **CTest 64/64 PASS**; CUDA disabled and CPU fallback verified
 - GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + version title observed, process terminated cleanly); slot-path workflow automated PASS (`scan_workflow_test`); automated validation of human operation NOT_VALIDATED (environment limit) — development lead user-reports direct confirmation of run → search → report display in a real Windows session
 - Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in

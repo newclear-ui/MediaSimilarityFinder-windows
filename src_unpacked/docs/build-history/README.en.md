@@ -118,6 +118,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.4.2 | Node B1 Minimal Adaptive Allocation (CpuGpuScheduler, proportional shares, re-evaluation cadence, scheduler telemetry) |
 | 0.9.4.3 | Node B2 Runtime Throughput Feedback (ThroughputWindow, observed-ratio shares, effective capacities) |
 | 0.9.4.4 | Node B3 Live Load Awareness (system-load headroom, external-load throttle, D1-reserved queue fields) |
+| 0.9.4.5 | Node B4 Stability Control (SMA smoothing, kill-band hysteresis, minimum hold) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

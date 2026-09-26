@@ -23,7 +23,7 @@ void ThroughputWindow::prune(double nowSec) const {
   while (!samples_.empty() && nowSec - samples_.front().first > windowSec_)
     samples_.pop_front();
 }
-SchedulerDecision CpuGpuScheduler::evaluate(const SchedulerHardware& hw) {
+SchedulerDecision CpuGpuScheduler::evaluate(const SchedulerHardware& hw, bool keepThrottled) {
   SchedulerDecision d;
   if (!hw.gpuEnabled) {
     d.cpuShare = 100.0; d.gpuShare = 0.0;
@@ -38,7 +38,7 @@ SchedulerDecision CpuGpuScheduler::evaluate(const SchedulerHardware& hw) {
   double cpu = 0, gpu = 0;
   std::string reason;
   bool throttled = false;
-  effectivePair(hw, cpu, gpu, reason, throttled);
+  effectivePair(hw, keepThrottled, cpu, gpu, reason, throttled);
   if (gpu <= 0.0) {
     // No capacity: distinguish missing hardware (B1) from live contention
     // (B3). cpu keeps its scaled value; shares stay exact.
@@ -61,7 +61,8 @@ SchedulerDecision CpuGpuScheduler::evaluate(const SchedulerHardware& hw) {
 //     external-dominated (our batches are sub-ms), so full contention may
 //     legitimately converge to CPU. memPressure is recorded, not scaled
 //     (B6 policy use).
-void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, double& cpu, double& gpu,
+void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrottled,
+                                    double& cpu, double& gpu,
                                     std::string& reason, bool& throttled) {
   double baseCpu = hw.cpuThreads > 0 ? (double)hw.cpuThreads : 1.0;
   double baseGpu = hw.gpuComputeUnits > 0 ? hw.gpuComputeUnits : 0.0;
@@ -88,19 +89,65 @@ void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, double& cpu, do
   }
   cpu = baseCpu * cpuAvail;
   gpu = baseGpu * gpuAvail;
-  throttled = (gpu <= 0.0);
+  // B4 kill-band hysteresis on GPU availability: kill at <= 0.02
+  // (load >= 98), relieve above 0.05 (load < 95), keep the previous
+  // (published) state between. Integer nvidia-smi readings dither
+  // exactly in this band under saturation; without it the kill decision
+  // flip-flops every cadence tick.
+  bool kill = false, relieve = false;
+  if (hw.gpuLoadKnown) {
+    if (gpuAvail <= 0.02) kill = true;
+    else if (gpuAvail > 0.05) relieve = true;
+  }
+  if (kill || (!relieve && keepThrottled)) {
+    gpu = 0.0;
+    throttled = true;
+    reason = "external_load_throttle";
+    return;
+  }
+  throttled = false;
   reason = observed ? "observed_throughput" : "proportional_baseline";
-  if (throttled) reason = "external_load_throttle";
 }
 bool CpuGpuScheduler::sameDecision(const SchedulerDecision& a, const SchedulerDecision& b) {
   return a.gpuUsed == b.gpuUsed && a.backend == b.backend &&
          std::fabs(a.gpuShare - b.gpuShare) < kShareEpsilon;
 }
+void CpuGpuScheduler::Sma::feed(double v) {
+  q_.push_back(v);
+  while (q_.size() > n_) q_.pop_front();
+}
+void CpuGpuScheduler::Sma::clear() { q_.clear(); }
+bool CpuGpuScheduler::Sma::value(double& out) const {
+  if (q_.empty()) return false;
+  double sum = 0;
+  for (double v : q_) sum += v;
+  out = sum / (double)q_.size();
+  return true;
+}
+SchedulerHardware CpuGpuScheduler::smoothHw(const SchedulerHardware& hw) {
+  SchedulerHardware s = hw;
+  auto lane = [](Sma& m, bool known, double v, bool& oKnown, double& oVal) {
+    if (known) m.feed(v);
+    else m.clear();
+    double a = 0;
+    if (m.value(a)) { oKnown = true; oVal = a; }
+    else { oKnown = false; oVal = 0; }
+  };
+  lane(smaCpuRate_, hw.cpuRateKnown, hw.cpuRate, s.cpuRateKnown, s.cpuRate);
+  lane(smaGpuRate_, hw.gpuRateKnown, hw.gpuRate, s.gpuRateKnown, s.gpuRate);
+  lane(smaCpuLoad_, hw.cpuLoadKnown, hw.cpuLoad, s.cpuLoadKnown, s.cpuLoad);
+  lane(smaGpuLoad_, hw.gpuLoadKnown, hw.gpuLoad, s.gpuLoadKnown, s.gpuLoad);
+  return s;
+}
 SchedulerDecision CpuGpuScheduler::decide(const SchedulerHardware& hw) {
-  last_ = evaluate(hw);
-  lastHw_ = hw;
+  const SchedulerHardware s = smoothHw(hw);
+  last_ = evaluate(s, false);
+  lastHw_ = s;
   decided_ = true;
   ++evaluations_;
+  // Fresh start: the next change is hold-exempt (B1-compatible), and the
+  // published throttle state tracks the fresh decision.
+  lastPublishTickMs_ = -1;
   lastThrottled_ = (last_.reason == "external_load_throttle");
   return last_;
 }
@@ -110,18 +157,26 @@ bool CpuGpuScheduler::maybeReevaluate(const SchedulerHardware& hw, long long now
     return false;
   lastEvalTickMs_ = nowTickMs;
   ++evaluations_;
-  const SchedulerDecision next = evaluate(hw);
-  lastHw_ = hw;
+  const SchedulerHardware s = smoothHw(hw);
+  const SchedulerDecision next = evaluate(s, lastThrottled_);
+  lastHw_ = s;
+  if (sameDecision(last_, next)) return true;
+  // B4 minimum hold: the published (acted) decision only moves after the
+  // hold expires. Telemetry inputs (lastHw_) stay fresh; the policy does not.
+  if (holdMs_ > 0 && lastPublishTickMs_ >= 0 && nowTickMs - lastPublishTickMs_ < holdMs_)
+    return true;
   const bool nowThrottled = (next.reason == "external_load_throttle");
   if (nowThrottled && !lastThrottled_) ++throttles_;
   lastThrottled_ = nowThrottled;
-  if (!sameDecision(last_, next)) { last_ = next; ++adjustments_; }
+  last_ = next;
+  lastPublishTickMs_ = nowTickMs;
+  ++adjustments_;
   return true;
 }
 void CpuGpuScheduler::currentCapacities(double& cpu, double& gpu) const {
   std::string reason;
   bool throttled = false;
-  effectivePair(lastHw_, cpu, gpu, reason, throttled);
+  effectivePair(lastHw_, lastThrottled_, cpu, gpu, reason, throttled);
 }
 void CpuGpuScheduler::reset() {
   last_ = SchedulerDecision{};
@@ -129,6 +184,11 @@ void CpuGpuScheduler::reset() {
   decided_ = false;
   lastThrottled_ = false;
   throttles_ = 0;
+  lastPublishTickMs_ = -1;
+  smaCpuRate_.clear();
+  smaGpuRate_.clear();
+  smaCpuLoad_.clear();
+  smaGpuLoad_.clear();
   lastEvalTickMs_ = -1;
   evaluations_ = adjustments_ = 0;
 }

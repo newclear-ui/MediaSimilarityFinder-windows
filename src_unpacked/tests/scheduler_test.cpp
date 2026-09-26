@@ -16,6 +16,7 @@ void check(bool ok, const char* name) {
 bool near(double a, double b) { return std::fabs(a - b) < 1e-9; }
 } // namespace
 int b2checks();
+int b4checks();
 int main() {
   using msf::CpuGpuScheduler;
   using msf::SchedulerHardware;
@@ -119,6 +120,8 @@ int main() {
   if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
   b2checks();
   if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
+  b4checks();
+  if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
   std::cout << "scheduler=ok\n";
   return 0;
 }
@@ -171,6 +174,7 @@ int b2checks() {
     checkB2(near(ec, 16.0) && near(eg, 80.0), "partial-effective");
   }
   // 4. Observed change across re-evaluation adjusts the decision.
+  // (Single change after decide() is hold-exempt by design.)
   {
     CpuGpuScheduler s;
     s.setReevalIntervalMs(0);
@@ -202,9 +206,11 @@ int b2checks() {
     checkB2(near(ec, 2.0) && near(eg, 10.0), "load-cpu-effective");
   }
   // 6. B3: fully contended GPU kills its share, counts one throttle edge.
+  // Hold pinned to 0: this case exercises the kill rule, not stability.
   {
     CpuGpuScheduler s;
     s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
     SchedulerHardware hw;
     hw.cpuThreads = 8; hw.gpuEnabled = true;
     hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
@@ -236,6 +242,108 @@ int b2checks() {
     hw.memKnown = true; hw.memPressure = 99.0;
     const auto d2 = s.decide(hw);
     checkB2(near(d2.gpuShare, d.gpuShare), "mem-no-effect");
+  }
+  return 0;
+}
+// ---- Node B4: stability control ------------------------------------------
+int b4checks() {
+  using msf::CpuGpuScheduler;
+  using msf::SchedulerHardware;
+  // 1. SMA smoothing: shares glide toward a step input, never jump.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    SchedulerHardware hw;
+    hw.cpuThreads = 10; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 10; hw.backendName = "CUDA";
+    hw.cpuRateKnown = hw.gpuRateKnown = true;
+    hw.cpuRate = 100.0; hw.gpuRate = 100.0;
+    check(near(s.decide(hw).gpuShare, 50.0), "sma-start");
+    hw.gpuRate = 20.0;
+    s.maybeReevaluate(hw, 1000);
+    const double s1 = s.lastDecision().gpuShare;
+    // SMA(100,20) -> 60 vs cpu 100 -> 37.5, not the raw 16.7.
+    check(near(s1, 100.0 * 60 / 160), "sma-step1");
+    s.maybeReevaluate(hw, 2000);
+    const double s2 = s.lastDecision().gpuShare;
+    // SMA(100,20,20) -> ~46.7 -> ~31.8: gliding down, still above raw.
+    check(s2 < s1 && s2 > 100.0 * 20 / 120, "sma-glide");
+  }
+  // 2. Minimum hold: a changed decision waits out the hold.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(10000);
+    SchedulerHardware hw;
+    hw.cpuThreads = 8; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
+    const double base = s.decide(hw).gpuShare;
+    hw.cpuRateKnown = hw.gpuRateKnown = true;
+    hw.cpuRate = 10.0; hw.gpuRate = 90.0;
+    s.maybeReevaluate(hw, 1000);
+    // First change after decide() is hold-exempt.
+    check(near(s.lastDecision().gpuShare, 90.0), "hold-first-free");
+    check(s.adjustments() == 1, "hold-first-count");
+    hw.cpuRate = 90.0; hw.gpuRate = 10.0;
+    s.maybeReevaluate(hw, 2000);
+    // Same-tick reversal is held: published decision frozen.
+    check(near(s.lastDecision().gpuShare, 90.0), "hold-freeze");
+    check(s.adjustments() == 1, "hold-no-count");
+    s.maybeReevaluate(hw, 12000);
+    // Hold expired -> the reversal publishes.
+    check(s.lastDecision().gpuShare < 50.0, "hold-release");
+    check(s.adjustments() == 2, "hold-release-count");
+    (void)base;
+  }
+  // 3. Kill-band hysteresis under integer-rounded saturation load.
+  // SMA-4 interacts: loads average across the sequence below.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    SchedulerHardware hw;
+    hw.cpuThreads = 8; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
+    // NOTE: gpuLoadKnown stays false until a real reading arrives; arming it
+    // with value 0 would inject a phantom 0 into the SMA lane.
+    s.decide(hw); // no load yet -> alive
+    check(s.lastDecision().gpuUsed, "band-alive");
+    hw.gpuLoadKnown = true;
+    hw.gpuLoad = 97.0;
+    s.maybeReevaluate(hw, 1000);
+    check(s.lastDecision().gpuUsed, "band-low-alive"); // avail .03, in band
+    hw.gpuLoad = 99.0;
+    s.maybeReevaluate(hw, 2000);
+    check(!s.lastDecision().gpuUsed, "band-kill"); // SMA 98 -> avail .02
+    check(s.lastDecision().reason == "external_load_throttle", "band-reason");
+    hw.gpuLoad = 96.0;
+    s.maybeReevaluate(hw, 3000);
+    check(!s.lastDecision().gpuUsed, "band-hold-kill"); // SMA ~97.3, in band
+    hw.gpuLoad = 90.0;
+    s.maybeReevaluate(hw, 4000);
+    check(!s.lastDecision().gpuUsed, "band-hold-kill2"); // SMA 95.5, in band
+    s.maybeReevaluate(hw, 5000);
+    check(s.lastDecision().gpuUsed, "band-relief"); // SMA 93.75 -> avail .06
+  }
+  // 4. Unknown input clears its SMA lane (no stale averages).
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    SchedulerHardware hw;
+    hw.cpuThreads = 16; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 80; hw.backendName = "CUDA";
+    hw.cpuRateKnown = hw.gpuRateKnown = true;
+    hw.cpuRate = 50.0; hw.gpuRate = 150.0;
+    s.decide(hw);
+    check(s.lastDecision().reason == "observed_throughput", "stale-obs");
+    hw.cpuRateKnown = hw.gpuRateKnown = false;
+    hw.cpuRate = hw.gpuRate = 0;
+    s.maybeReevaluate(hw, 1000);
+    const auto d = s.lastDecision();
+    check(d.reason == "proportional_baseline", "stale-cleared");
+    check(near(d.gpuShare, 100.0 * 80 / 96), "stale-shares");
   }
   return 0;
 }

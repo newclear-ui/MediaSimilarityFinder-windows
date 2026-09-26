@@ -1,12 +1,19 @@
 #pragma once
-// Node B1 (0.9.4 line): Minimal Adaptive Allocation. Node B2 adds recent
-// throughput feedback (see ThroughputWindow below).
+// Node B1: Minimal Adaptive Allocation. B2: recent-throughput feedback.
+// B4: Stability Control — SMA smoothing, kill-band hysteresis, minimum
+// hold on published decisions. All scheduler-internal; the engine keeps
+// calling decide()/maybeReevaluate() and gating on lastDecision().
 //
-// B1 decides CPU/GPU work shares from baseline capacities only. B2 feeds
-// observed image-path throughput in: when both backends have recent rates,
-// shares follow the observed ratio; otherwise the baseline ratio holds.
-// No smoothing (B4), no transfer/workload cost (B5), no external-load model
-// (B3). Pipeline topology is untouched.
+// B4 rules:
+//  - Observed rates and loads pass through SMA-4 (feed-if-known-else-clear;
+//    baselines are static and unsmoothed). B3 tests pin hold to 0 where they
+//    exercise non-stability features.
+//  - GPU kill hysteresis band: kill at availability <= 0.02 (load >= 98),
+//    relieve above 0.05 (load < 95), keep previous state between.
+//  - Minimum hold (default 10 s, settable, 0 disables): a changed decision
+//    publishes only after the hold expires. The first change after decide()
+//    is exempt (B1-compatible). adjustments counts publishes, so the counter
+//    stops jittering with the system.
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -63,6 +70,8 @@ public:
   // B1 inputs are static so re-runs are stable; the counter still proves
   // the cadence fires, and B2+ live inputs make it adjust.
   void setReevalIntervalMs(long long ms) { reevalIntervalMs_ = ms < 0 ? 0 : ms; }
+  // B4: minimum hold on published-decision changes (ms). Default 10000.
+  void setHoldMs(long long ms) { holdMs_ = ms < 0 ? 0 : ms; }
   SchedulerDecision decide(const SchedulerHardware& hw);
   // Returns true when a (re)evaluation ran. Counts adjustments only when
   // the decision actually changed (share delta or backend flip).
@@ -78,17 +87,33 @@ public:
   void currentCapacities(double& cpu, double& gpu) const;
   void reset();
 private:
-  static SchedulerDecision evaluate(const SchedulerHardware& hw);
+  static SchedulerDecision evaluate(const SchedulerHardware& hw, bool keepThrottled);
   static bool sameDecision(const SchedulerDecision& a, const SchedulerDecision& b);
   // B3: headroom scaling shared by evaluate() and currentCapacities().
   // outThrottled is set when live load kills a GPU share the base rule kept.
-  static void effectivePair(const SchedulerHardware& hw, double& cpu, double& gpu,
+  static void effectivePair(const SchedulerHardware& hw, bool keepThrottled,
+                            double& cpu, double& gpu,
                             std::string& reason, bool& throttled);
+  // B4: fixed-window average over consecutive known samples. Unknown input
+  // clears the lane so stale values never pose as fresh.
+  struct Sma {
+    void setN(std::size_t n) { n_ = n < 1 ? 1 : n; }
+    void feed(double v);
+    void clear();
+    bool value(double& out) const;
+  private:
+    std::size_t n_ = 4;
+    std::deque<double> q_;
+  };
+  SchedulerHardware smoothHw(const SchedulerHardware& hw);
   SchedulerDecision last_;
   bool decided_ = false;
   SchedulerHardware lastHw_;
   bool lastThrottled_ = false;
   std::uint64_t throttles_ = 0;
+  long long holdMs_ = 10000;
+  long long lastPublishTickMs_ = -1;
+  Sma smaCpuRate_, smaGpuRate_, smaCpuLoad_, smaGpuLoad_;
   long long reevalIntervalMs_ = 2000;
   long long lastEvalTickMs_ = -1;
   std::uint64_t evaluations_ = 0, adjustments_ = 0;

@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.4 |
+| 기준 코드 | 0.9.4.5 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | B — Adaptive Scheduler (활성 substep B3, B4 미착수) |
-| 현재 단계 | B3 구현·검증 완료 → B4 진입은 brief 검토 후 |
-| 현재 버전 | 0.9.4.4 |
+| 현재 노드 | B — Adaptive Scheduler (활성 substep B4, B5 미착수) |
+| 현재 단계 | B4 구현·검증 완료 → B5 진입은 brief 검토 후 |
+| 현재 버전 | 0.9.4.5 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -87,6 +87,18 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### B4 — Stability Control (→ 0.9.4.5, 검증됨)
+
+- 관측 rate·부하의 SMA-4(feed-if-known-else-clear, baseline은 정적).
+  kill-band hysteresis(kill 0.02 이하·relief 0.05 초과·사이 이전 유지).
+  발표 판단에 minimum hold 10초 기본. `decide()` 직후 첫 변경 면제.
+  adjustments는 발표 기준.
+- 스케줄러 내부 전용: 엔진 게이트가 발표 판단을 읽으므로 실행
+  안정화가 엔진 변경 없이 상속된다.
+- 검증: CPU 64/64, GPU 65/65(B4 추가분: SMA glide·hold 동결/해제·
+  5단계 kill-band·unknown lane clear), `scan_workflow_test`로 UI parity,
+  양쪽 `--version`/`--smoke`. 검색 의미 불변.
 
 ### B3 — Live Load Awareness (→ 0.9.4.4, 검증됨)
 
@@ -205,6 +217,14 @@ A
 - 실패했던 시도
 - 해결 후 결과
 - 다음 gate 영향
+
+### B4 구현 과정의 기록
+
+- B4 (테스트 셋업): kill-band 테스트가 `decide()` 시점에
+  `gpuLoadKnown=true` + 값 0으로 SMA 레인에 유령 0을 주입해 밴드에
+  닿지 않았다. known 플래그는 실제 판독과 함께 무장하도록 수정 —
+  Node A telemetry의 unknown-vs-zero 원칙과 동일. 테스트 전용.
+- B3 kill 테스트는 `setHoldMs(0)` 명시로 hold와 kill 규칙의 독립성 입증.
 
 ### B3 구현 과정의 기록
 
