@@ -14,8 +14,7 @@
   video_decoder.h/.cpp.
 - src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
 - tests/ — CTest 테스트(msf_*_test 컨벤션).
-- docs/ — development-roadmap.ko/.en.md(전체 개발 방향), development-progress.ko/.en.md(현재 진척도), build-history/<버전>.ko/.en.md(실제 버전 증거), architecture/*.ko/.en.md, legacy/(교체 구현 스냅샷),
-  STRUCTURE.md(이 파일), llms.txt(LLM용 텍스트 인덱스).
+- docs/ — development-roadmap.ko/.en.md(전체 개발 방향), development-progress.ko/.en.md(현재 진척도), implementation-briefs/(활성 Node 세부 구현 계약), build-history/<버전>.ko/.en.md(실제 버전 증거), architecture/*.ko/.en.md, legacy/(교체 구현 스냅샷), STRUCTURE.md(이 파일), llms.txt(LLM용 텍스트 인덱스).
 - docs/development-roadmap.ko/.en.md — A→B→C 개발 순서도와 recovery branch 규칙.
 - docs/development-progress.ko/.en.md — 현재 node/version/substep/blocker/validation 상태.
 - docs/architecture/resource-scheduling.ko/.en.md — CPU 정책 + Adaptive GPU AUTO + INI calibration + 실시간 부하 기반 자원관리 목표 아키텍처.
@@ -70,3 +69,12 @@
 - 빌드마다 docs/build-history/<버전>.ko.md + .en.md 쌍, README.ko/.en.md 버전표.
 - 변경은 "변경 필요성 → 기존 구조 → 변경 구조 → 해결된 상황 → 검증 → 향후 영향" 형식.
 - GPU backend별 알고리즘은 독립적으로 유지하며 CPU fallback을 보존한다. 상위 engine에 vendor-specific GPU API를 직접 확산하지 않는다.
+
+
+## Active implementation briefs
+
+- docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — Node B staged Scheduler implementation scope and gate.
+- docs/implementation-briefs/C-calibration-profile.ko.md / .en.md — Node C profile/calibration reuse + extension scope.
+- docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — Node D pipeline/queue optimization scope.
+
+Roadmap remains the high-level direction document; implementation briefs contain node-level engineering detail.
