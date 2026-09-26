@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.6 |
+| 기준 코드 | 0.9.4.7 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | B — Adaptive Scheduler (활성 substep B5, B6 미착수) |
-| 현재 단계 | B5 구현·검증 완료 → B6 진입은 brief 검토 후 |
-| 현재 버전 | 0.9.4.6 |
+| 현재 노드 | B — Adaptive Scheduler (활성 substep B6, B7 미착수) |
+| 현재 단계 | B6 구현·검증 완료 → B7 진입은 brief 검토 후 |
+| 현재 버전 | 0.9.4.7 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -87,6 +87,20 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### B6 — Resource Mode Integration (→ 0.9.4.7, 검증됨)
+
+- `paramsForMode()`: 모드별 (cpuFloor, holdMs, killAt, relieveAbove).
+  Maximum 민첩/자기 우선, Gaming 조기 yield/늦은 복귀/긴 hold,
+  Balanced·Custom = B4값, 명시 `setHoldMs()` 우선, 미설정(-1)은 모드
+  기본값.
+- 엔진은 스캔당 `schedHw.mode = policy_.mode` 1줄 연결. Manual CPU
+  상한은 upstream 유지(스케줄러 측 Manual == Balanced, 테스트됨).
+- 검증: CPU 64/64, GPU 65/65(B6 추가분: 모드표·모드 분기·비대칭
+  relief·모드별 hold·Manual==Balanced), `scan_workflow_test`로 UI parity,
+  양쪽 `--version`/`--smoke`. 검색 의미 불변. GPU 스위트 초회 빌드
+  직후 8건 실패 후 동일 바이너리 2연속 그린(환경 경합, 회귀 아님.
+  실패명 미캡처는 운용 교훈).
 
 ### B5 — Transfer / Workload Cost (→ 0.9.4.6, 검증됨)
 
@@ -230,6 +244,19 @@ A
 - 실패했던 시도
 - 해결 후 결과
 - 다음 gate 영향
+
+### B6 구현 과정의 기록
+
+- B6 (명칭): "Manual"은 UI 라벨, enum은 `ResourceMode::Custom`
+  (C2838). 테스트 수정, 향후 UI 작업용으로 기록.
+- B6 (접합 파손): 테스트 삽입 중 B5 xfer 블록이 함수 밖 고아 상태가
+  됨(C2447/C2059). `b4checks()` 안으로 복구, 중복행 삭제, read-back
+  검증.
+- B6 (SMA 상호작용): 모드 hold 테스트가 첫 관측 전 rate를 뒤집어
+  SMA가 decide 시점 값을 섞음(50/50). B4 패턴(rateless decide 후
+  관측)으로 재작성. 테스트 설계는 SMA 메모리를 존중해야 함.
+- B6 (스위트): 새 GPU 빌드 직후 8건 실패 후 동일 바이너리 2연속
+  65/65. 환경 경합으로 기록, 실패명 미캡처는 정직하게 남김.
 
 ### B5 구현 과정의 기록
 

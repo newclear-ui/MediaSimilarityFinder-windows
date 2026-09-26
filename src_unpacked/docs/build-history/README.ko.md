@@ -120,6 +120,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.4.4 | Node B3 Live Load Awareness (시스템 부하 headroom, 외부 부하 throttle, D1 예약 queue 필드) |
 | 0.9.4.5 | Node B4 Stability Control (SMA 스무딩, kill-band hysteresis, minimum hold) |
 | 0.9.4.6 | Node B5 Transfer / Workload Cost (total-cost 규칙, transfer 항, 관측 rate 내 workload) |
+| 0.9.4.7 | Node B6 Resource Mode Integration (모드별 floor/hold/kill band, Manual == Balanced) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

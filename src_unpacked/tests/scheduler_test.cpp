@@ -17,6 +17,7 @@ bool near(double a, double b) { return std::fabs(a - b) < 1e-9; }
 } // namespace
 int b2checks();
 int b4checks();
+int b6checks();
 int main() {
   using msf::CpuGpuScheduler;
   using msf::SchedulerHardware;
@@ -121,6 +122,8 @@ int main() {
   b2checks();
   if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
   b4checks();
+  if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
+  b6checks();
   if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
   std::cout << "scheduler=ok\n";
   return 0;
@@ -351,7 +354,6 @@ int b4checks() {
     CpuGpuScheduler s;
     s.setReevalIntervalMs(0);
     s.setHoldMs(0);
-    s.setHoldMs(0);
     SchedulerHardware hw;
     hw.cpuThreads = 8; hw.gpuEnabled = true;
     hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
@@ -374,6 +376,138 @@ int b4checks() {
     hw.transferBytesPerUnit = 0;
     s.maybeReevaluate(hw, 2000);
     check(near(s.lastDecision().gpuShare, 50.0), "xfer-disabled");
+  }
+  return 0;
+}
+// ---- Node B6: Resource Mode integration --------------------------------
+int b6checks() {
+  using msf::CpuGpuScheduler;
+  using msf::ResourceMode;
+  using msf::SchedulerHardware;
+  auto baseHw = []() {
+    SchedulerHardware hw;
+    hw.cpuThreads = 10; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 10; hw.backendName = "CUDA";
+    return hw;
+  };
+  // 1. Mode table itself (provisional values, pinned here).
+  {
+    const auto mx = CpuGpuScheduler::paramsForMode(ResourceMode::Maximum);
+    const auto bl = CpuGpuScheduler::paramsForMode(ResourceMode::Balanced);
+    const auto gm = CpuGpuScheduler::paramsForMode(ResourceMode::Gaming);
+    check(mx.cpuFloor > bl.cpuFloor && bl.cpuFloor > gm.cpuFloor, "mode-floors");
+    check(mx.holdMs < bl.holdMs && bl.holdMs < gm.holdMs, "mode-holds");
+    check(gm.killAt > mx.killAt && gm.relieveAbove > mx.relieveAbove, "mode-band");
+  }
+  // 2. Same load, different response: Gaming yields where Maximum persists.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    auto hw = baseHw();
+    hw.cpuLoadKnown = hw.gpuLoadKnown = true;
+    // cpuLoad 95 -> raw avail .05: maximum floors to .10, gaming keeps .05.
+    hw.cpuLoad = 95.0; hw.gpuLoad = 96.0;
+    hw.mode = ResourceMode::Maximum;
+    const auto dMx = s.decide(hw);
+    check(dMx.gpuUsed, "mode-max-alive"); // avail .04 above max kill .02
+    hw.mode = ResourceMode::Gaming;
+    const auto dGm = s.decide(hw);
+    check(!dGm.gpuUsed, "mode-gaming-kill"); // avail .04 within gaming kill .05
+    check(dGm.reason == "external_load_throttle", "mode-gaming-reason");
+    // Kill dominates shares, so compare floors via effective capacities:
+    // gaming cuts deeper (0.02) than maximum (0.10).
+    double mxC = 0, mxG = 0, gmC = 0, gmG = 0;
+    hw.mode = ResourceMode::Maximum;
+    s.decide(hw);
+    s.currentCapacities(mxC, mxG);
+    hw.mode = ResourceMode::Gaming;
+    s.decide(hw);
+    s.currentCapacities(gmC, gmG);
+    check(near(mxC, 1.0) && near(gmC, 0.5), "mode-cpu-floor");
+    check(dGm.gpuShare < dMx.gpuShare, "mode-gpu-share");
+  }
+  // 3. Relief asymmetry: Gaming returns later than Maximum.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    auto hw = baseHw();
+    hw.gpuLoadKnown = true;
+    hw.mode = ResourceMode::Gaming;
+    hw.gpuLoad = 99.0;
+    s.decide(hw);
+    check(!s.lastDecision().gpuUsed, "relief-setup");
+    hw.gpuLoad = 92.0; // SMA(99,92)=95.5 -> still at/above gaming kill edge
+    s.maybeReevaluate(hw, 1000);
+    check(!s.lastDecision().gpuUsed, "relief-gaming-holds");
+    // ... while Maximum at the same reading stays alive throughout.
+    // SMA drags relief by one tick: the first 92 still averages hot.
+    CpuGpuScheduler s2;
+    s2.setReevalIntervalMs(0);
+    s2.setHoldMs(0);
+    auto hw2 = baseHw();
+    hw2.gpuLoadKnown = true;
+    hw2.mode = ResourceMode::Maximum;
+    hw2.gpuLoad = 99.0;
+    s2.decide(hw2); // avail .01 <= .02 even for Maximum -> killed
+    check(!s2.lastDecision().gpuUsed, "relief-max-kill");
+    hw2.gpuLoad = 92.0; // SMA(99,92)=95.5 -> avail .045, still killed
+    s2.maybeReevaluate(hw2, 1000);
+    check(!s2.lastDecision().gpuUsed, "relief-max-drag");
+    s2.maybeReevaluate(hw2, 2000); // SMA(99,92,92)=94.3 -> avail .057
+    check(s2.lastDecision().gpuUsed, "relief-max-back");
+  }
+  // 4. Hold durations follow the mode (Maximum nimble, Gaming calm).
+  // Pattern mirrors the B4 hold test: decide rateless (baseline), then
+  // introduce rates so the first observation is SMA-pure.
+  {
+    auto flipHw = [&]() {
+      auto hw = baseHw();
+      return hw;
+    };
+    CpuGpuScheduler mx;
+    mx.setReevalIntervalMs(0); // hold from mode default (5000)
+    auto hwm = flipHw();
+    hwm.mode = ResourceMode::Maximum;
+    mx.decide(hwm);
+    hwm.cpuRateKnown = hwm.gpuRateKnown = true;
+    hwm.cpuRate = 10.0; hwm.gpuRate = 90.0;
+    mx.maybeReevaluate(hwm, 1000); // first change exempt -> publishes 90
+    check(near(mx.lastDecision().gpuShare, 90.0), "hold-max-first");
+    hwm.cpuRate = 90.0; hwm.gpuRate = 10.0;
+    mx.maybeReevaluate(hwm, 4000); // reversal inside 5 s hold
+    check(near(mx.lastDecision().gpuShare, 90.0), "hold-max-freeze");
+    mx.maybeReevaluate(hwm, 7000); // 6 s after publish -> releases
+    check(mx.lastDecision().gpuShare < 50.0, "hold-max-release");
+    CpuGpuScheduler gm;
+    gm.setReevalIntervalMs(0); // hold from mode default (30000)
+    auto hwg = flipHw();
+    hwg.mode = ResourceMode::Gaming;
+    gm.decide(hwg);
+    hwg.cpuRateKnown = hwg.gpuRateKnown = true;
+    hwg.cpuRate = 10.0; hwg.gpuRate = 90.0;
+    gm.maybeReevaluate(hwg, 1000);
+    check(near(gm.lastDecision().gpuShare, 90.0), "hold-gaming-first");
+    hwg.cpuRate = 90.0; hwg.gpuRate = 10.0;
+    gm.maybeReevaluate(hwg, 20000); // inside 30 s hold
+    check(near(gm.lastDecision().gpuShare, 90.0), "hold-gaming-freeze");
+    gm.maybeReevaluate(hwg, 32000); // 31 s after publish -> releases
+    check(gm.lastDecision().gpuShare < 50.0, "hold-gaming-release");
+  }
+  // 5. Manual == Balanced scheduler-side (CPU limit lives upstream).
+  // NOTE: "Manual" is the UI label; the enum value is ResourceMode::Custom.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    auto hw = baseHw();
+    hw.cpuLoadKnown = true; hw.cpuLoad = 70.0;
+    hw.mode = ResourceMode::Custom;
+    const auto dM = s.decide(hw);
+    hw.mode = ResourceMode::Balanced;
+    const auto dB = s.decide(hw);
+    check(near(dM.gpuShare, dB.gpuShare) && dM.reason == dB.reason, "manual-balanced");
   }
   return 0;
 }

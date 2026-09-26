@@ -239,6 +239,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   schedHw.gpuAvailable = imagePipeline.gpuAvailable();
   schedHw.gpuComputeUnits = imagePipeline.gpuComputeUnits();
   schedHw.backendName = imagePipeline.gpuBackendName();
+  // B6: the scheduler connects to Resource Mode policy (floors, hold,
+  // kill band). Manual's CPU limit is enforced upstream by worker counts.
+  schedHw.mode = policy_.mode;
   // B5: transfer volume per GPU unit is known from the packing layout;
   // bandwidth stays the documented coarse default until Node C measures it.
   schedHw.transferBytesPerUnit = (double)imagePipeline.gpuTransferBytesPerUnit();

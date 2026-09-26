@@ -52,19 +52,44 @@ SchedulerDecision CpuGpuScheduler::evaluate(const SchedulerHardware& hw, bool ke
   d.reason = reason; d.gpuUsed = true;
   return d;
 }
-// B3 headroom rule. Base capacities come from the B2 branch (observed
-// rates when both known, else baselines); live load scales them:
-//   cpuAvail = (100 - sysCpu)/100 floored at 0.05 — the floor keeps us from
-//     fully zeroing our own share on self-loaded systems (coarse B3 rule;
-//     self-attribution is B4+ work).
+// B6: per-mode stability policy. Modes tune responsiveness, never raw
+// speed: shares stay proportional under every mode. Values are provisional
+// (build-history); long-run observation tunes them.
+//   Maximum: nimble (5 s hold), self-prioritizing floor, standard band.
+//   High: standard calm with a slightly higher self floor.
+//   Balanced/Custom: the B4-validated defaults (existing tests pin these).
+//   Gaming (= legacy Light alias): yields early (kill at load>=95),
+//     returns late (relieve below 90), holds long (30 s), cuts deepest.
+CpuGpuScheduler::ModeParams CpuGpuScheduler::paramsForMode(ResourceMode mode) {
+  switch (mode) {
+    case ResourceMode::Maximum:
+      return {0.10, 5000, 0.02, 0.05};
+    case ResourceMode::High:
+      return {0.07, 10000, 0.02, 0.05};
+    case ResourceMode::Gaming:
+      return {0.02, 30000, 0.05, 0.10};
+    case ResourceMode::Balanced:
+    case ResourceMode::Custom:
+    default:
+      return {0.05, 10000, 0.02, 0.05};
+  }
+}
+long long CpuGpuScheduler::effectiveHoldMs(long long explicitHold, ResourceMode mode) {
+  if (explicitHold >= 0) return explicitHold;
+  return paramsForMode(mode).holdMs;
+}
+// B3 headroom rule (B6: floors and band edges now come from the mode).
+// Base capacities come from the B2 branch (observed rates when both known,
+// else baselines); live load scales them:
+//   cpuAvail = (100 - sysCpu)/100 floored at the mode floor — the floor
+//     keeps us from fully zeroing our own share on self-loaded systems
+//     (coarse rule; self-attribution is future runtime-accounting work).
 //   gpuAvail = (100 - sysGpu)/100 with no floor — system GPU% is
 //     external-dominated (our batches are sub-ms), so full contention may
-//     legitimately converge to CPU. memPressure is recorded, not scaled
-//     (B6 policy use).
+//     legitimately converge to CPU. memPressure is recorded, not scaled.
 void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrottled,
                                     double& cpu, double& gpu,
-                                    std::string& reason, bool& throttled) {
-  double baseCpu = hw.cpuThreads > 0 ? (double)hw.cpuThreads : 1.0;
+                                    std::string& reason, bool& throttled) {  double baseCpu = hw.cpuThreads > 0 ? (double)hw.cpuThreads : 1.0;
   double baseGpu = hw.gpuComputeUnits > 0 ? hw.gpuComputeUnits : 0.0;
   bool observed = false;
   if (hw.cpuRateKnown && hw.gpuRateKnown && hw.cpuRate > 0 && hw.gpuRate > 0) {
@@ -87,9 +112,10 @@ void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrott
     return;
   }
   double cpuAvail = 1.0, gpuAvail = 1.0;
+  const ModeParams mp = paramsForMode(hw.mode);
   if (hw.cpuLoadKnown) {
     cpuAvail = (100.0 - hw.cpuLoad) / 100.0;
-    if (cpuAvail < 0.05) cpuAvail = 0.05;
+    if (cpuAvail < mp.cpuFloor) cpuAvail = mp.cpuFloor;
     if (cpuAvail > 1.0) cpuAvail = 1.0;
   }
   if (hw.gpuLoadKnown) {
@@ -99,15 +125,12 @@ void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrott
   }
   cpu = baseCpu * cpuAvail;
   gpu = baseGpu * gpuAvail;
-  // B4 kill-band hysteresis on GPU availability: kill at <= 0.02
-  // (load >= 98), relieve above 0.05 (load < 95), keep the previous
-  // (published) state between. Integer nvidia-smi readings dither
-  // exactly in this band under saturation; without it the kill decision
-  // flip-flops every cadence tick.
+  // B4 kill-band hysteresis, B6 mode edges: kill at/below killAt, relieve
+  // above relieveAbove, keep the previous (published) state between.
   bool kill = false, relieve = false;
   if (hw.gpuLoadKnown) {
-    if (gpuAvail <= 0.02) kill = true;
-    else if (gpuAvail > 0.05) relieve = true;
+    if (gpuAvail <= mp.killAt) kill = true;
+    else if (gpuAvail > mp.relieveAbove) relieve = true;
   }
   if (kill || (!relieve && keepThrottled)) {
     gpu = 0.0;
@@ -171,9 +194,10 @@ bool CpuGpuScheduler::maybeReevaluate(const SchedulerHardware& hw, long long now
   const SchedulerDecision next = evaluate(s, lastThrottled_);
   lastHw_ = s;
   if (sameDecision(last_, next)) return true;
-  // B4 minimum hold: the published (acted) decision only moves after the
-  // hold expires. Telemetry inputs (lastHw_) stay fresh; the policy does not.
-  if (holdMs_ > 0 && lastPublishTickMs_ >= 0 && nowTickMs - lastPublishTickMs_ < holdMs_)
+  // B4 minimum hold, B6 mode default: the published (acted) decision only
+  // moves after the hold expires. Telemetry inputs (lastHw_) stay fresh.
+  const long long hold = effectiveHoldMs(holdMs_, hw.mode);
+  if (hold > 0 && lastPublishTickMs_ >= 0 && nowTickMs - lastPublishTickMs_ < hold)
     return true;
   const bool nowThrottled = (next.reason == "external_load_throttle");
   if (nowThrottled && !lastThrottled_) ++throttles_;

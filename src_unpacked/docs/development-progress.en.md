@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.6 |
+| Reference code | 0.9.4.7 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | B — Adaptive Scheduler (active substep B5, B6 not started) |
-| Current phase | B5 implementation and validation complete → B6 entry pending brief review |
-| Current version | 0.9.4.6 |
+| Current node | B — Adaptive Scheduler (active substep B6, B7 not started) |
+| Current phase | B6 implementation and validation complete → B7 entry pending brief review |
+| Current version | 0.9.4.7 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -90,6 +90,21 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### B6 — Resource Mode Integration (→ 0.9.4.7, validated)
+
+- `paramsForMode()`: per-mode (cpuFloor, holdMs, killAt, relieveAbove).
+  Maximum nimble/self-prioritizing, Gaming early-yield/late-return/calm,
+  Balanced/Custom = B4 values, explicit `setHoldMs()` wins, unset (-1)
+  takes the mode default.
+- Engine connects `schedHw.mode = policy_.mode` once per scan; Manual's
+  CPU cap stays upstream (scheduler-side Manual == Balanced, tested).
+- Validation: CPU 64/64, GPU 65/65 (B6 additions: mode table, mode
+  divergence, asymmetric relief, per-mode holds, Manual == Balanced);
+  UI parity via `scan_workflow_test`; `--version`/`--smoke` on both.
+  Search semantics unchanged. GPU suite: 8 failures on the first
+  post-build run, green twice after on identical binaries (environment
+  contention, not a regression; uncaptured names kept as an ops lesson).
 
 ### B5 — Transfer / Workload Cost (→ 0.9.4.6, validated)
 
@@ -237,6 +252,21 @@ Each substep records:
 - failed attempts
 - result after the fix
 - impact on the next gate
+
+### B6 records from the implementation
+
+- B6 (naming): "Manual" is the UI label; the enum value is
+  `ResourceMode::Custom` (C2838). Fixed the test, noted for future UI work.
+- B6 (splice damage): a test insertion orphaned the B5 xfer block outside
+  its function (C2447/C2059). Restored into `b4checks()`, duplicate line
+  removed, structure verified by read-back.
+- B6 (SMA interaction): mode-hold tests first flipped rates before the
+  first observation, so SMA mixed decide-time values (50/50, not 90).
+  Rewrote to the B4 pattern (rateless decide, then observe). Test design
+  must respect SMA memory.
+- B6 (suite): GPU suite failed 8 right after the fresh build, then 65/65
+  twice on identical binaries. Recorded as environment contention with
+  the honesty note that failure names were not captured.
 
 ### B5 records from the implementation
 

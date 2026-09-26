@@ -18,6 +18,7 @@
 #include <deque>
 #include <string>
 #include <utility>
+#include "resource_policy.h"
 namespace msf {
 // Simple recent-window rate observer: push (timestampSec, completedUnits),
 // rate() returns units/sec over the retained window, or -1 when unknown
@@ -51,6 +52,11 @@ struct SchedulerHardware {
   // self-attribution arrives with B4+ runtime accounting).
   bool cpuLoadKnown = false, gpuLoadKnown = false, memKnown = false;
   double cpuLoad = 0, gpuLoad = 0, memPressure = 0;
+  // B6: the scheduler connects to Resource Mode policy. Modes tune
+  // stability/responsiveness (floors, hold, kill band), never raw speed:
+  // shares stay proportional. Manual's CPU limit is enforced upstream by
+  // worker counts, so scheduler-side Manual == Balanced (documented).
+  ResourceMode mode = ResourceMode::Balanced;
   // D1-reserved: queue depths have no producer on the scan path yet.
   // B3 carries the fields so D1 fills them without interface churn;
   // evaluate() ignores them until then.
@@ -75,8 +81,14 @@ public:
   // B1 inputs are static so re-runs are stable; the counter still proves
   // the cadence fires, and B2+ live inputs make it adjust.
   void setReevalIntervalMs(long long ms) { reevalIntervalMs_ = ms < 0 ? 0 : ms; }
-  // B4: minimum hold on published-decision changes (ms). Default 10000.
-  void setHoldMs(long long ms) { holdMs_ = ms < 0 ? 0 : ms; }
+  // B6: per-mode stability policy. Provisional values, documented in
+  // build-history; long-run observation tunes them. Light is the legacy
+  // Gaming alias (same enum value) and shares Gaming params.
+  struct ModeParams { double cpuFloor; long long holdMs; double killAt; double relieveAbove; };
+  static ModeParams paramsForMode(ResourceMode mode);
+  // Effective hold: explicit setHoldMs() wins (tests, diagnostics);
+  // otherwise the mode default. Default member -1 means "auto".
+  void setHoldMs(long long ms) { holdMs_ = ms; }
   SchedulerDecision decide(const SchedulerHardware& hw);
   // Returns true when a (re)evaluation ran. Counts adjustments only when
   // the decision actually changed (share delta or backend flip).
@@ -116,7 +128,8 @@ private:
   SchedulerHardware lastHw_;
   bool lastThrottled_ = false;
   std::uint64_t throttles_ = 0;
-  long long holdMs_ = 10000;
+  long long holdMs_ = -1; // -1 = mode default (B6); explicit value wins
+  static long long effectiveHoldMs(long long explicitHold, ResourceMode mode);
   long long lastPublishTickMs_ = -1;
   Sma smaCpuRate_, smaGpuRate_, smaCpuLoad_, smaGpuLoad_;
   long long reevalIntervalMs_ = 2000;
