@@ -7,7 +7,6 @@
 #include "media_pipeline.h"
 #include "video_fingerprint.h"
 #include "monitor.h"
-#include "calibration.h"
 #include "similarity.h"
 #include <filesystem>
 #include <unordered_map>
@@ -256,6 +255,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // stored estimate without recalibrating (drift is C3's domain).
   bool profCalibrated = false;
   CalibrationResult profCalib;
+  // C3: hoisted for finishScan (trigger needs path + identity + estimate).
+  std::string profPath;
+  ProfileIdentity profIdentity;
   {
     ProfileIdentity profCur;
     profCur.cpuThreads = schedHw.cpuThreads;
@@ -265,7 +267,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     profCur.engineVersion = kEngineVersion;
     const long long nowSec = (long long)std::time(nullptr);
     ProfileStore profStore;
-    std::string profPath;
+    profIdentity = profCur;
     if (managedIndexActive_)
       profPath = path_to_utf8(managedIndex_.directory.parent_path() / "PerformanceProfile.ini");
     ProfileMatch profVerdict = ProfileMatch::Missing;
@@ -341,6 +343,61 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     if(!completed){
       if(control && control->cancel.load(std::memory_order_relaxed)) bench_.setCancelled("cancelled");
       else bench_.setFailed("", "failed");
+    }
+    // C3: opportunistic recalibration. Only on completed scans fed by a
+    // profile, only after K consecutive deviating scans, only with a
+    // candidate that agrees with live observation. Failures and
+    // inconsistencies keep the existing profile; nothing here can fail
+    // the scan (bounded probes, swallowed errors).
+    if (completed && schedHw.profileBaselineKnown && !profPath.empty()) {
+      try {
+        const double nowS = std::chrono::duration<double>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const double liveCpu = schedCpuWin_.rate(nowS);
+        const double liveGpu = schedGpuWin_.rate(nowS);
+        ProfileStore rs;
+        if (liveCpu > 0 && liveGpu > 0 && rs.load(profPath)) {
+          const double baseCpu = schedHw.profileBaselineCpu;
+          const double baseGpu = schedHw.profileBaselineGpu;
+          if (recalTracker_.feed(liveCpu, liveGpu, baseCpu, baseGpu, rs.profile().id)) {
+            CalibrationConfig ccfg;
+            ccfg.identity = profIdentity;
+            ccfg.gpuAllowed = policy_.gpuEnabled;
+            Calibrator rc;
+            const CalibrationResult cand = rc.run(ccfg, &videoGpu_);
+            const bool candOk =
+                cand.attempted && cand.failedStage.empty() &&
+                cand.profile.cpuThroughput.state == MeasureState::Measured &&
+                cand.profile.gpuThroughput.state == MeasureState::Measured;
+            if (candOk) {
+              PerformanceProfile upd = rs.profile();
+              const double oldConf = upd.confidence;
+              const bool consistent = DeviationTracker::candidateConsistent(
+                  cand.profile.cpuThroughput.value, cand.profile.gpuThroughput.value,
+                  liveCpu, liveGpu, DeviationPolicy{}.consistencyTol);
+              if (consistent) {
+                upd.cpuThroughput = cand.profile.cpuThroughput;
+                upd.gpuThroughput = cand.profile.gpuThroughput;
+                if (cand.profile.gpuBatchThroughput.state == MeasureState::Measured)
+                  upd.gpuBatchThroughput = cand.profile.gpuBatchThroughput;
+                upd.confidence = std::min(DeviationPolicy{}.confidenceMax,
+                                          oldConf + DeviationPolicy{}.confidenceStep);
+                upd.lastUpdate = {"recalibration_consistent", upd.id, oldConf, upd.confidence, true};
+              } else {
+                upd.confidence = std::max(DeviationPolicy{}.confidenceMin,
+                                          oldConf - DeviationPolicy{}.confidenceStep);
+                upd.lastUpdate = {"recalibration_inconsistent", upd.id, oldConf, upd.confidence, true};
+              }
+              ProfileStore writer;
+              writer.setProfile(std::move(upd));
+              writer.save(profPath); // ignored: affects future runs only
+            }
+            // !candOk (failed calibration): existing profile untouched.
+          }
+        }
+      } catch (...) {
+        // Recalibration must never fail a scan.
+      }
     }
     bench_.setFileProgress(r.scanned, r.analyzed, r.scanned > r.analyzed ? r.scanned - r.analyzed : 0);
     // B1: record the scheduler decision (initial == current; live adjustment

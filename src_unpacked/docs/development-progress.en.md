@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.10 |
+| Reference code | 0.9.4.11 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | C — Calibration / INI Performance Profile (active substep C2, C3 not started) |
-| Current phase | C2 implementation and validation complete → C3 entry per C brief |
-| Current version | 0.9.4.10 |
+| Current node | C — Calibration / INI Performance Profile (active substep C3, C4 not started) |
+| Current phase | C3 implementation and validation complete → C4 entry per C brief |
+| Current version | 0.9.4.11 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -102,6 +102,22 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
 - Profile is an initial estimate; live runtime state always has precedence.
 - D queue/worker topology and F hardware decode are not pulled into C.
 - Metrics not yet measurable are recorded with explicit measurement states.
+
+### C3 — Opportunistic Recalibration (→ 0.9.4.11, validated)
+
+- `DeviationTracker`: per-scan live-vs-feeding-baseline check, fires on
+  3 consecutive >25% deviations, resets after firing and on profile
+  switch/invalid input. Fixed policy (25/3/40%/±0.1, cap 0.95/floor 0.1).
+- Candidate must agree with firing live observation (40%) to replace;
+  mismatch keeps metrics and steps confidence down; failures leave the
+  file untouched. `[lastUpdate]` persisted (absent = never updated).
+- Engine `finishScan`: trigger evaluated on completed, profile-fed scans
+  with both live rates; bounded re-measure in try/catch; cancelled scans
+  excluded. CPU-only scans never enter evaluation.
+- Validation: CPU 66/66, GPU 67/67 (tracker, consistency, update/keep
+  reloads, `[lastUpdate]` round-trips); UI parity via
+  `scan_workflow_test`; `--version`/`--smoke` on both. Search semantics
+  unchanged.
 
 ### C2 — Initial Calibration (→ 0.9.4.10, validated)
 

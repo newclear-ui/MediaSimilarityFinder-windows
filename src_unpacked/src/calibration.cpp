@@ -1,6 +1,7 @@
 #include "calibration.h"
 #include "fingerprint.h"
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <ctime>
 #include <vector>
@@ -141,5 +142,45 @@ CalibrationResult Calibrator::run(const CalibrationConfig& cfg, GpuBackend* gpu)
   r.telemetry.profileId = r.profile.id;
   r.telemetry.profileVersion = std::to_string(PerformanceProfile::kProfileVersion);
   return r;
+}
+void DeviationTracker::reset() {
+  consecutive_ = 0;
+  lastProfileId_.clear();
+  armed_ = false;
+}
+void DeviationTracker::resetForProfile(const std::string& profileId) {
+  if (!armed_ || profileId != lastProfileId_) {
+    consecutive_ = 0;
+    lastProfileId_ = profileId;
+    armed_ = true;
+  }
+}
+bool DeviationTracker::feed(double liveCpu, double liveGpu, double profCpu, double profGpu,
+                            const std::string& profileId) {
+  resetForProfile(profileId);
+  const bool valid = liveCpu > 0 && liveGpu > 0 && profCpu > 0 && profGpu > 0;
+  bool deviating = false;
+  if (valid) {
+    const double dc = std::fabs(liveCpu - profCpu) / profCpu;
+    const double dg = std::fabs(liveGpu - profGpu) / profGpu;
+    deviating = dc > policy_.threshold || dg > policy_.threshold;
+  }
+  // Invalid or agreeing observations break the run: only repetition fires.
+  if (!deviating) {
+    consecutive_ = 0;
+    return false;
+  }
+  ++consecutive_;
+  if (consecutive_ >= policy_.repetitions) {
+    consecutive_ = 0; // fresh run required for the next trigger
+    return true;
+  }
+  return false;
+}
+bool DeviationTracker::candidateConsistent(double candCpu, double candGpu,
+                                           double liveCpu, double liveGpu, double tol) {
+  if (candCpu <= 0 || candGpu <= 0 || liveCpu <= 0 || liveGpu <= 0 || tol < 0) return false;
+  return std::fabs(candCpu - liveCpu) / liveCpu <= tol &&
+         std::fabs(candGpu - liveGpu) / liveGpu <= tol;
 }
 }

@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.10 |
+| 기준 코드 | 0.9.4.11 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | C — Calibration / INI Performance Profile (활성 substep C2, C3 미착수) |
-| 현재 단계 | C2 구현·검증 완료 → C3 진입은 C brief 기준 |
-| 현재 버전 | 0.9.4.10 |
+| 현재 노드 | C — Calibration / INI Performance Profile (활성 substep C3, C4 미착수) |
+| 현재 단계 | C3 구현·검증 완료 → C4 진입은 C brief 기준 |
+| 현재 버전 | 0.9.4.11 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -99,6 +99,21 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - Profile은 initial estimate이며 live runtime state가 항상 우선한다.
 - D queue/worker topology와 F hardware decode는 C에서 선행하지 않는다.
 - queue latency와 hardware decode가 아직 측정 불가능한 경우 explicit measurement state로 기록한다.
+
+### C3 — Opportunistic Recalibration (→ 0.9.4.11, 검증됨)
+
+- `DeviationTracker`: 스캔당 live-vs-feeding-baseline 검사, 25% 초과
+  3연속에만 발화, 발화·교체·무효 입력에 리셋. 고정 정책(25/3/40%/
+  ±0.1, 상한 0.95/하한 0.1).
+- 후보는 발화 live 관측과 40% 이내 일치해야 교체. 불일치는 metrics
+  유지 + confidence 하향. 실패는 파일 무수정. `[lastUpdate]` 영속화
+  (부재 = 미갱신).
+- 엔진 `finishScan`: 완료·profile-fed·양쪽 live 실측 스캔에만 trigger
+  평가, bounded 재측정 + try/catch, 취소 스캔 제외. CPU-only 스캔은
+  평가 진입 불가.
+- 검증: CPU 66/66, GPU 67/67(tracker·일관성·update/keep reload·
+  `[lastUpdate]` round-trip), `scan_workflow_test`로 UI parity, 양쪽
+  `--version`/`--smoke`. 검색 의미 불변.
 
 ### C2 — Initial Calibration (→ 0.9.4.10, 검증됨)
 

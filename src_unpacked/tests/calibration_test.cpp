@@ -113,6 +113,97 @@ int main() {
       check(off.profile.cpuThroughput.state == MeasureState::Measured, "off-cpu-ok");
     }
   }
+  // 5. C3 tracker: normal runtime never fires.
+  {
+    msf::DeviationTracker t;
+    check(!t.feed(120.0, 480.0, 120.0, 480.0, "id1"), "t-normal-1");
+    check(!t.feed(125.0, 470.0, 120.0, 480.0, "id1"), "t-normal-2");
+    check(t.consecutive() == 0, "t-normal-count");
+  }
+  // 6. C3 tracker: a single outlier never fires.
+  {
+    msf::DeviationTracker t;
+    check(!t.feed(120.0, 480.0, 120.0, 480.0, "id1"), "t-out-base");
+    check(!t.feed(10.0, 480.0, 120.0, 480.0, "id1"), "t-out-single");
+    check(t.consecutive() == 1, "t-out-count");
+    check(!t.feed(120.0, 480.0, 120.0, 480.0, "id1"), "t-out-recover");
+    check(t.consecutive() == 0, "t-out-reset");
+  }
+  // 7. C3 tracker: repeated deviation fires exactly once per run.
+  {
+    msf::DeviationTracker t;
+    check(!t.feed(60.0, 480.0, 120.0, 480.0, "id1"), "t-rep-1");
+    check(!t.feed(60.0, 480.0, 120.0, 480.0, "id1"), "t-rep-2");
+    check(t.feed(60.0, 480.0, 120.0, 480.0, "id1"), "t-rep-fire");
+    check(t.consecutive() == 0, "t-rep-reset");
+    check(!t.feed(60.0, 480.0, 120.0, 480.0, "id1"), "t-rep-fresh");
+  }
+  // 8. C3 tracker: profile switch resets the run; invalid inputs never fire.
+  {
+    msf::DeviationTracker t;
+    check(!t.feed(60.0, 480.0, 120.0, 480.0, "id1"), "t-sw-1");
+    check(!t.feed(60.0, 480.0, 120.0, 480.0, "id2"), "t-sw-reset");
+    check(t.consecutive() == 1, "t-sw-count");
+    check(!t.feed(-1.0, 480.0, 120.0, 480.0, "id2"), "t-invalid");
+    check(t.consecutive() == 0, "t-invalid-reset");
+    // CPU-only-like scan (no GPU observation) never feeds the trigger.
+    check(!t.feed(90.0, -1.0, 120.0, 480.0, "id2"), "t-cpuonly");
+    check(t.consecutive() == 0, "t-cpuonly-count");
+  }
+  // 9. C3 candidate consistency + update record round-trip.
+  {
+    check(msf::DeviationTracker::candidateConsistent(115.0, 470.0, 120.0, 480.0, 0.40),
+          "cand-consistent");
+    check(!msf::DeviationTracker::candidateConsistent(300.0, 480.0, 120.0, 480.0, 0.40),
+          "cand-inconsistent");
+    check(!msf::DeviationTracker::candidateConsistent(0.0, 480.0, 120.0, 480.0, 0.40),
+          "cand-invalid");
+    // Consistent update: metrics replaced, confidence stepped, record kept.
+    const std::string path = tmpIni("calib-update.ini");
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    msf::ProfileStore s;
+    msf::PerformanceProfile p;
+    msf::ProfileIdentity id = testIdentity();
+    p.identity = id;
+    p.confidence = 0.7;
+    p.cpuThroughput = {120.0, MeasureState::Measured};
+    p.gpuThroughput = {480.0, MeasureState::Measured};
+    s.setProfile(p);
+    check(s.save(path), "upd-save");
+    msf::ProfileStore r;
+    check(r.load(path), "upd-load");
+    msf::PerformanceProfile upd = r.profile();
+    const double oldConf = upd.confidence;
+    upd.cpuThroughput = {110.0, MeasureState::Measured};
+    upd.gpuThroughput = {450.0, MeasureState::Measured};
+    upd.confidence = std::min(0.95, oldConf + 0.1);
+    upd.lastUpdate = {"recalibration_consistent", upd.id, oldConf, upd.confidence, true};
+    msf::ProfileStore w;
+    w.setProfile(upd);
+    check(w.save(path), "upd-save2");
+    msf::ProfileStore r2;
+    check(r2.load(path), "upd-reload");
+    const auto& q = r2.profile();
+    check(q.cpuThroughput.value == 110.0, "upd-values");
+    check(q.lastUpdate.present, "upd-present");
+    check(q.lastUpdate.reason == "recalibration_consistent", "upd-reason");
+    check(q.lastUpdate.oldProfileId == q.id, "upd-ids");
+    check(q.lastUpdate.oldConfidence == 0.7 && q.lastUpdate.newConfidence > 0.7, "upd-conf");
+    // Inconsistent keep: metrics kept, confidence stepped down, record kept.
+    msf::PerformanceProfile kp = q;
+    const double kc = kp.confidence;
+    kp.confidence = std::max(0.1, kc - 0.1);
+    kp.lastUpdate = {"recalibration_inconsistent", kp.id, kc, kp.confidence, true};
+    msf::ProfileStore w2;
+    w2.setProfile(kp);
+    check(w2.save(path), "keep-save");
+    msf::ProfileStore r3;
+    check(r3.load(path), "keep-reload");
+    check(r3.profile().cpuThroughput.value == 110.0, "keep-values");
+    check(r3.profile().confidence < kc, "keep-conf");
+    check(r3.profile().lastUpdate.reason == "recalibration_inconsistent", "keep-reason");
+  }
   if (failures) {
     std::cerr << "calibration failures=" << failures << "\n";
     return 1;

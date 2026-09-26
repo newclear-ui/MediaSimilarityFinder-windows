@@ -33,6 +33,17 @@ struct ProfileMetric {
   double value = 0;
   MeasureState state = MeasureState::NotMeasured;
 };
+// C3: last profile update record (brief §5 [lastUpdate]). Written on every
+// recalibration decision (consistent update or inconsistent keep); absent
+// means "never updated since creation". Old/new ids are usually equal
+// (identity-based ids); they are kept to show continuity, not change.
+struct ProfileUpdateRecord {
+  std::string reason; // recalibration_consistent | recalibration_inconsistent
+  std::string oldProfileId;
+  double oldConfidence = 0;
+  double newConfidence = 0;
+  bool present = false;
+};
 struct PerformanceProfile {
   static constexpr int kProfileVersion = 1;
   // Opaque stable id: FNV-1a hex over the canonical identity. Same hardware
@@ -52,6 +63,7 @@ struct PerformanceProfile {
   // scheduler's cost term converts with bytes-per-unit at use time.
   ProfileMetric transferBandwidthMBps; // MB/s (C2 measures)
   ProfileMetric queueLatencyMs;   // ms (D1 instruments; C1: not_measured)
+  ProfileUpdateRecord lastUpdate; // C3: last recalibration decision
 };
 enum class ProfileMatch { Missing, Exact, Soft, Hard, Stale };
 struct InitialEstimate {

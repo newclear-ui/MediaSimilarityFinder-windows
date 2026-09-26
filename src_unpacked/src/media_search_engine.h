@@ -5,6 +5,7 @@
 #include "resource_policy.h"
 #include "scheduler.h"
 #include "profile.h"
+#include "calibration.h"
 #include "video_fingerprint.h"
 #include "gpu_backend.h"
 #include "index_manager.h"
@@ -118,8 +119,10 @@ const std::vector<MediaFile>& files() const { return files_; }
   // B1 Minimal Adaptive Allocation: decided per scan, re-evaluated at
   // existing phase points. Gates backend use; never touches workers/queues.
   // B2: image-path recent-throughput windows feed observed rates in.
+  // C3: consecutive-deviation trigger for opportunistic recalibration.
   CpuGpuScheduler scheduler_;
   ThroughputWindow schedCpuWin_, schedGpuWin_;
+  DeviationTracker recalTracker_;
   struct ColorThumb { int w=0, h=0; std::vector<unsigned char> bgra; };
   static constexpr std::size_t kColorThumbMax = 2048;
   mutable std::mutex thumbMutex_;

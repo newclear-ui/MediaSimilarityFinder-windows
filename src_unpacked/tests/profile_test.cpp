@@ -228,6 +228,31 @@ int main() {
     check(d.reason == "profile_baseline", "delivery-reason");
     check(d.gpuUsed && d.backend == "CUDA", "delivery-meta");
   }
+  // 13. [lastUpdate] round-trip; absent section stays absent.
+  {
+    const std::string path = tmpIni("lastupdate.ini");
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    ProfileStore s;
+    msf::PerformanceProfile p = makeProfile();
+    check(!p.lastUpdate.present, "lu-absent-default");
+    s.setProfile(p);
+    check(s.save(path), "lu-save-absent");
+    ProfileStore r;
+    check(r.load(path), "lu-load-absent");
+    check(!r.profile().lastUpdate.present, "lu-stays-absent");
+    msf::PerformanceProfile q = r.profile();
+    q.lastUpdate = {"recalibration_consistent", q.id.empty() ? "x" : q.id, 0.7, 0.8, true};
+    const std::string qid = q.id;
+    ProfileStore w;
+    w.setProfile(q);
+    check(w.save(path), "lu-save-present");
+    ProfileStore r2;
+    check(r2.load(path), "lu-load-present");
+    const auto& lu = r2.profile().lastUpdate;
+    check(lu.present && lu.reason == "recalibration_consistent", "lu-values");
+    check(lu.oldProfileId == qid && lu.oldConfidence == 0.7 && lu.newConfidence == 0.8, "lu-conf");
+  }
   if (failures) {
     std::cerr << "profile failures=" << failures << "\n";
     return 1;

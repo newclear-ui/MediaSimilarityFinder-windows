@@ -44,4 +44,40 @@ class Calibrator {
 public:
   CalibrationResult run(const CalibrationConfig& cfg, GpuBackend* gpu);
 };
+// Node C3: Opportunistic Recalibration trigger.
+//
+// A single outlier must never replace a profile: only K consecutive scans
+// whose live observation deviates from the feeding baseline fire the
+// trigger. Thresholds are fixed policy (build-history), not tunables:
+// deviation above 25% on either rate counts; 3 in a row fires.
+// Candidate consistency uses 40% tolerance against the triggering live
+// observation; confidence moves in 0.1 steps (cap 0.95, floor 0.1).
+struct DeviationPolicy {
+  double threshold = 0.25;
+  int repetitions = 3;
+  double consistencyTol = 0.40;
+  double confidenceStep = 0.1;
+  double confidenceMax = 0.95;
+  double confidenceMin = 0.1;
+};
+class DeviationTracker {
+public:
+  void configure(const DeviationPolicy& p) { policy_ = p; }
+  void reset();
+  void resetForProfile(const std::string& profileId);
+  // One scan's live observation vs the profile baseline that fed it.
+  // Returns true exactly on the firing scan (counter resets after fire
+  // so the next trigger needs a fresh repetition run).
+  bool feed(double liveCpu, double liveGpu, double profCpu, double profGpu,
+            const std::string& profileId);
+  int consecutive() const { return consecutive_; }
+  // Fresh candidate agrees with the triggering live observation?
+  static bool candidateConsistent(double candCpu, double candGpu,
+                                  double liveCpu, double liveGpu, double tol);
+private:
+  DeviationPolicy policy_;
+  int consecutive_ = 0;
+  std::string lastProfileId_;
+  bool armed_ = false;
+};
 }

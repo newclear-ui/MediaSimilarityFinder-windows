@@ -184,6 +184,10 @@ bool ProfileStore::load(const std::string& path) {
     else if (q == "metric.transferBandwidthMBps.state") { if (!parseState(dval, p.transferBandwidthMBps.state)) return false; }
     else if (q == "metric.queueLatencyMs") { if (!parseDouble(dval, p.queueLatencyMs.value)) return false; }
     else if (q == "metric.queueLatencyMs.state") { if (!parseState(dval, p.queueLatencyMs.state)) return false; }
+    else if (q == "lastUpdate.reason") { p.lastUpdate.reason = dval; p.lastUpdate.present = true; }
+    else if (q == "lastUpdate.oldProfileId") { p.lastUpdate.oldProfileId = dval; p.lastUpdate.present = true; }
+    else if (q == "lastUpdate.oldConfidence") { if (!parseDouble(dval, p.lastUpdate.oldConfidence)) return false; p.lastUpdate.present = true; }
+    else if (q == "lastUpdate.newConfidence") { if (!parseDouble(dval, p.lastUpdate.newConfidence)) return false; p.lastUpdate.present = true; }
     // Unknown keys/sections ignored: forward compatibility for new fields.
   }
   if (!seenVersion) return false;
@@ -231,6 +235,13 @@ bool ProfileStore::save(const std::string& path) {
     writeMetric(o, "metric", "decodeThroughput", profile_.decodeThroughput);
     writeMetric(o, "metric", "transferBandwidthMBps", profile_.transferBandwidthMBps);
     writeMetric(o, "metric", "queueLatencyMs", profile_.queueLatencyMs);
+    if (profile_.lastUpdate.present) {
+      o << "[lastUpdate]\n";
+      o << "reason=" << escapeIni(profile_.lastUpdate.reason) << "\n";
+      o << "oldProfileId=" << escapeIni(profile_.lastUpdate.oldProfileId) << "\n";
+      o << "oldConfidence=" << profile_.lastUpdate.oldConfidence << "\n";
+      o << "newConfidence=" << profile_.lastUpdate.newConfidence << "\n";
+    }
     std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
     if (!f) return false;
     f << o.str();
