@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.3 |
+| 기준 코드 | 0.9.4.4 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | B — Adaptive Scheduler (활성 substep B2, B3 미착수) |
-| 현재 단계 | B2 구현·검증 완료 → B3 진입은 brief 검토 후 |
-| 현재 버전 | 0.9.4.3 |
+| 현재 노드 | B — Adaptive Scheduler (활성 substep B3, B4 미착수) |
+| 현재 단계 | B3 구현·검증 완료 → B4 진입은 brief 검토 후 |
+| 현재 버전 | 0.9.4.4 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -87,6 +87,19 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### B3 — Live Load Awareness (→ 0.9.4.4, 검증됨)
+
+- `SchedulerHardware`에 시스템 부하 입력(cpu/gpu/mem + known 플래그,
+  queue depth는 D1 예약으로 동승·판단에서 무시). headroom 규칙: CPU
+  하한 0.05, GPU 하한 없음, mem은 기록만. 완전 GPU kill 시
+  `external_load_throttle` + edge 카운트.
+- 엔진은 스캔당 `SystemLoadMonitor` 1개를 decide/재평가 지점에서
+  갱신한다. `externalLoadThrottling`은 edge 카운터로 채우고,
+  `throttlingEvents`는 B4+ 몫으로 0 유지.
+- 검증: CPU 64/64, GPU 65/65(`scheduler_test` 내 B3 추가분),
+  `scan_workflow_test`로 UI parity, 양쪽 `--version`/`--smoke`.
+  검색 의미 불변. 스무딩·hysteresis 없음(B4), transfer/workload 없음(B5).
 
 ### B2 — Runtime Throughput Feedback (→ 0.9.4.3, 검증됨)
 
@@ -192,6 +205,13 @@ A
 - 실패했던 시도
 - 해결 후 결과
 - 다음 gate 영향
+
+### B3 구현 과정의 기록
+
+- B3 (멤버 중복): 헤더 편집 중 `last_`/`decided_`/`lastHw_` 중복
+  선언(C2086). 중복 블록 삭제, 로직 변경 없음.
+- B3 기지 동작: 부하 기반 share jitter는 그대로 기록된다(adjustment
+  카운터가 시스템을 따라 움직임). damp는 B4 범위.
 
 ### B2 구현 과정의 기록
 

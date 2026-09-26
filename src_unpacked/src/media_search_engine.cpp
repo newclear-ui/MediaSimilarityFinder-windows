@@ -6,6 +6,7 @@
 #include "incremental_scanner.h"
 #include "media_pipeline.h"
 #include "video_fingerprint.h"
+#include "monitor.h"
 #include "similarity.h"
 #include <filesystem>
 #include <unordered_map>
@@ -241,6 +242,19 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   scheduler_.reset();
   schedCpuWin_.clear();
   schedGpuWin_.clear();
+  // B3: live system load via the existing sampler (CPU delta needs one
+  // priming call; GPU % is cached 3 s inside the sampler, so the 2 s
+  // re-evaluation cadence costs no extra nvidia-smi spawn).
+  SystemLoadMonitor schedLoadmon;
+  schedLoadmon.sample();
+  auto refreshSchedLoad = [&]() {
+    const SystemLoad sl = schedLoadmon.sample();
+    schedHw.cpuLoadKnown = true; schedHw.cpuLoad = sl.cpuPercent;
+    schedHw.gpuLoadKnown = sl.gpuPercent >= 0;
+    schedHw.gpuLoad = sl.gpuPercent >= 0 ? sl.gpuPercent : 0;
+    schedHw.memKnown = true; schedHw.memPressure = sl.memoryPercent;
+  };
+  refreshSchedLoad();
   const SchedulerDecision sched0 = scheduler_.decide(schedHw);
   const bool schedUseGpu = sched0.gpuUsed;
   const bool benchOn = !control || control->benchmarkEnabled;
@@ -270,6 +284,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       st.cpuWorkShare = sd.cpuShare;
       st.gpuWorkShare = sd.gpuShare;
       st.adjustmentCount = scheduler_.adjustments();
+      st.throttlingEvents = 0; // B4+: hysteresis/policy events
+      st.externalLoadThrottling = scheduler_.throttles();
       st.selectedBackend = sd.backend;
       st.backendFallbacks = (std::uint64_t)r.gpuFallbackImages + bench_.videoGpuFallbacks();
     }
@@ -314,6 +330,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    const auto bt0=std::chrono::steady_clock::now();
    // B1 re-evaluation point (existing phase boundary; no topology change).
    // B2: refresh observed image-path rates first (unknown until 2+ batches).
+   // B3: refresh live loads alongside (cheap: GPU % cached in the sampler).
+   refreshSchedLoad();
    {
      const double nowS = std::chrono::duration<double>(bt0.time_since_epoch()).count();
      const double cpuR = schedCpuWin_.rate(nowS), gpuR = schedGpuWin_.rate(nowS);
@@ -350,6 +368,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // GPU image batching independent from the video decoder architecture.
   auto processVideoRange=[&](std::size_t from,std::size_t to)->bool{
    // B1 re-evaluation point (existing phase boundary; no topology change).
+   // B3: video carries no new throughput observation, but loads refresh.
+   refreshSchedLoad();
    scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
    std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){

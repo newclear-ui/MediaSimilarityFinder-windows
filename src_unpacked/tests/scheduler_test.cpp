@@ -186,5 +186,56 @@ int b2checks() {
     checkB2(s.lastDecision().reason == "observed_throughput", "chg-reason");
     checkB2(near(s.lastDecision().gpuShare, 90.0), "chg-shares");
   }
+  // 5. B3: busy CPU scales its effective capacity (floored, never zeroed).
+  {
+    CpuGpuScheduler s;
+    SchedulerHardware hw;
+    hw.cpuThreads = 10; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 10; hw.backendName = "CUDA";
+    hw.cpuLoadKnown = true; hw.cpuLoad = 80.0;
+    const auto d = s.decide(hw);
+    // effCpu = 10 * 0.2 = 2, effGpu = 10 -> gpuShare = 10/12.
+    checkB2(near(d.gpuShare, 100.0 * 10 / 12), "load-cpu-shares");
+    checkB2(d.gpuUsed && d.reason == "proportional_baseline", "load-cpu-meta");
+    double ec = 0, eg = 0;
+    s.currentCapacities(ec, eg);
+    checkB2(near(ec, 2.0) && near(eg, 10.0), "load-cpu-effective");
+  }
+  // 6. B3: fully contended GPU kills its share, counts one throttle edge.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    SchedulerHardware hw;
+    hw.cpuThreads = 8; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
+    s.decide(hw);
+    checkB2(s.lastDecision().gpuUsed, "thr-start");
+    hw.gpuLoadKnown = true; hw.gpuLoad = 100.0;
+    checkB2(s.maybeReevaluate(hw, 1000), "thr-reeval");
+    const auto d = s.lastDecision();
+    checkB2(!d.gpuUsed && d.backend == "CPU", "thr-kill");
+    checkB2(d.reason == "external_load_throttle", "thr-reason");
+    checkB2(s.throttles() == 1, "thr-edge");
+    // Sustained contention does not inflate the edge counter.
+    checkB2(s.maybeReevaluate(hw, 2000), "thr-reeval2");
+    checkB2(s.throttles() == 1, "thr-no-inflate");
+    // Relief returns to GPU use.
+    hw.gpuLoad = 0.0;
+    checkB2(s.maybeReevaluate(hw, 3000), "thr-relief");
+    checkB2(s.lastDecision().gpuUsed, "thr-back");
+  }
+  // 7. B3: unknown loads behave exactly as B2 (no penalty for missing data).
+  {
+    CpuGpuScheduler s;
+    SchedulerHardware hw;
+    hw.cpuThreads = 16; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 80; hw.backendName = "CUDA";
+    const auto d = s.decide(hw);
+    checkB2(near(d.gpuShare, 100.0 * 80 / 96), "noload-shares");
+    // memPressure is recorded input only in B3: no share effect.
+    hw.memKnown = true; hw.memPressure = 99.0;
+    const auto d2 = s.decide(hw);
+    checkB2(near(d2.gpuShare, d.gpuShare), "mem-no-effect");
+  }
   return 0;
 }

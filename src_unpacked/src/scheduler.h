@@ -38,6 +38,17 @@ struct SchedulerHardware {
   // unknown values are never numeric zero (Node A measurement rule).
   bool cpuRateKnown = false, gpuRateKnown = false;
   double cpuRate = 0, gpuRate = 0;
+  // B3: live system load (percent). System readings include our own usage;
+  // the rules below treat them as headroom signals with documented floors,
+  // not as precise external-load attribution (that model is B3-simple;
+  // self-attribution arrives with B4+ runtime accounting).
+  bool cpuLoadKnown = false, gpuLoadKnown = false, memKnown = false;
+  double cpuLoad = 0, gpuLoad = 0, memPressure = 0;
+  // D1-reserved: queue depths have no producer on the scan path yet.
+  // B3 carries the fields so D1 fills them without interface churn;
+  // evaluate() ignores them until then.
+  bool queueKnown = false;
+  double cpuQueueDepth = 0, gpuQueueDepth = 0;
 };
 struct SchedulerDecision {
   double cpuShare = 100.0, gpuShare = 0.0; // percent, sum to 100
@@ -60,6 +71,8 @@ public:
   bool hasDecision() const { return decided_; }
   std::uint64_t evaluations() const { return evaluations_; }
   std::uint64_t adjustments() const { return adjustments_; }
+  // B3: transitions into load-driven GPU kill (edge-counted).
+  std::uint64_t throttles() const { return throttles_; }
   // Effective capacities for telemetry: observed rates when both backends
   // reported recently (same image/sec units), else the baselines.
   void currentCapacities(double& cpu, double& gpu) const;
@@ -67,9 +80,15 @@ public:
 private:
   static SchedulerDecision evaluate(const SchedulerHardware& hw);
   static bool sameDecision(const SchedulerDecision& a, const SchedulerDecision& b);
+  // B3: headroom scaling shared by evaluate() and currentCapacities().
+  // outThrottled is set when live load kills a GPU share the base rule kept.
+  static void effectivePair(const SchedulerHardware& hw, double& cpu, double& gpu,
+                            std::string& reason, bool& throttled);
   SchedulerDecision last_;
   bool decided_ = false;
   SchedulerHardware lastHw_;
+  bool lastThrottled_ = false;
+  std::uint64_t throttles_ = 0;
   long long reevalIntervalMs_ = 2000;
   long long lastEvalTickMs_ = -1;
   std::uint64_t evaluations_ = 0, adjustments_ = 0;

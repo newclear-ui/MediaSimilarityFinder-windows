@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.3 |
+| Reference code | 0.9.4.4 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | B — Adaptive Scheduler (active substep B2, B3 not started) |
-| Current phase | B2 implementation and validation complete → B3 entry pending brief review |
-| Current version | 0.9.4.3 |
+| Current node | B — Adaptive Scheduler (active substep B3, B4 not started) |
+| Current phase | B3 implementation and validation complete → B4 entry pending brief review |
+| Current version | 0.9.4.4 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -90,6 +90,20 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### B3 — Live Load Awareness (→ 0.9.4.4, validated)
+
+- System-load inputs on `SchedulerHardware` (cpu/gpu/mem + known flags;
+  queue depths ride along D1-reserved, ignored by evaluation).
+  Headroom rule: CPU floored at 0.05, GPU floorless, mem recorded only.
+  Full GPU kill → `external_load_throttle` + edge count.
+- Engine holds one `SystemLoadMonitor` per scan, refreshed at decide /
+  re-evaluation points. `externalLoadThrottling` filled from the edge
+  counter; `throttlingEvents` stays 0 for B4+.
+- Validation: CPU 64/64, GPU 65/65 (B3 additions in `scheduler_test`);
+  UI parity via `scan_workflow_test`; `--version`/`--smoke` on both.
+  Search semantics unchanged. No smoothing/hysteresis (B4), no
+  transfer/workload cost (B5).
 
 ### B2 — Runtime Throughput Feedback (→ 0.9.4.3, validated)
 
@@ -196,6 +210,13 @@ Each substep records:
 - failed attempts
 - result after the fix
 - impact on the next gate
+
+### B3 records from the implementation
+
+- B3 (member duplication): a header edit duplicated `last_`/`decided_`/
+  `lastHw_` (C2086). Removed the duplicate block; no logic change.
+- Known B3 behavior: load-driven share jitter is recorded as-is
+  (adjustment counter moves with the system). Damping is B4's scope.
 
 ### B2 records from the implementation
 
