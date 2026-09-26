@@ -88,6 +88,19 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   (real clicks, screen reading) = NOT_VALIDATED — reserved for a Windows
   interactive session, never recorded as PASS without running it.
 
+## Node B/C/D detailed-design state
+
+Node B and D are **new design work**. Node C is **partial reuse and extension of the existing profile/benchmark concepts**.
+
+Detailed implementation contracts live under `docs/implementation-briefs/`. The Roadmap keeps direction and boundaries; implementation stages are not duplicated there.
+
+Current B/C/D briefs:
+- `docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md`
+- `docs/implementation-briefs/C-calibration-profile.ko.md / .en.md`
+- `docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md`
+
+The active implementation target is B. B begins with small, verifiable B1 steps. D pipeline internals must not be implemented prematurely inside B.
+
 ## Node A — Foundation / Terminology / Instrumentation
 
 ### Current goals
@@ -206,6 +219,8 @@ When starting new work, OpenCode reads:
 3. development-progress.ko.md or .en.md
 4. relevant architecture documentation
 5. required source and tests
+
+When an implementation brief exists for the active node, OpenCode also reads that KO/EN brief with the relevant architecture documentation.
 
 It checks the current node's exit criteria before implementation.
 
