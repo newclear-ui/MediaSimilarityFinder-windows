@@ -1,5 +1,20 @@
 # Development Roadmap — 0.9.4 개발선
 
+## 문서 계층
+
+Roadmap과 세부 implementation brief는 역할을 분리합니다.
+
+- **Roadmap**: 전체 방향, 의존관계, Node 경계, 변경 관리 규칙.
+- **Progress**: 현재 실제 Node, blocker, 검증 상태, recovery history.
+- **Implementation Brief**: 현재 활성 Node를 구현하기 위한 집중된 기술 계약. 단계별 범위, 경계, telemetry, 종료 조건을 기록합니다.
+- **Build History**: 실제 버전에서 무엇을 변경했고 어떻게 검증했는지의 증거.
+
+현재 B/C/D 세부 문서:
+
+- `docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md`
+- `docs/implementation-briefs/C-calibration-profile.ko.md / .en.md`
+- `docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md`
+
 이 문서는 0.9.4 개발선의 상위 개발 방향과 실행 순서를 정의합니다.
 
 핵심 원칙은 개발 단계와 빌드 번호를 분리하는 것입니다.
@@ -97,46 +112,33 @@ B에서 문제가 발생한 경우의 예:
 
 ## Node B — Adaptive Scheduler
 
-고정 50:50이 아닌 실효 처리능력 기반으로 CPU/GPU 작업량을 동적으로 조정합니다.
+B는 **실효 처리능력 기반의 CPU/GPU 작업 배분 정책**을 담당합니다. 고정 50:50이 아니며 GPU utilization 자체를 최적화 목표로 삼지 않습니다.
 
-입력:
-- CPU/GPU baseline capacity
-- backend/decoder capability
-- 실시간 CPU/GPU 부하
-- memory/VRAM
-- CPU/GPU queue
-- 최근 throughput
-- transfer cost
-- workload cost
-- 외부 프로그램 부하
+세부 구현:
+- `docs/implementation-briefs/B-adaptive-scheduler.ko.md`
+- B1 최소 배분 → B2 throughput → B3 live load → B4 안정화 → B5 cost → B6 Resource Mode → B7 최종 gate
 
-필수:
-- GPU utilization 자체를 최적화 목표로 삼지 않음
-- 느린 GPU는 CPU 중심 또는 CPU-only로 수렴 가능
-- Gaming은 보수적 adaptive policy
-- Manual은 CPU 제약만 사용자 지정
-- moving average / hysteresis / minimum hold time
-- scheduler decision을 benchmark에 기록
+B의 경계는 "작업을 어디에 얼마나 배분할 것인가"이며 실제 queue/worker/pipeline 구현은 D에 둡니다.
 
 ## Node C — Calibration / INI Performance Profile
 
-장기 baseline과 현재 실행의 실측값을 분리합니다.
+C는 기존 profile/benchmark 구조를 **부분 재사용하면서 확장**합니다.
 
-CPU/GPU fingerprint, resize/conversion, decode, transfer, queue latency 등을 짧게 측정하고 profile id/version/confidence/timestamp를 INI에 저장합니다.
+상대적으로 안정적인 baseline과 live measurement를 분리하고 profile id/version/confidence 등을 INI에 저장하여 Scheduler의 초기 추정값으로 제공합니다. Live runtime state가 항상 우선합니다.
 
-INI는 다음 실행의 초기 추정값이며 live runtime state보다 우선하지 않습니다.
+세부 구현:
+- `docs/implementation-briefs/C-calibration-profile.ko.md`
 
 ## Node D — Pipeline / Queue Optimization
 
-CPU와 GPU의 병렬성을 높이고 barrier와 worker starvation을 줄입니다.
+D는 **신규 pipeline/queue 설계**입니다. Scheduler가 결정한 작업을 실제로 어떻게 흘려보낼지 담당하며 barrier, worker starvation, queue imbalance, transfer stall, 불필요한 serialization을 줄입니다.
 
-CPU decode / analysis → GPU hashing / verification → CPU result / DB
+첫 단계에서는 기존 구조를 크게 바꾸지 않고 관측성을 확보한 뒤 단계적으로 최적화합니다.
 
-필요하면:
+세부 구현:
+- `docs/implementation-briefs/D-pipeline-queue.ko.md`
 
-Hardware Decode → GPU resize / hash → CPU result / DB
-
-worker 수 증가만으로 해결하지 않고 queue depth, wait, batching, transfer, stage overlap을 함께 측정합니다.
+B와 D는 역할을 섞지 않습니다. B는 allocation policy, D는 execution pipeline입니다.
 
 ## Node E — Adaptive Video Decode Planner
 
