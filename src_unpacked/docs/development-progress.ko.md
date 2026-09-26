@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.12 |
+| 기준 코드 | 0.9.4.13 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
 | 현재 노드 | C — Calibration / INI Performance Profile (C4 게이트 통과 → 다음 게이트 D) |
 | 현재 단계 | Node C 완료 → D 착수는 D brief 기준 (D1 관측성 우선) |
-| 현재 버전 | 0.9.4.12 |
+| 현재 버전 | 0.9.4.13 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -100,10 +100,10 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - D queue/worker topology와 F hardware decode는 C에서 선행하지 않는다.
 - queue latency와 hardware decode가 아직 측정 불가능한 경우 explicit measurement state로 기록한다.
 
-### C4 — Calibration Gate (→ 0.9.4.12, 통과)
+### C4 — Calibration Gate (→ 0.9.4.13, 통과)
 
 - 기능 추가 없음: 프롬프트 17조합을 증거에 연결(매핑은
-  `docs/build-history/0.9.4.12.ko.md`).
+  `docs/build-history/0.9.4.13.ko.md`).
 - 최소 추출 1건: `calibrationUsableForUpdate()` — 엔진이 쓰던 동일식,
   이제 단위 테스트 가능. 엔진 람다는 호출로 교체(동작 동일).
 - C4 단언: Exact 10연속 무발화, 실패/부분 불가 판정, 실패 후 파일
@@ -449,3 +449,8 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
 - Next Gate
 
 **이 문서는 미래 계획을 예측하는 문서가 아니라 현재 개발 위치를 잃지 않기 위한 상태 기록입니다.**
+
+
+### C4.1 — Calibration Lifecycle Fix (→ 0.9.4.13)
+- **GPT Fix:** GPU OFF→ON incomplete-profile lifecycle, default 30-day stale enforcement, CPU model/GPU driver identity completion, and failed-retry preservation.
+- Windows CPU/GPU Release build and full CTest validation: **PENDING**.
