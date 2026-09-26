@@ -86,6 +86,19 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
   단언), 인간 조작(실제 클릭·화면 판독) = NOT_VALIDATED — Windows
   대화식 세션용으로 남기며, 실행 없이 PASS로 기록하지 않는다.
 
+## Node B/C/D 상세 설계 상태
+
+Node B와 D는 **신규 설계**, Node C는 **기존 profile/benchmark 개념의 부분 재사용 + 확장**으로 분류한다.
+
+상세 구현 계약은 `docs/implementation-briefs/`에 둔다. Roadmap에는 방향과 경계만 두고 세부 구현 단계를 반복하지 않는다.
+
+현재 B/C/D 문서:
+- `docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md`
+- `docs/implementation-briefs/C-calibration-profile.ko.md / .en.md`
+- `docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md`
+
+현재 구현 대상은 B이며 B1부터 작은 검증 단위로 진입한다. D의 pipeline 내부 구조를 B에서 선행 구현하지 않는다.
+
 ## Node A — Foundation / Terminology / Instrumentation
 
 ### 현재 목표
@@ -205,6 +218,8 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
 3. development-progress.ko.md 또는 .en.md
 4. 현재 노드에 해당하는 architecture 문서
 5. 필요한 기존 소스와 테스트
+
+활성 Node에 implementation brief가 있으면 해당 KO/EN brief도 architecture 문서와 함께 읽습니다.
 
 현재 노드의 종료 조건을 먼저 확인한 뒤 구현합니다.
 
