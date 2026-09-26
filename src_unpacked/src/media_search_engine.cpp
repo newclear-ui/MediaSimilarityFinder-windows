@@ -295,7 +295,15 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
         // GPT Fix / C4.1: incomplete retry never overwrites an existing profile.
         const bool candidateComplete = calibrationUsableForUpdate(profCalib) || (!profStore.hasProfile() && profCalib.attempted && profCalib.failedStage.empty());
         if(candidateComplete) writer.save(profPath);
-        const InitialEstimate est = writer.initialEstimate(profCur, PerformanceProfile::kDefaultMaxAgeDays, nowSec);
+        // Failed/incomplete candidates are never scheduler baselines. A
+        // non-stale existing profile may still be reused; stale profiles
+        // deliberately fall back to hardware until a usable candidate exists.
+        InitialEstimate est;
+        if(candidateComplete) {
+          est = writer.initialEstimate(profCur, PerformanceProfile::kDefaultMaxAgeDays, nowSec);
+        } else if(profStore.hasProfile() && profVerdict != ProfileMatch::Stale) {
+          est = profStore.initialEstimate(profCur, PerformanceProfile::kDefaultMaxAgeDays, nowSec);
+        }
         if (est.cpuKnown && est.gpuKnown) {
           schedHw.profileBaselineKnown = true;
           schedHw.profileBaselineCpu = est.cpu;
