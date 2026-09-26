@@ -60,7 +60,7 @@
 
 - scripts/build_windows_gpu.ps1 -VcpkgRoot C:\src\vcpkg — GPU 빌드 진입점(0.9.4.x 목표; 현재 backend는 NVIDIA CUDA).
 - scripts/build_windows_cpu.ps1 -VcpkgRoot C:\src\vcpkg — CPU 빌드/CTest.
-- 현재 CMakeLists.txt에는 GPU 64개 / CPU 63개 CTest가 등록되어 있다.
+- 현재 CMakeLists.txt에는 GPU 65개 / CPU 64개 CTest가 등록되어 있다.
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - 버전 상향 파일(검색용): CMakeLists.txt, vcpkg.json, gui/main.cpp, scripts/package_portable.ps1, src/index_manager.cpp.
 

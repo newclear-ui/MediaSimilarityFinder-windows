@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.1 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -41,6 +41,7 @@ add_library(msf_core STATIC
     src/media_search_engine.cpp
     src/monitor.cpp
     src/benchmark.cpp
+    src/scheduler.cpp
 )
 target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 if(WIN32)
@@ -107,6 +108,10 @@ if(MSF_BUILD_TESTS)
     add_test(NAME video_similarity_test COMMAND msf_video_similarity_test)
     target_link_libraries(msf_resource_policy_test PRIVATE msf_core)
     add_test(NAME resource_policy_test COMMAND msf_resource_policy_test)
+    # Node B1: Minimal Adaptive Allocation decision-table regression.
+    add_executable(msf_scheduler_test tests/scheduler_test.cpp)
+    target_link_libraries(msf_scheduler_test PRIVATE msf_core)
+    add_test(NAME scheduler_test COMMAND msf_scheduler_test)
     target_link_libraries(msf_similarity_engine_test PRIVATE msf_core)
     add_test(NAME similarity_engine_test COMMAND msf_similarity_engine_test)
     target_link_libraries(msf_similarity_parallel_test PRIVATE msf_core)

@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.1 |
+| 기준 코드 | 0.9.4.2 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | A — Foundation / Terminology / Instrumentation (종료 게이트 통과 → 다음 게이트 B) |
-| 현재 단계 | Node A 구현·검증 완료 → B 진입 가능 |
-| 현재 버전 | 0.9.4.1 |
+| 현재 노드 | B — Adaptive Scheduler (활성 substep B1, B2 미착수) |
+| 현재 단계 | B1 구현·검증 완료 → B2 진입은 brief 검토 후 |
+| 현재 버전 | 0.9.4.2 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -87,6 +87,20 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### B1 — Minimal Adaptive Allocation (→ 0.9.4.2, 검증됨)
+
+- `CpuGpuScheduler`(`src/scheduler.h/.cpp`): baseline 전용 입력(CPU
+  스레드·GPU ON/OFF·가용성·SM 수), 비례 배분, reason 코드, 기존 단계
+  지점에서 2000ms 재평가 주기. moving average·hysteresis·transfer·
+  workload·외부 부하 모델 없음. pipeline·worker·queue 변경 없음.
+- 엔진 배선: 스캔당 1회 `decide()`, 이미지/비디오 게이트가 판단값을
+  읽는다(기존 플래그와 동작 동일). `finishScan`에서 scheduler 섹션을
+  `measured`로 기록한다(shares·backend·조정 횟수·이미지+비디오
+  fallback 합).
+- 검증: CPU 64/64, GPU 65/65(신규 `scheduler_test` 포함: B1 판단표·
+  주기·telemetry JSON 양쪽 통과), `scan_workflow_test`로 UI parity,
+  양쪽 `--version`/`--smoke`. 검색 의미 불변(엔진 1.5.0·DB 1.0.3·캐시 v9).
 
 ## Node B/C/D 상세 설계 상태
 
@@ -165,6 +179,15 @@ A
 - 실패했던 시도
 - 해결 후 결과
 - 다음 gate 영향
+
+### B1 구현 과정의 기록
+
+- B1 (테스트 전제): `scheduler_test`가 무장 전 `decide()`의 주기
+  유지를 기대했으나, 첫 `maybeReevaluate`가 시계를 무장하는 게
+  설계다. 코드가 아니라 테스트를 수정(명시적 무장 단계). 게이트 영향 없음.
+- B1 (flake): 전체 CPU 스위트 안에서 `reveal_window_test` 1회 실패,
+  단독·스위트 재실행 통과 — Explorer 포그라운드 경합, 스케줄러 경로와
+  무관. 기록, 게이트 영향 없음.
 
 ### Node A 구현 과정의 A1 기록
 

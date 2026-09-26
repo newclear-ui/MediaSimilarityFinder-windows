@@ -42,6 +42,10 @@ public:
     void setKind(GpuBackendKind k) { kind_ = k; }
     GpuBackendKind kind() const { return kind_; }
     std::string backendName() const;
+    // B1 baseline capacity proxy: CUDA SM count (relative units; only the
+    // CPU/GPU ratio feeds shares). 0 when no device. B2/C replace this with
+    // measured throughput and calibration.
+    double computeUnits() const;
     std::size_t recommendedBatchSize(std::size_t requested=256) const;
     bool hashBatch(const std::uint8_t* grayscale,std::uint64_t count,
                    std::uint64_t* hashes) const;

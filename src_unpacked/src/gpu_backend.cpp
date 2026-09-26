@@ -57,8 +57,7 @@ bool GpuBackend::available() const {
     return false;
 #endif
 }
-std::string GpuBackend::backendName() const {
-    // Canonical resolved name: what actually executes, not what was asked.
+std::string GpuBackend::backendName() const {    // Canonical resolved name: what actually executes, not what was asked.
     if(kind_==GpuBackendKind::Cpu) return "CPU";
 #ifdef MSF_HAS_CUDA
     if(kind_==GpuBackendKind::Cuda) return detect().available ? "CUDA" : "CPU";
@@ -67,8 +66,18 @@ std::string GpuBackend::backendName() const {
     return "CPU";
 #endif
 }
-std::size_t GpuBackend::recommendedBatchSize(std::size_t requested) const {
-    requested=std::max<std::size_t>(1,requested);
+double GpuBackend::computeUnits() const {
+#ifdef MSF_HAS_CUDA
+    int n = 0;
+    if (cudaGetDeviceCount(&n) != cudaSuccess || n <= 0) return 0.0;
+    cudaDeviceProp prop{};
+    if (cudaGetDeviceProperties(&prop, 0) != cudaSuccess) return 0.0;
+    return prop.multiProcessorCount > 0 ? (double)prop.multiProcessorCount : 0.0;
+#else
+    return 0.0;
+#endif
+}
+std::size_t GpuBackend::recommendedBatchSize(std::size_t requested) const {    requested=std::max<std::size_t>(1,requested);
     const auto info=detect();
     if(!info.available || info.freeMemoryBytes==0) return 0;
     constexpr std::size_t bytesPerImage=1032;

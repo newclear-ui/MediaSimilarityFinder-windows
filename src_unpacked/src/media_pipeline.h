@@ -16,6 +16,7 @@ public:
  std::vector<ImageFingerprintResult> imageBatch(const std::vector<std::string>& paths,bool preferGpu=true,std::size_t gpuBatchSize=256,std::atomic<bool>* activity=nullptr,BenchmarkRecorder* bench=nullptr) const;
   bool gpuAvailable() const { return gpu_.available(); }
   std::string gpuBackendName() const { return gpu_.backendName(); }
+  double gpuComputeUnits() const { return gpu_.computeUnits(); }
 private:
  mutable GpuBackend gpu_;
 };

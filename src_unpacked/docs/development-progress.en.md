@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.1 |
+| Reference code | 0.9.4.2 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | A — Foundation / Terminology / Instrumentation (exit gate PASS → next gate B) |
-| Current phase | Node A implementation and validation complete → B entry ready |
-| Current version | 0.9.4.1 |
+| Current node | B — Adaptive Scheduler (active substep B1, B2 not started) |
+| Current phase | B1 implementation and validation complete → B2 entry pending brief review |
+| Current version | 0.9.4.2 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -90,6 +90,22 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### B1 — Minimal Adaptive Allocation (→ 0.9.4.2, validated)
+
+- `CpuGpuScheduler` (`src/scheduler.h/.cpp`): baseline-only inputs (CPU
+  threads, GPU ON/OFF, availability, SM count), proportional shares,
+  reason codes, 2000 ms re-evaluation cadence at existing phase points.
+  No moving average / hysteresis / transfer / workload / external-load
+  models; no pipeline, worker, or queue changes.
+- Engine wiring: one `decide()` per scan; image/video gates read the
+  decision (behavior-identical to the old flag). `finishScan` records the
+- scheduler section as `measured` (shares, backend, adjustments,
+  image + video fallback sum).
+- Validation: CPU 64/64, GPU 65/65 (incl. new `scheduler_test`: B1
+  decision table, cadence, telemetry JSON on both trees); UI parity via
+  `scan_workflow_test`; `--version`/`--smoke` on both. Search semantics
+  unchanged (engine 1.5.0, DB 1.0.3, cache v9).
 
 ## Node B/C/D detailed-design state
 
@@ -167,6 +183,15 @@ Each substep records:
 - failed attempts
 - result after the fix
 - impact on the next gate
+
+### B1 records from the implementation
+
+- B1 (test premise): `scheduler_test` initially expected an unarmed
+  `decide()` to hold the cadence; the first `maybeReevaluate` arms the
+  clock by design. Fixed the test (explicit arm step), not the code.
+- B1 (flake): `reveal_window_test` failed once inside the full CPU suite
+  and passed standalone and on suite re-run — Explorer foreground
+  contention, unrelated to scheduler paths. Recorded, no gate impact.
 
 ### A1 records from the Node A implementation
 

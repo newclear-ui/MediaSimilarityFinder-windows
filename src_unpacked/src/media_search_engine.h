@@ -3,6 +3,7 @@
 #include "database.h"
 #include "scan_pipeline.h"
 #include "resource_policy.h"
+#include "scheduler.h"
 #include "video_fingerprint.h"
 #include "gpu_backend.h"
 #include "index_manager.h"
@@ -100,6 +101,9 @@ const std::vector<MediaFile>& files() const { return files_; }
   bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
   bool hasBenchmark() const { return bench_.hasData(); }
   std::string benchmarkJson() const { return bench_.toJson(); }
+  // B1: last scheduler decision for this engine (valid after scan()).
+  SchedulerDecision lastSchedulerDecision() const { return scheduler_.lastDecision(); }
+  bool hasSchedulerDecision() const { return scheduler_.hasDecision(); }
   void beginBenchmark(const BenchmarkConfig& cfg, bool withSampler);
   void abortBenchmark() { bench_.abortUnfinished(); }
   bool getColorThumb(const std::string& path, int& w, int& h, std::vector<unsigned char>& bgra) const;
@@ -110,6 +114,9 @@ const std::vector<MediaFile>& files() const { return files_; }
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
   mutable std::atomic<bool> gpuActive_{false};
   BenchmarkRecorder bench_;
+  // B1 Minimal Adaptive Allocation: decided per scan, re-evaluated at
+  // existing phase points. Gates backend use; never touches workers/queues.
+  CpuGpuScheduler scheduler_;
   struct ColorThumb { int w=0, h=0; std::vector<unsigned char> bgra; };
   static constexpr std::size_t kColorThumbMax = 2048;
   mutable std::mutex thumbMutex_;

@@ -135,6 +135,7 @@ public:
                 std::uint64_t gpuImages, std::uint64_t gpuFallback);
   std::string toJson() const;
   bool hasData() const { return started_; }
+  std::uint64_t videoGpuFallbacks() const { return vidGpuFallback_.load(); }
   static std::string escapeJson(const std::string& s);
 private:
   void sampleOnce(double tMs);

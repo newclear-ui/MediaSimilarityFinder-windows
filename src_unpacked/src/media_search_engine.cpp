@@ -225,6 +225,22 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   auto benchMsSince=[&](){ return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchT0).count(); };
   MediaPipeline imagePipeline;
   BenchmarkConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.gpuBackend=imagePipeline.gpuBackendName(); bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable();
+  // B1 Minimal Adaptive Allocation: baseline capacities only. The decision
+  // gates backend use exactly where policy_.gpuEnabled gated before, so
+  // verdict behavior is unchanged; the shares + decision are recorded.
+  auto schedTickMs = []() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+  };
+  SchedulerHardware schedHw;
+  schedHw.cpuThreads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+  schedHw.gpuEnabled = policy_.gpuEnabled;
+  schedHw.gpuAvailable = imagePipeline.gpuAvailable();
+  schedHw.gpuComputeUnits = imagePipeline.gpuComputeUnits();
+  schedHw.backendName = imagePipeline.gpuBackendName();
+  scheduler_.reset();
+  const SchedulerDecision sched0 = scheduler_.decide(schedHw);
+  const bool schedUseGpu = sched0.gpuUsed;
   const bool benchOn = !control || control->benchmarkEnabled;
   bcfg.detail = benchOn;
   bench_.start(bcfg);
@@ -238,6 +254,22 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       else bench_.setFailed("", "failed");
     }
     bench_.setFileProgress(r.scanned, r.analyzed, r.scanned > r.analyzed ? r.scanned - r.analyzed : 0);
+    // B1: record the scheduler decision (initial == current; live adjustment
+    // arrives in B2+). Fallbacks accumulate image + video backend fallbacks.
+    {
+      const SchedulerDecision sd = scheduler_.lastDecision();
+      SchedulerTelemetry& st = bench_.scheduler();
+      st.markMeasured();
+      st.initialCpuCapacity = (double)schedHw.cpuThreads;
+      st.initialGpuCapacity = schedHw.gpuComputeUnits;
+      st.currentCpuCapacity = (double)schedHw.cpuThreads;
+      st.currentGpuCapacity = schedHw.gpuComputeUnits;
+      st.cpuWorkShare = sd.cpuShare;
+      st.gpuWorkShare = sd.gpuShare;
+      st.adjustmentCount = scheduler_.adjustments();
+      st.selectedBackend = sd.backend;
+      st.backendFallbacks = (std::uint64_t)r.gpuFallbackImages + bench_.videoGpuFallbacks();
+    }
     bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
     return r;
   };
@@ -275,9 +307,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // grayscale frames, then hash them in bounded GPU batches. If CUDA is absent,
  // MediaPipeline transparently executes the same CPU pHash reference path.
  // Single DB connection: only this thread touches db_/files_/r.
-  auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
-  const auto bt0=std::chrono::steady_clock::now();
-  auto results=imagePipeline.imageBatch(batch,policy_.gpuEnabled,gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
+   auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
+   const auto bt0=std::chrono::steady_clock::now();
+   // B1 re-evaluation point (existing phase boundary; no topology change).
+   scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
+   auto results=imagePipeline.imageBatch(batch,schedUseGpu,gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
   bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
   for(auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
@@ -291,15 +325,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  };
  // Videos retain the bounded asynchronous CPU/FFmpeg analysis path. This keeps
  // GPU image batching independent from the video decoder architecture.
- auto processVideoRange=[&](std::size_t from,std::size_t to)->bool{
-  std::vector<std::future<AnalysisJob>> futs;
+  auto processVideoRange=[&](std::size_t from,std::size_t to)->bool{
+   // B1 re-evaluation point (existing phase boundary; no topology change).
+   scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
+   std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){
    FileState x=changedVideos[k];
-    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn](){
+    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn,schedUseGpu](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,policy_.gpuEnabled?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
+       if(videoEngine_.build(x.path,vf,schedUseGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
      return j;
     }));
   }
