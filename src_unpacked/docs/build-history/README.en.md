@@ -140,3 +140,5 @@ See the version-specific `.ko.md` / `.en.md` files for details.
 ## Legacy
 
 Previous implementation/design snapshots are preserved under `../architecture/legacy/`.
+
+| 0.9.4.13 | Node C4.1 Calibration Lifecycle Fix — GPU OFF→ON metric-gap, 30-day stale policy, CPU/GPU identity completion — **GPT Fix** |
