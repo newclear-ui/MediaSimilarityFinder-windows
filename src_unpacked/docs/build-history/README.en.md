@@ -116,6 +116,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.4.0 | Node A foundation: GPU terminology/abstraction, GPU ON/OFF UI, build naming, benchmark instrumentation |
 | 0.9.4.1 | MainWindow scan-workflow regression test (offscreen slot-path driver, modal closer, UI CPU/GPU parity) |
 | 0.9.4.2 | Node B1 Minimal Adaptive Allocation (CpuGpuScheduler, proportional shares, re-evaluation cadence, scheduler telemetry) |
+| 0.9.4.3 | Node B2 Runtime Throughput Feedback (ThroughputWindow, observed-ratio shares, effective capacities) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

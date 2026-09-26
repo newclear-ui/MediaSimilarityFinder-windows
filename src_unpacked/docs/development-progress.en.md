@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.2 |
+| Reference code | 0.9.4.3 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | B — Adaptive Scheduler (active substep B1, B2 not started) |
-| Current phase | B1 implementation and validation complete → B2 entry pending brief review |
-| Current version | 0.9.4.2 |
+| Current node | B — Adaptive Scheduler (active substep B2, B3 not started) |
+| Current phase | B2 implementation and validation complete → B3 entry pending brief review |
+| Current version | 0.9.4.3 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -90,6 +90,19 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### B2 — Runtime Throughput Feedback (→ 0.9.4.3, validated)
+
+- `ThroughputWindow` (30 s recent window, unknown below 2 samples or on
+  expiry, no smoothing). `SchedulerHardware` gains observed image-path
+  rates; both known and positive → `observed_throughput` shares, else the
+  baseline path. One-sided unknown falls back, never zero.
+- Engine attributes completed images per hashing backend per batch and
+  refreshes rates before re-evaluation. Video excluded (decode side is
+  C/E). `currentCapacities()` reports observed rates or baselines.
+- Validation: CPU 64/64, GPU 65/65 (extended `scheduler_test` in place,
+  counts unchanged); UI parity via `scan_workflow_test`;
+  `--version`/`--smoke` on both. Search semantics unchanged.
 
 ### B1 — Minimal Adaptive Allocation (→ 0.9.4.2, validated)
 
@@ -183,6 +196,12 @@ Each substep records:
 - failed attempts
 - result after the fix
 - impact on the next gate
+
+### B2 records from the implementation
+
+- B2 (linkage): the first B2 test draft declared `b2checks()` in one
+  anonymous namespace and defined it at global scope (LNK2019). Fixed by
+  moving the forward declaration to file scope. Test-only, no gate impact.
 
 ### B1 records from the implementation
 

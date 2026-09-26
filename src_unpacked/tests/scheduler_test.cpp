@@ -15,6 +15,7 @@ void check(bool ok, const char* name) {
 }
 bool near(double a, double b) { return std::fabs(a - b) < 1e-9; }
 } // namespace
+int b2checks();
 int main() {
   using msf::CpuGpuScheduler;
   using msf::SchedulerHardware;
@@ -116,6 +117,74 @@ int main() {
     check(ok, "telemetry-json");
   }
   if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
+  b2checks();
+  if (failures) { std::cerr << "scheduler failures=" << failures << "\n"; return 1; }
   std::cout << "scheduler=ok\n";
+  return 0;
+}
+// ---- Node B2: recent-throughput feedback --------------------------------
+namespace {
+void checkB2(bool ok, const char* name) { check(ok, name); }
+} // namespace
+int b2checks() {
+  using msf::CpuGpuScheduler;
+  using msf::SchedulerHardware;
+  using msf::ThroughputWindow;
+  // 1. Window rate math + unknown states (never numeric zero).
+  {
+    ThroughputWindow w;
+    checkB2(w.rate(100.0) < 0, "win-empty-unknown");
+    w.add(100.0, 10.0);
+    checkB2(w.rate(100.0) < 0, "win-single-unknown");
+    w.add(110.0, 10.0);
+    checkB2(near(w.rate(110.0), 2.0), "win-rate");
+    // Expiry: window is 30 s; everything older drops out -> unknown again.
+    checkB2(w.rate(200.0) < 0, "win-expired-unknown");
+  }
+  // 2. Both rates known -> observed ratio drives shares.
+  {
+    CpuGpuScheduler s;
+    SchedulerHardware hw;
+    hw.cpuThreads = 16; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 80; hw.backendName = "CUDA";
+    hw.cpuRateKnown = hw.gpuRateKnown = true;
+    hw.cpuRate = 50.0; hw.gpuRate = 150.0;
+    const auto d = s.decide(hw);
+    checkB2(near(d.gpuShare, 75.0) && near(d.cpuShare, 25.0), "obs-ratio");
+    checkB2(d.reason == "observed_throughput" && d.gpuUsed, "obs-meta");
+    double ec = 0, eg = 0;
+    s.currentCapacities(ec, eg);
+    checkB2(near(ec, 50.0) && near(eg, 150.0), "obs-effective");
+  }
+  // 3. One side unknown -> baseline ratio holds (unknown != zero).
+  {
+    CpuGpuScheduler s;
+    SchedulerHardware hw;
+    hw.cpuThreads = 16; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 80; hw.backendName = "CUDA";
+    hw.cpuRateKnown = false; hw.gpuRateKnown = true; hw.gpuRate = 150.0;
+    const auto d = s.decide(hw);
+    checkB2(d.reason == "proportional_baseline", "partial-fallback");
+    checkB2(near(d.gpuShare, 100.0 * 80 / 96), "partial-shares");
+    double ec = 0, eg = 0;
+    s.currentCapacities(ec, eg);
+    checkB2(near(ec, 16.0) && near(eg, 80.0), "partial-effective");
+  }
+  // 4. Observed change across re-evaluation adjusts the decision.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    SchedulerHardware hw;
+    hw.cpuThreads = 8; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
+    s.decide(hw);
+    checkB2(s.lastDecision().reason == "proportional_baseline", "chg-start");
+    hw.cpuRateKnown = hw.gpuRateKnown = true;
+    hw.cpuRate = 10.0; hw.gpuRate = 90.0;
+    checkB2(s.maybeReevaluate(hw, 1000), "chg-reeval");
+    checkB2(s.adjustments() == 1, "chg-adjust");
+    checkB2(s.lastDecision().reason == "observed_throughput", "chg-reason");
+    checkB2(near(s.lastDecision().gpuShare, 90.0), "chg-shares");
+  }
   return 0;
 }

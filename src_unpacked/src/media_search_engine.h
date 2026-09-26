@@ -116,7 +116,9 @@ const std::vector<MediaFile>& files() const { return files_; }
   BenchmarkRecorder bench_;
   // B1 Minimal Adaptive Allocation: decided per scan, re-evaluated at
   // existing phase points. Gates backend use; never touches workers/queues.
+  // B2: image-path recent-throughput windows feed observed rates in.
   CpuGpuScheduler scheduler_;
+  ThroughputWindow schedCpuWin_, schedGpuWin_;
   struct ColorThumb { int w=0, h=0; std::vector<unsigned char> bgra; };
   static constexpr std::size_t kColorThumbMax = 2048;
   mutable std::mutex thumbMutex_;

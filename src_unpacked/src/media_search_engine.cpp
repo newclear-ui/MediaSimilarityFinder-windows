@@ -239,6 +239,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   schedHw.gpuComputeUnits = imagePipeline.gpuComputeUnits();
   schedHw.backendName = imagePipeline.gpuBackendName();
   scheduler_.reset();
+  schedCpuWin_.clear();
+  schedGpuWin_.clear();
   const SchedulerDecision sched0 = scheduler_.decide(schedHw);
   const bool schedUseGpu = sched0.gpuUsed;
   const bool benchOn = !control || control->benchmarkEnabled;
@@ -256,14 +258,15 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     bench_.setFileProgress(r.scanned, r.analyzed, r.scanned > r.analyzed ? r.scanned - r.analyzed : 0);
     // B1: record the scheduler decision (initial == current; live adjustment
     // arrives in B2+). Fallbacks accumulate image + video backend fallbacks.
+    // B2: current capacities are the observed image/sec rates when both
+    // backends reported recently, else the baselines.
     {
       const SchedulerDecision sd = scheduler_.lastDecision();
       SchedulerTelemetry& st = bench_.scheduler();
       st.markMeasured();
       st.initialCpuCapacity = (double)schedHw.cpuThreads;
       st.initialGpuCapacity = schedHw.gpuComputeUnits;
-      st.currentCpuCapacity = (double)schedHw.cpuThreads;
-      st.currentGpuCapacity = schedHw.gpuComputeUnits;
+      scheduler_.currentCapacities(st.currentCpuCapacity, st.currentGpuCapacity);
       st.cpuWorkShare = sd.cpuShare;
       st.gpuWorkShare = sd.gpuShare;
       st.adjustmentCount = scheduler_.adjustments();
@@ -310,9 +313,29 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
    const auto bt0=std::chrono::steady_clock::now();
    // B1 re-evaluation point (existing phase boundary; no topology change).
+   // B2: refresh observed image-path rates first (unknown until 2+ batches).
+   {
+     const double nowS = std::chrono::duration<double>(bt0.time_since_epoch()).count();
+     const double cpuR = schedCpuWin_.rate(nowS), gpuR = schedGpuWin_.rate(nowS);
+     schedHw.cpuRateKnown = cpuR >= 0; schedHw.cpuRate = cpuR >= 0 ? cpuR : 0;
+     schedHw.gpuRateKnown = gpuR >= 0; schedHw.gpuRate = gpuR >= 0 ? gpuR : 0;
+   }
    scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
    auto results=imagePipeline.imageBatch(batch,schedUseGpu,gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
-  bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
+   bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
+   // B2: attribute completed images to the backend that hashed them.
+   // Coarse by design (batch wall includes shared CPU work); video-side
+   // throughput belongs to Node C/E. Feeds the next re-evaluation.
+    {
+      const double nowS = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+      std::size_t cpuN = 0, gpuN = 0;
+      for (const auto& ir : results) {
+        if (!ir.ok) continue;
+        if (ir.usedGpu) ++gpuN; else ++cpuN;
+      }
+      if (cpuN > 0) schedCpuWin_.add(nowS, (double)cpuN);
+      if (gpuN > 0) schedGpuWin_.add(nowS, (double)gpuN);
+    }
   for(auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
    if(it==currentByPath.end()) continue;

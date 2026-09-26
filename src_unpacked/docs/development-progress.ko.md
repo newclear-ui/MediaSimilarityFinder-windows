@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.2 |
+| 기준 코드 | 0.9.4.3 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | B — Adaptive Scheduler (활성 substep B1, B2 미착수) |
-| 현재 단계 | B1 구현·검증 완료 → B2 진입은 brief 검토 후 |
-| 현재 버전 | 0.9.4.2 |
+| 현재 노드 | B — Adaptive Scheduler (활성 substep B2, B3 미착수) |
+| 현재 단계 | B2 구현·검증 완료 → B3 진입은 brief 검토 후 |
+| 현재 버전 | 0.9.4.3 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -87,6 +87,19 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### B2 — Runtime Throughput Feedback (→ 0.9.4.3, 검증됨)
+
+- `ThroughputWindow`(30초 recent-window, 2표본 미만·만료 시 unknown,
+  smoothing 없음). `SchedulerHardware`에 관측 이미지 경로 rate 추가.
+  양쪽 실측·양수면 `observed_throughput` 배분, 아니면 baseline 경로.
+  한쪽 미상은 0이 아니라 폴백한다.
+- 엔진은 배치마다 완료 이미지를 해시 backend별로 귀속하고 재평가 전
+  rate를 갱신한다. 비디오는 제외(디코드 측은 C/E). `currentCapacities()`
+  는 실측 rate 또는 baseline을 보고한다.
+- 검증: CPU 64/64, GPU 65/65(`scheduler_test` 내 확장, 수량 불변),
+  `scan_workflow_test`로 UI parity, 양쪽 `--version`/`--smoke`.
+  검색 의미 불변.
 
 ### B1 — Minimal Adaptive Allocation (→ 0.9.4.2, 검증됨)
 
@@ -179,6 +192,12 @@ A
 - 실패했던 시도
 - 해결 후 결과
 - 다음 gate 영향
+
+### B2 구현 과정의 기록
+
+- B2 (링키지): B2 테스트 초안이 `b2checks()`를 익명 네임스페이스에
+  선언하고 전역에 정의해 LNK2019. 전방 선언을 파일 스코프로 옮겨
+  해결. 테스트 전용, 게이트 영향 없음.
 
 ### B1 구현 과정의 기록
 
