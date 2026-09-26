@@ -55,6 +55,18 @@ int main(int argc, char** argv) {
   if (target != 4) { std::cerr << "target=" << target << "\n"; return 5; }
   const auto pending = w.takePending();
   if (pending.size() < 6) { std::cerr << "streamed=" << pending.size() << "\n"; return 2; }
+  // B7 binding/telemetry: the engine scan behind the worker must have
+  // recorded its scheduler decision (measured, with a resolved backend).
+  // GPU OFF here -> gpu_off 100/0; ON trees assert the same shape.
+  {
+    const std::string bj = w.scanEngine().benchmarkJson();
+    if (bj.find("\"scheduler\":{\"state\":\"measured\"") == std::string::npos) {
+      std::cerr << "scheduler not measured\n"; return 6;
+    }
+    if (bj.find("\"selectedBackend\":\"") == std::string::npos) {
+      std::cerr << "no selected backend\n"; return 7;
+    }
+  }
   // Phase 2: a fresh engine on the same managed index must quick-load them.
   msf::MediaSearchEngine e2;
   if (!e2.openIndexForRoot(root, ad)) return 3;

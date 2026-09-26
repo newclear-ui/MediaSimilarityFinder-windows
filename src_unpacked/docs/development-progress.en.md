@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.7 |
+| Reference code | 0.9.4.8 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | B — Adaptive Scheduler (active substep B6, B7 not started) |
-| Current phase | B6 implementation and validation complete → B7 entry pending brief review |
-| Current version | 0.9.4.7 |
+| Current node | B — Adaptive Scheduler (B7 gate PASS → next gate C) |
+| Current phase | Node B done → C kickoff needs stage decomposition (C brief has no B-style staging) |
+| Current version | 0.9.4.8 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -90,6 +90,24 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### B7 — Final Scheduler Gate (→ 0.9.4.8, PASS)
+
+- External review finding fixed: `const bool schedUseGpu` pinned the
+  scan-start verdict while re-evaluations moved shares. Replaced with
+  `schedUseGpuNow()` fresh published reads per image batch and per video
+  range (3 read sites, stale const deleted and grep-verified). No worker,
+  queue, or barrier changes — no D upfront.
+- Safety: only hold/band-approved publications flip, so execution cannot
+  flap; sub-2 s scans never re-evaluate (byte-identical).
+- Coverage audit tied every B7 item to evidence; deliberate non-gates
+  recorded: slow-hardware and under-load Gaming execution (units +
+  parity instead), wall-clock long runs (synthetic ticks instead),
+  comparative throughput gates (observed evidence instead of assertions).
+- `scan_streaming_test` asserts engine-level scheduler record
+  (`scheduler.measured` + `selectedBackend`).
+- Validation: CPU 64/64, GPU 65/65; `--version`/`--smoke` on both.
+  Search semantics unchanged. Node B done; next gate C.
 
 ### B6 — Resource Mode Integration (→ 0.9.4.7, validated)
 

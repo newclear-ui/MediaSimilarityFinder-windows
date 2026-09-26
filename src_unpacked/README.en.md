@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## Current development version: 0.9.4.7 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, Node B6 validated)
+## Current development version: 0.9.4.8 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, Node B gate passed)
 
 Windows 11 x64 media duplicate/similarity search engine under active CPU/CUDA development.
 

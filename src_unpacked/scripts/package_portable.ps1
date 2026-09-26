@@ -78,10 +78,10 @@ $smoke = Start-Process -FilePath (Join-Path $OutputDir "MediaSimilarityFinder.ex
 if ($smoke.ExitCode -ne 0) { throw "Portable smoke failed: $($smoke.ExitCode)" }
 @{
   product = "MediaSimilarityFinder"
-  version = "0.9.4.7"
+  version = "0.9.4.8"
   mode = "portable"
   indexRoot = "Index"
 } | ConvertTo-Json | Set-Content (Join-Path $OutputDir "portable.json") -Encoding UTF8
-$zip = "MediaSimilarityFinder-v0.9.4.7-Portable-Windows-x64.zip"
+$zip = "MediaSimilarityFinder-v0.9.4.8-Portable-Windows-x64.zip"
 Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $zip -Force
 Write-Host "Portable package created: $zip"

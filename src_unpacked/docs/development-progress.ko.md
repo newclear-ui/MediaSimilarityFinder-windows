@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.7 |
+| 기준 코드 | 0.9.4.8 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | B — Adaptive Scheduler (활성 substep B6, B7 미착수) |
-| 현재 단계 | B6 구현·검증 완료 → B7 진입은 brief 검토 후 |
-| 현재 버전 | 0.9.4.7 |
+| 현재 노드 | B — Adaptive Scheduler (B7 게이트 통과 → 다음 게이트 C) |
+| 현재 단계 | Node B 완료 → C 착수는 단계 분해 필요 (C brief에 B식 단계 없음) |
+| 현재 버전 | 0.9.4.8 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -87,6 +87,20 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### B7 — Final Scheduler Gate (→ 0.9.4.8, 통과)
+
+- 외부 리뷰 지적 수정: `const bool schedUseGpu`가 스캔 시작 판단을
+  고정시켰다. 이미지 배치·비디오 구간마다 fresh 발표 읽기로 교체
+  (3곳, stale const 삭제·grep 검증). worker·queue·barrier 변경 없음.
+- 안전: hold/band 승인 발표만 바뀌어 실행 요동 불가. 2초 미만 스캔은
+  재평가 미발화로 바이트 동일.
+- 커버리지 감사로 B7 항목 전부 증거 연결. 의도적 비게이트 기록:
+  저사양 실기·부하 중 Gaming 실행(단위+parity 대체), wall-clock 장기
+  실행(합성 틱 대체), 비교 throughput 게이트(관측 증거로 대체).
+- `scan_streaming_test`에 엔진 수준 scheduler 기록 단언 추가.
+- 검증: CPU 64/64, GPU 65/65, 양쪽 `--version`/`--smoke`. 검색 의미
+  불변. Node B 완료, 다음 게이트 C.
 
 ### B6 — Resource Mode Integration (→ 0.9.4.7, 검증됨)
 

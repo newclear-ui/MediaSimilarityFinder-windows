@@ -121,6 +121,7 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 | 0.9.4.5 | Node B4 Stability Control (SMA 스무딩, kill-band hysteresis, minimum hold) |
 | 0.9.4.6 | Node B5 Transfer / Workload Cost (total-cost 규칙, transfer 항, 관측 rate 내 workload) |
 | 0.9.4.7 | Node B6 Resource Mode Integration (모드별 floor/hold/kill band, Manual == Balanced) |
+| 0.9.4.8 | Execution binding + Node B7 게이트 (fresh 발표 읽기, 엔진 scheduler 단언, 커버리지 감사) |
 
 각 버전의 상세 로그는 해당 버전의 `.ko.md` / `.en.md`를 참조한다.
 

@@ -261,8 +261,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     schedHw.memKnown = true; schedHw.memPressure = sl.memoryPercent;
   };
   refreshSchedLoad();
-  const SchedulerDecision sched0 = scheduler_.decide(schedHw);
-  const bool schedUseGpu = sched0.gpuUsed;
+  scheduler_.decide(schedHw);
+  // B7 binding: no cached gpuUse flag. Every phase reads the CURRENT
+  // published decision after re-evaluating, so execution follows the
+  // scheduler (stability-guaranteed by B4 hold + B6 kill band). A cached
+  // bool here would silently pin the scan-start verdict (review finding).
+  auto schedUseGpuNow = [&]() { return scheduler_.lastDecision().gpuUsed; };
   const bool benchOn = !control || control->benchmarkEnabled;
   bcfg.detail = benchOn;
   bench_.start(bcfg);
@@ -345,7 +349,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      schedHw.gpuRateKnown = gpuR >= 0; schedHw.gpuRate = gpuR >= 0 ? gpuR : 0;
    }
    scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
-   auto results=imagePipeline.imageBatch(batch,schedUseGpu,gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
+   auto results=imagePipeline.imageBatch(batch,schedUseGpuNow(),gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
    bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
    // B2: attribute completed images to the backend that hashed them.
    // Coarse by design (batch wall includes shared CPU work); video-side
@@ -377,14 +381,16 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    // B3: video carries no new throughput observation, but loads refresh.
    refreshSchedLoad();
    scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
+   // B7 binding: phase-fresh published decision (see image path note).
+   const bool useGpu = schedUseGpuNow();
    std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){
    FileState x=changedVideos[k];
-    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn,schedUseGpu](){
+    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn,useGpu](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,schedUseGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
+       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
      return j;
     }));
   }
