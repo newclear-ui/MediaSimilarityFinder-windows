@@ -4,6 +4,7 @@
 #include "scan_pipeline.h"
 #include "resource_policy.h"
 #include "scheduler.h"
+#include "profile.h"
 #include "video_fingerprint.h"
 #include "gpu_backend.h"
 #include "index_manager.h"

@@ -15,6 +15,7 @@
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <ctime>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -245,6 +246,31 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // B5: transfer volume per GPU unit is known from the packing layout;
   // bandwidth stays the documented coarse default until Node C measures it.
   schedHw.transferBytesPerUnit = (double)imagePipeline.gpuTransferBytesPerUnit();
+  // C1: profile initial estimate. Machine-wide file beside the per-root
+  // managed indexes; dormant until C2 writes the first profile (store
+  // empty or unusable -> hardware baselines, behavior identical).
+  // maxAge: never-stale in C1 (C3 owns the default age policy).
+  {
+    ProfileIdentity profCur;
+    profCur.cpuThreads = schedHw.cpuThreads;
+    profCur.gpuName = imagePipeline.gpuName();
+    profCur.gpuBackend = imagePipeline.gpuBackendName();
+    profCur.appVersion = bcfg.build;
+    profCur.engineVersion = kEngineVersion;
+    const long long nowSec = (long long)std::time(nullptr);
+    ProfileStore profStore;
+    std::string profPath;
+    if (managedIndexActive_)
+      profPath = path_to_utf8(managedIndex_.directory.parent_path() / "PerformanceProfile.ini");
+    if (!profPath.empty() && profStore.load(profPath)) {
+      const InitialEstimate est = profStore.initialEstimate(profCur, -1, nowSec);
+      if (est.cpuKnown && est.gpuKnown) {
+        schedHw.profileBaselineKnown = true;
+        schedHw.profileBaselineCpu = est.cpu;
+        schedHw.profileBaselineGpu = est.gpu;
+      }
+    }
+  }
   scheduler_.reset();
   schedCpuWin_.clear();
   schedGpuWin_.clear();

@@ -67,6 +67,11 @@ struct SchedulerHardware {
   // by measurement. Zero bytes disables the term (baseline path untouched).
   double transferBytesPerUnit = 0;
   double transferBandwidthMBps = 12000.0;
+  // C1: profile baseline (images/sec pair from a usable PerformanceProfile).
+  // Priority: live measured rates (B2) -> profile baseline (C1) ->
+  // hardware proxies (B1). Pair-or-nothing, same ratio-honesty rule.
+  bool profileBaselineKnown = false;
+  double profileBaselineCpu = 0, profileBaselineGpu = 0;
 };
 struct SchedulerDecision {
   double cpuShare = 100.0, gpuShare = 0.0; // percent, sum to 100

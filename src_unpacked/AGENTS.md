@@ -18,7 +18,7 @@
    - 검색엔진 판정 버전 `MediaSearchEngine::kEngineVersion`: patch=임계·가중·게이트 튜닝, minor=새 단계·규칙 추가, major=판정 아키텍처 교체. 상향 시 다음 스캔에서 저장 쌍 자동 재검증 (전체 재스캔 불필요)
    - DB 스키마 버전 `Database::kDatabaseVersion`: patch=부가적 추가(테이블·컬럼·인덱스, 구코드 읽기 가능), minor=마이그레이션 필요 변경, major=파괴적 변경(구행 무효, wipe+재스캔). open 시 마이그레이션 후 스탬프
    - 빌드 번호와 무관하게 필요할 때만 상향. 상향한 빌드는 build-history에 명시
-3. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.4.8, 개발선 0.9.4) 구분 유지. 판정 의미 불변, additive CUDA 커널·호출 병합 허용, CPU fallback 유지
+3. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.4.9, 개발선 0.9.4) 구분 유지. 판정 의미 불변, additive CUDA 커널·호출 병합 허용, CPU fallback 유지
 
 4. **0.9.4 개발선 작업 규칙**
 

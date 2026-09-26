@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.8 |
+| Reference code | 0.9.4.9 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | C — Calibration / INI Performance Profile (C0 design review complete → C1 ready) |
-| Current phase | C design contract defined → documentation review before C1 Profile Foundation implementation |
-| Current version | 0.9.4.8 |
+| Current node | C — Calibration / INI Performance Profile (active substep C1, C2 not started) |
+| Current phase | C1 implementation and validation complete → C2 entry per C brief |
+| Current version | 0.9.4.9 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -91,7 +91,7 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
 
-### C — Calibration / INI Performance Profile (ready to start)
+### C — Calibration / INI Performance Profile (C1 done, C2 pending)
 
 - The C brief is now concretized into C1–C4 stages.
 - C1 covers Profile Foundation only; actual calibration execution is excluded.
@@ -102,7 +102,20 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
 - Profile is an initial estimate; live runtime state always has precedence.
 - D queue/worker topology and F hardware decode are not pulled into C.
 - Metrics not yet measurable are recorded with explicit measurement states.
-- Current work is documentation/design only; C++ implementation has not started.
+
+### C1 — Profile Foundation (→ 0.9.4.9, validated)
+
+- `PerformanceProfile` + `ProfileStore` (`src/profile.h/.cpp`, Qt-free):
+  FNV-1a stable id, Missing/Hard/Stale/Soft/Exact verdicts (stale only on
+  caller maxAge; C1 sets no default age), pair-or-nothing initial
+  estimates, manual INI codec with atomic temp+rename save. QSettings not
+  reused (non-atomic). CPU-only machines never yield estimates.
+- Scheduler priority live → profile → hardware with a `profile_baseline`
+  reason; policy untouched. Engine hook loads the machine-wide
+  `<appDir>/Index/PerformanceProfile.ini`; dormant live (no writer yet).
+- Validation: CPU 65/65, GPU 66/66 (new `profile_test`, 12 groups);
+  UI parity via `scan_workflow_test`; `--version`/`--smoke` on both.
+  Search semantics unchanged. C2/C3 numbers deliberately undecided.
 
 ### B7 — Final Scheduler Gate (→ 0.9.4.8, PASS)
 

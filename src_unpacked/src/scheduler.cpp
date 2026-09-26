@@ -89,9 +89,10 @@ long long CpuGpuScheduler::effectiveHoldMs(long long explicitHold, ResourceMode 
 //     legitimately converge to CPU. memPressure is recorded, not scaled.
 void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrottled,
                                     double& cpu, double& gpu,
-                                    std::string& reason, bool& throttled) {  double baseCpu = hw.cpuThreads > 0 ? (double)hw.cpuThreads : 1.0;
+                                    std::string& reason, bool& throttled) {
+  double baseCpu = hw.cpuThreads > 0 ? (double)hw.cpuThreads : 1.0;
   double baseGpu = hw.gpuComputeUnits > 0 ? hw.gpuComputeUnits : 0.0;
-  bool observed = false;
+  bool observed = false, fromProfile = false;
   if (hw.cpuRateKnown && hw.gpuRateKnown && hw.cpuRate > 0 && hw.gpuRate > 0) {
     baseCpu = hw.cpuRate;
     baseGpu = hw.gpuRate;
@@ -106,6 +107,13 @@ void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrott
       const double tSec = hw.transferBytesPerUnit / (hw.transferBandwidthMBps * 1e6);
       if (tSec > 0) baseGpu = 1.0 / (1.0 / baseGpu + tSec);
     }
+  } else if (hw.profileBaselineKnown && hw.profileBaselineCpu > 0 && hw.profileBaselineGpu > 0) {
+    // C1: profile initial estimate sits between live rates and hardware
+    // proxies. Same pair-or-nothing ratio honesty; transfer/load scaling
+    // below applies to it like any other baseline.
+    baseCpu = hw.profileBaselineCpu;
+    baseGpu = hw.profileBaselineGpu;
+    fromProfile = true;
   }
   if (baseGpu <= 0.0) {
     cpu = baseCpu; gpu = 0.0; reason = "no_gpu_capacity"; throttled = false;
@@ -139,7 +147,7 @@ void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrott
     return;
   }
   throttled = false;
-  reason = observed ? "observed_throughput" : "proportional_baseline";
+  reason = observed ? "observed_throughput" : (fromProfile ? "profile_baseline" : "proportional_baseline");
 }
 bool CpuGpuScheduler::sameDecision(const SchedulerDecision& a, const SchedulerDecision& b) {
   return a.gpuUsed == b.gpuUsed && a.backend == b.backend &&

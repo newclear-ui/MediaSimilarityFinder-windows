@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.8 |
+| 기준 코드 | 0.9.4.9 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | C — Calibration / INI Performance Profile (C0 설계 검토 완료 → C1 착수 준비) |
-| 현재 단계 | C 설계 계약 정리 완료 → C1 Profile Foundation 구현 전 문서 검토 |
-| 현재 버전 | 0.9.4.8 |
+| 현재 노드 | C — Calibration / INI Performance Profile (활성 substep C1, C2 미착수) |
+| 현재 단계 | C1 구현·검증 완료 → C2 진입은 C brief 기준 |
+| 현재 버전 | 0.9.4.9 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -88,7 +88,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
 
-### C — Calibration / INI Performance Profile (착수 준비)
+### C — Calibration / INI Performance Profile (C1 완료, C2 대기)
 
 - C brief를 C1~C4 단계로 구체화했다.
 - C1은 Profile Foundation만 다루며 실제 calibration 실행은 넣지 않는다.
@@ -99,7 +99,20 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - Profile은 initial estimate이며 live runtime state가 항상 우선한다.
 - D queue/worker topology와 F hardware decode는 C에서 선행하지 않는다.
 - queue latency와 hardware decode가 아직 측정 불가능한 경우 explicit measurement state로 기록한다.
-- 현재는 문서/설계 단계이며 C++ 구현은 아직 시작하지 않는다.
+
+### C1 — Profile Foundation (→ 0.9.4.9, 검증됨)
+
+- `PerformanceProfile` + `ProfileStore`(`src/profile.h/.cpp`, Qt-free):
+  FNV-1a 안정 id, Missing/Hard/Stale/Soft/Exact 판정(stale은 호출자
+  maxAge로만 발화, C1 기본 age 없음), pair-or-nothing initial estimate,
+  수동 INI codec + temp+rename 원자 저장. QSettings 미재사용(비원자).
+  CPU-only 머신은 estimate 불가.
+- 스케줄러 우선순위 live → profile → hardware + `profile_baseline`
+  reason, 정책 불변. 엔진 후크는 머신 전역
+  `<appDir>/Index/PerformanceProfile.ini` 로드, live 휴면(writer 없음).
+- 검증: CPU 65/65, GPU 66/66(신규 `profile_test` 12항),
+  `scan_workflow_test`로 UI parity, 양쪽 `--version`/`--smoke`.
+  검색 의미 불변. C2/C3 수치는 의도적 미결정.
 
 ### B7 — Final Scheduler Gate (→ 0.9.4.8, 통과)
 

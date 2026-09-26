@@ -122,6 +122,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.4.6 | Node B5 Transfer / Workload Cost (total-cost rule, transfer term, workload via observed rates) |
 | 0.9.4.7 | Node B6 Resource Mode Integration (per-mode floors/hold/kill band, Manual == Balanced) |
 | 0.9.4.8 | Execution binding + Node B7 gate (fresh published reads, engine scheduler assertion, coverage audit) |
+| 0.9.4.9 | Node C1 Profile Foundation (PerformanceProfile, INI store, verdicts, initial-estimate delivery) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 
