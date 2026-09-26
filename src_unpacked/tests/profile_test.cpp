@@ -228,6 +228,8 @@ int main() {
     check(d.reason == "profile_baseline", "delivery-reason");
     check(d.gpuUsed && d.backend == "CUDA", "delivery-meta");
   }
+  // C4.1: default stale age and GPU OFF -> ON metric-gap lifecycle.
+  { ProfileStore stale; auto p=makeProfile(); p.updatedAt=now-31LL*86400LL; stale.setProfile(p); check(stale.classify(hwIdentity(),PerformanceProfile::kDefaultMaxAgeDays,now)==ProfileMatch::Stale,"c41-default-stale"); check(stale.classify(hwIdentity(),-1,now)==ProfileMatch::Exact,"c41-never-stale-diagnostic"); p.gpuThroughput={0.0,MeasureState::NotMeasured}; check(!profileNeedsCalibration(p,false,true),"c41-gpu-off-no-gap"); check(profileNeedsCalibration(p,true,true),"c41-gpu-on-gap"); p.gpuThroughput={480.0,MeasureState::Measured}; check(!profileNeedsCalibration(p,true,true),"c41-gpu-on-complete"); }
   // 13. [lastUpdate] round-trip; absent section stays absent.
   {
     const std::string path = tmpIni("lastupdate.ini");

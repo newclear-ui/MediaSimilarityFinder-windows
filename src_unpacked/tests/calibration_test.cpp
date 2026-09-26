@@ -204,6 +204,8 @@ int main() {
     check(r3.profile().confidence < kc, "keep-conf");
     check(r3.profile().lastUpdate.reason == "recalibration_inconsistent", "keep-reason");
   }
+  // C4.1 lifecycle regression: GPU OFF profile becomes a calibration candidate when GPU is enabled later.
+  { msf::PerformanceProfile p; p.cpuThroughput={120.0,msf::MeasureState::Measured}; p.gpuThroughput={0.0,msf::MeasureState::NotMeasured}; check(!msf::profileNeedsCalibration(p,false,true),"c41-off-ready"); check(msf::profileNeedsCalibration(p,true,true),"c41-on-requires-calibration"); p.gpuThroughput={480.0,msf::MeasureState::Measured}; check(!msf::profileNeedsCalibration(p,true,true),"c41-on-ready"); }
   c4checks();
   if (failures) {
     std::cerr << "calibration failures=" << failures << "\n";

@@ -15,16 +15,17 @@
 #include <string>
 #include "benchmark.h" // MeasureState reuse (Node A rule: no duplicate states)
 namespace msf {
+std::string detectCpuModel();
+
 struct ProfileIdentity {
   // cpuModel may be empty in C1 (no portable CPU-model source in msf_core
   // yet); the classifier treats empty-vs-set as Soft, never as a match.
-  // C2 may fill it via CPUID/registry without changing this struct.
+  // C2/C4 fills it from a local CPU identity source when available; an empty value remains unknown.
   std::string cpuModel;
   int cpuThreads = 0;
   std::string gpuName; // empty when no concrete backend resolved
   std::string gpuBackend = "CPU";
-  // driver string (e.g. CUDA driver version) is empty in C1; C2 fills it
-  // from the backend. Empty-vs-set counts as Soft, never as a match.
+  // driver string is empty only when the backend cannot report it. Empty-vs-set counts as Soft.
   std::string driver;
   std::string appVersion;
   std::string engineVersion;
@@ -84,16 +85,19 @@ public:
   void clear() { profile_ = PerformanceProfile{}; has_ = false; }
   static std::string deriveId(const ProfileIdentity& id);
   static const char* matchName(ProfileMatch m);
-  // Order: Missing -> Hard -> Stale -> Soft -> Exact. maxAgeDays < 0 means
-  // "never stale" (C1 live path; C3 owns the default age policy).
+  // Order: Missing -> Hard -> Stale -> Soft -> Exact. The normal development
+  // default is 30 days; negative age is reserved for explicit diagnostics.
   ProfileMatch classify(const ProfileIdentity& current, long long maxAgeDays, long long nowSec) const;
   // Usable only when the verdict is Exact/Soft AND both throughputs are
   // measured. Pair-or-nothing: overriding one baseline while keeping the
   // other would corrupt the scheduler ratio. CPU-only machines therefore
   // never yield an estimate (their GPU path is fallback by construction).
   InitialEstimate initialEstimate(const ProfileIdentity& current, long long maxAgeDays, long long nowSec) const;
+  static constexpr long long kDefaultMaxAgeDays = 30;
 private:
   PerformanceProfile profile_;
   bool has_ = false;
 };
+
+bool profileNeedsCalibration(const PerformanceProfile& profile, bool gpuEnabled, bool gpuAvailable);
 }

@@ -57,6 +57,13 @@ bool GpuBackend::available() const {
     return false;
 #endif
 }
+std::string GpuBackend::driverVersion() const {
+#ifdef MSF_HAS_CUDA
+    int version=0;if(cudaDriverGetVersion(&version)!=cudaSuccess||version<=0)return {};return std::to_string(version);
+#else
+    return {};
+#endif
+}
 std::string GpuBackend::backendName() const {    // Canonical resolved name: what actually executes, not what was asked.
     if(kind_==GpuBackendKind::Cpu) return "CPU";
 #ifdef MSF_HAS_CUDA

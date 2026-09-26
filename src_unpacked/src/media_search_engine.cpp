@@ -260,9 +260,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   ProfileIdentity profIdentity;
   {
     ProfileIdentity profCur;
+    profCur.cpuModel = detectCpuModel();
     profCur.cpuThreads = schedHw.cpuThreads;
     profCur.gpuName = imagePipeline.gpuName();
     profCur.gpuBackend = imagePipeline.gpuBackendName();
+    profCur.driver = imagePipeline.gpuDriverVersion();
     profCur.appVersion = bcfg.build;
     profCur.engineVersion = kEngineVersion;
     const long long nowSec = (long long)std::time(nullptr);
@@ -272,8 +274,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       profPath = path_to_utf8(managedIndex_.directory.parent_path() / "PerformanceProfile.ini");
     ProfileMatch profVerdict = ProfileMatch::Missing;
     if (!profPath.empty() && profStore.load(profPath))
-      profVerdict = profStore.classify(profCur, -1, nowSec);
-    if ((profVerdict == ProfileMatch::Missing || profVerdict == ProfileMatch::Hard) && !profPath.empty()) {
+      profVerdict = profStore.classify(profCur, PerformanceProfile::kDefaultMaxAgeDays, nowSec);
+    const bool profileMetricGap = profStore.hasProfile() && profileNeedsCalibration(profStore.profile(), policy_.gpuEnabled, schedHw.gpuAvailable);
+    const bool needsCalibration = profVerdict == ProfileMatch::Missing || profVerdict == ProfileMatch::Hard || profVerdict == ProfileMatch::Stale || profileMetricGap;
+    if (needsCalibration && !profPath.empty()) {
       // Bounded first-time calibration. Any throw or failure falls through
       // to hardware baselines: a profile must never fail a search.
       try {
@@ -288,8 +292,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
         profCalibrated = true;
         ProfileStore writer;
         writer.setProfile(profCalib.profile);
-        writer.save(profPath); // result ignored: loss affects future runs only
-        const InitialEstimate est = writer.initialEstimate(profCur, -1, nowSec);
+        // GPT Fix / C4.1: incomplete retry never overwrites an existing profile.
+        const bool candidateComplete = calibrationUsableForUpdate(profCalib) || (!profStore.hasProfile() && profCalib.attempted && profCalib.failedStage.empty());
+        if(candidateComplete) writer.save(profPath);
+        const InitialEstimate est = writer.initialEstimate(profCur, PerformanceProfile::kDefaultMaxAgeDays, nowSec);
         if (est.cpuKnown && est.gpuKnown) {
           schedHw.profileBaselineKnown = true;
           schedHw.profileBaselineCpu = est.cpu;
@@ -299,7 +305,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
         profCalibrated = false;
       }
     } else if (!profPath.empty()) {
-      const InitialEstimate est = profStore.initialEstimate(profCur, -1, nowSec);
+      const InitialEstimate est = profStore.initialEstimate(profCur, PerformanceProfile::kDefaultMaxAgeDays, nowSec);
       if (est.cpuKnown && est.gpuKnown) {
         schedHw.profileBaselineKnown = true;
         schedHw.profileBaselineCpu = est.cpu;

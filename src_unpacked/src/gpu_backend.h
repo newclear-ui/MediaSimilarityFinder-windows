@@ -42,6 +42,7 @@ public:
     void setKind(GpuBackendKind k) { kind_ = k; }
     GpuBackendKind kind() const { return kind_; }
     std::string backendName() const;
+    std::string driverVersion() const;
     // B1 baseline capacity proxy: CUDA SM count (relative units; only the
     // CPU/GPU ratio feeds shares). 0 when no device. B2/C replace this with
     // measured throughput and calibration.

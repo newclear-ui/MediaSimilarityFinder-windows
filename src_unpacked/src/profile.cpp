@@ -3,6 +3,11 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <cstring>
+#include <cctype>
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#endif
 #include <sstream>
 namespace msf {
 namespace {
@@ -14,6 +19,7 @@ std::uint64_t fnv1a(const std::string& s) {
   for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
   return h;
 }
+std::string trimCpuModel(std::string s) { auto b=s.begin(); while(b!=s.end()&&std::isspace(static_cast<unsigned char>(*b)))++b; auto e=s.end(); while(e!=b&&std::isspace(static_cast<unsigned char>(*(e-1))))--e; return std::string(b,e); }
 std::string escapeIni(const std::string& s) {
   std::string o;
   for (char c : s) {
@@ -69,6 +75,15 @@ void writeMetric(std::ostringstream& o, const char* section, const char* name, c
     << name << ".state=" << measureStateName(m.state) << "\n";
 }
 } // namespace
+std::string detectCpuModel() {
+#if defined(_MSC_VER) && defined(_M_X64)
+  int regs[4]{}; __cpuid(regs,0x80000000); const unsigned maxExt=static_cast<unsigned>(regs[0]);
+  if(maxExt>=0x80000004){char brand[49]{};for(unsigned i=0;i<3;++i){__cpuid(regs,0x80000002+static_cast<int>(i));std::memcpy(brand+i*16,regs,sizeof(regs));}return trimCpuModel(brand);}
+#elif defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+  std::ifstream f("/proc/cpuinfo");std::string line;while(std::getline(f,line)){const auto pos=line.find(':');if(pos!=std::string::npos&&line.substr(0,pos)=="model name")return trimCpuModel(line.substr(pos+1));}
+#endif
+  return {};
+}
 std::string ProfileStore::deriveId(const ProfileIdentity& id) {
   std::ostringstream o;
   o << "v" << PerformanceProfile::kProfileVersion << "|"
@@ -101,7 +116,7 @@ ProfileMatch ProfileStore::classify(const ProfileIdentity& cur, long long maxAge
   if (!st.cpuModel.empty() && !cur.cpuModel.empty() && st.cpuModel != cur.cpuModel)
     return ProfileMatch::Hard;
   // Stale outranks soft reuse: time says re-measure before trusting.
-  if (maxAgeDays >= 0 && nowSec > profile_.updatedAt + maxAgeDays * 86400LL)
+  if (maxAgeDays >= 0 && profile_.updatedAt > 0 && nowSec > profile_.updatedAt + maxAgeDays * 86400LL)
     return ProfileMatch::Stale;
   // Soft: version drift, thread-count change, or one-sided identity info
   // (including driver appearing/disappearing while the GPU itself matches).
@@ -113,6 +128,7 @@ ProfileMatch ProfileStore::classify(const ProfileIdentity& cur, long long maxAge
   if (st.driver != cur.driver) return ProfileMatch::Soft;
   return ProfileMatch::Exact;
 }
+bool profileNeedsCalibration(const PerformanceProfile& profile, bool gpuEnabled, bool gpuAvailable) { const bool cpuOk=profile.cpuThroughput.state==MeasureState::Measured&&profile.cpuThroughput.value>0; if(!cpuOk)return true; if(gpuEnabled&&gpuAvailable)return !(profile.gpuThroughput.state==MeasureState::Measured&&profile.gpuThroughput.value>0); return false; }
 InitialEstimate ProfileStore::initialEstimate(const ProfileIdentity& current,
                                                long long maxAgeDays, long long nowSec) const {
   InitialEstimate e;
