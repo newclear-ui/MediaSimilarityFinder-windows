@@ -1,5 +1,20 @@
 # Development Roadmap — 0.9.4 Development Line
 
+## Document hierarchy
+
+Roadmap and detailed implementation briefs have different roles.
+
+- **Roadmap**: overall direction, dependency order, node boundaries, and change-management rules.
+- **Progress**: actual current node, blocker, validation state, and recovery history.
+- **Implementation Brief**: the focused engineering contract for the active node; it contains staged scope, boundaries, telemetry expectations, and exit criteria.
+- **Build History**: evidence of what was actually changed and validated in each version.
+
+Current B/C/D briefs:
+
+- `docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md`
+- `docs/implementation-briefs/C-calibration-profile.ko.md / .en.md`
+- `docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md`
+
 ## Purpose
 
 This document defines the high-level development direction and dependency order for the MediaSimilarityFinder 0.9.4 development line.
@@ -114,64 +129,33 @@ Exit criteria:
 
 ## Node B — Adaptive Scheduler
 
-Goal:
-- Dynamic allocation based on effective capacity rather than fixed 50:50 sharing.
+B owns the **CPU/GPU work-allocation policy based on effective capacity** rather than fixed 50:50 sharing. GPU utilization itself is not the optimization target.
 
-Inputs:
-- CPU/GPU baseline capacity
-- decoder/backend capability
-- live CPU/GPU load
-- memory/VRAM pressure
-- CPU/GPU queue depth
-- recent throughput
-- CPU↔GPU transfer cost
-- workload-specific cost
-- external load
+Detailed implementation:
+- `docs/implementation-briefs/B-adaptive-scheduler.en.md`
+- B1 minimal allocation → B2 throughput → B3 live load → B4 stability → B5 cost → B6 Resource Mode → B7 final gate
 
-Required:
-- GPU utilization itself is not the optimization target.
-- Inefficient GPU configurations may converge toward CPU-centric or CPU-only work.
-- Gaming is conservative adaptive policy.
-- Manual constrains CPU only; GPU remains AUTO.
-- moving average / hysteresis / minimum hold time
-- Record scheduler decisions in benchmark.
-
-Exit criteria:
-The scheduler must control work without repeated oscillation on real workloads and CPU-only / GPU OFF / GPU ON-AUTO runs must be comparable.
+The B boundary is "where and how much work to allocate"; internal queue/worker/pipeline execution belongs to D.
 
 ## Node C — Calibration / INI Performance Profile
 
-Goal:
-- Separate relatively stable baseline from current-run measurements.
+C **partially reuses and extends** the existing profile/benchmark concepts.
 
-Measure:
-- CPU fingerprint throughput
-- GPU fingerprint throughput
-- resize / conversion
-- CPU decode / hardware-decode feasibility
-- CPU↔GPU transfer
-- queue latency
+Separate relatively stable baselines from live runtime measurements. Store profile identity/version/confidence and related measurements in INI for use as the Scheduler's initial estimate. Live runtime state always has precedence.
 
-Store profile id / version / confidence / timestamp in INI.
-
-Exit criteria:
-The INI profile is used only as the next-run initial estimate, never above live runtime state, and can be revalidated after driver/backend/algorithm changes.
+Detailed implementation:
+- `docs/implementation-briefs/C-calibration-profile.en.md`
 
 ## Node D — Pipeline / Queue Optimization
 
-Goal:
-Increase CPU/GPU overlap and reduce unnecessary barriers and worker starvation.
+D is **new pipeline/queue design work**. It owns how Scheduler-assigned work actually flows through queues and workers, reducing unnecessary barriers, worker starvation, queue imbalance, transfer stalls, and serialization.
 
-Basic direction:
-CPU decode / analysis -> GPU hashing / verification -> CPU result / DB
+Start with observability before making large structural changes, then optimize incrementally.
 
-Where appropriate:
-Hardware Decode -> GPU resize / hash -> CPU result / DB
+Detailed implementation:
+- `docs/implementation-briefs/D-pipeline-queue.en.md`
 
-Do not solve the problem only by increasing worker count. Measure queue depth, wait time, batching, transfer cost, and stage overlap.
-
-Exit criteria:
-End-to-end throughput improves and queue wait / barrier / starvation become observable.
+B and D keep separate responsibilities: B is allocation policy; D is execution pipeline.
 
 ## Node E — Adaptive Video Decode Planner
 
