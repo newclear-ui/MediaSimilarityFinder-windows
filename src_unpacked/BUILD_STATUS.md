@@ -7,9 +7,9 @@
 - Current: 0.9.4.13 — Node C4.1 Calibration Lifecycle Fix (engine 1.5.0, video cache v9)
 - Active Node C substep: C4.1 fix — validation pending on current Windows CPU/GPU trees
 - Last completed Windows build/test line: **0.9.4.12**
-- Last completed v0.9.4.13 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.13 test run: **CTest 67/67 PASS (GPU)**
-- Last completed v0.9.4.13 validation: 17-combination evidence mapping; calibrationUsableForUpdate helper; Exact long silence + failure-keeps-file assertions; `--version` 0.9.4.13
+- Last completed v0.9.4.12 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.12 test run: **CTest 67/67 PASS (GPU)**
+- Last completed v0.9.4.12 validation: 17-combination evidence mapping; calibrationUsableForUpdate helper; Exact long silence + failure-keeps-file assertions; `--version` 0.9.4.12
 - CPU-only validation: Release build PASS; **CTest 64/64 PASS**; CUDA disabled and CPU fallback verified
 - GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + version title observed, process terminated cleanly); slot-path workflow automated PASS (`scan_workflow_test`); automated validation of human operation NOT_VALIDATED (environment limit) — development lead user-reports direct confirmation of run → search → report display in a real Windows session
 - Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in
