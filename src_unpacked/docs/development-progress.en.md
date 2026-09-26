@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.12 |
+| Reference code | 0.9.4.13 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
 | Current node | C — Calibration / INI Performance Profile (C4 gate PASS → next gate D) |
 | Current phase | Node C done → D kickoff per D brief (D1 observability first) |
-| Current version | 0.9.4.12 |
+| Current version | 0.9.4.13 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -103,10 +103,10 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
 - D queue/worker topology and F hardware decode are not pulled into C.
 - Metrics not yet measurable are recorded with explicit measurement states.
 
-### C4 — Calibration Gate (→ 0.9.4.12, PASS)
+### C4 — Calibration Gate (→ 0.9.4.13, PASS)
 
 - No new features: the prompt's 17 combinations tied to evidence
-  (mapping in `docs/build-history/0.9.4.12.en.md`).
+  (mapping in `docs/build-history/0.9.4.13.en.md`).
 - One minimal extraction: `calibrationUsableForUpdate()` — the exact
   rule the engine used, now unit-testable. Engine lambda calls it
   (behavior identical).
@@ -468,3 +468,8 @@ Once source implementation begins, update:
 - Next Gate
 
 **This is not a prediction document; it is the state record that prevents loss of the current development position.**
+
+
+### C4.1 — Calibration Lifecycle Fix (→ 0.9.4.13)
+- **GPT Fix:** GPU OFF→ON incomplete-profile lifecycle, default 30-day stale enforcement, CPU model/GPU driver identity completion, and failed-retry preservation.
+- Windows CPU/GPU Release build and full CTest validation: **PENDING**.
