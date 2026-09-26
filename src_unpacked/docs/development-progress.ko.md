@@ -13,8 +13,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 기준 코드 | 0.9.4.8 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | B — Adaptive Scheduler (B7 게이트 통과 → 다음 게이트 C) |
-| 현재 단계 | Node B 완료 → C 착수는 단계 분해 필요 (C brief에 B식 단계 없음) |
+| 현재 노드 | C — Calibration / INI Performance Profile (C0 설계 검토 완료 → C1 착수 준비) |
+| 현재 단계 | C 설계 계약 정리 완료 → C1 Profile Foundation 구현 전 문서 검토 |
 | 현재 버전 | 0.9.4.8 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
@@ -87,6 +87,19 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### C — Calibration / INI Performance Profile (착수 준비)
+
+- C brief를 C1~C4 단계로 구체화했다.
+- C1은 Profile Foundation만 다루며 실제 calibration 실행은 넣지 않는다.
+- C2는 short initial calibration과 Profile → Scheduler initial estimate 연결을 담당한다.
+- C3는 반복 runtime deviation을 기준으로 opportunistic recalibration과 confidence update를 담당한다.
+- C4는 Profile lifecycle, live precedence, CPU/GPU parity, failure/partial state, persistence를 최종 검증한다.
+- Profile 저장 위치는 portable 기준 Index/PerformanceProfile.ini로 정의한다.
+- Profile은 initial estimate이며 live runtime state가 항상 우선한다.
+- D queue/worker topology와 F hardware decode는 C에서 선행하지 않는다.
+- queue latency와 hardware decode가 아직 측정 불가능한 경우 explicit measurement state로 기록한다.
+- 현재는 문서/설계 단계이며 C++ 구현은 아직 시작하지 않는다.
 
 ### B7 — Final Scheduler Gate (→ 0.9.4.8, 통과)
 
