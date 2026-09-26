@@ -80,7 +80,7 @@ double GpuBackend::computeUnits() const {
 std::size_t GpuBackend::recommendedBatchSize(std::size_t requested) const {    requested=std::max<std::size_t>(1,requested);
     const auto info=detect();
     if(!info.available || info.freeMemoryBytes==0) return 0;
-    constexpr std::size_t bytesPerImage=1032;
+    constexpr std::size_t bytesPerImage = GpuBackend::kTransferBytesPerUnit;
     const std::size_t budget=info.freeMemoryBytes/2;
     const std::size_t byMemory=std::max<std::size_t>(1,budget/bytesPerImage);
     return std::min(requested,byMemory);

@@ -345,5 +345,35 @@ int b4checks() {
     check(d.reason == "proportional_baseline", "stale-cleared");
     check(near(d.gpuShare, 100.0 * 80 / 96), "stale-shares");
   }
+  // 5. B5: transfer cost bends observed GPU throughput toward CPU.
+  // Hold pinned to 0: this case exercises the cost term, not stability.
+  {
+    CpuGpuScheduler s;
+    s.setReevalIntervalMs(0);
+    s.setHoldMs(0);
+    s.setHoldMs(0);
+    SchedulerHardware hw;
+    hw.cpuThreads = 8; hw.gpuEnabled = true;
+    hw.gpuAvailable = true; hw.gpuComputeUnits = 40; hw.backendName = "CUDA";
+    hw.cpuRateKnown = hw.gpuRateKnown = true;
+    hw.cpuRate = 100.0; hw.gpuRate = 100.0;
+    // No transfer term -> even split (B4 behavior preserved).
+    const auto d0 = s.decide(hw);
+    check(near(d0.gpuShare, 50.0), "xfer-off");
+    // 1 MB per unit at 1 MB/s bandwidth = 1 s transfer per image:
+    // effGpu = 1/(1/100 + 1) ~= 0.99 -> overwhelmingly CPU-lean.
+    hw.transferBytesPerUnit = 1e6; hw.transferBandwidthMBps = 1.0;
+    s.maybeReevaluate(hw, 1000);
+    const auto d1 = s.lastDecision();
+    check(d1.gpuShare < 5.0 && d1.gpuUsed, "xfer-lean");
+    check(d1.reason == "observed_throughput", "xfer-reason");
+    double ec = 0, eg = 0;
+    s.currentCapacities(ec, eg);
+    check(near(eg, 1.0 / (1.0 / 100.0 + 1.0)), "xfer-effective");
+    // Zero bytes disables the term exactly.
+    hw.transferBytesPerUnit = 0;
+    s.maybeReevaluate(hw, 2000);
+    check(near(s.lastDecision().gpuShare, 50.0), "xfer-disabled");
+  }
   return 0;
 }

@@ -119,6 +119,7 @@ This directory records MediaSimilarityFinder release history and important archi
 | 0.9.4.3 | Node B2 Runtime Throughput Feedback (ThroughputWindow, observed-ratio shares, effective capacities) |
 | 0.9.4.4 | Node B3 Live Load Awareness (system-load headroom, external-load throttle, D1-reserved queue fields) |
 | 0.9.4.5 | Node B4 Stability Control (SMA smoothing, kill-band hysteresis, minimum hold) |
+| 0.9.4.6 | Node B5 Transfer / Workload Cost (total-cost rule, transfer term, workload via observed rates) |
 
 See the version-specific `.ko.md` / `.en.md` files for details.
 

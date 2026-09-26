@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.5 |
+| 기준 코드 | 0.9.4.6 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | B — Adaptive Scheduler (활성 substep B4, B5 미착수) |
-| 현재 단계 | B4 구현·검증 완료 → B5 진입은 brief 검토 후 |
-| 현재 버전 | 0.9.4.5 |
+| 현재 노드 | B — Adaptive Scheduler (활성 substep B5, B6 미착수) |
+| 현재 단계 | B5 구현·검증 완료 → B6 진입은 brief 검토 후 |
+| 현재 버전 | 0.9.4.6 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -87,6 +87,19 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    (자동화 환경 한계) — 단, 개발 주체가 실제 Windows 세션에서 직접
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
+
+### B5 — Transfer / Workload Cost (→ 0.9.4.6, 검증됨)
+
+- 관측 경로 전용 total-cost 규칙:
+  `effGpu = 1/(1/effGpu + transferSecPerUnit)`. 전송량(1032B)은
+  패킹 확정값, 대역폭은 Node C 교정 대상 coarse 12000MB/s.
+  workload 편차는 관측 rate 내재, 명시 모델은 Node E 몫.
+- `GpuBackend::kTransferBytesPerUnit`으로 VRAM 매직넘버 통일,
+  파이프라인 1줄 전달, 스캔당 1회 주입.
+- 검증: CPU 64/64, GPU 65/65(`scheduler_test` 내 B5 추가분),
+  `scan_workflow_test`로 UI parity, 양쪽 `--version`/`--smoke`.
+  검색 의미 불변. 실측 전송(약 86ns)은 오늘 사실상 0 — 구조 우선,
+  가중치는 후속.
 
 ### B4 — Stability Control (→ 0.9.4.5, 검증됨)
 
@@ -217,6 +230,12 @@ A
 - 실패했던 시도
 - 해결 후 결과
 - 다음 gate 영향
+
+### B5 구현 과정의 기록
+
+- 코드 이슈 없음. 도구 메모 1건: 버전 문자열 편집 1회가 spurious
+  "identical"로 보고되어 넓은 컨텍스트로 재적용, 이후 grep sweep으로
+  검증.
 
 ### B4 구현 과정의 기록
 

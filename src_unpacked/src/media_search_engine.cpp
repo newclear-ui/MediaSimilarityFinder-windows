@@ -239,6 +239,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   schedHw.gpuAvailable = imagePipeline.gpuAvailable();
   schedHw.gpuComputeUnits = imagePipeline.gpuComputeUnits();
   schedHw.backendName = imagePipeline.gpuBackendName();
+  // B5: transfer volume per GPU unit is known from the packing layout;
+  // bandwidth stays the documented coarse default until Node C measures it.
+  schedHw.transferBytesPerUnit = (double)imagePipeline.gpuTransferBytesPerUnit();
   scheduler_.reset();
   schedCpuWin_.clear();
   schedGpuWin_.clear();

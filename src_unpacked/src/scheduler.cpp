@@ -71,6 +71,16 @@ void CpuGpuScheduler::effectivePair(const SchedulerHardware& hw, bool keepThrott
     baseCpu = hw.cpuRate;
     baseGpu = hw.gpuRate;
     observed = true;
+    // B5: total-cost rule. Observed GPU rate is compute-only throughput;
+    // each unit also pays transferBytesPerUnit at the assumed bandwidth.
+    // Effective rate = 1 / (computeTime + transferTime). Workload-specific
+    // cost variation is already embedded in the observed rates; an explicit
+    // workload model belongs to Node E. Baseline (unobserved) path skips
+    // this term: without rate units there is nothing to add seconds to.
+    if (hw.transferBytesPerUnit > 0 && hw.transferBandwidthMBps > 0) {
+      const double tSec = hw.transferBytesPerUnit / (hw.transferBandwidthMBps * 1e6);
+      if (tSec > 0) baseGpu = 1.0 / (1.0 / baseGpu + tSec);
+    }
   }
   if (baseGpu <= 0.0) {
     cpu = baseCpu; gpu = 0.0; reason = "no_gpu_capacity"; throttled = false;

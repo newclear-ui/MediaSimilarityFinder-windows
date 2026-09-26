@@ -46,6 +46,10 @@ public:
     // CPU/GPU ratio feeds shares). 0 when no device. B2/C replace this with
     // measured throughput and calibration.
     double computeUnits() const;
+    // B5: host<->device bytes moved per GPU image unit (packed 32x32 frame
+    // plus hash slot). Feeds the scheduler transfer-cost term; Node C
+    // calibrates the bandwidth side by measurement.
+    static constexpr std::size_t kTransferBytesPerUnit = 1032;
     std::size_t recommendedBatchSize(std::size_t requested=256) const;
     bool hashBatch(const std::uint8_t* grayscale,std::uint64_t count,
                    std::uint64_t* hashes) const;

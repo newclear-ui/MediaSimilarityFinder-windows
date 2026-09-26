@@ -56,6 +56,11 @@ struct SchedulerHardware {
   // evaluate() ignores them until then.
   bool queueKnown = false;
   double cpuQueueDepth = 0, gpuQueueDepth = 0;
+  // B5: transfer cost. Bytes moved per GPU unit (known from the packing
+  // layout); bandwidth is a coarse default in MB/s that Node C calibrates
+  // by measurement. Zero bytes disables the term (baseline path untouched).
+  double transferBytesPerUnit = 0;
+  double transferBandwidthMBps = 12000.0;
 };
 struct SchedulerDecision {
   double cpuShare = 100.0, gpuShare = 0.0; // percent, sum to 100

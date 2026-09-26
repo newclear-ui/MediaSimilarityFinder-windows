@@ -17,6 +17,7 @@ public:
   bool gpuAvailable() const { return gpu_.available(); }
   std::string gpuBackendName() const { return gpu_.backendName(); }
   double gpuComputeUnits() const { return gpu_.computeUnits(); }
+  std::size_t gpuTransferBytesPerUnit() const { return GpuBackend::kTransferBytesPerUnit; }
 private:
  mutable GpuBackend gpu_;
 };

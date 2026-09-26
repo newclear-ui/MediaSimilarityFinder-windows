@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.5 |
+| Reference code | 0.9.4.6 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | B — Adaptive Scheduler (active substep B4, B5 not started) |
-| Current phase | B4 implementation and validation complete → B5 entry pending brief review |
-| Current version | 0.9.4.5 |
+| Current node | B — Adaptive Scheduler (active substep B5, B6 not started) |
+| Current phase | B5 implementation and validation complete → B6 entry pending brief review |
+| Current version | 0.9.4.6 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -90,6 +90,20 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   lead reports having directly confirmed run → search → report display
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
+
+### B5 — Transfer / Workload Cost (→ 0.9.4.6, validated)
+
+- Total-cost rule on the observed path only:
+  `effGpu = 1/(1/effGpu + transferSecPerUnit)`. Transfer volume (1032 B)
+  fixed by packing layout; bandwidth a coarse 12000 MB/s default for Node
+  C to calibrate. Workload variation lives inside observed rates;
+  explicit workload model belongs to Node E.
+- `GpuBackend::kTransferBytesPerUnit` unifies the VRAM-budget magic;
+  one-line pipeline forward, once-per-scan engine injection.
+- Validation: CPU 64/64, GPU 65/65 (B5 additions in `scheduler_test`);
+  UI parity via `scan_workflow_test`; `--version`/`--smoke` on both.
+  Search semantics unchanged. Production transfer (≈86 ns) is
+  effectively zero today — structure first, weight later.
 
 ### B4 — Stability Control (→ 0.9.4.5, validated)
 
@@ -223,6 +237,12 @@ Each substep records:
 - failed attempts
 - result after the fix
 - impact on the next gate
+
+### B5 records from the implementation
+
+- No code issues; one tooling note: a version-string edit reported
+  "identical strings" spuriously and was re-applied with wider context.
+  Verified by grep sweep afterwards.
 
 ### B4 records from the implementation
 
