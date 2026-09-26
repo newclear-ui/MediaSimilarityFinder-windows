@@ -10,6 +10,9 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 
 - docs/development-roadmap.ko.md / .en.md — authoritative A→B→C development flow; roadmap nodes are not version numbers.
 - docs/development-progress.ko.md / .en.md — current node, substep, blocker, validation, and next gate.
+- docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — staged Node B implementation contract.
+- docs/implementation-briefs/C-calibration-profile.ko.md / .en.md — Node C partial reuse/extension of profile and benchmark concepts.
+- docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — new Node D pipeline/queue implementation contract.
 - docs/build-history/<version>.ko.md / .en.md — per-version implementation and validation evidence.
 - Version progression is evidence-driven: validated states may advance 0.9.4.0 → 0.9.4.1 → 0.9.4.2 without fixed version assignments to roadmap nodes.
 
@@ -79,3 +82,9 @@ Current CMake registers 64 GPU / 63 CPU tests, including thumb_cache_test, video
 ## URLs
 
 Use raw GitHub URLs for source files when programmatic access is needed.
+
+## Active-node document hierarchy
+
+Roadmap = direction and dependency order. Progress = actual state and recovery history. Implementation Brief = focused engineering contract for the active node. Build History = version-specific evidence.
+
+Current design classification: B and D are new design work; C is partial reuse + extension.
