@@ -122,12 +122,45 @@ B의 경계는 "작업을 어디에 얼마나 배분할 것인가"이며 실제 
 
 ## Node C — Calibration / INI Performance Profile
 
-C는 기존 profile/benchmark 구조를 **부분 재사용하면서 확장**합니다.
+C는 기존 benchmark의 CalibrationTelemetry 기반을 재사용하면서 Performance Profile과 짧은 calibration lifecycle을 확장합니다.
 
-상대적으로 안정적인 baseline과 live measurement를 분리하고 profile id/version/confidence 등을 INI에 저장하여 Scheduler의 초기 추정값으로 제공합니다. Live runtime state가 항상 우선합니다.
+핵심 경계:
 
-세부 구현:
+- Profile은 다음 실행의 initial estimate입니다.
+- Live runtime measurement가 항상 Profile보다 우선합니다.
+- Profile identity가 맞지 않으면 재사용하지 않거나 confidence를 낮추고 재측정합니다.
+- C는 B의 Scheduler policy를 바꾸지 않습니다.
+- C는 D의 queue/worker topology와 F의 hardware decode 구현을 선행하지 않습니다.
+- 아직 측정할 수 없는 항목은 not_measured / not_available / partial / failed / fallback 상태로 명시합니다.
+
+설계 흐름:
+
+```
+Profile load
+   ↓
+identity / freshness check
+   ↓
+usable ───────────────→ initial estimate
+   │                           ↓
+   └→ short calibration → B Scheduler
+                               ↓
+                         live measurement
+                               ↓
+                    repeated deviation?
+                               ↓
+                    opportunistic calibration
+```
+
+세부 구현 계약:
 - `docs/implementation-briefs/C-calibration-profile.ko.md`
+
+단계:
+- C1 Profile Foundation — INI model/store, identity, confidence, stale/invalid, atomic persistence, Scheduler initial-estimate interface
+- C2 Initial Calibration — CPU/GPU fingerprint·batch, transfer/resize, CPU decode baseline, Profile creation, Scheduler initial estimate
+- C3 Opportunistic Recalibration — runtime deviation, repeated trigger, candidate update, confidence
+- C4 Calibration Gate — lifecycle, precedence, CPU/GPU parity, failure/partial state, persistence, regression
+
+C1 이전에는 실제 calibration 실행을 구현하지 않습니다.
 
 ## Node D — Pipeline / Queue Optimization
 
