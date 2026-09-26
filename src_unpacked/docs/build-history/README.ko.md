@@ -140,3 +140,5 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 ## Legacy
 
 이전 구현/설계 snapshot은 `../architecture/legacy/`에 보존한다.
+
+| 0.9.4.13 | Node C4.1 Calibration Lifecycle Fix — GPU OFF→ON metric-gap, 30-day stale policy, CPU/GPU identity completion — **GPT Fix** |
