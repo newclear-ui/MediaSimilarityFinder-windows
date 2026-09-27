@@ -161,6 +161,8 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   vidCount_ = 0; vidBytes_ = 0; vidFrames_ = 0; vidBuildNs_ = 0;
   vidDecodedFrames_ = 0; vidSampledFrames_ = 0;
   vidDecodedRecorded_ = vidSampledRecorded_ = false;
+  vidRangeCount_ = 0; vidRangeFiles_ = 0;
+  walkQueued_ = 0; walkDequeued_ = 0; walkMaxDepth_ = 0; walkStarved_ = 0;
   vidPlaySec_ = 0;
   {
     std::lock_guard<std::mutex> g(slowMutex_);
@@ -243,6 +245,24 @@ void BenchmarkRecorder::addImageTransferMs(double ms) {
 void BenchmarkRecorder::addImageExecMs(double ms) {
   imgExecNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
   imgExecRecorded_ = true;
+}
+void BenchmarkRecorder::recordWalkerEnqueue(std::size_t depthAfterPush) {
+  walkQueued_.fetch_add(1, std::memory_order_relaxed);
+  std::uint64_t prev = walkMaxDepth_.load(std::memory_order_relaxed);
+  while ((std::uint64_t)depthAfterPush > prev &&
+         !walkMaxDepth_.compare_exchange_weak(prev, (std::uint64_t)depthAfterPush,
+                                              std::memory_order_relaxed)) {}
+}
+void BenchmarkRecorder::recordWalkerDequeue(std::size_t depthAfterPop) {
+  (void)depthAfterPop;
+  walkDequeued_.fetch_add(1, std::memory_order_relaxed);
+}
+void BenchmarkRecorder::noteWalkerStarved() {
+  walkStarved_.fetch_add(1, std::memory_order_relaxed);
+}
+void BenchmarkRecorder::recordVideoRange(std::size_t files) {
+  vidRangeCount_.fetch_add(1, std::memory_order_relaxed);
+  vidRangeFiles_.fetch_add((std::uint64_t)files, std::memory_order_relaxed);
 }
 void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
                                  std::size_t decodedFrames, std::size_t sampledFrames) {
@@ -497,6 +517,8 @@ std::string BenchmarkRecorder::toJson() const {
     << ",\"meanBuildMs\":" << (vidN ? vidBuildMs / vidN : 0)
     << ",\"secPerPlayMin\":" << (playSec > 0 ? (vidBuildMs / 1000.0) / (playSec / 60.0) : 0)
     << ",\"secPerGB\":" << (vidBytes_.load() > 0 ? (vidBuildMs / 1000.0) / ((double)vidBytes_.load() / 1e9) : 0)
+    << ",\"ranges\":" << vidRangeCount_.load() << ",\"rangeFiles\":" << vidRangeFiles_.load()
+    << ",\"rangeState\":\"" << measureStateName(vidRangeCount_.load() > 0 ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"slowest\":[";
   {
     std::lock_guard<std::mutex> g(slowMutex_);
@@ -509,6 +531,11 @@ std::string BenchmarkRecorder::toJson() const {
     }
   }
   o << "]},";
+  // D1b walker queue: unbounded by construction (producer never blocks);
+  // queued/dequeued/maxDepth/starvedTicks recorded, never zero-filled.
+  o << "\"walker\":{\"queued\":" << walkQueued_.load() << ",\"dequeued\":" << walkDequeued_.load()
+    << ",\"maxDepth\":" << walkMaxDepth_.load() << ",\"starvedTicks\":" << walkStarved_.load()
+    << ",\"state\":\"" << measureStateName(walkQueued_.load() > 0 ? MeasureState::Measured : MeasureState::NotMeasured) << "\"},";
   const MeasureState sampleState = samplerStarted_ ? MeasureState::Measured : MeasureState::NotMeasured;
   const MeasureState diskState = diskWasAvailable_ ? MeasureState::Measured : MeasureState::NotAvailable;
   o << "\"resources\":{\"sampleMs\":" << kSampleMs << ",\"samples\":" << nS

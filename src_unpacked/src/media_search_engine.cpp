@@ -513,6 +513,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    // B3: video carries no new throughput observation, but loads refresh.
    refreshSchedLoad();
    scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
+   // D1b: async range granularity (count + admitted files, no timing split).
+   bench_.recordVideoRange(to > from ? to - from : 0);
    // B7 binding: phase-fresh published decision (see image path note).
    const bool useGpu = schedUseGpuNow();
    std::vector<std::future<AnalysisJob>> futs;
@@ -576,16 +578,20 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    cb.onProgress=[control](std::size_t n){ if(control->listing) control->listing(n); };
    cb.cancel=&control->cancel; cb.pause=&control->pause;
   }
-  cb.onFile=[&](FileState&& f){ {std::lock_guard<std::mutex> g(queueMutex); queue.push(std::move(f));} queueCv.notify_one(); };
+   cb.onFile=[&](FileState&& f){ {std::lock_guard<std::mutex> g(queueMutex); queue.push(std::move(f)); bench_.recordWalkerEnqueue(queue.size());} queueCv.notify_one(); };
   s.scan_stream(root, excl, cb);
   walkDone.store(true); queueCv.notify_all();
  });
- while(!failed && !cancelled){
-  FileState x; bool have=false;
-  { std::unique_lock<std::mutex> g(queueMutex);
-   queueCv.wait_for(g,std::chrono::milliseconds(50),[&]{return !queue.empty()||walkDone.load();});
-   if(!queue.empty()){ x=std::move(queue.front()); queue.pop(); have=true; } }
-  if(have) processOne(std::move(x));
+  while(!failed && !cancelled){
+   FileState x; bool have=false;
+   { std::unique_lock<std::mutex> g(queueMutex);
+    // D1b: a 50 ms timeout with an empty queue while the walker is alive is
+    // a genuine consumer-idle poll (starved tick). Spurious wakeups and the
+    // drained exit are not counted.
+    const bool woke = queueCv.wait_for(g,std::chrono::milliseconds(50),[&]{return !queue.empty()||walkDone.load();});
+    if(!queue.empty()){ x=std::move(queue.front()); queue.pop(); bench_.recordWalkerDequeue(queue.size()); have=true; }
+    else if(!woke && !walkDone.load()) bench_.noteWalkerStarved(); }
+   if(have) processOne(std::move(x));
   if(stopped(control)) cancelled=true;
   else if(walkDone.load() && queue.empty()){ if(!benchWalkTimed){ benchWalkTimed=true; bench_.addWalkMs(benchMsSince()); } walkCompleted=true; break; }
  }

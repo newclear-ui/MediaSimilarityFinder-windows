@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.16 |
+| Reference code | 0.9.4.17 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — Pipeline / Queue (D1a gate PASS → next D1b) |
-| Current phase | Node D in progress → D1b per D brief (walker + video async) |
-| Current version | 0.9.4.16 |
+| Current node | D — Pipeline / Queue (D1b gate PASS → next D2) |
+| Current phase | Node D in progress → D2 per D brief (barrier review on D1a/D1b evidence, pre-register first) |
+| Current version | 0.9.4.17 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -478,3 +478,9 @@ Once source implementation begins, update:
 - Remote 0.9.4.15 implementation validated locally: packMs excludes decode, cpuHashMs records executed CPU hash work (mirror-inclusive on GPU path, separate field), batchMaxDepth is structurally 1 (documented, D3 activates the counter), batchItems counts attempted inputs, transfer stays not_measured.
 - Gate fix inside: schema v2 → v3 for the 6 added keys (Node A rule), plus completion of the partial 0.9.4.15 version sweep (vcpkg/index/GUI-about-titles/package/tests).
 - Validation: CPU 66/66, GPU 67/67; `--version`/`--smoke` on both. Next: D1b (walker + video async).
+
+### D1b — Walker/Video Observability Gate (→ 0.9.4.17, PASS)
+- Walker handoff: enqueue/dequeue counts with exact depths, maxDepth, starved ticks (timeout + empty + walker-alive only). No producer-block counter (unbounded by construction, documented).
+- Video async granularity: ranges/rangeFiles/rangeState per launched range (no timing split; range walls already in `videoStageMs`).
+- Schema v4 for the new keys (Node A rule). No topology change (4 hooks).
+- Validation: CPU 66/66, GPU 67/67; `--version`/`--smoke` on both. Next: D2 (barrier review on D1a/D1b evidence, pre-register first).

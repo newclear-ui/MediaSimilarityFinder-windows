@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.16 |
+| 기준 코드 | 0.9.4.17 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | D — Pipeline / Queue (D1a 게이트 통과 → 다음 D1b) |
-| 현재 단계 | Node D 진행 중 → D1b는 D brief 기준 (walker + video async) |
-| 현재 버전 | 0.9.4.16 |
+| 현재 노드 | D — Pipeline / Queue (D1b 게이트 통과 → 다음 D2) |
+| 현재 단계 | Node D 진행 중 → D2는 D brief 기준 (D1a/D1b 증거 기반 barrier 검토, 사전 등록 우선) |
+| 현재 버전 | 0.9.4.17 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -463,3 +463,13 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
 - 게이트 수정: 6개 키에 schema v2 → v3 (Node A 규칙), 부분적 0.9.4.15
   버전 sweep 완성 (vcpkg/index/GUI-about-titles/package/tests).
 - 검증: CPU 66/66, GPU 67/67, 양쪽 `--version`/`--smoke`. 다음 D1b.
+
+### D1b — Walker/Video Observability 게이트 (→ 0.9.4.17, 통과)
+- Walker handoff: 정확한 depth 포함 enqueue/dequeue 카운트, maxDepth,
+  starved tick (타임아웃 + empty + walker alive만). producer block
+  카운터 없음 (unbounded 구조, 문서화).
+- Video async 단위: 실행 range마다 ranges/rangeFiles/rangeState
+  (타이밍 분해 없음, range wall은 기존 `videoStageMs`에 이미 있음).
+- 신규 키에 schema v4 (Node A 규칙). topology 변경 없음 (후크 4개).
+- 검증: CPU 66/66, GPU 67/67, 양쪽 `--version`/`--smoke`. 다음 D2
+  (D1a/D1b 증거 기반 barrier 검토, 사전 등록 우선).

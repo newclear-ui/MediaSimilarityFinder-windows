@@ -101,7 +101,8 @@ public:
   // v2: calibration metric states (C2 first fills CalibrationTelemetry).
   // v3: D1a image-batch observability keys (packMs, cpuHashMs, batchCount,
   // batchItems, batchMaxDepth, batchState).
-  static constexpr int kBenchmarkSchemaVersion = 3;
+  // v4: D1b walker-queue and video-range keys.
+  static constexpr int kBenchmarkSchemaVersion = 4;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);
@@ -129,6 +130,13 @@ public:
   void addImageGpuQueueMs(double ms);
   void addImageTransferMs(double ms);
   void addImageExecMs(double ms);
+  // Node D1b: walker-queue and video-range observability. Depth values are
+  // passed in by the engine (exact queue.size() under its lock); the
+  // recorder only accumulates counts and the maximum.
+  void recordWalkerEnqueue(std::size_t depthAfterPush);
+  void recordWalkerDequeue(std::size_t depthAfterPop);
+  void noteWalkerStarved();
+  void recordVideoRange(std::size_t files);
   void addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
                 std::size_t decodedFrames = kFramesNotProvided, std::size_t sampledFrames = kFramesNotProvided);
   void addVideoGpu(bool used, bool fallback, double gpuMs);
@@ -175,9 +183,16 @@ private:
   std::atomic<std::uint64_t> vidCount_{0}, vidBytes_{0}, vidFrames_{0};
   std::atomic<std::uint64_t> vidDecodedFrames_{0}, vidSampledFrames_{0};
   bool vidDecodedRecorded_ = false, vidSampledRecorded_ = false;
+  // D1b: async video-range granularity (ranges launched, files admitted).
+  std::atomic<std::uint64_t> vidRangeCount_{0}, vidRangeFiles_{0};
   std::atomic<long long> vidBuildNs_{0};
   std::atomic<std::uint64_t> vidGpu_{0}, vidGpuFallback_{0};
   std::atomic<long long> vidGpuNs_{0};
+  // D1b walker queue: unbounded by construction, so the producer never
+  // blocks (no producerBlocked counter exists); the consumer records idle
+  // polls while the walker is alive as starved ticks.
+  std::atomic<std::uint64_t> walkQueued_{0}, walkDequeued_{0}, walkMaxDepth_{0};
+  std::atomic<std::uint64_t> walkStarved_{0};
   std::atomic<double> vidPlaySec_{0};
   mutable std::mutex slowMutex_;
   std::vector<SlowFile> slowImages_, slowVideos_;

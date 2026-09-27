@@ -146,3 +146,4 @@ Previous implementation/design snapshots are preserved under `../architecture/le
 
 - v0.9.4.15 — Node D1a Image-Path Observability (implementation complete; validation PASS confirmed in 0.9.4.16)
 - v0.9.4.16 — D1a gate: schema v3 restoration, version-string completion, full-suite validation
+- v0.9.4.17 — D1b gate: walker-queue and video-range observability, schema v4
