@@ -23,6 +23,11 @@ Testing/
 /src_unpacked/portable-release/
 MediaSimilarityFinder-v*-Portable-*.zip
 
+# Source backup zips (regenerable via src_unpacked/scripts/backup_src.ps1).
+# These are byte-identical to GitHub by construction, so committing them would
+# only duplicate the repo. Excluded so a backup can never nest inside the next.
+/backup/
+
 # Runtime index/cache (program-owned, machine-local)
 /Index/
 /Cache/

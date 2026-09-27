@@ -80,6 +80,7 @@ Current CMake registers 78 GPU / 77 CPU tests, including verify_parity_test (the
 - Build CPU: scripts/build_windows_cpu.ps1 -VcpkgRoot C:\src\vcpkg (VS 2026 x64, project-local vcpkg_installed, vcpkg.json is the single dependency source).
 - Build GPU: scripts/build_windows_gpu.ps1 -VcpkgRoot C:\src\vcpkg (canonical; clean build-windows-gpu tree). The legacy build-windows-cuda tree is preserved, not renamed in place.
 - Smoke: MediaSimilarityFinder.exe --smoke (offscreen) and --version.
+- Source backup: scripts/backup_src.ps1 [-Keep 3] writes backup/MediaSimilarityFinder-v<version>-src.zip containing source + docs. It uses `git archive` only, so the zip is byte-identical to GitHub by construction and can never pick up uncommitted working-tree edits. It refuses to run when HEAD != origin/main or when tracked files are dirty. Keeps the newest 3 and recycles the oldest beyond that. Run it at every version bump; this rule is session- and agent-independent (AGENTS.md item 4).
 - Version bump files: CMakeLists.txt, vcpkg.json, gui/main.cpp (kVersion), scripts/package_portable.ps1, src/index_manager.cpp.
 - CI workflows under .github/workflows/ are manual-dispatch regression workflows aligned with VS2026, src_unpacked, and project-local vcpkg_installed. The hosted CUDA workflow validates CUDA compilation and device-independent tests; local NVIDIA hardware remains the runtime validation authority.
 

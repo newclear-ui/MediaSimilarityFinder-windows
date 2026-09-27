@@ -14,13 +14,25 @@
 
 2. 빌드 기준: Visual Studio 18 2026 x64, project-local `vcpkg_installed`, `vcpkg.json`이 유일 의존성 기준
 3. 릴리즈 zip 규칙: 최근 2개 빌드(bin/src/portable 각 1개)만 유지. src.zip은 `git archive <태그> -- src_unpacked ':!*.zip'`으로 만들어 zip 중첩 금지
-4. 엔진/DB 버전 규칙 (빌드 번호 0.9.2.x와 분리, "M.m.p" 형식):
+4. **소스 백업(zip) 규칙 — 세션·에이전트가 바뀌어도 항상 유지**
+   - 목적: 최근 소스+문서를 zip 백업으로 항상 남긴다. **이 규칙은 어떤 세션/에이전트에서도 예외 없이 지켜야 한다.**
+   - 생성: `powershell -ExecutionPolicy Bypass -File scripts/backup_src.ps1` (cwd = `src_unpacked`)
+   - 파일명: `MediaSimilarityFinder-v<버전>-src.zip`, 위치: 저장소 루트 `backup/`
+   - **내용물은 반드시 GitHub과 동일해야 한다.** zip은 `git archive`로만 만든다. 워킹트리 복사 금지. 코드와 문서를 모두 포함한다.
+   - 스크립트가 다음을 사전 검증한다. 위반 시 refuse 한다.
+     1. `HEAD == origin/main` (미push 커밋이 있으면 중단)
+     2. tracked 파일에 미커밋 변경이 있으면 중단
+     3. `.zip`은 archive 대상에서 제외 (zip 중첩 금지)
+   - **회전(rotation)**: 백업은 최대 **3개**를 보존한다. 신규 zip을 만들면 가장 오래된 zip을 **휴지통으로 보낸다**(삭제하지 않는다). 3개를 넘어서면 다음 빌드에서 최이래 1개가 회전 대상이 된다.
+   - 신규 zip 생성 후 `git ls-tree` + `git hash-object`로 **파일 목록과 내용의 byte 단위 일치를 검증**하고 결과를 보고한다. 이름만 같으면 통과로 보지 않는다.
+   - 이 규칙은 버전 변경 시점마다 수행한다. `docs/STRUCTURE.md`, `docs/llms.txt`, `BUILD_STATUS.md`에 상태를 기록한다.
+5. 엔진/DB 버전 규칙 (빌드 번호 0.9.2.x와 분리, "M.m.p" 형식):
    - 검색엔진 판정 버전 `MediaSearchEngine::kEngineVersion`: patch=임계·가중·게이트 튜닝, minor=새 단계·규칙 추가, major=판정 아키텍처 교체. 상향 시 다음 스캔에서 저장 쌍 자동 재검증 (전체 재스캔 불필요)
    - DB 스키마 버전 `Database::kDatabaseVersion`: patch=부가적 추가(테이블·컬럼·인덱스, 구코드 읽기 가능), minor=마이그레이션 필요 변경, major=파괴적 변경(구행 무효, wipe+재스캔). open 시 마이그레이션 후 스탬프
    - 빌드 번호와 무관하게 필요할 때만 상향. 상향한 빌드는 build-history에 명시
-3. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.4.25, 개발선 0.9.4) 구분 유지. 판정 의미 불변, additive CUDA 커널·호출 병합 허용, CPU fallback 유지
+6. 공식 기준선(0.9.2.32)과 작업 검증선(0.9.4.25, 개발선 0.9.4) 구분 유지. 판정 의미 불변, additive CUDA 커널·호출 병합 허용, CPU fallback 유지
 
-4. **0.9.4 개발선 작업 규칙**
+7. **0.9.4 개발선 작업 규칙**
 
 - 상위 개발 방향은 `docs/development-roadmap.ko.md` / `.en.md`가 기준이다.
 - 현재 실제 상태는 `docs/development-progress.ko.md` / `.en.md`가 기준이다.
@@ -41,7 +53,7 @@
 - Node B와 D는 신규 설계, Node C는 기존 profile/benchmark 개념의 부분 재사용 + 확장으로 취급한다.
 - Benchmark/Telemetry는 각 development node의 완료조건과 함께 구현한다.
 
-5. **벤치마크 / Telemetry**
+8. **벤치마크 / Telemetry**
 
 - Benchmark / Telemetry는 모든 development node의 핵심 계층이다.
 - 상세 설계는 `docs/architecture/benchmark-telemetry-roadmap.ko.md` + `.en.md`를 따른다.

@@ -9,7 +9,8 @@
 - CMakeLists.txt — 빌드/테스트 정의, 버전(project(... VERSION ...))은 여기서 시작.
 - CMakePresets.json — x64 MSVC 프리셋.
 - scripts/ — build_windows_cpu.ps1(CPU 빌드), build_windows_gpu.ps1(GPU 빌드, 0.9.4.x 목표),
-  package_portable.ps1(포터블 패키징, 버전 문자열을 여기서도 상향).
+  package_portable.ps1(포터블 패키징, 버전 문자열을 여기서도 상향),
+  backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 3개 회전).
 - gui/ — Qt 위젯 앱. main.cpp(kVersion 포함), mainwindow.h/.cpp(한글 포함),
   video_decoder.h/.cpp.
 - src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
@@ -63,9 +64,10 @@
 - scripts/build_windows_gpu.ps1 -VcpkgRoot C:\src\vcpkg — GPU 빌드 진입점(0.9.4.x 목표; 현재 backend는 NVIDIA CUDA).
 - scripts/build_windows_cpu.ps1 -VcpkgRoot C:\src\vcpkg — CPU 빌드/CTest.
 - scripts/prepare_dataset.ps1 -Root ..\test_sample_img_vid [-Scale small|full] — D8 표준 dataset 결정론적 생성기(binary 미커밋). 산출물 설명/기대 fingerprint: docs/test_sample_img_vid.md.
+- scripts/backup_src.ps1 [-Keep 3] — GitHub과 동일한 소스+문서 zip 백업. `git archive`로만 생성하므로 워킹트리 편집이 섞일 수 없고, HEAD != origin/main 이거나 미커밋 tracked 변경이 있으면 refuse. 산출물은 저장소 루트 `backup/MediaSimilarityFinder-v<버전>-src.zip`. 기본 3개 보존이며 초과 시 가장 오래된 것을 휴지통으로 보낸다(AGENTS.md 4번).
 - msf_dataset_report <root> — dataset fingerprint 출력 + <root>.fingerprint.json 기록(root 옆, root 안쪽 금지).
 - msf_dataset_baseline <root> <app-dir> [runs] — 동일 dataset 반복 스캔, walker queue / GPU 내부 타이밍 / stage 분해 리포트. CTest 아님(의사결정 입력).
-- 현재 CMakeLists.txt에는 GPU 77개 / CPU 76개 CTest가 등록되어 있다.
+- 현재 CMakeLists.txt에는 GPU 78개 / CPU 77개 CTest가 등록되어 있다.
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - 버전 상향 파일(검색용): CMakeLists.txt, vcpkg.json, gui/main.cpp, scripts/package_portable.ps1, src/index_manager.cpp.
 - Portable UI settings: `initAppSettings()` 가 organization `MediaSimilarityFinder-ui` + application `MediaSimilarityFinder` 로 INI 를 exe 옆에 기록한다. 0.9.4.24 이전의 `newclear-ui` 디렉터리는 첫 실행 시 1회 자동 migration 되며, 새 위치에 이미 파일이 있으면 덮어쓰지 않는다. QuickLook 레지스트리 조회는 `NativeFormat` + 명시 path 라서 이 identity 와 무관하다.
