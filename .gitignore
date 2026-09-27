@@ -29,3 +29,13 @@ MediaSimilarityFinder-v*-Portable-*.zip
 /src_unpacked/Index/
 /src_unpacked/Cache/
 *.sqlite-journal
+
+# D8 standard dataset (regenerable via scripts/prepare_dataset.ps1).
+# Binary fixtures are never committed; the expected fingerprint lives in
+# src_unpacked/docs/test_sample_img_vid.md and the build-history docs.
+/test_sample_img_vid/
+/src_unpacked/test_sample_img_vid/
+*.fingerprint.json
+
+# Per-scan scratch index dirs created by the D8 review probe
+/test_sample_img_vid_appdir*/
