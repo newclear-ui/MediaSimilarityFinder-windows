@@ -234,6 +234,16 @@ Crop                ──────
 
 겹치는 구간을 식별할 수 있도록 stage activity interval 또는 group-level overlap evidence를 기록한다.
 
+### D1a 구현 시작 기준선
+
+- D0 baseline: v0.9.4.14
+- first implementation: v0.9.4.15
+- existing BenchmarkRecorder telemetry is reused
+- only the existing synchronous imageBatch boundary is observed
+- Scheduler/Profile/Calibration/CUDA/video/similarity/DB/cache are unchanged
+- transfer remains not_measured without backend-internal hooks
+- queue wait is not encoded as zero because no separate execution queue exists
+
 ### D1a 종료 조건
 
 - image decode/hash/crop 경계가 관측 가능
@@ -516,7 +526,7 @@ CPU result 대기
 
 ---
 
-# D7 — Scheduler Execution Binding (allocation-proportional dispatch)
+# D7 — Allocation-Proportional Dispatch
 
 ## 목적
 
