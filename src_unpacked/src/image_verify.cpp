@@ -51,40 +51,50 @@ bool verifyBuffersFor(const std::string& path, GrayImage& full, GrayImage& asp,
     tel->verifyQuickHashBytes += n;
   }
   {
+    // D9d: wait is measured around the lock attempt, hold around the critical
+    // section. The lock itself is untouched.
+    const auto tWait0 = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(verifyCacheMutex);
+    if (tel) { tel->cacheMutexWaitMs += msSince(tWait0); ++tel->cacheMutexAcquires; }
+    const auto tHold0 = std::chrono::steady_clock::now();
     auto it = verifyCacheMap.find(key);
     if(it != verifyCacheMap.end()){
       verifyCacheList.splice(verifyCacheList.begin(), verifyCacheList, it->second);
       if(tel) ++tel->verifyCacheHits;
-      // D9c: the hit path copies both GrayImages out of the cache, which
-      // allocates and memcpy's per call. Timed on its own so it cannot hide
-      // inside decodeMs.
       const auto tCopy0 = tel ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
       full = it->second->second.full; asp = it->second->second.asp;
       if(tel){ tel->verifyCacheCopyMs += msSince(tCopy0); ++tel->verifyCacheCopies; }
+      if(tel) tel->cacheMutexHoldMs += msSince(tHold0);
       return true;
     }
+    if(tel) tel->cacheMutexHoldMs += msSince(tHold0);
   }
   if(tel) ++tel->verifyDecodeMisses;
   // D9c: decode is timed apart from the cache insert so a miss-only stage and
-  // an every-call stage are never reported as one number.
+  // an every-call stage are never reported as one number. D9d: the decoder
+  // writes its own sub-stage breakdown into tel->decode.
   const auto tDec0 = std::chrono::steady_clock::now();
   ImageDecoder dec; GrayImage f, a;
-  if(!dec.decode(path, kDim, kDim, f) || !dec.decodePreserveAspect(path, kDim, a)) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }
+  if(!dec.decode(path, kDim, kDim, f, tel? &tel->decode : nullptr) || !dec.decodePreserveAspect(path, kDim, a, tel? &tel->decode : nullptr)) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }
   if(tel){ tel->verifyDecodes += 2; }
   if(f.width != kDim || f.height != kDim || f.pixels.size() != (std::size_t)kDim * kDim) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }
   if(a.width <= 0 || a.height <= 0 || a.pixels.size() != (std::size_t)a.width * a.height) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }
   if(tel) tel->verifyDecodeMs += msSince(tDec0);
   {
-    const auto tStore0 = tel ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    // D9d: second lock site, accounted the same way as the lookup above.
+    // cacheStoreMs keeps its D9c meaning (the whole store critical section),
+    // while the mutex wait and hold are split out of it for D9d.
+    const auto tWait0 = tel ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     std::lock_guard<std::mutex> lock(verifyCacheMutex);
+    const auto tHold0 = tel ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (tel) { tel->cacheMutexWaitMs += msSince(tWait0); ++tel->cacheMutexAcquires; }
     verifyCacheList.emplace_front(key, VerifyBuffers{f, a});
     verifyCacheMap[key] = verifyCacheList.begin();
     while(verifyCacheList.size() > kVerifyCacheMax){
       verifyCacheMap.erase(verifyCacheList.back().first);
       verifyCacheList.pop_back();
     }
-    if(tel) tel->verifyCacheStoreMs += msSince(tStore0);
+    if(tel){ tel->cacheMutexHoldMs += msSince(tHold0); tel->verifyCacheStoreMs += msSince(tWait0); }
   }
   full = f; asp = a;
   return true;

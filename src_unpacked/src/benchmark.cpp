@@ -714,6 +714,38 @@ std::string BenchmarkRecorder::toJson() const {
       << ",\"verifyCacheCopies\":" << v.verifyCacheCopies
       << ",\"verifyCropCalls\":" << v.verifyCropCalls
       << ",\"verifyFlipCalls\":" << v.verifyFlipCalls;
+    // D9d: the decode breakdown D9c could not produce. copyMs contains the real
+    // image decode because WIC decompresses lazily inside CopyPixels; the field
+    // comment says so and the report repeats it, so the number is never misread
+    // as a plain memcpy.
+    auto d9dStage = [&](const char* n, double ms) {
+      a << ",\"" << n << "\":" << ms << ",\"" << n << "State\":\""
+        << measureStateName(breakdown ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    };
+    const auto& d = v.decode;
+    d9dStage("decodeTotalMs", d.totalMs);
+    d9dStage("decodeComInitMs", d.comInitMs);
+    d9dStage("decodeFactoryMs", d.factoryMs);
+    d9dStage("decodeOpenMs", d.openMs);
+    d9dStage("decodeMetadataMs", d.metadataMs);
+    d9dStage("decodeOrientMs", d.orientMs);
+    d9dStage("decodeResizeMs", d.resizeMs);
+    d9dStage("decodeConvertMs", d.convertMs);
+    d9dStage("decodeCopyMs", d.copyMs);
+    d9dStage("decodePgmFallbackMs", d.pgmFallbackMs);
+    a << ",\"decodeSubSumMs\":" << (d.comInitMs + d.factoryMs + d.openMs + d.metadataMs
+        + d.orientMs + d.resizeMs + d.convertMs + d.copyMs);
+    a << ",\"decodeCalls\":" << d.calls
+      << ",\"decodeAspectCalls\":" << d.aspectCalls
+      << ",\"decodeWicSucceeded\":" << d.wicSucceeded
+      << ",\"decodePgmFallbacks\":" << d.pgmFallbacks
+      << ",\"decodeOrientApplied\":" << d.orientApplied
+      << ",\"decodeFailures\":" << d.failures;
+    // Wait and hold are deliberately not summed: small hold plus large wait means
+    // contention, small hold plus small wait means the lock is not the problem.
+    a << ",\"cacheMutexWaitMs\":" << v.cacheMutexWaitMs
+      << ",\"cacheMutexHoldMs\":" << v.cacheMutexHoldMs
+      << ",\"cacheMutexAcquires\":" << v.cacheMutexAcquires;
     a << "},";
     o << a.str();
   }

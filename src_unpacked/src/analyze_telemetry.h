@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "image_decoder.h"   // D9d: DecodeTelemetry
 
 namespace msf {
 
@@ -85,6 +86,19 @@ struct AnalyzeTelemetry {
     std::uint64_t verifyCacheCopies = 0;    // GrayImage copies out of the cache
     std::uint64_t verifyCropCalls = 0;      // centerCropResize invocations
     std::uint64_t verifyFlipCalls = 0;      // flipBuf invocations
+
+    // ------------------------------------------------------------ D9d
+    // D9c measured decode as one opaque 94.90% region. D9d splits it, and adds
+    // the cache-mutex accounting D9c could not do. The two are separate because
+    // the lock is held across a map lookup, not across decoding.
+    DecodeTelemetry decode;                 // decode sub-stage timings/counters
+
+    // Mutex accounting, exclusive of each other: wait is time blocked before the
+    // lock is held, hold is time the lock is held. The verdict depends on their
+    // ratio, so they are never summed into one number.
+    double cacheMutexWaitMs = 0;
+    double cacheMutexHoldMs = 0;
+    std::uint64_t cacheMutexAcquires = 0;
 };
 
 }

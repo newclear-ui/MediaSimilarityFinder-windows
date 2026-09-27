@@ -336,6 +336,13 @@ if(isVideo){
   s.analyze.verifyCacheCopies=tel.verifyCacheCopies;
   s.analyze.verifyCropCalls=tel.verifyCropCalls;
   s.analyze.verifyFlipCalls=tel.verifyFlipCalls;
+  // D9d: decode sub-stage breakdown and cache-mutex accounting. The mutex wait
+  // and hold are reported side by side rather than summed, because the verdict
+  // depends on their ratio.
+  s.analyze.decode=tel.decode;
+  s.analyze.cacheMutexWaitMs=tel.cacheMutexWaitMs;
+  s.analyze.cacheMutexHoldMs=tel.cacheMutexHoldMs;
+  s.analyze.cacheMutexAcquires=tel.cacheMutexAcquires;
   return s;
 }
 const std::vector<MediaFile>& ScanPipeline::files()const{return files_;}

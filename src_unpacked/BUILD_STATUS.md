@@ -4,14 +4,56 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.26 — D9c expensive verify internal cost accounting (instrumentation build). decode is 94.90 % of the 8.564 ms expensive verify; frame_ssim is 0.55 %**
-- Active node: **I / D9a PASS; D9b Candidate B NOT ACCEPTED; D9c PASS (measurement). Next: Candidate D (decode), which must first decompose the 4.31 ms decode**
+- Current: **0.9.4.26 — D9c (PASS) + D9d (PASS) instrumentation. decode 94.86 % of the verify; inside it open 62.15 % + factory 27.39 %; cache mutex is not a bottleneck. GUI translation keys restored; benchmark schema v9 confirmed additive-read**
+- Active node: **I / D9a PASS; D9b Candidate B NOT ACCEPTED; D9c PASS (profiling); D9d PASS (measurement). Next: Candidate D1 (decoder construction + file open), which must first decompose them**
 - Last completed Windows build/test line: **0.9.4.26**
 - Last completed v0.9.4.26 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.26 test run: **CTest 78/78 PASS (GPU)**
-- Last completed v0.9.4.26 validation: `verify_parity_test` 25 checks (optimized path still double-identical to the preserved pre-D9b reference) + new D9c `verify_instrumentation` assertions (stage sum <= total, instrumented == uninstrumented, stage counters match the known per-call structure); CPU 77/77, GPU 78/78; every existing counter and groups 156,152 identical to 0.9.4.24 D9a; `--smoke` exit 0; `--version` 0.9.4.26
-- CPU-only validation: Release build PASS; **CTest 77/77 PASS**; CUDA disabled and CPU fallback verified
-- D9c scope note: **instrumentation only, no optimization.** 8 exclusive stage timings + 7 stage counters in `AnalyzeTelemetry`; timers placed outside the calls they measure; `frame_ssim` internals and decode internals deliberately left unmeasured. SSIM, window, precision, threshold, candidate, grouping, verdict, cache, decode, resize, crop, mirror, CPU-fallback, and CUDA semantics all unchanged. Engine 1.5.0 / DB 1.0.3 / cache v9 / schema v9 unchanged
+- Last completed v0.9.4.26 test run: **CTest 80/80 PASS (GPU)**, **79/79 PASS (CPU)**
+- Last completed v0.9.4.26 validation: `verify_parity_test` 25 checks + D9c `verify_instrumentation`; `ui_translation_keys_test` (new); `benchmark_schema_test` (new, 29 checks, `additive-read-confirmed`); every verify counter and groups 156,152 identical to 0.9.4.24 D9a across 5 runs; `--smoke` exit 0; `--version` 0.9.4.26
+- CPU-only validation: Release build PASS; **CTest 79/79 PASS**; CUDA disabled and CPU fallback verified
+- D9d scope note: **instrumentation only, no optimization.** `DecodeTelemetry` added to the decoder with an optional defaulted sink; timers placed around the six WIC steps; cache-mutex wait and hold measured at both lock sites. `decodeColorAspect` deliberately uninstrumented (UI thread). SSIM, window, precision, threshold, candidate, grouping, verdict, cache, decode, resize, crop, mirror, CPU-fallback, and CUDA semantics all unchanged. Engine 1.5.0 / DB 1.0.3 / cache v9 / schema v9 unchanged
+
+### D9d measured result — what the decode region is made of
+
+25,898 decode calls (12,949 `decode` + 12,949 `decodePreserveAspect`), 4.4654 ms
+per call, `decodeTotalMs` 115,628.4:
+
+| Sub-stage | Total ms | Share | ms/call |
+|---|---:|---:|---:|
+| **open** (`CreateDecoderFromFilename`) | 71,865.2 | **62.15 %** | 2.7749 |
+| **factory** (WIC factory `CoCreateInstance`) | 31,674.5 | **27.39 %** | 1.2230 |
+| copy (`CopyPixels`, contains the real decode) | 5,956.9 | 5.15 % | 0.2300 |
+| comInit | 492.7 | 0.43 % | 0.0190 |
+| resize (Fant) | 369.0 | 0.32 % | 0.0142 |
+| convert | 311.7 | 0.27 % | 0.0120 |
+| metadata (EXIF) | 194.0 | 0.17 % | 0.0075 |
+| orient | 15.4 | 0.01 % | 0.0006 |
+| **total** | **115,628.4** | 100 % | **4.4654** |
+
+`open + factory` = 89.54 % of decode = **84.9 % of the whole expensive verify**.
+WIC succeeded 25,898 times, 0 PGM fallbacks, 0 failures, 0 orientations applied.
+
+Refuted with measurements, not left as opinions: `WICBitmapInterpolationModeFant`
+0.32 %, EXIF skip 0.17 %, and the actual decompression itself 5.15 %.
+
+### D9d cache mutex — not a bottleneck
+
+```text
+acquires 40,417   (27,468 lookups + 12,949 stores)
+waitMs   8.4      0.0002 ms/acquire   wait share 10.38 %
+holdMs  72.4      0.0018 ms/acquire   hold share 89.62 %
+```
+
+Total lock time is 80.8 ms, i.e. **0.07 % of decode**. Wait is never summed with
+hold, because the verdict depends on their ratio. This closes the question D9c
+could not answer and confirms D9c's `other` bucket (0.42 %) contains no hidden
+contention.
+
+`decodeSubSumMs` 110,879.4 vs `decodeTotalMs` 115,628.4 — the 4.1 % gap is
+unmeasured code between the instrumented calls (allocation, `GetSize`, HRESULT
+checks), reported rather than attributed to a stage. Read the stage shares, not
+the absolute milliseconds: this is an instrumented build.
+
 
 ### D9c measured result — where the 8.564 ms goes
 

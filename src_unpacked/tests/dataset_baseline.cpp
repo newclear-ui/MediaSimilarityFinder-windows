@@ -314,6 +314,57 @@ int main(int argc, char** argv) {
     }
   }
 
+  // --- D9d: what the 94.90% decode region is made of, and whether the verify
+  // cache mutex is doing anything. Measurement only: nothing here optimizes. ---
+  {
+    const double decTotal = numIn(lastJson, "analyze", "decodeTotalMs");
+    const double decCalls = numIn(lastJson, "analyze", "decodeCalls");
+    const double decAspect = numIn(lastJson, "analyze", "decodeAspectCalls");
+    const double decSubSum = numIn(lastJson, "analyze", "decodeSubSumMs");
+    const double wicOk = numIn(lastJson, "analyze", "decodeWicSucceeded");
+    const double pgm = numIn(lastJson, "analyze", "decodePgmFallbacks");
+    const double orient = numIn(lastJson, "analyze", "decodeOrientApplied");
+    const double fails = numIn(lastJson, "analyze", "decodeFailures");
+    const double mWait = numIn(lastJson, "analyze", "cacheMutexWaitMs");
+    const double mHold = numIn(lastJson, "analyze", "cacheMutexHoldMs");
+    const double mAcq = numIn(lastJson, "analyze", "cacheMutexAcquires");
+
+    std::printf("\n--- D9d: decode internal split (instrumented build) ---\n");
+    if (decCalls + decAspect <= 0) {
+      std::printf("  (no decode recorded; state=%s)\n",
+                  strAfter(lastJson, "decodeTotalMsState").c_str());
+    } else {
+      const double n = decCalls + decAspect;
+      std::printf("  decode calls %.0f  (decode %.0f, decodePreserveAspect %.0f)  WIC ok %.0f, PGM fallback %.0f\n",
+                  n, decCalls, decAspect, wicOk, pgm);
+      std::printf("  orient applied %.0f   failures %.0f   sub-sum %.1f vs total %.1f -> %s\n",
+                  orient, fails, decSubSum, decTotal,
+                  (decSubSum <= decTotal + 1.0) ? "OK (<=)" : "VIOLATION");
+      const char* names[8] = {"comInit", "factory", "open", "metadata", "orient", "resize", "convert", "copy"};
+      const char* keys[8] = {"decodeComInitMs", "decodeFactoryMs", "decodeOpenMs", "decodeMetadataMs",
+                             "decodeOrientMs", "decodeResizeMs", "decodeConvertMs", "decodeCopyMs"};
+      for (int i = 0; i < 8; ++i) {
+        const double ms = numIn(lastJson, "analyze", keys[i]);
+        std::printf("  %-10s %10.1f ms  %6.2f%%   %8.4f ms/call\n", names[i], ms,
+                    100.0 * ms / decTotal, ms / n);
+      }
+      std::printf("  NOTE copy = the real image decode: WIC decompresses lazily inside CopyPixels,\n");
+      std::printf("       so it cannot be split further without changing the code under measurement.\n");
+      std::printf("  pgmFallback %10.1f ms\n", numIn(lastJson, "analyze", "decodePgmFallbackMs"));
+    }
+    std::printf("\n--- D9d: verify cache mutex (wait and hold are NOT summed) ---\n");
+    if (mAcq <= 0) {
+      std::printf("  (no acquisitions recorded)\n");
+    } else {
+      std::printf("  acquires     %10.0f\n", mAcq);
+      std::printf("  waitMs       %10.1f   %8.4f ms/acquire\n", mWait, mWait / mAcq);
+      std::printf("  holdMs       %10.1f   %8.4f ms/acquire\n", mHold, mHold / mAcq);
+      if (mWait + mHold > 0)
+        std::printf("  wait share of lock time   %.2f%%   hold %.2f%%\n",
+                    100.0 * mWait / (mWait + mHold), 100.0 * mHold / (mWait + mHold));
+    }
+  }
+
   if (std::getenv("MSF_BASELINE_DUMP_WALKER")) {
     const std::size_t wp = lastJson.find("\"walker\":");
     if (wp != std::string::npos)

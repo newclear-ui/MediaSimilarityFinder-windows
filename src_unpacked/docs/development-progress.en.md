@@ -861,3 +861,51 @@ When recording a new build, include the **change relative to the 0.9.4.24 D9a ba
   4.31 ms decode. Candidate A stays deferred. A standalone frame_ssim
   optimization is not worth a pre-register at 0.55 %.
 - D9b remains **NOT ACCEPTED**. It is not reclassified as a success.
+
+### D9d — Decode internal decomposition + cache mutex accounting → 0.9.4.26, **PASS**
+
+- Pre-register commit `6f0ee90`. **Measurement build, no optimization.**
+- **89.54 % of decode is two WIC COM construction calls: file open + factory.**
+  ```
+  open    (CreateDecoderFromFilename)  71,865.2 ms  62.15 %  2.7749 ms/call
+  factory (CoCreateInstance WIC)       31,674.5 ms  27.39 %  1.2230 ms/call
+  copy    (CopyPixels = real decode)    5,956.9 ms   5.15 %  0.2300 ms/call
+  comInit                                492.7 ms   0.43 %
+  resize  (Fant)                         369.0 ms   0.32 %
+  convert                                311.7 ms   0.27 %
+  metadata (EXIF orientation)            194.0 ms   0.17 %
+  orient                                 15.4 ms   0.01 %
+  total                               115,628.4 ms  100.00 %  4.4654 ms/call
+  ```
+  `open + factory` = 89.54 % of decode = **84.9 % of the whole expensive verify**.
+- **Three targets refuted, with measurements**
+  - `WICBitmapInterpolationModeFant` 0.32 %. Expensive by name, 369 ms in
+    reality, and changing it would change resize quality, a verdict property.
+  - EXIF skip 0.17 %.  - `frame_ssim` 0.53 % of the verify.
+  - The actual decompression, `copy`, is 5.15 %. Where "decode is expensive"
+    intuition points is a twentieth of the cost.
+- **Cache mutex: not a bottleneck, closed with evidence**
+  ```
+  acquires 40,417 (27,468 lookups + 12,949 stores)
+  waitMs   8.4  (0.0002 ms/acquire)   wait share 10.38 %
+  holdMs  72.4  (0.0018 ms/acquire)   hold share 89.62 %
+  ```
+  Total lock time 80.8 ms = **0.07 %** of decode. This closes the question D9c
+  could not answer, and confirms there is no hidden contention inside D9c's
+  `other` (0.42 %).
+- 25,898 decodes = 12,949 x 2 (each miss decodes the same file twice).
+  WIC ok 25,898, PGM fallback 0, failures 0, orientation applied 0.
+- `sub-sum 110,879.4 vs total 115,628.4` — the 4.1 % gap is not a mis-scoped
+  timer but unmeasured code between the instrumented calls (allocation,
+  GetSize, HRESULT checks). Reported rather than folded into a stage.
+- Accuracy: all counters identical to D9a, **groups 156,152**, identical across
+  all 5 runs. D9c's exclusive sum still holds (`sum 121,906.2 == verifyMs`,
+  overflow 0.0000). Parity 25 PASS, CPU 79/79, GPU 80/80, `--smoke` exit 0.
+- Not measured and not estimated: 4.1 % of decode, the internals of `open` and
+  `factory`; `decodeColorAspect` deliberately uninstrumented (UI thread).
+- Wall clock is above the D9a/D9b range but that is **not a regression** — this
+  is an instrumented build and D9c already sat at the top of the range. The
+  trustworthy signal is the stage shares.
+- Noise 6.3 % (5 runs, 117,392.9–124,839.3 ms). Call counts identical in all 5.
+- **Next: Candidate D1 — image decoder construction and file open.** The 2.77 ms
+  `open` and 1.22 ms `factory` must be decomposed first. Not implemented here.

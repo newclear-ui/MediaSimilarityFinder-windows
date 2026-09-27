@@ -853,3 +853,49 @@ A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
 - **다음 후보: D (image decode 비용).** 단 먼저 4.31 ms decode 를 더 분해해야 한다.
   후보 A 는 계속 deferred. `frame_ssim` 단독 최적화는 0.55 % 라 가치가 없다.
 - D9b 는 **NOT ACCEPTED 로 유지.** 성공으로 재분류하지 않는다.
+
+### D9d — Decode 내부 분해 + cache mutex 계측 → 0.9.4.26, **PASS**
+
+- Pre-register commit `6f0ee90`. **measurement 빌드, 최적화 없음.**
+- **decode 내부 89.54 % 가 파일 open + WIC factory 생성 두 호출이다.**
+  ```
+  open    (CreateDecoderFromFilename)  71,865.2 ms  62.15 %  2.7749 ms/call
+  factory (CoCreateInstance WIC)       31,674.5 ms  27.39 %  1.2230 ms/call
+  copy    (CopyPixels = 실제 decode)    5,956.9 ms   5.15 %  0.2300 ms/call
+  comInit                                492.7 ms   0.43 %
+  resize  (Fant)                         369.0 ms   0.32 %
+  convert                                311.7 ms   0.27 %
+  metadata (EXIF orientation)            194.0 ms   0.17 %
+  orient                                 15.4 ms   0.01 %
+  합계                               115,628.4 ms  100.00 %  4.4654 ms/call
+  ```
+  `open + factory` = decode 의 89.54 % = **expensive verify 전체의 84.9 %**.
+- **기각된 목표 3가지 (측정 근거 있음)**
+  - `WICBitmapInterpolationModeFant` 0.32 % — 이름은 비싸 보이지만 369 ms.
+    바꾸면 resize quality 즉 verdict 속성이 바뀐다.
+  - EXIF skip 0.17 %.  - `frame_ssim` verify 의 0.53 %.
+  - 실제 이미지 압축 해제인 `copy` 는 5.15 %. "decode 가 비싸다"는 직관이
+    가리킨 곳은 비용의 20분의 1 이었다.
+- **cache mutex: 병목 아님 (증거로 종결)**
+  ```
+  acquires 40,417 (조회 27,468 + 저장 12,949)
+  waitMs   8.4  (0.0002 ms/acquire)   wait share 10.38 %
+  holdMs  72.4  (0.0018 ms/acquire)   hold share 89.62 %
+  ```
+  lock 총시간 80.8 ms = decode 의 **0.07 %**. D9c 가 답하지 못했던 질문이 닫혔고,
+  D9c 의 `other`(0.42 %)에 숨은 contention 이 **없음**도 확인된다.
+- decode 25,898회 = 12,949 × 2 (같은 파일을 miss 마다 2회 디코드).
+  WIC 성공 25,898, PGM fallback 0, 실패 0, orientation 적용 0.
+- `sub-sum 110,879.4 vs total 115,628.4` — 4.1 % 갭은 timer 오류가 아니라
+  계측 안 된 호출 간 코드(할당, GetSize, HRESULT 검사)다. 단계에 흡수시키지
+  않고 그대로 보고.
+- 정합성: 전 카운터 D9a 동일, **groups 156,152**, 5회 모두 동일.
+  D9c exclusive 합계도 유지(`sum 121,906.2 == verifyMs`, 초과 0.0000).
+  parity 25 PASS, CPU 79/79, GPU 80/80, `--smoke` exit 0.
+- 미측정(추정하지 않음): decode 시간의 4.1 %, `open` 과 `factory` 의 내부,
+  decodeWicFileAspectColor 는 의도적으로 계측하지 않음(UI 스레드).
+- wall clock 은 D9a/D9b 범위보다 높지만 **회귀가 아니다** — instrumented 빌드
+  이며 D9c 도 이미 범위 상단이었다. 신뢰할 신호는 단계 비중이다.
+- noise 6.3 % (5회, 117,392.9–124,839.3 ms). 호출 횟수는 5회 모두 결정적.
+- **다음 후보 D1 — image decoder 생성과 file open.** 먼저 2.77 ms `open` 과
+  1.22 ms `factory` 를 더 분해해야 한다. 구현하지 않았다.
