@@ -99,7 +99,9 @@ public:
   static constexpr std::size_t kMaxSamples = 50000;
   // Independent of app/engine/db versions; bump only on benchmark schema change.
   // v2: calibration metric states (C2 first fills CalibrationTelemetry).
-  static constexpr int kBenchmarkSchemaVersion = 2;
+  // v3: D1a image-batch observability keys (packMs, cpuHashMs, batchCount,
+  // batchItems, batchMaxDepth, batchState).
+  static constexpr int kBenchmarkSchemaVersion = 3;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);

@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.14 |
+| 기준 코드 | 0.9.4.16 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | C — Calibration / INI Performance Profile (C4.1 수정 검증됨 → 다음 게이트 D) |
-| 현재 단계 | Node C 완료 → D 착수는 D brief 기준 (D1 관측성 우선) |
-| 현재 버전 | 0.9.4.14 |
+| 현재 노드 | D — Pipeline / Queue (D1a 게이트 통과 → 다음 D1b) |
+| 현재 단계 | Node D 진행 중 → D1b는 D brief 기준 (walker + video async) |
+| 현재 버전 | 0.9.4.16 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -454,3 +454,12 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
 ### C4.1 — Calibration Lifecycle Fix (→ 0.9.4.13, 0.9.4.14에서 검증)
 - **GPT Fix:** GPU OFF→ON incomplete-profile lifecycle, default 30-day stale enforcement, CPU model/GPU driver identity completion, and failed-retry preservation.
 - Windows CPU/GPU Release 빌드 및 전체 CTest 검증: **0.9.4.14에서 통과** (CPU 66/66, GPU 67/67). `kDefaultMaxAgeDays`를 `PerformanceProfile`으로 이동하고 테스트 참조에 접두 추가. 상세: `docs/build-history/0.9.4.14.ko.md`.
+
+### D1a — Image-Path Observability 게이트 (→ 0.9.4.16, 통과)
+- 원격 0.9.4.15 구현을 로컬 검증: packMs는 decode 제외, cpuHashMs는
+  실행된 CPU hash 작업 기록(GPU 경로 mirror 포함, 별도 필드),
+  batchMaxDepth는 구조상 항상 1(기록, D3에서 카운터 활성화),
+  batchItems는 시도 입력 수, transfer는 계속 not_measured.
+- 게이트 수정: 6개 키에 schema v2 → v3 (Node A 규칙), 부분적 0.9.4.15
+  버전 sweep 완성 (vcpkg/index/GUI-about-titles/package/tests).
+- 검증: CPU 66/66, GPU 67/67, 양쪽 `--version`/`--smoke`. 다음 D1b.

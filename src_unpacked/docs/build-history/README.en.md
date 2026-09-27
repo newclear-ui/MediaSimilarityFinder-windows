@@ -144,4 +144,5 @@ Previous implementation/design snapshots are preserved under `../architecture/le
 | 0.9.4.13 | Node C4.1 Calibration Lifecycle Fix — GPU OFF→ON metric-gap, 30-day stale policy, CPU/GPU identity completion — **GPT Fix** |
 | 0.9.4.14 | C4.1 build recovery (kDefaultMaxAgeDays declaration site, msf:: prefix in test) |
 
-- v0.9.4.15 — Node D1a Image-Path Observability (implementation started; validation pending)
+- v0.9.4.15 — Node D1a Image-Path Observability (implementation complete; validation PASS confirmed in 0.9.4.16)
+- v0.9.4.16 — D1a gate: schema v3 restoration, version-string completion, full-suite validation

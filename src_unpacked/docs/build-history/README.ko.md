@@ -143,3 +143,6 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 
 | 0.9.4.13 | Node C4.1 Calibration Lifecycle Fix — GPU OFF→ON metric-gap, 30-day stale policy, CPU/GPU identity completion — **GPT Fix** |
 | 0.9.4.14 | C4.1 빌드 복구 (kDefaultMaxAgeDays 선언 위치, 테스트 msf:: 접두) |
+
+- v0.9.4.15 — Node D1a Image-Path Observability (구현 완료, 검증 PASS는 0.9.4.16에서 확정)
+- v0.9.4.16 — D1a 게이트: schema v3 복구, 버전 문자열 완성, 전체 스위트 검증

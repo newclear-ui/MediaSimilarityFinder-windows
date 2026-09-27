@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.14 |
+| Reference code | 0.9.4.16 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | C — Calibration / INI Performance Profile (C4.1 fix validated → next gate D) |
-| Current phase | Node C done → D kickoff per D brief (D1 observability first) |
-| Current version | 0.9.4.14 |
+| Current node | D — Pipeline / Queue (D1a gate PASS → next D1b) |
+| Current phase | Node D in progress → D1b per D brief (walker + video async) |
+| Current version | 0.9.4.16 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -473,3 +473,8 @@ Once source implementation begins, update:
 ### C4.1 — Calibration Lifecycle Fix (→ 0.9.4.13, validated in 0.9.4.14)
 - **GPT Fix:** GPU OFF→ON incomplete-profile lifecycle, default 30-day stale enforcement, CPU model/GPU driver identity completion, and failed-retry preservation.
 - Windows CPU/GPU Release build and full CTest validation: **PASS in 0.9.4.14** (CPU 66/66, GPU 67/67) after moving `kDefaultMaxAgeDays` to `PerformanceProfile` and prefixing the test reference. Details: `docs/build-history/0.9.4.14.en.md`.
+
+### D1a — Image-Path Observability Gate (→ 0.9.4.16, PASS)
+- Remote 0.9.4.15 implementation validated locally: packMs excludes decode, cpuHashMs records executed CPU hash work (mirror-inclusive on GPU path, separate field), batchMaxDepth is structurally 1 (documented, D3 activates the counter), batchItems counts attempted inputs, transfer stays not_measured.
+- Gate fix inside: schema v2 → v3 for the 6 added keys (Node A rule), plus completion of the partial 0.9.4.15 version sweep (vcpkg/index/GUI-about-titles/package/tests).
+- Validation: CPU 66/66, GPU 67/67; `--version`/`--smoke` on both. Next: D1b (walker + video async).
