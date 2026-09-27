@@ -14,7 +14,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
 | 현재 노드 | I — Analyze / Matching Performance (D9a 통과) |
-| 현재 단계 | Node I 진행 중 → `verify` 가 analyze 의 **99.67 %** 이며 "캐시 용량 32" 가설은 **기각**(적중률 0.53). 다음 substep 은 verify 경로 손대기 전 pre-register 필수 |
+| 현재 단계 | Node I 진행 중 → `verify` 가 analyze 의 **99.67 %** 이며 "캐시 용량 32" 가설은 **기각**(적중률 0.53). D9b는 **B(expensive verify 1건 비용 감소)를 우선**하며, A(candidate pair 도착률 감소)는 verdict semantics 위험 때문에 deferred. D9b 구현 전 pre-register 필수 |
 | 현재 버전 | 0.9.4.24 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
@@ -706,3 +706,85 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
   legacy 보존) 확인.
 - 검증: CPU 76/76, GPU 77/77; 양쪽 `--version` 0.9.4.24, `--smoke` PASS.
   Engine 1.5.0 / DB 1.0.3 / cache v9 불변.
+
+### D9b — 향후 빌드 비교 기준 고정 및 후보 우선순위 결정
+
+D9b 이후의 모든 관련 빌드에서는 **0.9.4.24 D9a 측정값을 baseline으로 기억하고 비교**한다.
+
+#### 1. 0.9.4.24 D9a baseline
+
+| 항목 | 기준값 |
+| --- | ---: |
+| dataset | D8b standard, 2,700 files, fingerprint `9b113848…4253c` |
+| verifyCalls | 158,020 |
+| verifyHitRate | 0.5286 |
+| expensive verify | 13,734 |
+| expensive verify 평균 | 약 8.5 ms/call |
+| expensive verify aggregate | 약 117 s |
+| decode | 최대 4회/건 |
+| frame_ssim | 최대 20회/건 |
+| ssimBuf | 10회/건, 그중 9회가 aspect 조합 |
+| groups | 156,152 |
+
+이 값들은 이후 빌드의 **성능 비교와 정확성/parity 비교의 기준선**으로 유지한다.
+
+#### 2. D9b primary candidate — B
+
+**B: expensive verify 1건 비용 감소**를 D9b의 primary 대상으로 한다.
+
+최적화 대상은 불필요한 decode, 중복 buffer 작업, 중복 SSIM 입력 준비/복사, aspect 조합의 반복 buffer 작업이다.
+
+기본적으로 다음 의미는 변경하지 않는다.
+
+- verdict semantics
+- candidate semantics
+- similarity threshold
+- grouping semantics
+- Engine / DB / cache semantics
+
+단, 판정식을 직접 바꾸지 않는 것만으로 정확성 보존을 가정하지 않는다. **기존/신규 결과 parity를 실제로 측정한다.**
+
+#### 3. 향후 빌드에서 반드시 비교할 항목
+
+D9b 이후에는 0.9.4.24 baseline과 가능한 한 다음을 함께 비교한다.
+
+- verifyCalls
+- expensive verify count
+- total verify time
+- ms per expensive verify
+- verifyDecodeMisses / verifyCacheHits
+- decode count
+- frameSsimEvals
+- ssimBuf 관련 비용 또는 동등한 telemetry
+- groups
+- 최종 match/verdict parity
+- CPU/GPU parity
+
+동일 dataset / hardware / 가능한 동일 cold-index 조건이 아니면 직접적인 성능 개선으로 단정하지 않는다.
+
+#### 4. Candidate A는 deferred로 기억한다
+
+**A: candidate pair 도착률 감소**는 158,020건의 gate 도달량을 줄일 수 있는 잠재력이 있지만 candidate/verdict semantics에 영향을 줄 가능성이 있다.
+
+따라서 D9b에서는 구현하지 않는다.
+
+향후 A를 재검토할 경우 별도의 pre-register를 먼저 작성하고 candidate recall, false-positive/false-negative risk, candidate count, verifyCalls, 최종 grouping/verdict parity를 비교한다.
+
+A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
+
+#### 5. 향후 빌드에서도 유지할 관계
+
+```
+0.9.4.24 D9a
+    ├─ baseline: 158,020 verifyCalls
+    ├─ expensive: 13,734 × ~8.5 ms ≈ 117 s
+    │
+    ├─ D9b primary: B
+    │      └─ per-expensive-verify cost reduction
+    │
+    └─ deferred candidate: A
+           └─ candidate-arrival reduction
+              (verdict semantics risk)
+```
+
+새 빌드를 기록할 때는 가능한 경우 **0.9.4.24 D9a baseline 대비 변화량**도 함께 기록한다.
