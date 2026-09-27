@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include <QApplication>
 #include <QCoreApplication>
 #include <QFile>
@@ -25,7 +25,7 @@ static bool attachParentConsole() { return true; }
 #endif
 
 namespace {
-constexpr const char* kVersion = "0.9.4.21";
+constexpr const char* kVersion = "0.9.4.22";
 }
 #ifdef _WIN32
 static bool platformPluginPresent() {

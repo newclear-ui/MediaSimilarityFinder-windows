@@ -22,36 +22,48 @@ suite already generates its own media at runtime.
 
 ```powershell
 cd src_unpacked
-.\scripts\prepare_dataset.ps1 -Root ..\test_sample_img_vid
+.\scripts\prepare_dataset.ps1 -Root ..\test_sample_img_vid -Scale full
 ```
 
 The generator reads no clock, no environment, and no random source. Every
 byte is a pure function of `(seed, x, y)`, so repeated runs produce
 byte-identical files.
 
-## Composition (v1 — image only)
+## Composition (v2 — `full`, current default)
 
-| Group | Files | Content |
-| --- | --- | --- |
-| `images/exact/dupGG_MM.bmp` | 12 groups × 4 = 48 | Byte-identical members inside a group; distinct seeds per group |
-| `images/varied/vNN.bmp` | 12 | One distinct seed each, so no two are identical |
-| **Total** | **60** | |
+| Group | Files | Size | Purpose |
+| --- | --- | --- | --- |
+| `images/exact/dupGG_MM.bmp` | 12 groups × 4 = 48 | 8×8 (246 B) | Byte-identical members inside a group; distinct seeds per group |
+| `images/varied/vNN.bmp` | 12 | 8×8 (246 B) | One distinct seed each, so no two are identical |
+| `tree/lNN/mMM/lNNNNN.bmp` | 2,400 | 8×8 (246 B) | Spread over 240 leaf dirs → real walk cost, so the queue can build depth |
+| `bulk/bNNNN.bmp` | 240 | 256×192 (147,510 B) | Real decode + crop + color-thumbnail cost → makes the consumer the slow side |
+| **Total** | **2,700** | **36,007,560 B** | |
 
-- Format: 8×8 24-bit uncompressed BMP (246 bytes each), the format the rest
-  of the test suite hand-rolls. WIC reads it through the real production
-  path, and the scanner recognises `.bmp`.
-- `exact` exercises the duplicate/aggregation path; `varied` exercises
-  classification and threshold behaviour.
+- Format: 24-bit uncompressed BMP, the format the rest of the test suite
+  hand-rolls. WIC reads it through the real production path, and the scanner
+  recognises `.bmp`.
+- The `tree` / `bulk` split is deliberately **asymmetric**: the queue only
+  grows when consumer cost exceeds producer cost, so walk cost and decode
+  cost are scaled independently.
+- `-Scale small` regenerates the v1 fixture (60 files only) — useful as a
+  fast parity anchor, but **it cannot answer queue or GPU-share questions**
+  because it makes the pipeline do no real work.
 
 ## Expected fingerprint
 
 ```
-fingerprint          f01d5c77ccd777057494cefc5ad817caea567b40341fa1925f53bb04ec5b2d7c
+fingerprint          9b1138489827804b24bdfb645e4b72c5a3ab3fa79b8b8ba1b2d5cd051614253c
 fingerprintVersion   1
-fileCount            60
-totalBytes           14760
+fileCount            2700
+totalBytes           36007560
+dirCount             95
 state                measured
 ```
+
+The v1 (60-file) fingerprint was
+`f01d5c77ccd777057494cefc5ad817caea567b40341fa1925f53bb04ec5b2d7c`. The
+algorithm did **not** change — only the content, so the value changes by
+definition.
 
 ## How to validate
 

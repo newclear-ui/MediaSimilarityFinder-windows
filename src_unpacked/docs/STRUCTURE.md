@@ -60,6 +60,9 @@
 
 - scripts/build_windows_gpu.ps1 -VcpkgRoot C:\src\vcpkg — GPU 빌드 진입점(0.9.4.x 목표; 현재 backend는 NVIDIA CUDA).
 - scripts/build_windows_cpu.ps1 -VcpkgRoot C:\src\vcpkg — CPU 빌드/CTest.
+- scripts/prepare_dataset.ps1 -Root ..\test_sample_img_vid [-Scale small|full] — D8 표준 dataset 결정론적 생성기(binary 미커밋). 산출물 설명/기대 fingerprint: docs/test_sample_img_vid.md.
+- msf_dataset_report <root> — dataset fingerprint 출력 + <root>.fingerprint.json 기록(root 옆, root 안쪽 금지).
+- msf_dataset_baseline <root> <app-dir> [runs] — 동일 dataset 반복 스캔, walker queue / GPU 내부 타이밍 / stage 분해 리포트. CTest 아님(의사결정 입력).
 - 현재 CMakeLists.txt에는 GPU 71개 / CPU 70개 CTest가 등록되어 있다.
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - 버전 상향 파일(검색용): CMakeLists.txt, vcpkg.json, gui/main.cpp, scripts/package_portable.ps1, src/index_manager.cpp.

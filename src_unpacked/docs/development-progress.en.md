@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.21 |
+| Reference code | 0.9.4.22 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — Pipeline / Queue (D8a reproducible dataset foundation PASS) |
-| Current phase | Node D in progress → D4b overlap, Full D3 queue, and D8 end-to-end are now comparable on one dataset fingerprint; all three remain undecided |
-| Current version | 0.9.4.21 |
+| Current node | D — Pipeline / Queue (D8b measured; D4b + Full D3 deferred on evidence) |
+| Current phase | Node D measurement complete → D has no addressable headroom on this workload; the real bottleneck (`analyze`) is outside the D brief and needs its own node |
+| Current version | 0.9.4.22 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -554,3 +554,39 @@ Once source implementation begins, update:
   both. All seven pre-register rollback criteria clear.
 - **D4b overlap and Full D3 topology are still not implemented.** Both are
   now decidable against this fingerprint.
+
+### D8b — Scaled Dataset / Walker Queue Evidence (→ 0.9.4.22, PASS, measurement only)
+- Pre-register committed before any fixture change (`8f52587`).
+- **No product code change.** The generator gained `-Scale full`, and the
+  review probe gained stage-breakdown reporting.
+- Why it was needed: D8a's "no gain" verdict came from an **absent
+  measurement subject** — 60 tiny 8×8 files in 2 directories make the
+  pipeline do no real work, so `maxDepth = 1` described the dataset, not the
+  architecture.
+- Dataset v2 = D8a's 60 files **kept byte-identical** (parity anchor) plus two
+  deliberately asymmetric axes, because the queue only grows when consumer
+  cost exceeds producer cost: `tree/` 2,400 tiny files across 240 leaf
+  directories (walk cost) and `bulk/` 240 images at 256×192 (decode + crop +
+  color-thumbnail cost). Total 2,700 files / 36,007,560 B / 95 dirs.
+  Fingerprint `9b113848…4253c`; the algorithm did not change, only content.
+- Measured (RTX 3080 Ti, 3 runs, cold index each):
+  - `walker maxDepth` **1 → 964 mean / 1076 max** (23.5 % of capacity), so
+    D8a's depth of 1 is now shown to have been a dataset-size artifact
+  - `blocked_ticks` **still 0** — the producer never blocked; depth 1076 is
+    3.8× below the capacity of 4096
+  - `gpu_batch share of engine wall` 0.34 % → **0.026 %**
+  - `kernel device` 17.1 ms of a 20.5 ms device sum (84 %), so there is
+    little for overlap to hide
+- Stage breakdown of the 109,737 ms engine wall: **`analyze` 98.62 %**,
+  walk 1.40 %, image stage 0.59 %, gpu batch 0.04 %.
+  **D3+D4 addressable ceiling: 0.044 %.**
+- `analyze` is `MediaPipeline::analyze()` — the final matching/grouping stage
+  at `media_search_engine.cpp:702-703` — which is **outside** the
+  queue/transfer/overlap scope Node D owns.
+- Therefore: **D4b and Full D3 are deferred on evidence, not on assumption**,
+  and continuing D yields no meaningful gain on this workload.
+- Validation: CPU 70/70, GPU 71/71; no product code touched.
+- Honest scope: the `bulk` images were sized to *favour* observing the queue,
+  and GPU share was still 0.026 %. For the GPU path to matter, images would
+  need to be far larger (no crop/thumbnail cost) or hash batches far more
+  numerous.

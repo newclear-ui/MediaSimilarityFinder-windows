@@ -155,10 +155,50 @@ int main(int argc, char** argv) {
   std::printf("image_stage_ms          mean=%.1f\n", meanOf(imgStage));
   std::printf("gpu_batch_ms            mean=%.3f\n", meanOf(gpuBatchMs));
   std::printf("runs=%d (single-run conclusions are not valid)\n", runs);
+
+  // Where the wall time actually goes. The D stages optimize queues and
+  // transfer overlap, so a decision needs the share of wall that those
+  // stages even touch -- not just their own numbers.
+  {
+    bool ok = false;
+    const double benchWall = numAfter(lastJson, "wallMs", ok);
+    auto share = [&](const char* key) {
+      bool found = false;
+      return numAfter(lastJson, key, found);
+    };
+    std::printf("\n--- stage breakdown (where wall time actually goes) ---\n");
+    std::printf("summary_wall_ms         mean=%.1f (engine-reported, excludes setup)\n", benchWall);
+    struct Row { const char* key; const char* label; };
+    const Row rows[] = {
+        {"walkMs", "walk"},
+        {"imageStageMs", "image stage"},
+        {"videoStageMs", "video stage"},
+        {"analyzeMs", "analyze"},
+        {"revalidateMs", "revalidate"},
+        {"incrementalMs", "incremental"},
+        {"candidateIndexMs", "candidate index"},
+        {"similarityMs", "similarity"},
+        {"persistenceMs", "persistence"},
+        {"gpuBatchMs", "  (of which gpu batch)"},
+    };
+    for (const Row& r : rows) {
+      const double v = share(r.key);
+      std::printf("%-24s mean=%10.1f ms  %6.2f%% of engine wall\n", r.label, v,
+                  benchWall > 0 ? v / benchWall * 100.0 : 0.0);
+    }
+    // D-owned overhead: the walker queue and the GPU batch together. This is
+    // the honest ceiling on what any D3/D4 change could return.
+    const double dOwned = share("gpuBatchMs");
+    std::printf("\nD3+D4 addressable ceiling: %.3f%% of engine wall\n",
+                benchWall > 0 ? dOwned / benchWall * 100.0 : 0.0);
+    std::printf("(outer host wall incl. process setup/teardown: %.1f ms)\n", meanOf(wall));
+  }
+
   if (std::getenv("MSF_BASELINE_DUMP_WALKER")) {
-    const std::size_t w = lastJson.find("\"walker\":");
-    if (w != std::string::npos)
-      std::printf("walker_json=%s\n", lastJson.substr(w, lastJson.find('}', w) - w + 1).c_str());
+    const std::size_t wp = lastJson.find("\"walker\":");
+    if (wp != std::string::npos)
+      std::printf("walker_json=%s\n",
+                  lastJson.substr(wp, lastJson.find('}', wp) - wp + 1).c_str());
   }
   return 0;
 }

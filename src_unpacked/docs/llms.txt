@@ -2,7 +2,7 @@
 
 ## Current development version
 
-0.9.4.21 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, D8a validated)
+0.9.4.22 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, D8b measured)
 
 Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing (currently NVIDIA CUDA backend), incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 
@@ -45,7 +45,7 @@ The project is explicitly a CPU+GPU cooperative application.
 
 Detailed target architecture: docs/architecture/resource-scheduling.ko.md and docs/architecture/resource-scheduling.en.md. Multi-vendor backend roadmap: docs/architecture/gpu-backend-roadmap.ko.md and docs/architecture/gpu-backend-roadmap.en.md.
 
-Important status: 0.9.4.21 implements Nodes A–C plus D1a/D1b observability, D2 completion-order harvest, the D3-Minimal bounded walker queue, D4a CUDA backend internal timing, and D8a the reproducible dataset foundation with a dataset fingerprint (benchmark schemaVersion 8 with measurement states). D4a and D8a are measurement/foundation only: no overlap, no buffering change, no queue topology change. D4b overlap, full D3 topology, and D8 end-to-end validation remain future work, now comparable on one dataset fingerprint.
+Important status: 0.9.4.22 implements Nodes A–C plus D1a/D1b observability, D2 completion-order harvest, the D3-Minimal bounded walker queue, D4a CUDA backend internal timing, D8a the reproducible dataset foundation with a dataset fingerprint (benchmark schemaVersion 8), and D8b the scaled dataset that produced the Node D verdict. Measured on 2700 files: walker maxDepth 964/4096 with blocked_ticks 0, and gpu_batch at 0.026% of engine wall while the final matching stage (`analyze`) takes 98.62%. D3+D4 addressable ceiling is 0.044%, so D4b overlap and Full D3 topology are deferred on evidence; the real bottleneck is outside the D brief and needs its own node.
 
 ## Repository layout
 
@@ -55,7 +55,7 @@ Important status: 0.9.4.21 implements Nodes A–C plus D1a/D1b observability, D2
 - src_unpacked/tests/ - CTest tests, named msf_*_test.
 - src_unpacked/scripts/ - build_windows_gpu.ps1 (canonical GPU entry point, clean build-windows-gpu tree), build_windows_cpu.ps1, package_portable.ps1. build_windows_cuda.ps1 remains a deprecated alias path; the legacy build-windows-cuda tree is preserved.
 - src_unpacked/docs/ - per-build history, architecture notes, STRUCTURE.md, and this file.
-- src_unpacked/AGENTS.md - working rules (docs policy, build baseline 0.9.2.32, working validation line 0.9.4.21, CUDA invariance, release procedure).
+- src_unpacked/AGENTS.md - working rules (docs policy, build baseline 0.9.2.32, working validation line 0.9.4.22, CUDA invariance, release procedure).
 
 ## Key entry points
 

@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.21 |
+| 기준 코드 | 0.9.4.22 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | D — Pipeline / Queue (D8a 재현 가능 dataset 기반 통과) |
-| 현재 단계 | Node D 진행 중 → D4b overlap, Full D3 queue, D8 end-to-end 를 동일 dataset fingerprint 로 비교 가능해짐. 세 갈래 모두 아직 미결 |
-| 현재 버전 | 0.9.4.21 |
+| 현재 노드 | D — Pipeline / Queue (D8b 측정 완료, D4b + Full D3 근거 기반 보류) |
+| 현재 단계 | Node D 계측 완료 → 이 workload 에서 D가 다룰 여지는 거의 없음. 진짜 병목(`analyze`)은 D brief 범위 밖이라 별도 노드 필요 |
+| 현재 버전 | 0.9.4.22 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -567,3 +567,38 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
   pre-register 롤백 기준 7항목 전부 무발동.
 - **D4b overlap 과 Full D3 topology 는 아직 구현하지 않았다.**
   둘 다 이제 이 fingerprint 기준으로 판단 가능하다.
+
+### D8b — 규모 확장 Dataset / Walker Queue 증거 (→ 0.9.4.22, 통과, 계측만)
+- fixture 변경 전에 pre-register 커밋(`8f52587`).
+- **제품 코드 변경 없음.** 생성기에 `-Scale full` 추가, review probe 에
+  stage 분해 리포트 추가만.
+- 왜 필요했나: D8a 의 "이득 없다" 판정은 **측정 대상 부재** 에서 왔다 —
+  60개의 8×8 을 디렉토리 2개에 두면 파이프라인이 아무 일도 하지 않으므로
+  `maxDepth = 1` 은 dataset 크기를 기술한 것이지 구조가 아니었다.
+- dataset v2 = D8a 60개를 **바이트 동일하게 유지** (parity anchor) +
+  의도적으로 비대칭인 두 축. queue 는 consumer 비용이 producer 비용보다
+  클 때만 깊어지므로 walk 비용과 decode 비용을 독립적으로 조절했다:
+  `tree/` 2400개 소형 파일을 240 leaf 디렉토리에 분산 (walk 비용),
+  `bulk/` 256×192 이미지 240장 (decode + crop + color thumbnail 비용).
+  합계 2700 파일 / 36,007,560 B / 95 디렉토리.
+  fingerprint `9b113848…4253c`. 알고리즘 변경 없음, content 만 변경.
+- 실측(RTX 3080 Ti, 3회, 매 run cold index):
+  - `walker maxDepth` **1 → 964 mean / 1076 max** (capacity 23.5 %).
+    D8a 의 depth 1 이 dataset 크기 탓이었음이 실증됨
+  - `blocked_ticks` **여전히 0** — producer 는 한 번도 block 되지 않음.
+    depth 1076 은 capacity 4096 보다 3.8배 낮으므로
+  - `gpu_batch share of engine wall` 0.34 % → **0.026 %**
+  - `kernel device` 17.1 ms / device 합 20.5 ms 의 84 % — overlap 이 숨길
+    대상이 애초에 크지 않음
+- 109,737 ms 엔진 wall 의 stage 분해: **`analyze` 98.62 %**, walk 1.40 %,
+  image stage 0.59 %, gpu batch 0.04 %.
+  **D3+D4 addressable ceiling: 0.044 %.**
+- `analyze` 는 `MediaPipeline::analyze()` = 최종 매칭/그룹화 단계
+  (`media_search_engine.cpp:702-703`) 로, Node D 가 다우는
+  queue/transfer/overlap 범위 **밖**이다.
+- 따라서: **D4b 와 Full D3 는 가정이 아니라 근거로 보류**되며, D 를 더
+  진행해도 이 workload 에서 의미 있는 이득은 없다.
+- 검증: CPU 70/70, GPU 71/71. 제품 코드 무변경.
+- 정직한 범위: `bulk` 이미지는 queue 관찰에 *유리하도록* 크기를 정했고,
+  그래도 GPU share 는 0.026 % 였다. GPU 경로가 의미를 가지려면 이미지가 훨씬
+  크거나(crop/thumbnail 비용 없음) hash batch 가 훨씬 많아야 한다.

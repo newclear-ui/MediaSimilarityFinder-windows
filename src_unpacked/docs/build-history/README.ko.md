@@ -151,3 +151,4 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 - v0.9.4.19 — D3-Minimal: bounded walker queue, backpressure, 취소/일시정지 안전, schema v6
 - v0.9.4.20 — D4a: CUDA 백엔드 내부 타이밍(h2d/kernel/d2h device 분리 + host 대기), schema v7
 - v0.9.4.21 — D8a: 재현 가능한 dataset + benchmark JSON dataset fingerprint, schema v8
+- v0.9.4.22 — D8b: dataset 규모 확장(2700파일) + walker queue / stage 분해 증거, D4b·Full D3 근거 기반 보류
