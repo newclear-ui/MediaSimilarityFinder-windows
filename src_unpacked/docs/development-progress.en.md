@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.17 |
+| Reference code | 0.9.4.18 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — Pipeline / Queue (D1b gate PASS → next D2) |
-| Current phase | Node D in progress → D2 per D brief (barrier review on D1a/D1b evidence, pre-register first) |
-| Current version | 0.9.4.17 |
+| Current node | D — Pipeline / Queue (D2 barrier review done → next D3) |
+| Current phase | Node D in progress → D3 per D brief (queue work needs D1b depth evidence) |
+| Current version | 0.9.4.18 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -484,3 +484,10 @@ Once source implementation begins, update:
 - Video async granularity: ranges/rangeFiles/rangeState per launched range (no timing split; range walls already in `videoStageMs`).
 - Schema v4 for the new keys (Node A rule). No topology change (4 hooks).
 - Validation: CPU 66/66, GPU 67/67; `--version`/`--smoke` on both. Next: D2 (barrier review on D1a/D1b evidence, pre-register first).
+
+### D2 — Barrier Review (→ 0.9.4.18, done)
+- Pre-registered before code: straggler-wait candidate, (max−min) gain hypothesis, parity-or-revert criterion.
+- Completion-order harvest in video ranges (same threads/joins; 5 ms idle bound; cancel semantics kept). `maxRangeFileMs` per range for JSON-only quantification; failed ranges unrecorded.
+- Non-candidates documented with dependency reasons: image phase joins, walker poll, DB single-writer, final matching boundary.
+- Schema v5 (new-key rule). No topology change.
+- Validation: CPU 66/66, GPU 67/67 (parity proves order-independence); `--version`/`--smoke` on both. Next: D3 (queues on D1b depth evidence).

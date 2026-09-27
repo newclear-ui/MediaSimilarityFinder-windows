@@ -102,7 +102,8 @@ public:
   // v3: D1a image-batch observability keys (packMs, cpuHashMs, batchCount,
   // batchItems, batchMaxDepth, batchState).
   // v4: D1b walker-queue and video-range keys.
-  static constexpr int kBenchmarkSchemaVersion = 4;
+  // v5: D2 per-range slowest-file key (maxRangeFileMs).
+  static constexpr int kBenchmarkSchemaVersion = 5;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);
@@ -136,7 +137,9 @@ public:
   void recordWalkerEnqueue(std::size_t depthAfterPush);
   void recordWalkerDequeue(std::size_t depthAfterPop);
   void noteWalkerStarved();
-  void recordVideoRange(std::size_t files);
+  // D1b range count/files; D2 adds the slowest file in the range so join
+  // waste (rangeWall - maxFile) is quantifiable from JSON alone.
+  void recordVideoRange(std::size_t files, double maxFileMs);
   void addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
                 std::size_t decodedFrames = kFramesNotProvided, std::size_t sampledFrames = kFramesNotProvided);
   void addVideoGpu(bool used, bool fallback, double gpuMs);
@@ -184,7 +187,9 @@ private:
   std::atomic<std::uint64_t> vidDecodedFrames_{0}, vidSampledFrames_{0};
   bool vidDecodedRecorded_ = false, vidSampledRecorded_ = false;
   // D1b: async video-range granularity (ranges launched, files admitted).
+  // D2: slowest file per range (join-waste accounting).
   std::atomic<std::uint64_t> vidRangeCount_{0}, vidRangeFiles_{0};
+  std::atomic<long long> vidRangeMaxNs_{0};
   std::atomic<long long> vidBuildNs_{0};
   std::atomic<std::uint64_t> vidGpu_{0}, vidGpuFallback_{0};
   std::atomic<long long> vidGpuNs_{0};

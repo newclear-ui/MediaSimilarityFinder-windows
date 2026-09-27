@@ -162,6 +162,7 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   vidDecodedFrames_ = 0; vidSampledFrames_ = 0;
   vidDecodedRecorded_ = vidSampledRecorded_ = false;
   vidRangeCount_ = 0; vidRangeFiles_ = 0;
+  vidRangeMaxNs_ = 0;
   walkQueued_ = 0; walkDequeued_ = 0; walkMaxDepth_ = 0; walkStarved_ = 0;
   vidPlaySec_ = 0;
   {
@@ -260,9 +261,12 @@ void BenchmarkRecorder::recordWalkerDequeue(std::size_t depthAfterPop) {
 void BenchmarkRecorder::noteWalkerStarved() {
   walkStarved_.fetch_add(1, std::memory_order_relaxed);
 }
-void BenchmarkRecorder::recordVideoRange(std::size_t files) {
+void BenchmarkRecorder::recordVideoRange(std::size_t files, double maxFileMs) {
   vidRangeCount_.fetch_add(1, std::memory_order_relaxed);
   vidRangeFiles_.fetch_add((std::uint64_t)files, std::memory_order_relaxed);
+  const long long ns = (long long)(maxFileMs * 1e6);
+  long long prev = vidRangeMaxNs_.load(std::memory_order_relaxed);
+  while (ns > prev && !vidRangeMaxNs_.compare_exchange_weak(prev, ns, std::memory_order_relaxed)) {}
 }
 void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
                                  std::size_t decodedFrames, std::size_t sampledFrames) {
@@ -518,6 +522,7 @@ std::string BenchmarkRecorder::toJson() const {
     << ",\"secPerPlayMin\":" << (playSec > 0 ? (vidBuildMs / 1000.0) / (playSec / 60.0) : 0)
     << ",\"secPerGB\":" << (vidBytes_.load() > 0 ? (vidBuildMs / 1000.0) / ((double)vidBytes_.load() / 1e9) : 0)
     << ",\"ranges\":" << vidRangeCount_.load() << ",\"rangeFiles\":" << vidRangeFiles_.load()
+    << ",\"maxRangeFileMs\":" << (double)vidRangeMaxNs_.load() / 1e6
     << ",\"rangeState\":\"" << measureStateName(vidRangeCount_.load() > 0 ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"slowest\":[";
   {

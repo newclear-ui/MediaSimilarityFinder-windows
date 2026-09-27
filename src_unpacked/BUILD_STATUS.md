@@ -1,15 +1,15 @@
 # Build Status
 
-- Current development version: **0.9.4.17**
+- Current development version: **0.9.4.18**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.17 — D1b gate (walker-queue and video-range observability, schema v4)**
-- Active Node D substep: **D1b gate PASS → next D2**
-- Last completed Windows build/test line: **0.9.4.17**
-- Last completed v0.9.4.17 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.17 test run: **CTest 67/67 PASS (GPU)**
-- Last completed v0.9.4.17 validation: walker enqueue/dequeue/maxDepth/starvedTicks; video ranges/rangeFiles; schema v4; `--version` 0.9.4.17
+- Current: **0.9.4.18 — D2 barrier review (video completion-order join, maxRangeFileMs, schema v5)**
+- Active Node D substep: **D2 done → next D3**
+- Last completed Windows build/test line: **0.9.4.18**
+- Last completed v0.9.4.18 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.18 test run: **CTest 67/67 PASS (GPU)**
+- Last completed v0.9.4.18 validation: completion-order harvest with cancel semantics kept; maxRangeFileMs recorded; parity proves order-independence; `--version` 0.9.4.18
 - CPU-only validation: Release build PASS; **CTest 66/66 PASS**; CUDA disabled and CPU fallback verified
 - GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + version title observed, process terminated cleanly); slot-path workflow automated PASS (`scan_workflow_test`); automated validation of human operation NOT_VALIDATED (environment limit) — development lead user-reports direct confirmation of run → search → report display in a real Windows session
 - Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in

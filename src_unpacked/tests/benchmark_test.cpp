@@ -8,7 +8,7 @@ int main() {
   if (rec.hasData()) return 1;
   msf::BenchmarkConfig cfg;
   cfg.root = "C:/media";
-   cfg.build = "0.9.4.17"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
+   cfg.build = "0.9.4.18"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
   cfg.distance = 8; cfg.cpuWorkers = 4; cfg.gpuBatch = 64; cfg.gpuBackend = "CUDA";
   cfg.scanImages = true; cfg.scanVideos = true; cfg.cudaAvailable = false;
   rec.start(cfg);
@@ -35,7 +35,7 @@ int main() {
     if (js.find(s) == std::string::npos) { std::cerr << "missing: " << s << "\n"; return false; }
     return true;
   };
-   if (!need("\"build\":\"0.9.4.17\"")) return 3;
+   if (!need("\"build\":\"0.9.4.18\"")) return 3;
   if (!need("\"completed\":true")) return 4;
   if (!need("\"count\":30")) return 5;
   if (!need("\"gpuHashed\":10")) return 6;
@@ -64,14 +64,15 @@ int main() {
    // C2: schema 2 adds calibration metric states.
    // D1a: schema 3 adds image-batch observability keys.
    // D1b: schema 4 adds walker-queue and video-range keys.
-   if (!need("\"schemaVersion\":4")) return 30;
+   // D2: schema 5 adds the per-range slowest-file key.
+   if (!need("\"schemaVersion\":5")) return 30;
    if (!need("\"runId\":\"")) return 31;
    if (!need("\"completionReason\":\"completed\"")) return 32;
    if (!need("\"cancelled\":false")) return 33;
    if (!need("\"gpuBackend\":\"CUDA\"")) return 34;
   // Node D1a: batch telemetry JSON regression.
   {
-    msf::BenchmarkRecorder rD; msf::BenchmarkConfig cD; cD.root = "C:/media"; cD.build = "0.9.4.17";
+    msf::BenchmarkRecorder rD; msf::BenchmarkConfig cD; cD.root = "C:/media"; cD.build = "0.9.4.18";
     rD.start(cD); rD.beginImageBatch(4); rD.addImagePackMs(2.5); rD.addImageCpuHashMs(1.25); rD.endImageBatch();
     rD.finalize(true, 4, 4, 0, 0, 0, 0, 0.0, 0, 0);
     const std::string jd = rD.toJson();
@@ -111,14 +112,14 @@ int main() {
    {
     msf::BenchmarkRecorder r4;
     msf::BenchmarkConfig c4;
-    c4.root = "C:/media"; c4.build = "0.9.4.17"; c4.engine = "1.5.0"; c4.db = "1.0.3";
+    c4.root = "C:/media"; c4.build = "0.9.4.18"; c4.engine = "1.5.0"; c4.db = "1.0.3";
     r4.start(c4);
     for (int i = 0; i < 5; ++i) r4.recordWalkerEnqueue((std::size_t)(i + 1));
     for (int i = 0; i < 3; ++i) r4.recordWalkerDequeue(1);
     r4.noteWalkerStarved();
     r4.noteWalkerStarved();
-    r4.recordVideoRange(8);
-    r4.recordVideoRange(4);
+    r4.recordVideoRange(8, 120.5);
+    r4.recordVideoRange(4, 60.25);
     r4.finalize(true, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
     const std::string j4 = r4.toJson();
     auto need4 = [&](const char* s) {
@@ -129,6 +130,7 @@ int main() {
     if (!need4("\"starvedTicks\":2")) return 63;
     if (!need4("\"state\":\"measured\"")) return 64;
     if (!need4("\"ranges\":2,\"rangeFiles\":12")) return 65;
+    if (!need4("\"maxRangeFileMs\":120.500")) return 69;
     if (!need4("\"rangeState\":\"measured\"")) return 66;
     // Untouched recorder: unmeasured, never zero-filled.
     if (js.find("\"walker\":{\"queued\":0") == std::string::npos) return 67;
@@ -142,7 +144,7 @@ int main() {
   {
     msf::BenchmarkRecorder r2;
     msf::BenchmarkConfig c2;
-    c2.root = "C:/media"; c2.build = "0.9.4.17"; c2.engine = "1.5.0"; c2.db = "1.0.3";
+    c2.root = "C:/media"; c2.build = "0.9.4.18"; c2.engine = "1.5.0"; c2.db = "1.0.3";
     c2.distance = 8; c2.cpuWorkers = 2; c2.gpuBatch = 32; c2.gpuBackend = "CPU";
     r2.start(c2);
     r2.addVideo(1000ULL, 10.0, 5.0, 8, "v.mp4", 10, 12);
@@ -177,7 +179,7 @@ int main() {
   {
     msf::BenchmarkRecorder r3;
     msf::BenchmarkConfig c3;
-    c3.root = "relative/path"; c3.build = "0.9.4.17"; c3.engine = "1.5.0"; c3.db = "1.0.3";
+    c3.root = "relative/path"; c3.build = "0.9.4.18"; c3.engine = "1.5.0"; c3.db = "1.0.3";
     r3.start(c3);
     r3.finalize(true, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
     const std::string j3 = r3.toJson();

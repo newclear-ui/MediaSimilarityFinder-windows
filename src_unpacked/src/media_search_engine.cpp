@@ -514,22 +514,44 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    refreshSchedLoad();
    scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
    // D1b: async range granularity (count + admitted files, no timing split).
-   bench_.recordVideoRange(to > from ? to - from : 0);
+   // D2: slowest file per range recorded after the join (pre-registered).
+   std::vector<double> rangeFileMs(to > from ? to - from : 0, 0.0);
    // B7 binding: phase-fresh published decision (see image path note).
    const bool useGpu = schedUseGpuNow();
    std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){
    FileState x=changedVideos[k];
-    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn,useGpu](){
+    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn,useGpu,&rangeFileMs,slot = k - from](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; bench_.addVideo(x.size, vf.duration, std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(), vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
+       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; bench_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); } }
      return j;
     }));
   }
    bool stopSeen=false;
-   for(auto&f:futs){auto j=f.get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue; if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;MediaFile mf{j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+   // D2: completion order (was index order). Same threads, same joins —
+   // only the harvest sequence changes, so a straggler stops blocking
+   // finished siblings. 5 ms idle bound per range, negligible against
+   // seconds-long builds. Cancel semantics preserved: post-stop
+   // completions are still joined and discarded.
+   std::vector<char> taken(futs.size(), 0);
+   std::size_t remaining=futs.size();
+   while(remaining>0){
+    bool progressed=false;
+    for(std::size_t i=0;i<futs.size();++i){
+     if(taken[i]) continue;
+     if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
+     taken[i]=1; --remaining; progressed=true;
+     auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue; if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;MediaFile mf{j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+    if(!progressed && remaining>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+   }
+   // D1b/D2 range record (completed ranges only; failed ranges stay absent).
+   {
+    double rangeMax = 0;
+    for (double v : rangeFileMs) rangeMax = std::max(rangeMax, v);
+    bench_.recordVideoRange(to > from ? to - from : 0, rangeMax);
+   }
    // Prompt stop: in-flight analyses must still join, but their results are
    // discarded and no new range starts, so the scan winds down instead of
    // grinding on. Checkpoints keep completed work; the worker maps cancel.
