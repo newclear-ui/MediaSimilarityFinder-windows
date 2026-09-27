@@ -14,7 +14,7 @@ The Roadmap is the structural direction. Progress records the actual position, p
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
 | Current node | I — Analyze / Matching Performance (D9a PASS) |
-| Current phase | Node I in progress → `verify` is **99.67 %** of analyze and the "cache capacity 32" hypothesis is **refuted** (hit rate 0.53); the next substep must pre-register before touching the verify path |
+| Current phase | Node I in progress → `verify` is **99.67 %** of analyze and the "cache capacity 32" hypothesis is **refuted** (hit rate 0.53). D9b prioritizes **B (reduce expensive-verify cost)**; A (reduce candidate-pair arrival) remains deferred because it can touch verdict semantics. Pre-register is mandatory before D9b implementation |
 | Current version | 0.9.4.24 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
@@ -676,6 +676,88 @@ Once source implementation begins, update:
   `frame_ssim`, of which 9 of 10 `ssimBuf` calls are aspect combinations with
   no buffer reuse). Caveat: this dataset uses synthetic deterministic
   fingerprints, so a real library's candidate ratio will differ.
+
+### D9b — Locked future-build comparison baseline and candidate priority
+
+After D9b, all related builds must **remember and compare against the 0.9.4.24 D9a baseline**.
+
+#### 1. 0.9.4.24 D9a baseline
+
+| Item | Baseline |
+| --- | ---: |
+| dataset | D8b standard, 2,700 files, fingerprint `9b113848…4253c` |
+| verifyCalls | 158,020 |
+| verifyHitRate | 0.5286 |
+| expensive verify | 13,734 |
+| average expensive-verify cost | ~8.5 ms/call |
+| expensive-verify aggregate | ~117 s |
+| decode | up to 4/call |
+| frame_ssim | up to 20/call |
+| ssimBuf | 10/call, 9 aspect-combination calls |
+| groups | 156,152 |
+
+These values are the baseline for both **performance comparison and correctness/parity comparison**.
+
+#### 2. D9b primary candidate — B
+
+**B: reduce the cost of one expensive verification** is the D9b primary target.
+
+The optimization may reduce redundant decode work, repeated buffer work, repeated SSIM input preparation/copies, and repeated buffer work in aspect combinations.
+
+The following semantics are invariant by default:
+
+- verdict semantics
+- candidate semantics
+- similarity threshold
+- grouping semantics
+- Engine / DB / cache semantics
+
+Do not assume parity merely because the verdict formula is untouched. **Existing/new result parity must be measured explicitly.**
+
+#### 3. Required future-build comparisons
+
+After D9b, compare against 0.9.4.24 using, where reproducible:
+
+- verifyCalls
+- expensive verify count
+- total verify time
+- ms per expensive verify
+- verifyDecodeMisses / verifyCacheHits
+- decode count
+- frameSsimEvals
+- ssimBuf-related cost or equivalent telemetry
+- groups
+- final match/verdict parity
+- CPU/GPU parity
+
+When dataset, hardware, or cold-index conditions differ, document the difference and do not present the result as a direct performance improvement.
+
+#### 4. Candidate A remains deferred
+
+**A: reduce candidate-pair arrival rate** could have a large effect because 158,020 calls reach the gate, but it can affect candidate/verdict semantics.
+
+Do not implement A in D9b.
+
+Any future A work requires a separate pre-register first, including candidate recall, false-positive/false-negative risk, candidate count, verifyCalls, and final grouping/verdict parity.
+
+A is not discarded; it is an **intentionally deferred candidate**.
+
+#### 5. Relationship that must remain visible across future builds
+
+```
+0.9.4.24 D9a
+    ├─ baseline: 158,020 verifyCalls
+    ├─ expensive: 13,734 × ~8.5 ms ≈ 117 s
+    │
+    ├─ D9b primary: B
+    │      └─ per-expensive-verify cost reduction
+    │
+    └─ deferred candidate: A
+           └─ candidate-arrival reduction
+              (verdict semantics risk)
+```
+
+When recording a new build, include the **change relative to the 0.9.4.24 D9a baseline** whenever a valid comparison is possible.
 
 ### 0.9.4.24 — QSettings Organization Name Change (PASS, identity only)
 - Not part of the D telemetry sequence; a narrow portable-UI-identity change.
