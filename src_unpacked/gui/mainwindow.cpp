@@ -166,6 +166,10 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"viewL")) return S("큰 아이콘","Large icons");
   if (!std::strcmp(key,"viewM")) return S("보통 아이콘","Medium icons");
   if (!std::strcmp(key,"viewS")) return S("작은 아이콘","Small icons");
+  // viewGrid pairs with viewList: the two QToolButton toggles above the file
+  // view (the check-mark glyph and the rows glyph). viewList was already
+  // defined, viewGrid was not, so the toggle's tooltip showed the raw key.
+  if (!std::strcmp(key,"viewGrid")) return S("격자","Grid");
   if (!std::strcmp(key,"viewList")) return S("리스트","List");
   if (!std::strcmp(key,"viewDetails")) return S("자세히","Details");
   if (!std::strcmp(key,"viewTiles")) return S("타일","Tiles");
@@ -186,6 +190,14 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"tabExif")) return S("EXIF 정보","EXIF");
   if (!std::strcmp(key,"tabSim")) return S("유사도 분석","Similarity");
   if (!std::strcmp(key,"tabHash")) return S("해시 정보","Hash");
+  // Column headers for the file list view. The labels above (fileName, modified,
+  // ...) end in a colon because they are detail-form rows; a tree column header
+  // must not, so these are separate keys rather than a reuse of those. They were
+  // missing, and the fallback at the end of trStr() returned the key itself, so
+  // the header rendered the literal text "colFile" and "colDate". colDate holds
+  // QFileInfo::lastModified(), matching the "수정 날짜" terminology.
+  if (!std::strcmp(key,"colFile")) return S("파일 이름","File name");
+  if (!std::strcmp(key,"colDate")) return S("수정 날짜","Modified");
   if (!std::strcmp(key,"fileName")) return S("파일 이름:","File name:");
   if (!std::strcmp(key,"fullPath")) return S("전체 경로:","Full path:");
   if (!std::strcmp(key,"fileSize")) return S("파일 크기:","File size:");

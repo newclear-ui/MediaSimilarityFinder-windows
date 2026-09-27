@@ -392,6 +392,10 @@ if(MSF_BUILD_GUI)
       add_test(NAME ui_settings_verify COMMAND msf_ui_settings_test --probe-verify "${MSF_UI_SETTINGS_DIR}" 640 480)
       set_tests_properties(ui_settings_verify PROPERTIES DEPENDS ui_settings_write)
       add_test(NAME ui_reference_order_test COMMAND msf_ui_settings_test --ref-order)
+      # Any UI string key that is used but missing from trStr() renders as its
+      # own camelCase identifier, because trStr() falls back to returning the
+      # key. colFile/colDate/viewGrid were missing and showed up that way.
+      add_test(NAME ui_translation_keys_test COMMAND msf_ui_settings_test --tr-keys)
       # 0.9.4.26 settings-identity migration. Every phase is its own process so
       # a same-process QSettings cache can never make a broken migration pass.
       set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")

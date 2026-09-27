@@ -74,6 +74,55 @@ bool plantIni(const QString& path, const QMap<QString, QString>& values) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // Translation-table regression gate.
+  //
+  // trStr() ends with `return QString::fromUtf8(key)`, so any key used in the UI
+  // but missing from the table renders as its own camelCase identifier in front
+  // of the user. That is exactly what happened: colFile, colDate and viewGrid
+  // were referenced by the file-list headers and the grid toggle tooltip, never
+  // defined, and the header showed the literal text "colFile" / "colDate".
+  //
+  // Detection uses the Korean value, not both languages: a key is an ASCII
+  // camelCase identifier, so a genuine Korean translation can never equal it,
+  // while the fallback returns the key unchanged in both languages. The English
+  // value is only checked for emptiness, because a legitimate entry can
+  // coincide with its own key -- "files" is a real column header whose English
+  // label is "files". Comparing English against the key would flag that as a
+  // false positive, and "fixing" it by capitalizing would be a cosmetic change
+  // to working UI.
+  if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--tr-keys") {
+    static const char* const kKeys[] = {
+      // file list view: headers and the view-mode toggles
+      "colFile", "colDate", "viewGrid", "viewList",
+      "similarity", "resolution", "format", "fileSize",
+      // detail form rows
+      "fileName", "fullPath", "modified", "created",
+      // group tree headers
+      "group", "files", "pairs",
+      // view-mode combo entries
+      "viewXL", "viewL", "viewM", "viewS", "viewDetails", "viewTiles",
+    };
+    int missing = 0;
+    for (const char* k : kKeys) {
+      const QString ko = trStr(UiLang::Ko, k);
+      const QString en = trStr(UiLang::En, k);
+      if (ko == QString::fromUtf8(k)) {
+        std::cerr << "trStr(ko) has no entry for key '" << k << "'\n";
+        ++missing;
+      }
+      if (en.trimmed().isEmpty()) {
+        std::cerr << "trStr(en) returned empty text for key '" << k << "'\n";
+        ++missing;
+      }
+      if (ko == en && ko.trimmed().isEmpty()) {
+        std::cerr << "key '" << k << "' resolved to empty text in both languages\n";
+        ++missing;
+      }
+    }
+    if (missing) { std::cout << "tr_keys=failed " << missing << "\n"; return 1; }
+    std::cout << "tr_keys=ok checked=" << (int)(sizeof(kKeys) / sizeof(kKeys[0])) << "\n";
+    return 0;
+  }
   if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--ref-order") {
     QStringList paths({"a", "b", "c", "d"});
     QHash<QString,qulonglong> pix, siz;
