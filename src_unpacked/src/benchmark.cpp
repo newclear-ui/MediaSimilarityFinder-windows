@@ -677,7 +677,44 @@ std::string BenchmarkRecorder::toJson() const {
     a << ",\"msPerVerifyCallState\":\"" << measureStateName(hasVerify ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
     a << ",\"ssimEvals\":" << analyzeTel_.ssimEvals
       << ",\"frameSsimEvals\":" << analyzeTel_.frameSsimEvals
-      << ",\"videoTemporalPairs\":" << analyzeTel_.videoTemporalPairs << "},";
+      << ",\"videoTemporalPairs\":" << analyzeTel_.videoTemporalPairs;
+    // D9c: exclusive breakdown of verifyMs. Each field is a disjoint code
+    // region and verifyOtherMs is the remainder, so the seven times plus other
+    // reconstruct verifyMs without double counting. verifySumMs is published
+    // next to them so a consumer can check that identity instead of trusting
+    // it, and verifyBreakdownOverMs exposes any drift.
+    //
+    // These come from an instrumented build, so they describe a build paying for
+    // its own timers. Read them as a relative distribution, not a production
+    // performance figure.
+    const auto& v = analyzeTel_;
+    const double vSum = v.verifyKeyMs + v.verifyDecodeMs + v.verifyCacheStoreMs
+                      + v.verifyCacheCopyMs + v.verifyCropMs + v.verifyFlipMs
+                      + v.verifyFrameSsimMs + v.verifyOtherMs;
+    const bool breakdown = hasVerify && v.verifyBufferLookups > 0;
+    auto stageMs = [&](const char* n, double ms) {
+      a << ",\"" << n << "\":" << ms << ",\"" << n << "State\":\""
+        << measureStateName(breakdown ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    };
+    stageMs("verifyKeyMs", v.verifyKeyMs);
+    stageMs("verifyDecodeMs", v.verifyDecodeMs);
+    stageMs("verifyCacheStoreMs", v.verifyCacheStoreMs);
+    stageMs("verifyCacheCopyMs", v.verifyCacheCopyMs);
+    stageMs("verifyCropMs", v.verifyCropMs);
+    stageMs("verifyFlipMs", v.verifyFlipMs);
+    stageMs("verifyFrameSsimMs", v.verifyFrameSsimMs);
+    stageMs("verifyOtherMs", v.verifyOtherMs);
+    a << ",\"verifySumMs\":" << vSum;
+    a << ",\"verifyBreakdownOverMs\":" << (vSum - v.verifyMs);
+    a << ",\"verifyBreakdownState\":\"" << measureStateName(breakdown ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"verifyBufferLookups\":" << v.verifyBufferLookups
+      << ",\"verifyQuickHashReads\":" << v.verifyQuickHashReads
+      << ",\"verifyQuickHashBytes\":" << v.verifyQuickHashBytes
+      << ",\"verifyDecodes\":" << v.verifyDecodes
+      << ",\"verifyCacheCopies\":" << v.verifyCacheCopies
+      << ",\"verifyCropCalls\":" << v.verifyCropCalls
+      << ",\"verifyFlipCalls\":" << v.verifyFlipCalls;
+    a << "},";
     o << a.str();
   }
   auto stageObj = [&](const char* name, double ms, bool recorded) {

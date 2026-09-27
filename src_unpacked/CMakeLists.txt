@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.25 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.26 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -392,7 +392,7 @@ if(MSF_BUILD_GUI)
       add_test(NAME ui_settings_verify COMMAND msf_ui_settings_test --probe-verify "${MSF_UI_SETTINGS_DIR}" 640 480)
       set_tests_properties(ui_settings_verify PROPERTIES DEPENDS ui_settings_write)
       add_test(NAME ui_reference_order_test COMMAND msf_ui_settings_test --ref-order)
-      # 0.9.4.25 settings-identity migration. Every phase is its own process so
+      # 0.9.4.26 settings-identity migration. Every phase is its own process so
       # a same-process QSettings cache can never make a broken migration pass.
       set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")
       set(MSF_MIGRATE_BOTH_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate-both")

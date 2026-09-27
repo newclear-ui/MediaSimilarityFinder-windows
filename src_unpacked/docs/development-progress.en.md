@@ -821,3 +821,43 @@ When recording a new build, include the **change relative to the 0.9.4.24 D9a ba
 - Remaining questions: where does the 8.5 ms actually go, and can
   `frame_ssim` itself be reduced? (window size, precision, and early exit all
   affect results, so they need their own pre-register.)
+
+### D9c — Expensive verify internal cost accounting → 0.9.4.26, **PASS**
+
+- Pre-register commit `39d2442` (before any code), baseline remains 0.9.4.24 D9a.
+- **An instrumentation build. Performance improvement was not the goal.**
+- **Headline: decode is 94.90 % of the 8.564 ms expensive verify.**
+  `frame_ssim` — the stage D9b optimized — is **0.55 %**.
+  ```
+  decode             111,621.7 ms   94.90 %   8.1274 ms/verify
+  key (stat+64KB)      4,421.9 ms    3.76 %   0.3220 ms/verify
+  frame_ssim             645.2 ms    0.55 %   0.0470 ms/verify
+  crop/aspect             201.9 ms    0.17 %   0.0147 ms/verify
+  mirror flip             188.7 ms    0.16 %   0.0137 ms/verify
+  cache store+copy         53.9 ms    0.05 %   0.0039 ms/verify
+  other (remainder)       481.4 ms    0.41 %   0.0351 ms/verify
+  total                117,614.6 ms  100.00 %   8.564 ms/verify
+  ```
+  `sum == verifyMs` holds exactly (overflow 0.0000 ms).
+- **D9b's failure now has evidence behind it.** The whole scoring path is
+  0.55 %, and decode is roughly 173x frame_ssim. A candidate that does not touch
+  decode cannot address more than the remaining 5.1 %.
+- The "~8.5 ms" D9a derived is for the first time a direct measurement (8.564 ms).
+- Two structural facts from the counters:
+  - **Each miss decodes the same file twice** (`verifyDecodes` 25,898 = 2x12,949),
+    because both `decode` and `decodePreserveAspect` are called on the same path.
+  - **Cache hits still read and hash 64 KiB.** Of 27,468 lookups, 14,519 are
+    hits. 363.3 MB read and hashed. (3.76 % of cost)
+- Not measured, and not estimated: `frame_ssim` internals, decode internals
+  (the 4.31 ms breakdown).
+- Accuracy: every existing counter identical to D9a — verifyCalls 158,020,
+  expensive 13,734, misses 12,949, hits 14,519, ssimEvals 137,340,
+  frameSsimEvals 274,680, **groups 156,152**. `verify_parity_test` 25 checks
+  PASS, new `verify_instrumentation` PASS (stage sum <= total, instrumented ==
+  uninstrumented). CPU 77/77, GPU 78/78. `--smoke` exit 0, `--version` 0.9.4.26.
+- Engine/DB/cache/schema unchanged; SSIM, threshold, verdict, candidate, and
+  grouping semantics untouched.
+- **Next candidate: D (image decode cost).** It must first decompose the
+  4.31 ms decode. Candidate A stays deferred. A standalone frame_ssim
+  optimization is not worth a pre-register at 0.55 %.
+- D9b remains **NOT ACCEPTED**. It is not reclassified as a success.

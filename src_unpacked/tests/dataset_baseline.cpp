@@ -244,6 +244,76 @@ int main(int argc, char** argv) {
     if (calls > 0) std::printf("ssimEvals/verifyCall %.2f\n", ssim / calls);
   }
 
+  // --- D9c: where the expensive verify time actually goes. The stages are
+  // disjoint code regions and "other" is the remainder of verifyMs, so the
+  // list adds up to verifyMs without double counting; the sum check below
+  // proves that on real data instead of asserting it in prose. Reported
+  // unconditionally for the same reason as the D9a block. ---
+  {
+    bool f1 = false;
+    const double vfyTotal = numIn(lastJson, "analyze", "verifyMs");
+    const double lookups = numIn(lastJson, "analyze", "verifyBufferLookups");
+    const double lookupsState = numIn(lastJson, "analyze", "verifyQuickHashReads");
+    const double quickBytes = numIn(lastJson, "analyze", "verifyQuickHashBytes");
+    const double decodes = numIn(lastJson, "analyze", "verifyDecodes");
+    const double copies = numIn(lastJson, "analyze", "verifyCacheCopies");
+    const double cropCalls = numIn(lastJson, "analyze", "verifyCropCalls");
+    const double flipCalls = numIn(lastJson, "analyze", "verifyFlipCalls");
+    // Expensive verifies: buffer lookups are 2 per verify, and a lookup is
+    // only reached when the kFast short-circuit did not fire. Deriving the
+    // count this way avoids inventing a second definition of "expensive".
+    const double expensive = lookups / 2.0;
+
+    const double keyMs   = numIn(lastJson, "analyze", "verifyKeyMs");
+    const double decMs   = numIn(lastJson, "analyze", "verifyDecodeMs");
+    const double stoMs   = numIn(lastJson, "analyze", "verifyCacheStoreMs");
+    const double copMs   = numIn(lastJson, "analyze", "verifyCacheCopyMs");
+    const double cropMs  = numIn(lastJson, "analyze", "verifyCropMs");
+    const double flipMs  = numIn(lastJson, "analyze", "verifyFlipMs");
+    const double fsMs    = numIn(lastJson, "analyze", "verifyFrameSsimMs");
+    const double othMs   = numIn(lastJson, "analyze", "verifyOtherMs");
+    const double sum     = numIn(lastJson, "analyze", "verifySumMs");
+    const double over    = numIn(lastJson, "analyze", "verifyBreakdownOverMs");
+    (void)numAfter(lastJson, "analyzeMs", f1);
+
+    std::printf("\n--- D9c: expensive verify internal cost split (instrumented build) ---\n");
+    if (lookups <= 0) {
+      std::printf("  (no buffer lookups recorded; state=%s)\n",
+                  strAfter(lastJson, "verifyBreakdownState").c_str());
+    } else {
+      const double per = expensive > 0 ? vfyTotal / expensive : 0.0;
+      std::printf("  verifyMs total     %10.1f   expensive verifies %.0f -> %.3f ms/verify\n",
+                  vfyTotal, expensive, per);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify\n", "key (stat+64KB hash)",
+                  keyMs, 100.0 * keyMs / vfyTotal, keyMs / expensive);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify\n", "decode",
+                  decMs, 100.0 * decMs / vfyTotal, decMs / expensive);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify\n", "cache store",
+                  stoMs, 100.0 * stoMs / vfyTotal, stoMs / expensive);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify\n", "cache copy (hits)",
+                  copMs, 100.0 * copMs / vfyTotal, copMs / expensive);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify  (crop+resize together)\n", "crop/aspect",
+                  cropMs, 100.0 * cropMs / vfyTotal, cropMs / expensive);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify\n", "mirror flip",
+                  flipMs, 100.0 * flipMs / vfyTotal, flipMs / expensive);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify\n", "frame_ssim",
+                  fsMs, 100.0 * fsMs / vfyTotal, fsMs / expensive);
+      std::printf("  %-18s %10.1f  %6.2f%%   %8.4f ms/verify  (remainder)\n", "other",
+                  othMs, 100.0 * othMs / vfyTotal, othMs / expensive);
+      std::printf("  sum                %10.1f   vs verifyMs %.1f -> %s (over %.4f ms)\n",
+                  sum, vfyTotal, (sum <= vfyTotal + 1.0) ? "OK (<=)" : "VIOLATION", over);
+      std::printf("  frame_ssim internals are NOT measured (single function, no separable sub-stage)\n");
+      std::printf("stage counters\n");
+      std::printf("verifyBufferLookups  %.0f\nverifyQuickHashReads %.0f\nverifyQuickHashBytes  %.0f (%.1f MB)\n",
+                  lookups, lookupsState, quickBytes, quickBytes / 1048576.0);
+      std::printf("verifyDecodes        %.0f\nverifyCacheCopies    %.0f\nverifyCropCalls      %.0f\nverifyFlipCalls      %.0f\n",
+                  decodes, copies, cropCalls, flipCalls);
+      if (expensive > 0)
+        std::printf("quickHashBytes/verify %.0f  (%d lookups x 64 KiB upper bound)\n",
+                    quickBytes / expensive, 2);
+    }
+  }
+
   if (std::getenv("MSF_BASELINE_DUMP_WALKER")) {
     const std::size_t wp = lastJson.find("\"walker\":");
     if (wp != std::string::npos)

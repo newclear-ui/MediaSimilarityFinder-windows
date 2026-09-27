@@ -816,3 +816,40 @@ A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
   올리지 않는다 — A 가 접촉하는 것은 verdict semantics 이기 때문이다.
 - 남은 질문: 8.5 ms 의 실제 소비처는? `frame_ssim` 자체를 줄일 수 있는가?
   (윈도우/정밀도/early-exit 은 결과에 영향 → 별도 pre-register 필요)
+
+### D9c — Expensive verify 내부 비용 계측 → 0.9.4.26, **PASS**
+
+- Pre-register commit `39d2442` (코드 변경 전), baseline 은 계속 0.9.4.24 D9a.
+- **instrumentation 빌드다. 성능 향상이 목표가 아니었다.**
+- **핵심 결과: expensive verify 8.564 ms 중 decode 가 94.90 %.**
+  `frame_ssim` 은 **0.55 %** — D9b 가 최적화한 그 단계다.
+  ```
+  decode             111,621.7 ms   94.90 %   8.1274 ms/verify
+  key (stat+64KB)      4,421.9 ms    3.76 %   0.3220 ms/verify
+  frame_ssim             645.2 ms    0.55 %   0.0470 ms/verify
+  crop/aspect             201.9 ms    0.17 %   0.0147 ms/verify
+  mirror flip             188.7 ms    0.16 %   0.0137 ms/verify
+  cache store+copy         53.9 ms    0.05 %   0.0039 ms/verify
+  other (나머지)          481.4 ms    0.41 %   0.0351 ms/verify
+  합계                117,614.6 ms  100.00 %   8.564 ms/verify
+  ```
+  `sum == verifyMs` 정확히 성립 (초과 0.0000 ms).
+- **D9b 가 왜 실패했는지 이제 증거로 확인되었다.** 채점 경로 전체가 0.55 %였고,
+  decode 는 frame_ssim 의 약 173배였다. decode 를 건드리지 않는 후보는 남은
+  5.1 % 보다 큰 것을 다룰 수 없다.
+- D9a 에서 유도한 "약 8.5 ms" 가 처음으로 **직접 측정값(8.564 ms)** 이 됐다.
+- 카운터에서 나온 구조적 사실 2가지:
+  - **miss 1건당 같은 파일을 2번 디코드** (`verifyDecodes` 25,898 = 2×12,949).
+    `decode` 와 `decodePreserveAspect` 를 같은 path 에 둘 다 호출한다.
+  - **cache hit 에도 64KB quick-hash 를 읽고 해시.** lookup 27,468회 중
+    hit 14,519회도 포함. 363.3 MB 를 읽고 해시했다. (비용 3.76 %)
+- 미측정(추정하지 않음): `frame_ssim` 내부, decode 내부(4.31 ms 의 분해).
+- 정확성: 기존 카운터 전부 D9a 와 동일 — verifyCalls 158,020, expensive 13,734,
+  misses 12,949, hits 14,519, ssimEvals 137,340, frameSsimEvals 274,680,
+  **groups 156,152**. `verify_parity_test` 25 checks PASS, 새
+  `verify_instrumentation` PASS(단계 합 ≤ total, instrumented == uninstrumented).
+  CPU 77/77, GPU 78/78. `--smoke` exit 0, `--version` 0.9.4.26.
+- Engine/DB/cache/schema 불변, SSIM·threshold·verdict·candidate·grouping 무변경.
+- **다음 후보: D (image decode 비용).** 단 먼저 4.31 ms decode 를 더 분해해야 한다.
+  후보 A 는 계속 deferred. `frame_ssim` 단독 최적화는 0.55 % 라 가치가 없다.
+- D9b 는 **NOT ACCEPTED 로 유지.** 성공으로 재분류하지 않는다.

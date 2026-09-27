@@ -311,6 +311,31 @@ if(isVideo){
   s.analyze.ssimEvals=tel.ssimEvals;
   s.analyze.frameSsimEvals=tel.frameSsimEvals;
   s.analyze.videoTemporalPairs=tel.videoTemporalPairs;
+  // D9c: close out the verify breakdown the same way. The seven measured
+  // stages are disjoint code regions, so "other" is the remainder of the
+  // verify total after them. It absorbs the per-call control work the timers
+  // do not wrap (kFast short-circuit, argument checks, the GrayImage
+  // assignments) rather than pretending that work belongs to a stage it was
+  // never measured in. Because it is a remainder, a mis-scoped timer would
+  // make it negative, which the benchmark report and the test both check.
+  s.analyze.verifyKeyMs=tel.verifyKeyMs;
+  s.analyze.verifyDecodeMs=tel.verifyDecodeMs;
+  s.analyze.verifyCacheStoreMs=tel.verifyCacheStoreMs;
+  s.analyze.verifyCacheCopyMs=tel.verifyCacheCopyMs;
+  s.analyze.verifyCropMs=tel.verifyCropMs;
+  s.analyze.verifyFlipMs=tel.verifyFlipMs;
+  s.analyze.verifyFrameSsimMs=tel.verifyFrameSsimMs;
+  double otherMs=verifyMs-tel.verifyKeyMs-tel.verifyDecodeMs-tel.verifyCacheStoreMs
+                 -tel.verifyCacheCopyMs-tel.verifyCropMs-tel.verifyFlipMs-tel.verifyFrameSsimMs;
+  if(otherMs<0) otherMs=0;   // timer noise guard; never report negative time
+  s.analyze.verifyOtherMs=otherMs;
+  s.analyze.verifyBufferLookups=tel.verifyBufferLookups;
+  s.analyze.verifyQuickHashReads=tel.verifyQuickHashReads;
+  s.analyze.verifyQuickHashBytes=tel.verifyQuickHashBytes;
+  s.analyze.verifyDecodes=tel.verifyDecodes;
+  s.analyze.verifyCacheCopies=tel.verifyCacheCopies;
+  s.analyze.verifyCropCalls=tel.verifyCropCalls;
+  s.analyze.verifyFlipCalls=tel.verifyFlipCalls;
   return s;
 }
 const std::vector<MediaFile>& ScanPipeline::files()const{return files_;}

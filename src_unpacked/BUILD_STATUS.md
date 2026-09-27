@@ -1,17 +1,49 @@
 # Build Status
 
-- Current development version: **0.9.4.25**
+- Current development version: **0.9.4.26**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.25 — D9b Candidate B (expensive verify cost reduction): NOT ACCEPTED, parity held but no cost reduction**
-- Active node: **I / D9a PASS; D9b Candidate B failed on evidence; Candidate A still deferred**
-- Last completed Windows build/test line: **0.9.4.25**
-- Last completed v0.9.4.25 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.25 test run: **CTest 78/78 PASS (GPU)**
-- Last completed v0.9.4.25 validation: `verify_parity_test` 25 checks (optimized path double-identical to the preserved pre-D9b reference); CPU 77/77, GPU 78/78; counters all unchanged vs 0.9.4.24 D9a
+- Current: **0.9.4.26 — D9c expensive verify internal cost accounting (instrumentation build). decode is 94.90 % of the 8.564 ms expensive verify; frame_ssim is 0.55 %**
+- Active node: **I / D9a PASS; D9b Candidate B NOT ACCEPTED; D9c PASS (measurement). Next: Candidate D (decode), which must first decompose the 4.31 ms decode**
+- Last completed Windows build/test line: **0.9.4.26**
+- Last completed v0.9.4.26 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.26 test run: **CTest 78/78 PASS (GPU)**
+- Last completed v0.9.4.26 validation: `verify_parity_test` 25 checks (optimized path still double-identical to the preserved pre-D9b reference) + new D9c `verify_instrumentation` assertions (stage sum <= total, instrumented == uninstrumented, stage counters match the known per-call structure); CPU 77/77, GPU 78/78; every existing counter and groups 156,152 identical to 0.9.4.24 D9a; `--smoke` exit 0; `--version` 0.9.4.26
 - CPU-only validation: Release build PASS; **CTest 77/77 PASS**; CUDA disabled and CPU fallback verified
-- D9b scope note: **no optimization accepted.** `centerCropResize` 8→6 calls and aspect-buffer reuse only; verdict semantics, candidate semantics, thresholds, SSIM formula, crop semantics, DB/cache/schema all unchanged
+- D9c scope note: **instrumentation only, no optimization.** 8 exclusive stage timings + 7 stage counters in `AnalyzeTelemetry`; timers placed outside the calls they measure; `frame_ssim` internals and decode internals deliberately left unmeasured. SSIM, window, precision, threshold, candidate, grouping, verdict, cache, decode, resize, crop, mirror, CPU-fallback, and CUDA semantics all unchanged. Engine 1.5.0 / DB 1.0.3 / cache v9 / schema v9 unchanged
+
+### D9c measured result — where the 8.564 ms goes
+
+| Stage | Total ms | Share | ms / expensive verify |
+|---|---:|---:|---:|
+| **decode** | 111,621.7 | **94.90 %** | **8.1274** |
+| key (2 stat + 64 KiB quick-hash read) | 4,421.9 | 3.76 % | 0.3220 |
+| other (remainder) | 481.4 | 0.41 % | 0.0351 |
+| **frame_ssim** | 645.2 | **0.55 %** | **0.0470** |
+| crop / aspect (crop + resize together) | 201.9 | 0.17 % | 0.0147 |
+| mirror flip | 188.7 | 0.16 % | 0.0137 |
+| cache store | 42.9 | 0.04 % | 0.0031 |
+| cache copy (hits) | 11.0 | 0.01 % | 0.0008 |
+| **total** | **117,614.6** | 100 % | **8.564** |
+
+`sum == verifyMs` exactly (overflow 0.0000 ms). Dataset fingerprint
+`9b113848…4253c` (2,700 files, 36,007,560 bytes), cold index, 3 runs, AMD Ryzen 7
+5800X3D / RTX 3080 Ti. Because this is an instrumented build, read the numbers
+as a relative distribution, not a production performance claim.
+
+This is the evidence for why D9b could not have succeeded: the whole scoring
+path it optimized is 0.55 % of the cost, and decode is roughly 173x
+`frame_ssim`.
+
+Counters also expose two structural facts: each cache miss decodes the same
+file **twice** (`verifyDecodes` 25,898 = 2 x 12,949, because `decode` and
+`decodePreserveAspect` are both called on the same path), and cache hits still
+rebuild the 64 KiB quick-hash key, which is 27,468 reads and 363.3 MB across the
+run.
+
+**D9b remains NOT ACCEPTED** and is not reclassified as a success.
+
 - Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Source: `MediaSimilarityFinder-v0.9.4.25-src.zip` (0.96 MB, 529 files verified byte-identical to GitHub). Compiled: `MediaSimilarityFinder-v0.9.4.19-Portable-Windows-x64.zip` and `-v0.9.4.20-...` (42.54 MB each, 85 entries, exe present) relocated here from src_unpacked/. `package_portable.ps1` now writes portable zips straight to `backup/`; both kinds rotate independently at 3. Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
 
 ### D9b measured result — Candidate B NOT ACCEPTED

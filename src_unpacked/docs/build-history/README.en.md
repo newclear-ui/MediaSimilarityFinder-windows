@@ -155,3 +155,4 @@ Previous implementation/design snapshots are preserved under `../architecture/le
 - v0.9.4.23 — D9a: analyze internal stage split + verify/SSIM counters, schema v9; "cache capacity 32" hypothesis refuted by measurement
 - v0.9.4.24 — QSettings organization renamed to `MediaSimilarityFinder-ui` with a safe one-time legacy settings migration
 - v0.9.4.25 — D9b Candidate B: **REJECTED.** centerCropResize 8→6 + aspect buffer reuse. 25 parity checks double-identical and every counter identical to D9a, but no cost reduction (frame_ssim dominates)
+- v0.9.4.26 — D9c: expensive verify internal cost accounting (instrumentation). **PASS.** decode 94.90% / frame_ssim 0.55% of the 8.564 ms verify; parity held, groups 156,152

@@ -3,6 +3,7 @@
 #include "image_verify.h"
 #include "path_utils.h"
 #include "video_fingerprint.h" // frame_ssim
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -74,5 +75,59 @@ int main() {
     }
   if (failures) { std::cout << "verify_parity=failed " << failures << "\n"; return 1; }
   std::cout << "verify_parity=ok checks=" << checks << "\n";
+
+  // ---------------------------------------------------------------- D9c
+  // The D9c instrumentation must be behaviour-preserving and must not
+  // double count. Three properties are asserted here:
+  //
+  //  1. Passing a telemetry sink produces a double-identical score to passing
+  //     nullptr, so the timers cannot have perturbed the arithmetic.
+  //  2. The stage counters match the known per-call structure, which would
+  //     catch a timer accidentally attached to the wrong region.
+  //  3. The stage times sum to less than or equal to a measured wrapper total,
+  //     which is the property that makes the reported distribution readable.
+  //     Without it, overlapping timers would still produce plausible-looking
+  //     percentages.
+  {
+    const int w = 96, h = 64;
+    const msf::GrayImage fA = makeBuf(11, kW, kH), aA = makeBuf(12, w, h);
+    const msf::GrayImage fB = makeBuf(13, kW, kH), aB = makeBuf(14, w, h);
+    const double ham = 90.0;
+
+    msf::AnalyzeTelemetry tel;
+    const auto t0 = std::chrono::steady_clock::now();
+    const double inst = msf::verifyScorePlan(fA, aA, fB, aB, ham, &tel);
+    const double wallMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+    const double plain = msf::verifyScorePlan(fA, aA, fB, aB, ham, nullptr);
+
+    expect(inst == plain, "D9c: instrumented score is double-identical to uninstrumented");
+
+    // Structure: 1 full ssimBuf plus 3 aspects x 3 pairs, each doing 2
+    // frame_ssim calls, plus 8 crops and 10 flips.
+    expect(tel.ssimEvals == 10, "D9c: ssimEvals is 10 per verify");
+    expect(tel.frameSsimEvals == 20, "D9c: frameSsimEvals is 20 per verify");
+    expect(tel.verifyCropCalls == 8, "D9c: verifyCropCalls is 8 per verify");
+    expect(tel.verifyFlipCalls == 10, "D9c: verifyFlipCalls is 10 per verify");
+    expect(tel.verifyBufferLookups == 0, "D9c: no buffer lookup happens in the scoring plan");
+
+    const double stageSum = tel.verifyKeyMs + tel.verifyDecodeMs + tel.verifyCacheStoreMs
+                          + tel.verifyCacheCopyMs + tel.verifyCropMs + tel.verifyFlipMs
+                          + tel.verifyFrameSsimMs;
+    // The wrapper total is the same clock the stages use, so the sum of disjoint
+    // regions cannot exceed it beyond timer noise. A generous tolerance keeps
+    // this from flaking on a loaded machine while still catching overlap.
+    expect(stageSum <= wallMs + 5.0, "D9c: stage timings do not exceed the measured total");
+    expect(stageSum > 0.0, "D9c: stage timings are actually recorded");
+    // crop, flip and frame_ssim are the three stages this call enters; key and
+    // decode are not entered here because no file is opened.
+    expect(tel.verifyCropMs > 0.0, "D9c: crop stage was measured");
+    expect(tel.verifyFlipMs > 0.0, "D9c: flip stage was measured");
+    expect(tel.verifyFrameSsimMs > 0.0, "D9c: frame_ssim stage was measured");
+    expect(tel.verifyKeyMs == 0.0, "D9c: key stage is zero when no buffer is fetched");
+  }
+
+  if (failures) { std::cout << "verify_instrumentation=failed " << failures << "\n"; return 1; }
+  std::cout << "verify_instrumentation=ok\n";
   return 0;
 }

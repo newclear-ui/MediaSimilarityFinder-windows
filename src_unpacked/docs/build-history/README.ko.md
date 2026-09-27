@@ -155,3 +155,4 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 - v0.9.4.23 — D9a: analyze 내부 stage 분해 + verify/SSIM 카운터, schema v9. "캐시 용량 32" 가설은 측정으로 기각
 - v0.9.4.24 — QSettings organization 을 `MediaSimilarityFinder-ui` 로 변경 + 기존 설정 안전한 1회 자동 마이그레이션
 - v0.9.4.25 — D9b 후보 B: **기각.** centerCropResize 8→6 + aspect 버퍼 재사용. parity 25건 double 동일, 카운터 D9a 와 모두 동일하나 비용 감소 없음 (frame_ssim 이 지배)
+- v0.9.4.26 — D9c: expensive verify 내부 비용 계측 (instrumentation). **PASS.** 8.564 ms 중 decode 94.90% / frame_ssim 0.55%. parity 유지, groups 156,152
