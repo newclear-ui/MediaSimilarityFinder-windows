@@ -2,101 +2,133 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>UI 목업 B — v0.9.3.3 기준: 좌 트리+요약 / 중 그룹+썸네일 / 우 상세 + 벤치마크 팝업</title>
+<title>UI 목업 B — v0.9.4.25 기준</title>
+<!--
+  v0.9.4.25 기준 실제 UI 목업.
+  모든 문자열은 gui/mainwindow.cpp 의 trStr() 번역 테이블에서 그대로 가져왔습니다.
+  0.9.3.3 목업 대비 변경점은 하단 "0.9.3.3 → 0.9.4.25 변경점" 참고.
+-->
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 12px; color: #222;
-         background: #888; display: flex; justify-content: center; padding: 12px; }
-  .win { width: 1520px; background: #fff; border: 1px solid #555; display: flex; flex-direction: column; }
+         background: #6b6b6b; display: flex; justify-content: center; padding: 14px; }
+  .win { width: 1560px; background: #fff; border: 1px solid #555; display: flex; flex-direction: column; }
   .titlebar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #ddd; font-weight: bold; }
   .titlebar .sp { flex: 1; } .titlebar .btns span { display: inline-block; width: 34px; text-align: center; color: #666; }
-  .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #ddd; }
-  .tbtn { border: 1px solid #ccc; background: #f7f7f7; border-radius: 5px; padding: 6px 10px; white-space: nowrap; }
-  .tbtn.primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; font-weight: bold; padding: 6px 18px; }
+
+  /* 툴바: buildToolbar() 의 실제 addWidget/addSeparator 순서를 그대로 따른다 */
+  .toolbar { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-bottom: 1px solid #ddd; }
+  .tbtn { border: 1px solid #c8c8c8; background: #f7f7f7; border-radius: 5px; padding: 6px 10px; white-space: nowrap; }
+  .tbtn.primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; font-weight: bold; }
+  .tbtn.chk { background: #fff; }
   .tbtn.hl { background: #ebf4ff; border-color: #2b6cb0; color: #2b6cb0; font-weight: bold; }
-  .path { flex: 1; border: 1px solid #ccc; border-radius: 5px; padding: 6px 10px; color: #333; }
+  .tbtn.dis { color: #b0b0b0; background: #f2f2f2; border-color: #e2e2e2; }
+  .tbtn.spin { background: #fff; padding: 6px 8px; }
+  .tbtn.util { font-size: 17px; font-weight: bold; padding: 2px 12px; }
+  .path { width: 190px; border: 1px solid #c8c8c8; border-radius: 5px; padding: 6px 8px; color: #333; background: #fff; }
+  .sep { width: 1px; height: 24px; background: #d5d5d5; margin: 0 3px; }
   .chk { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-  .tabrow { display: flex; align-items: flex-end; gap: 2px; padding: 8px 10px 0; background: #f4f4f4; border-bottom: 1px solid #bbb; }
-  .tab { border: 1px solid #bbb; border-bottom: none; background: #e4e4e4; border-radius: 6px 6px 0 0; padding: 6px 16px; }
+
+  .mid { display: flex; min-height: 578px; }
+  .left { width: 232px; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+  .pane-h { font-weight: bold; padding: 8px 10px 5px; }
+  .tree { padding: 0 8px; line-height: 1.95; font-size: 11.5px; }
+  .tree .sel { background: #2b6cb0; color: #fff; border-radius: 4px; padding: 0 4px; }
+  .sum { border-top: 1px solid #ddd; margin-top: auto; padding: 6px 10px 10px; }
+  .sum table { width: 100%; border-collapse: collapse; }
+  .sum td { padding: 2.5px 0; font-size: 11.5px; }
+  .sum td:last-child { text-align: right; color: #444; }
+
+  .center { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .gbar { display: flex; align-items: center; gap: 7px; padding: 8px 10px 6px; }
+  .gbar .gt { font-weight: bold; }
+  .gbar .path { flex: 1; }
+  .tabs { display: flex; align-items: flex-end; gap: 2px; padding: 0 10px; background: #f4f4f4;
+          border-top: 1px solid #e2e2e2; border-bottom: 1px solid #bbb; }
+  .tab { border: 1px solid #bbb; border-bottom: none; background: #e4e4e4; border-radius: 6px 6px 0 0; padding: 6px 15px; }
   .tab.on { background: #fff; font-weight: bold; }
-  .tabrow .sp { flex: 1; }
-  .viewbtn { border: 1px solid #bbb; background: #fff; border-radius: 6px; padding: 5px 12px; margin-bottom: 4px; }
-  .main { display: flex; min-height: 560px; }
-  .left { width: 210px; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
-  .pane-h { font-weight: bold; padding: 8px 10px 4px; }
-  .tree { padding: 0 6px; line-height: 1.9; }
-  .tree .sel { background: #dbeafe; border-radius: 4px; padding: 0 4px; }
-  .info { border-top: 1px solid #ddd; margin-top: auto; padding: 8px 10px; }
-  .info table { width: 100%; border-collapse: collapse; }
-  .info td { padding: 2px 0; } .info td:last-child { text-align: right; color: #555; }
-  .mid { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
-  .livebar { padding: 6px 10px; color: #c53030; font-weight: bold; }
-  .livebar span { color: #555; font-weight: normal; }
-  .grid { display: flex; gap: 10px; padding: 10px; flex-wrap: wrap; }
-  .cell { width: 150px; border: 1px solid #ddd; border-radius: 6px; padding: 6px; text-align: center; }
-  .cell.cur { border: 2px solid #2b6cb0; }
-  .thumb { width: 132px; height: 100px; border-radius: 4px; margin: 0 auto 4px;
-           display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; }
-  .cell .t { font-weight: bold; } .cell .s { color: #555; font-size: 11px; }
-  .gfoot { padding: 4px 10px; color: #555; border-top: 1px solid #eee; }
-  .right { width: 300px; border-left: 1px solid #ddd; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .listview { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .lv { display: flex; align-items: center; border-bottom: 1px solid #f0f0f0; padding: 6px 10px; gap: 9px; }
+  .lv.on { background: #2b6cb0; color: #fff; }
+  .lv .th { width: 92px; height: 62px; border-radius: 4px; flex: none;
+            display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 11px; }
+  .lv .nm { font-weight: bold; }
+  .lv .sub { color: #777; font-size: 11px; }
+  .lv.on .sub { color: #dbe9f7; }
+  .lv .sp { flex: 1; }
+  .lv .sim { font-weight: bold; color: #2f855a; }
+  .lv.on .sim { color: #b7f0cd; }
+  .fbar { display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-top: 1px solid #e0e0e0; background: #fafafa; }
+  .fbar span { border: 1px solid #d0d0d0; background: #fff; border-radius: 4px; padding: 3px 9px; font-size: 11.5px; }
+
+  .right { width: 316px; border-left: 1px solid #ddd; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
   .pv { height: 190px; border: 2px solid #2b6cb0; border-radius: 6px; display: flex; align-items: center; justify-content: center;
         color: #fff; font-weight: bold; background: linear-gradient(135deg,#9db9f5,#3f6fd1); }
-  .dform { line-height: 1.8; }
-  .dform td:first-child { color: #555; padding-right: 8px; white-space: nowrap; }
   .dtabs { display: flex; gap: 2px; }
-  .dtabs span { border: 1px solid #bbb; border-bottom: none; background: #e4e4e4; border-radius: 5px 5px 0 0; padding: 3px 10px; font-size: 11px; }
+  .dtabs span { border: 1px solid #bbb; border-bottom: none; background: #e4e4e4; border-radius: 5px 5px 0 0; padding: 3px 9px; font-size: 11px; }
   .dtabs .on { background: #fff; font-weight: bold; }
-  .ctx { position: absolute; left: 420px; top: 170px; width: 250px; background: #fff; border: 1px solid #999;
-         box-shadow: 3px 3px 8px rgba(0,0,0,.3); padding: 3px 0; z-index: 10; }
+  .dform { border: 1px solid #e0e0e0; border-top: none; padding: 8px; line-height: 1.85; }
+  .dform td:first-child { color: #666; padding-right: 8px; white-space: nowrap; font-size: 11.5px; }
+
+  .ctx { position: absolute; left: 470px; top: 214px; width: 246px; background: #fff; border: 1px solid #999;
+         box-shadow: 3px 3px 9px rgba(0,0,0,.32); padding: 3px 0; z-index: 10; font-size: 11.5px; }
   .ctx div { padding: 5px 12px; display: flex; }
   .ctx div span:last-child { margin-left: auto; color: #888; }
   .ctx hr { border: none; border-top: 1px solid #ddd; margin: 3px 0; }
-  .dlg { width: 620px; margin: 14px auto 0; background: #fff; border: 1px solid #555; }
-  .dlg .dh { padding: 6px 10px; font-weight: bold; border-bottom: 1px solid #ddd; }
-  .dlg pre { padding: 10px 12px; font-size: 11px; line-height: 1.7; white-space: pre-wrap; }
-  .dlg .df { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 10px; border-top: 1px solid #ddd; }
-  .dlg .df span { border: 1px solid #2b6cb0; color: #2b6cb0; border-radius: 5px; padding: 5px 14px; }
-  .dlg .df .p { background: #2b6cb0; color: #fff; }
+  .ctx .b { background: #2b6cb0; color: #fff; }
+  .ctx .b span:last-child { color: #cfe2f6; }
+
   .status { display: flex; border-top: 1px solid #bbb; background: #f7f7f7; align-items: center; }
   .status div { padding: 5px 12px; border-right: 1px solid #ddd; }
   .status .grow { flex: 1; }
-  .pbar { width: 180px; height: 14px; border: 1px solid #999; border-radius: 2px; margin: 4px 10px; background: #fff; }
+  .pbar { width: 176px; height: 14px; border: 1px solid #999; border-radius: 2px; margin: 4px 10px; background: #fff; }
   .pbar i { display: block; height: 100%; width: 94%; background: linear-gradient(#9ae6b4,#38a169); }
-  .note { max-width: 1520px; color: #eee; font-size: 12px; margin-top: 8px; line-height: 1.8; }
+
+  .dlg { width: 660px; margin: 14px auto 0; background: #fff; border: 1px solid #555; }
+  .dlg .dh { padding: 6px 10px; font-weight: bold; border-bottom: 1px solid #ddd; }
+  .dlg pre { padding: 10px 12px; font-size: 11px; line-height: 1.75; white-space: pre-wrap; font-family: Consolas, monospace; }
+  .dlg .df { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 10px; border-top: 1px solid #ddd; }
+  .dlg .df span { border: 1px solid #2b6cb0; color: #2b6cb0; border-radius: 5px; padding: 5px 14px; }
+  .dlg .df .p { background: #2b6cb0; color: #fff; }
+
+  .note { max-width: 1560px; color: #f0f0f0; font-size: 12px; margin-top: 10px; line-height: 1.9; }
   .note b { color: #fff; }
+  .note table { border-collapse: collapse; margin-top: 8px; font-size: 11.5px; width: 100%; }
+  .note th, .note td { border: 1px solid #666; padding: 4px 7px; text-align: left; color: #eee; }
+  .note th { background: #4a4a4a; color: #fff; }
+  .note code { background: #4a4a4a; padding: 0 4px; border-radius: 3px; color: #ffe08a; }
 </style>
 </head>
 <body>
 <div>
 <div class="win">
-  <div class="titlebar"><span style="color:#2b6cb0">▦</span> Media Similarity Finder 0.9.3.3 <span class="sp"></span>
+  <div class="titlebar"><span style="color:#2b6cb0">▦</span> Media Similarity Finder 0.9.4.25 <span class="sp"></span>
     <span class="btns"><span>–</span><span>▢</span><span>✕</span></span></div>
+
+  <!-- 툴바: buildToolbar() 838~846행의 실제 배치 순서 -->
   <div class="toolbar">
-    <span class="tbtn">📁 폴더 선택 ▾</span>
     <span class="path">D:\MediaLibrary</span>
-    <span class="tbtn">🔄 새로고침</span>
-    <span class="tbtn primary">▶ 검색/업데이트 시작</span>
-    <span class="chk">☑ 벤치마크</span>
+    <span class="tbtn dis">…</span>
+    <span class="tbtn dis">🔄 새로고침</span>
+    <span class="sep"></span>
+    <span class="tbtn primary dis">▶ 검색/업데이트 시작</span>
+    <span class="tbtn chk dis">☑ 벤치마크</span>
     <span class="tbtn hl">❚❚ 일시정지</span>
     <span class="tbtn">■ 중지</span>
-    <span class="tbtn">Maximum ▾</span>
-    <span class="tbtn">55% CPU</span>
-    <span class="tbtn">60% GPU</span>
-    <span class="tbtn">🖼+🎬 ▾</span>
-    <span style="flex:1"></span>
+    <span class="sep"></span>
+    <span class="tbtn">Balanced 55% ▾</span>
+    <span class="tbtn spin">CPU 55 %</span>
+    <span class="tbtn">검색 대상 ▾</span>
+    <span class="sep"></span>
     <span class="tbtn">👁 모니터</span>
-    <span class="tbtn">☐ GPU</span>
-    <span class="tbtn hl">📋 검색 로그</span>
-    <span class="tbtn">⚙ 설정</span>
-    <span class="tbtn">☰ 도움말</span>
+    <span class="tbtn chk">☑ GPU</span>
+    <span class="tbtn hl">검색 로그</span>
+    <span style="flex:1"></span>
+    <span class="tbtn util">☰</span>
   </div>
-  <div class="tabrow">
-    <span class="tab on">결과: 이미지 (31)</span><span class="tab">결과: 비디오 (12)</span><span class="tab">무시 목록 (2)</span>
-    <span class="sp"></span>
-    <span class="viewbtn">▦ 보기 ▾</span>
-  </div>
-  <div class="main">
+
+  <div class="mid">
+    <!-- 좌: 탐색기 + 검색 요약 (buildLeft 849~883행) -->
     <div class="left">
       <div class="pane-h">탐색기</div>
       <div class="tree">
@@ -108,67 +140,118 @@
         › 💾 로컬 디스크 (E:)<br>
         🌐 네트워크
       </div>
-      <div class="info"><div class="pane-h" style="padding:0 0 4px">정보</div>
+      <div class="sum">
+        <div class="pane-h" style="padding:0 0 5px">검색 요약</div>
         <table>
           <tr><td>총 파일</td><td>12,846</td></tr>
-          <tr><td>검색 완료</td><td>12,103</td></tr>
+          <tr><td>검색 완료</td><td>12,103 / 12,846</td></tr>
           <tr><td>유사 그룹</td><td>1,247</td></tr>
-          <tr><td>중복 파일</td><td>3,785 (29.6 GB)</td></tr>
+          <tr><td>중복 파일</td><td>3,785</td></tr>
           <tr><td>검색 시간</td><td>00:18:42</td></tr>
-          <tr><td>GPU</td><td>가속 중</td></tr>
+          <tr><td>GPU 가속</td><td>가속 중</td></tr>
           <tr><td>CPU 사용</td><td>55%</td></tr>
           <tr><td>RAM 사용</td><td>6.1 / 32 GB</td></tr>
         </table>
       </div>
     </div>
-    <div class="mid">
-      <div class="livebar">● 검색 중 실시간 갱신 <span>12,103 / 12,846 · 남은 시간 00:01:05</span></div>
-      <div class="grid">
-        <div class="cell cur"><div class="thumb" style="background:linear-gradient(135deg,#f6ad55,#c53030)">IMG</div>
-          <div class="t">그룹 1 · 4 파일</div><div class="s">6 Pairs · 98.7% · 2.4 MB</div></div>
-        <div class="cell"><div class="thumb" style="background:linear-gradient(135deg,#68d391,#2f855a)">IMG</div>
-          <div class="t">그룹 2 · 5 파일</div><div class="s">10 Pairs · 97.3% · 15.5 MB</div></div>
-        <div class="cell"><div class="thumb" style="background:linear-gradient(135deg,#9db9f5,#3f6fd1)">VID</div>
-          <div class="t">그룹 3 · 2 파일</div><div class="s">1 Pair · 96.1% · 240 MB</div></div>
-        <div class="cell"><div class="thumb" style="background:#cbd5e0;color:#555">…</div>
-          <div class="t">그룹 4 · 3 파일</div><div class="s">3 Pairs · 95.8% · 8.1 MB</div></div>
+
+    <!-- 중: 그룹 제목 + 정렬/보기/검색 → 탭 → 리스트 → 파일 액션바 -->
+    <div class="center">
+      <div class="gbar">
+        <span class="gt">유사 그룹 (1,247)</span>
+        <span style="flex:1"></span>
+        <span class="tbtn">유사도 내림차순 ▾</span>
+        <span class="tbtn">보통 아이콘 ▾</span>
+        <span class="path" style="width:180px;color:#999">그룹 검색</span>
       </div>
-      <div class="gfoot">전체 43 · 선택 1</div>
+      <div class="tabs">
+        <span class="tab on">결과: 이미지</span><span class="tab">결과: 비디오</span><span class="tab">무시 목록 (2)</span>
+      </div>
+
+      <!-- 리스트 보기 모드: 그룹 / 파일 / 쌍 / 유사도 / 파일 크기 헤더 (1156행) -->
+      <div class="listview">
+        <div class="lv on">
+          <div class="th" style="background:linear-gradient(135deg,#f6ad55,#c53030)">IMG</div>
+          <div><div class="nm">그룹 1 · 4 파일</div><div class="sub">6 쌍 · 최상위 98.7%</div></div>
+          <div class="sp"></div><div class="sim">98.7%</div><div class="sub">2.4 MB</div>
+        </div>
+        <div class="lv">
+          <div class="th" style="background:linear-gradient(135deg,#68d391,#2f855a)">IMG</div>
+          <div><div class="nm">그룹 2 · 5 파일</div><div class="sub">10 쌍 · 최상위 97.3%</div></div>
+          <div class="sp"></div><div class="sim">97.3%</div><div class="sub">15.5 MB</div>
+        </div>
+        <div class="lv">
+          <div class="th" style="background:linear-gradient(135deg,#9db9f5,#3f6fd1)">VID</div>
+          <div><div class="nm">그룹 3 · 2 파일</div><div class="sub">1 쌍 · 최상위 96.1%</div></div>
+          <div class="sp"></div><div class="sim">96.1%</div><div class="sub">240 MB</div>
+        </div>
+        <div class="lv">
+          <div class="th" style="background:#cbd5e0;color:#555">…</div>
+          <div><div class="nm">그룹 4 · 3 파일</div><div class="sub">3 쌍 · 최상위 95.8%</div></div>
+          <div class="sp"></div><div class="sim">95.8%</div><div class="sub">8.1 MB</div>
+        </div>
+        <div class="lv">
+          <div class="th" style="background:linear-gradient(135deg,#b794f4,#6b46c1)">IMG</div>
+          <div><div class="nm">그룹 5 · 6 파일</div><div class="sub">15 쌍 · 최상위 94.2%</div></div>
+          <div class="sp"></div><div class="sim">94.2%</div><div class="sub">32.7 MB</div>
+        </div>
+      </div>
+
+      <!-- 파일 액션바 (fileBar_ 1165~1172행) -->
+      <div class="fbar">
+        <span>열기</span><span>탐색기에서 보기</span><span>복사</span><span>잘라내기</span><span>붙여넣기</span>
+        <span>이동...</span><span>휴지통으로</span>
+      </div>
+
       <div class="ctx">
-        <div><span>열기</span><span>Enter</span></div>
+        <div class="b"><span>열기</span><span>Enter</span></div>
         <div><span>탐색기에서 보기</span><span></span></div>
         <hr>
-        <div><span>Mark / Unmark</span><span>Space</span></div>
+        <div><span>Mark</span><span>Space</span></div>
+        <div><span>모두 Mark</span><span></span></div>
         <div><span>Mark 전체 해제</span><span></span></div>
         <div><span>Mark 반전</span><span></span></div>
+        <hr>
+        <div><span>QuickLook으로 미리보기</span><span></span></div>
         <hr>
         <div><span>복사</span><span></span></div>
         <div><span>잘라내기</span><span></span></div>
         <div><span>붙여넣기</span><span></span></div>
         <div><span>이동...</span><span></span></div>
         <div><span>이름 바꾸기</span><span></span></div>
-        <div><span>삭제</span><span>Del</span></div>
+        <div><span>휴지통으로</span><span>Del</span></div>
       </div>
     </div>
+
+    <!-- 우: 미리보기 + 상세/EXIF/유사도/해시 4탭 -->
     <div class="right">
       <div class="pv">선택 미리보기<br>1920x1280</div>
-      <div class="dtabs"><span class="on">상세</span><span>EXIF</span><span>유사도</span></div>
+      <div class="dtabs">
+        <span class="on">상세 정보</span><span>EXIF 정보</span><span>유사도 분석</span><span>해시 정보</span>
+      </div>
       <div class="dform"><table>
-        <tr><td>파일명</td><td><b>IMG_101500.JPG</b> ☑</td></tr>
-        <tr><td>전체 경로</td><td>C:\Media\New\…</td></tr>
-        <tr><td>파일 크기</td><td>612 KB (626688 bytes)</td></tr>
-        <tr><td>형식</td><td>JPG</td></tr>
-        <tr><td>수정됨</td><td>2024-05-01 10:15:00</td></tr>
-        <tr><td>만들어짐</td><td>2024-05-01 10:14:02</td></tr>
-        <tr><td>해상도</td><td>1920x1280</td></tr>
-        <tr><td>재생 시간</td><td>-</td></tr>
+        <tr><td>파일 이름:</td><td><b>IMG_101500.JPG</b> ☑</td></tr>
+        <tr><td>전체 경로:</td><td>C:\Media\New\…</td></tr>
+        <tr><td>파일 크기:</td><td>612 KB (626688 bytes)</td></tr>
+        <tr><td>파일 형식:</td><td>JPG</td></tr>
+        <tr><td>수정 날짜:</td><td>2024-05-01 10:15:00</td></tr>
+        <tr><td>생성 날짜:</td><td>2024-05-01 10:14:02</td></tr>
+        <tr><td>해상도:</td><td>1920x1280</td></tr>
+        <tr><td>재생시간:</td><td>-</td></tr>
         <tr><td>유사도</td><td><b style="color:#2f855a">100% · 기준 파일</b></td></tr>
       </table></div>
     </div>
   </div>
-  <div class="status"><div><b>68</b> duplicate(s)</div><div>Cache: 228</div>
-    <div class="grow">New: 228/228 · ⚡ 214 파일/초 · analyzed 8,204</div><div class="pbar"><i></i></div><div>94%</div></div>
+
+  <!-- 상태줄: scanStatusText() 3056행의 "done / total (pct%) — 경로 — 경과 — 남음" 형식 -->
+  <div class="status">
+    <div><b>68</b> 중복 파일</div>
+    <div>분석됨 8,204</div>
+    <div class="grow">12,103 / 12,846 (94%) — D:\MediaLibrary — 00:18:42 — 남음 00:01:05</div>
+    <div class="pbar"><i></i></div><div>94%</div>
+  </div>
 </div>
+
 <div class="dlg">
   <div class="dh">검색 벤치마크</div>
   <pre>상태: 완료
@@ -184,15 +267,32 @@ CPU 사용률: 평균 61.2%, 최대 93.5%, 표준편차 14.20% · 메모리 최�
 느린 파일 (비디오):
   9120.3 ms  D:\Media\MOV\clip_4k.mp4
   ...
-빌드 0.9.3.3 · 엔진 1.1.0 · DB 1.0.2 · 거리 8 · GPU</pre>
+빌드 0.9.4.25 · 엔진 1.5.0 · DB 1.0.3 · 거리 8 · GPU</pre>
   <div class="df"><span class="p">JSON 저장…</span><span>닫기</span></div>
 </div>
-<p class="note"><b>목업 B — v0.9.3.3 기준</b>. 툴바: 검색 버튼 옆 <b>벤치마크 체크박스</b>(기본 켜짐),
-일시정지/계속 단일 토글(실행 중 하이라이트), 종류 메뉴(🖼+🎬), 모니터 토글·GPU 체크.
-요약 GPU 행은 <b>가속 중/정지/대기</b> 3상태. 중간: 그룹 그리드(썸네일·Pairs·유사도·용량),
-바닥 <b>전체 N · 선택 M</b>, 남은 시간 표시. 우측: 상세/EXIF/유사도 탭 + 기준 파일 100% 표기.
-우클릭 메뉴는 커서 아래 항목을 먼저 선택. 검색 완료·중단 시 <b>벤치마크 팝업</b>(요약+JSON 저장).
-좌 정보창 수치는 예시.</p>
+
+<p class="note">
+<b>목업 B — v0.9.4.25 실제 UI 기준.</b> 모든 문자열은 <code>gui/mainwindow.cpp</code> 의 <code>trStr()</code> 번역 테이블에서 그대로 가져왔습니다.
+
+<b>0.9.3.3 → 0.9.4.25 주요 변경점</b>
+<table>
+<tr><th>영역</th><th>이전 (0.9.3.3 목업)</th><th>현재 (0.9.4.25 실제)</th></tr>
+<tr><td>Resource Mode</td><td>Maximum 60% GPU (GPU % 직접 지정)</td><td><b>Maximum 90% / High 75% / Balanced 55% / Gaming 25% / Custom</b>. 라벨에 % 내장. GPU 는 ON/OFF 만 (Node A, 수동 GPU % 제거)</td></tr>
+<tr><td>폴더 선택</td><td>📁 폴더 선택 ▾ 버튼</td><td><b>경로 입력창 + "…" 버튼</b> (최근 폴더 저장)</td></tr>
+<tr><td>도움말/설정</td><td>⚙ 설정 / ☰ 도움말 별도 버튼</td><td><b>☰ 하나로 통합</b> (모니터 설정 + 도움말). 툴바 맨 오른쪽 고정</td></tr>
+<tr><td>탭</td><td>결과: 이미지 (31) / 비디오 (12) / 무시 목록 (2)</td><td>탭 문자열에 <b>개수 표시 없음</b>. 개수는 그룹 제목 "유사 그룹 (1,247)" 과 무시 목록 탭에만</td></tr>
+<tr><td>보기/정렬</td><td>보기 버튼 1개</td><td><b>7종 보기</b> (아주 큰/큰/보통/작은 아이콘, 리스트, 자세히, 타일) + 정렬 2종 + 그룹 검색창</td></tr>
+<tr><td>우측 탭</td><td>상세 / EXIF / 유사도 (3개)</td><td><b>4개</b> — "해시 정보"(지각 해시 pHash) 탭 추가</td></tr>
+<tr><td>파일 액션</td><td>컨텍스트 메뉴에만 존재</td><td><b>그룹 하단 fileBar_ 로 항상 노출</b> (열기/탐색기에서 보기/복사/잘라내기/붙여넣기/이동/휴지통으로)</td></tr>
+<tr><td>삭제</td><td>삭제</td><td><b>휴지통으로</b></td></tr>
+<tr><td>QuickLook</td><td>없음</td><td>컨텍스트 메뉴에 <b>QuickLook으로 미리보기</b> 추가 (Fail/Starting 상태 문구 포함)</td></tr>
+<tr><td>요약</td><td>정보 / 검색 완료 / GPU / CPU / RAM</td><td><b>검색 요약</b> 명칭 + 처리 중 행 추가, 검색 완료는 "n / total" 형식</td></tr>
+<tr><td>벤치마크</td><td>엔진 1.1.0 · DB 1.0.2</td><td><b>엔진 1.5.0 · DB 1.0.3</b></td></tr>
+</table>
+
+<b>발견한 실제 버그 (목업이 아니라 소스 확인 결과)</b><br>
+<code>colFile</code> / <code>colDate</code> / <code>viewGrid</code> 키가 <code>trStr()</code> 번역 테이블에 <b>정의되어 있지 않습니다</b> (mainwindow.cpp 1161~1162행, 1160행에서 사용). 미등록 키는 마지막에 <code>return QString::fromUtf8(key)</code> 로 빠지므로, 파일 리스트 헤더와 툴팁에 <b>"colFile" / "colDate" 라는 원본 키가 그대로 노출</b>됩니다. 이 목업에서는 사람이 읽히는 라벨로 표기했습니다.
+</p>
 </div>
 </body>
 </html>
