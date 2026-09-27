@@ -1,0 +1,273 @@
+# 작업 내역 — 0.9.4.19 ~ 0.9.4.24
+
+작성 기준: `ffd64e8` (origin/main 동기화, 트리 clean)
+범위: Node D 잔여 정리 → Dataset 기반 구축 → 병목 실측 → 병목 규명 → settings identity
+
+English version: `docs/worklog-0.9.4.19-0.9.4.24.en.md`
+
+---
+
+## 1. 한 줄 요약
+
+파이프라인 최적화(Node D)를 **측정 근거로 종료**하고, 비교가 불가능했던 상태를
+해소한 뒤, 진짜 병목인 매칭 단계를 계측해 **원인을 규명**했다.
+마지막으로 배포물의 개인 식별자를 제품명으로 교체하고 기존 사용자 설정을
+안전하게 이관했다.
+
+```
+"성능이 좋아졌다"가 아니라
+"이 workload 에서 D 는 못 한다"를 증명하고,
+진짜 병목이 어디인지 measurements 로 규명했다.
+```
+
+---
+
+## 2. 버전별 요약
+
+| 버전 | 성격 | 핵심 결과 | CTest |
+| --- | --- | --- | --- |
+| 0.9.4.19 | D3-Minimal | 유계 walker queue (capacity 4096, backpressure) | 67/68 |
+| 0.9.4.20 | D4a | CUDA 내부 타이밍 h2d/kernel/d2h + host 대기 분리 | 68/69 |
+| 0.9.4.21 | D8a | 재현 가능 dataset + dataset fingerprint (schema v8) | 70/71 |
+| 0.9.4.22 | D8b | dataset 2,700파일 확장 → D 종료 근거 확보 | 70/71 |
+| 0.9.4.23 | D9a | analyze 내부 4단계 분해 + verify 카운터 (schema v9) | 71/72 |
+| 0.9.4.24 | settings | organization 이름 변경 + 안전한 1회 마이그레이션 | 76/77 |
+
+(CTest 는 GPU/CPU 순서)
+
+---
+
+## 3. 핵심 흐름
+
+### 3.1 측정 없이는 판단할 수 없었다 (0.9.4.19 → 0.9.4.20)
+
+D3-Minimal 과 D4a 를 통과했지만 **비교 기준이 없었다.**
+"같은 조건에서 두 상태를 비교한다"는 말 자체가 성립하지 않았다.
+
+D4a 실측(합성 16/256장)에서 kernel device time 이 배치 크기에
+**비례해 증가하지 않는다**는 것까지 확인했고, 동시에 이건 대표
+dataset 이 아니므로 **D4b 결론으로 쓸 수 없다**고 명시했다.
+
+### 3.2 결론: 코드 문제가 아니라 근거 부재 (0.9.4.21)
+
+> "가장 큰 병목은 코드가 아니라, 동일 조건의 end-to-end 비교를 수행할 수
+> 있는 재현 가능한 대표 데이터셋이 없다는 것이다."
+
+D8a 는 성능 최적화가 아니라 **비교 재현성 기반**을 만들었다.
+조사 결과에 따라 세 가지를 결정했다.
+
+- **binary asset 미커밋** 관례(트랙 495개 전부 텍스트) → 생성 스크립트 방식
+- **`msf_core` 에 암호 해시 없음** (Qt `QCryptographicHash` 는 GUI 전용,
+  openssl 없음) → SHA-256 직접 구현 (NIST 벡터 4종 검증)
+- **ffmpeg 출력이 byte 비재현적** → video 는 제외하고 별도 과제로 문서화
+
+dataset identity 는 절대경로·timestamp·하드웨어명을 **포함하지 않으므로**
+동일 내용 복사본은 다른 root 에서도 동일 fingerprint 다.
+
+### 3.3 D8a 의 판정이 무효였음을 스스로 증명 (0.9.4.22)
+
+60개 8×8 파일 dataset 으로는 "이득 없다"가 **근거가 되지 못했다.**
+pipeline 이 아무 일도 하지 않으므로 `maxDepth = 1` 은 구조가 아니라
+**dataset 크기**를 기술한 것이었다.
+
+그래서 dataset 을 의도적으로 비대칭으로 확장했다.
+
+| 축 | 구성 | 목적 |
+| --- | --- | --- |
+| walk 축 | `tree/` 2,400개, 240 디렉토리 | producer enumeration 비용 |
+| decode 축 | `bulk/` 240장 256×192 | consumer decode+crop+thumbnail 비용 |
+
+queue 는 consumer 비용이 producer 비용보다 클 때만 깊어지므로
+**양쪽 축을 독립적으로 조절**해야 했다.
+
+결과:
+
+```
+walker maxDepth   1 → 964 mean / 1076 max  (capacity 23.5 %)
+blocked_ticks     0  (producer 는 한 번도 block 되지 않음)
+gpu_batch share   0.34 % → 0.026 %
+analyze           엔진 wall 의 98.62 %
+D3+D4 상한        0.044 %
+```
+
+→ **D4b overlap 과 Full D3 topology 를 근거로 보류.** 그리고 병목이
+D brief 범위 밖이라 **Node I 를 신설**했다 (변경 관리 5단계 기록).
+
+### 3.4 가설이 측정으로 뒤집혔다 (0.9.4.23)
+
+코드만 읽고 세운 가장 유력한 가설:
+
+> `kVerifyCacheMax = 32` 라서 2,700 파일 기준 캐시가 거의 안 맞고
+> 재디코드 비용이 98 % 를 설명한다.
+
+**결과: 적중률 0.5286 — 기각.** 후보 쌍이 인덱스 순으로 집중 방문해서
+32-entry 캐시도 절반은 맞는다. 캐시 용량 확대는 99.67 % 를 설명하지 못한다.
+
+실제 지배 구조:
+
+```
+verifyCalls 158,020  (가능 쌍 3,641,700 의 4.3 %)
+  ├─ ~144,286 (91.3 %)  kFast 단축, 거의 무비용
+  └─ ~ 13,734 ( 8.7 %)  buffer 조회 2회 + ssimBuf 10회 (frame_ssim 20회)
+                        각 ~8.5 ms → 117 초
+```
+
+→ 병목은 **건당 비용이 아니라 verify 게이트에 도달하는 후보 쌍의 수.**
+
+카운터 정합성으로 계측 자체를 신뢰성 검증:
+`ssimEvals/10 == (misses+hits)/2 == 13,734` **정확히 일치.**
+
+### 3.5 배포물의 개인 식별자 (0.9.4.24)
+
+QSettings organization 이름이 곧 설정 폴더명이므로, GitHub 계정명
+`newclear-ui` 가 그대로 배포물에 나가 있었다.
+
+단순 rename 은 기존 사용자의 UI 상태를 초기화처럼 보이게 하므로,
+삭제를 **엄격한 순서**로만 수행하도록 만들었다.
+
+```
+복사 → 실제 QSettings 로 새 INI open → status()==NoError
+     → 핵심 key 존재 확인 → 그때만 legacy 제거
+     → 디렉터리는 비었을 때만 rmdir
+```
+
+어떤 실패 경로에서도 legacy 가 보존된다. 새 위치가 있으면 그쪽이 승리하고
+legacy 는 그대로 두므로 **idempotent** 하다.
+
+---
+
+## 4. 이 작업에서 지키 못한 / 남은 것
+
+### 근거로 보류한 최적화 (구현하지 않음)
+
+| 항목 | 보류 근거 |
+| --- | --- |
+| D4b transfer/compute overlap | GPU hash 전체가 스캔의 0.026 %. 상한 0.044 % |
+| Full D3 queue topology | `blocked_ticks = 0`. 되돌릴 **관측된 손실이 없음** |
+| D5 batching / D6 worker / D7 dispatch | D3+D4 가 0.044 % 라 선행 근거 없음 |
+| verify cache 용량 확대 | **측정으로 기각** (적중률 0.53) |
+
+### D9a 가 식별했지만 구현하지 않은 다음 후보
+
+1. verify 게이트 도착률 4.3 % 낮추기 — 단 verdict semantics 를 건드릴 수 있음
+2. 비싼 검증 1건의 8.5 ms 낮추기 — 디코드 4회 + `frame_ssim` 20회,
+   `ssimBuf` 10회 중 9회가 aspect 조합이며 buffer 재사용 없음
+
+**어느 방향이 옳은지는 다음 substep 의 pre-register 를 먼저 써야 결정 가능.**
+
+### 명시적 한계
+
+- dataset 이 **합성 deterministic fingerprint** 이므로 실사용 라이브러리의
+  후보 쌍 비율은 다를 수 있다. 모든 결론은 **"이 dataset 에서"** 의 결론.
+- video 는 여전히 dataset 에 없다 (`analyzeVideoMs` = `not_measured`).
+  video 경로 판단은 video dataset 확보 후 별도 과제.
+- ffmpeg 비결정성으로 video fixture 는 아직 없다.
+
+---
+
+## 5. 이 작업에서 학습한 방식 (재사용 가치)
+
+### 5.1 pre-register 를 코드 변경 **전** 커밋
+
+```
+0fc3344  D9a pre-register      (코드 변경 전)
+f46658e  D9a implementation    (검증 후)
+```
+
+커밋 순서만으로 "약속을 먼저 세웠는지"가 감사된다. 이 순서를
+D4a · D8a · D8b · D9a 네 번 반복했다.
+
+### 5.2 가설을 코드에서 세우고 측정으로 깬다
+
+가장 크게 배운 지점이다.
+
+```
+가설: 캐시 32 가 재디코드 원인
+결과: verifyHitRate 0.5286 → 기각
+
+기각된 가설 덕분에 캐시 확대 작업(시간 낭비)을 하지 않았다.
+```
+
+"가설 ≠ 측정된 병목"을 문서와 코드 주석 양쪽에 명시했다.
+
+### 5.3 계측이 자기 자신을 검증하게 만들기
+
+```
+ssimEvals / 10          = 13,734
+(misses + hits) / 2     = 13,734   ← 서로 독립 경로
+```
+
+두 값이 일치한다는 사실이 계측이 서로 모순되지 않다는 증거다.
+
+### 5.4 무관한 것을 건드리지 않기
+
+- QuickLook 레지스트리 조회(`NativeFormat` + 명시 path) — organization 과 무관
+- `Index` 저장 구조, DB schema, Engine version — 전부 불변
+- CUDA / Scheduler / threshold / verdict — 계측 단계에서 미변경
+
+### 5.5 cross-process 테스트로 진짜 디스크를 검증
+
+같은 프로세스 read-back 은 QSettings 인메모리 캐시로 인해 **디스크
+영속성이 깨져도 통과**한다. migration 테스트를 5개 phase 로 프로세스를
+분리해 이 함정을 피했다.
+
+---
+
+## 6. 커밋 이력
+
+```
+ffd64e8  v0.9.4.24: rename QSettings organization to MediaSimilarityFinder-ui
+         with safe legacy settings migration
+55acecd  chore: ignore generated D8 dataset, fingerprint files, probe scratch
+f46658e  v0.9.4.23: D9a analyze internal observability (schema v9)
+cc72e58  docs: open Node I (Analyze/Matching) after D8b evidence
+0fc3344  docs: v0.9.4.23 D9a pre-register (before code)
+5bfe95d  v0.9.4.22: D8b scaled dataset + walker queue/stage breakdown evidence
+8f52587  docs: v0.9.4.22 D8b pre-register (before fixture change)
+76c67b0  test: add D8b review probe (repeated standard-dataset runs)
+36118c4  v0.9.4.21: D8a reproducible dataset + dataset fingerprint (schema v8)
+26cef86  docs: v0.9.4.21 D8a pre-register (before fixture/code)
+```
+
+---
+
+## 7. 최종 상태
+
+```
+Version        0.9.4.24
+HEAD           ffd64e8 (origin/main 동기화)
+Working tree   clean
+Engine         1.5.0   (불변)
+DB             1.0.3   (불변)
+Cache format   v9      (불변)
+Schema         v9      (D4a v7 → D8a v8 → D9a v9)
+CPU CTest      76/76 PASS
+GPU CTest      77/77 PASS
+공식 보존선     v0.9.2.32  (미변경)
+```
+
+### 현재 노드
+
+```
+Node D  →  측정 근거로 종료 (deferred, 근거 문서화 완료)
+Node I  →  D9a PASS. 병목 규명 완료, 최적화는 미착수
+```
+
+---
+
+## 8. 다음에 할 수 있는 것
+
+1. **D9b pre-register 후 verify 경로 최적화 착수**
+   도착률 감소 vs 건당 비용 감소 중 어느 쪽인지 먼저 확정 필요.
+   두 방향 모두 verdict semantics 영향 여부를 사전에 적어야 한다.
+
+2. **video dataset 확보** — ffmpeg 에 `-fflags +bitexact` +
+   `-map_metadata -1` 적용으로 byte 재현성을 보장해야 fingerprint 가
+   유지된다. 그때 `analyzeVideoMs` 를 측정할 수 있다.
+
+3. **실사용 규모 데이터셋** — 현재 결론이 합성 fingerprint 기반이라는
+   한계를 실사용 라이브러리에서 재확인.
+
+4. **Node I 의 다음 substep 은 반드시 pre-register 선행.**
+   이번 작업에서 "가설이 기각되는" 비용을 실제로 치렀으므로,
+   최적화 전에 측정 근거를 확보하는 순서를 계속 지키야 한다.

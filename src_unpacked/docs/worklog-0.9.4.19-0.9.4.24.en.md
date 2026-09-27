@@ -1,0 +1,291 @@
+# Work Log — 0.9.4.19 to 0.9.4.24
+
+Written against: `ffd64e8` (synced with origin/main, working tree clean)
+Scope: Node D cleanup → dataset foundation → bottleneck measurement → bottleneck identification → settings identity
+
+Korean version: `docs/worklog-0.9.4.19-0.9.4.24.ko.md`
+
+---
+
+## 1. One-line summary
+
+Node D (pipeline optimization) was **closed on measured evidence**, the
+state that made comparison impossible was removed, the real bottleneck
+(the matching stage) was instrumented, and the cause was **identified**.
+Finally, a personal identifier in the distribution was replaced with a
+product-based name, and existing user settings were migrated safely.
+
+```
+This is not "performance got better".
+It is proving that D cannot help on this workload, and then
+identifying where the real bottleneck is through measurement.
+```
+
+---
+
+## 2. Version summary
+
+| Version | Nature | Key result | CTest |
+| --- | --- | --- | --- |
+| 0.9.4.19 | D3-Minimal | Bounded walker queue (capacity 4096, backpressure) | 67/68 |
+| 0.9.4.20 | D4a | CUDA internal timing split (h2d/kernel/d2h) + host wait | 68/69 |
+| 0.9.4.21 | D8a | Reproducible dataset + dataset fingerprint (schema v8) | 70/71 |
+| 0.9.4.22 | D8b | Dataset expanded to 2,700 files → evidence for closing D | 70/71 |
+| 0.9.4.23 | D9a | analyze internal 4-stage split + verify counters (schema v9) | 71/72 |
+| 0.9.4.24 | settings | Organization name change + safe one-time migration | 76/77 |
+
+(CTest counts are GPU / CPU in that order.)
+
+---
+
+## 3. Core flow
+
+### 3.1 Without measurement, no judgment was possible (0.9.4.19 → 0.9.4.20)
+
+D3-Minimal and D4a passed, but there was **no comparison baseline.** The
+statement "compare two states under identical conditions" was not even
+expressible.
+
+D4a measured (synthetic 16/256 images) that kernel device time **does not
+grow proportionally with batch size**, while also recording explicitly that
+this **cannot** serve as a D4b verdict because it is not a representative
+dataset.
+
+### 3.2 The conclusion: not a code problem, an evidence problem (0.9.4.21)
+
+> The largest bottleneck is not the code, but the absence of a reproducible
+> representative dataset that allows an end-to-end comparison under identical
+> conditions.
+
+D8a was not a performance optimization; it built the **comparison
+reproducibility foundation**. Three decisions followed from the
+investigation:
+
+- **No committed binary assets** (all 495 tracked files are text) → a
+  generation script instead
+- **No cryptographic hash in `msf_core`** (Qt `QCryptographicHash` is
+  GUI-only, no openssl) → SHA-256 implemented directly, validated against
+  4 NIST vectors
+- **ffmpeg output is not byte-reproducible** → video excluded and documented
+  as separate future work
+
+Dataset identity deliberately contains **no absolute path, timestamp, or
+hardware name**, so two copies of the same content share a fingerprint even
+under different roots.
+
+### 3.3 D8a's own verdict was proven invalid (0.9.4.22)
+
+A 60-file 8×8 dataset could not support a "no gain" claim: the pipeline does
+no real work, so `maxDepth = 1` described **the dataset size**, not the
+architecture.
+
+The dataset was therefore expanded along deliberately asymmetric axes:
+
+| Axis | Composition | Purpose |
+| --- | --- | --- |
+| walk axis | `tree/` 2,400 files, 240 directories | producer enumeration cost |
+| decode axis | `bulk/` 240 images at 256×192 | consumer decode + crop + thumbnail cost |
+
+The queue only grows when consumer cost exceeds producer cost, so **both
+axes had to be tuned independently.**
+
+Result:
+
+```
+walker maxDepth   1 → 964 mean / 1076 max  (23.5 % of capacity)
+blocked_ticks     0  (the producer never actually blocked)
+gpu_batch share   0.34 % → 0.026 %
+analyze           98.62 % of engine wall
+D3+D4 ceiling     0.044 %
+```
+
+→ **D4b overlap and Full D3 topology deferred on evidence.** And because the
+bottleneck sat outside the D brief, **Node I was opened** (with the full
+5-step change-management record).
+
+### 3.4 A hypothesis was overturned by measurement (0.9.4.23)
+
+The most plausible hypothesis, formed by reading code alone:
+
+> Because `kVerifyCacheMax = 32`, the cache almost never hits across 2,700
+> files, and re-decode cost explains the 98 %.
+
+**Result: hit rate 0.5286 — refuted.** Candidate pairs arrive clustered in
+index order, so even a 32-entry cache hits about half the time. Cache
+enlargement cannot explain 99.67 %.
+
+The actual dominant structure:
+
+```
+verifyCalls 158,020  (4.3 % of 3,641,700 possible pairs)
+  ├─ ~144,286 (91.3 %)  kFast short-circuit, near-zero cost
+  └─ ~ 13,734 ( 8.7 %)  2 buffer lookups + 10 ssimBuf (20 frame_ssim)
+                        ~8.5 ms each → 117 s
+```
+
+→ The bottleneck is **candidate-pair volume reaching the verify gate**, not
+per-call cost.
+
+Counter coherence was used to validate the instrumentation itself:
+`ssimEvals/10 == (misses+hits)/2 == 13,734` **exactly**.
+
+### 3.5 A personal identifier in the distribution (0.9.4.24)
+
+The QSettings organization name becomes the settings folder name, so the
+GitHub account name `newclear-ui` was shipping in the product.
+
+A plain rename would make existing users' UI state look reset, so deletion
+was made to happen in a **strict order** only:
+
+```
+copy → open the new INI through a real QSettings → status() == NoError
+     → confirm the key presence → only then remove legacy
+     → remove the directory only if it is empty
+```
+
+No failure path can lose the legacy file. When the new location already
+exists it wins and legacy is left alone, which also makes the migration
+**idempotent**.
+
+---
+
+## 4. What was not achieved / what remains
+
+### Optimizations deferred on evidence (not implemented)
+
+| Item | Reason for deferral |
+| --- | --- |
+| D4b transfer/compute overlap | The entire GPU hash path is 0.026 % of a scan; ceiling 0.044 % |
+| Full D3 queue topology | `blocked_ticks = 0`; there is **no observed loss** to recover |
+| D5 batching / D6 worker / D7 dispatch | D3+D4 is 0.044 %, so there is no prerequisite evidence |
+| verify cache enlargement | **Refuted by measurement** (hit rate 0.53) |
+
+### Next candidates identified by D9a but deliberately not implemented
+
+1. Lower the 4.3 % arrival rate at the verify gate — but this can touch
+   verdict semantics
+2. Lower the 8.5 ms cost of one expensive verification — 4 decodes +
+   20 `frame_ssim`, of which 9 of 10 `ssimBuf` calls are aspect combinations
+   with no buffer reuse
+
+**Which direction is right must be settled by the next substep's
+pre-register first.**
+
+### Explicit limitations
+
+- The dataset uses **synthetic deterministic fingerprints**, so the candidate
+  pair ratio on a real user library will differ. Every conclusion here is a
+  conclusion **for this dataset**.
+- Video is still absent from the dataset (`analyzeVideoMs` is
+  `not_measured`). Judging the video path requires a separate dataset task.
+- Video fixtures do not exist yet because of ffmpeg non-determinism.
+
+---
+
+## 5. Ways of working learned here (reusable value)
+
+### 5.1 Commit the pre-register **before** any code change
+
+```
+0fc3344  D9a pre-register      (before code)
+f46658e  D9a implementation    (after validation)
+```
+
+Commit order alone makes "was the promise made first?" auditable. This
+order was repeated four times: D4a, D8a, D8b, D9a.
+
+### 5.2 Form a hypothesis from code, then break it with measurement
+
+This was the single biggest lesson.
+
+```
+hypothesis: cache size 32 causes re-decodes
+result:     verifyHitRate 0.5286 → refuted
+```
+
+Because the hypothesis was refuted, the cache-enlargement work (a waste of
+time) was never done. "Hypothesis ≠ measured bottleneck" was written
+explicitly in both the documents and the code comments.
+
+### 5.3 Make the instrumentation validate itself
+
+```
+ssimEvals / 10      = 13,734
+(misses + hits) / 2 = 13,734   ← independent paths
+```
+
+The two agreeing is evidence that the counters do not contradict each other.
+
+### 5.4 Do not touch unrelated things
+
+- The QuickLook registry lookup (`NativeFormat` + explicit path) is
+  unrelated to the organization name
+- `Index` storage, DB schema, Engine version — all unchanged
+- CUDA / Scheduler / threshold / verdict — untouched during measurement
+
+### 5.5 Verify real disk with cross-process tests
+
+A same-process read-back would pass from QSettings' in-memory cache **even
+if disk persistence were broken.** The migration tests were split into 5
+process phases to avoid that trap.
+
+---
+
+## 6. Commit history
+
+```
+ffd64e8  v0.9.4.24: rename QSettings organization to MediaSimilarityFinder-ui
+         with safe legacy settings migration
+55acecd  chore: ignore generated D8 dataset, fingerprint files, probe scratch
+f46658e  v0.9.4.23: D9a analyze internal observability (schema v9)
+cc72e58  docs: open Node I (Analyze/Matching) after D8b evidence
+0fc3344  docs: v0.9.4.23 D9a pre-register (before code)
+5bfe95d  v0.9.4.22: D8b scaled dataset + walker queue/stage breakdown evidence
+8f52587  docs: v0.9.4.22 D8b pre-register (before fixture change)
+76c67b0  test: add D8b review probe (repeated standard-dataset runs)
+36118c4  v0.9.4.21: D8a reproducible dataset + dataset fingerprint (schema v8)
+26cef86  docs: v0.9.4.21 D8a pre-register (before fixture/code)
+```
+
+---
+
+## 7. Final state
+
+```
+Version        0.9.4.24
+HEAD           ffd64e8 (synced with origin/main)
+Working tree   clean
+Engine         1.5.0   (unchanged)
+DB             1.0.3   (unchanged)
+Cache format   v9      (unchanged)
+Schema         v9      (D4a v7 → D8a v8 → D9a v9)
+CPU CTest      76/76 PASS
+GPU CTest      77/77 PASS
+Preserved      v0.9.2.32  (untouched)
+```
+
+### Current node
+
+```
+Node D  →  closed on measured evidence (deferred, reasoning documented)
+Node I  →  D9a PASS. Bottleneck identified; no optimization started
+```
+
+---
+
+## 8. What can be done next
+
+1. **Write the D9b pre-register, then start optimizing the verify path.**
+   Which lever matters — arrival rate or per-call cost — must be settled
+   first, and the impact on verdict semantics must be pre-recorded for both.
+
+2. **Obtain a video dataset.** Byte reproducibility requires
+   `-fflags +bitexact` plus `-map_metadata -1` so the fingerprint holds.
+   Only then can `analyzeVideoMs` be measured.
+
+3. **A real-scale dataset** to re-confirm the current conclusions, which
+   rest on synthetic fingerprints.
+
+4. **The next Node I substep must keep the pre-register-first order.** This
+   task actually paid the cost of "having a hypothesis refuted," so
+   obtaining measured evidence before optimizing must remain the rule.
