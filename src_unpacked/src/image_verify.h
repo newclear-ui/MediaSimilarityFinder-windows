@@ -1,5 +1,6 @@
 #pragma once
 #include "analyze_telemetry.h"
+#include "image_decoder.h"   // GrayImage
 #include <string>
 namespace msf {
 // Second-stage structural verification for IMAGE pairs that passed L1 Hamming.
@@ -22,7 +23,27 @@ namespace msf {
 // D9a: `tel` is an optional counter sink. It is a plain data struct, never a
 // recorder, so verification code takes no dependency on engine telemetry.
 // Callers that do not care omit it and the behavior is byte-identical.
+// D9b: the core scoring plan, expressed once so the optimized path and the
+// preserved reference cannot drift apart. Both walk the identical greedy max
+// over the identical 10 window pairs; only the amount of recomputation
+// differs. Exposed for the parity test only, not part of the public surface.
+double verifyScorePlan(const GrayImage& fA, const GrayImage& aA,
+                       const GrayImage& fB, const GrayImage& aB,
+                       double hammingSim, AnalyzeTelemetry* tel);
+double verifyScorePlanReference(const GrayImage& fA, const GrayImage& aA,
+                                const GrayImage& fB, const GrayImage& aB,
+                                double hammingSim, AnalyzeTelemetry* tel);
+
 double verifyImagePair(const std::string& pathA, const std::string& pathB,
                        bool isImage, double hammingSim, double threshold,
                        AnalyzeTelemetry* tel = nullptr);
+
+// D9b: the pre-optimization reference, kept byte-for-byte as the original
+// implementation was. It exists so an optimized path can be compared against
+// the code it replaced on the same input, instead of trusting that an
+// algebraically identical rewrite must produce identical floating-point
+// results. It is not called by the product; only the parity test calls it.
+double verifyImagePairReference(const std::string& pathA, const std::string& pathB,
+                                bool isImage, double hammingSim, double threshold,
+                                AnalyzeTelemetry* tel = nullptr);
 }

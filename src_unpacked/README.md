@@ -1,4 +1,4 @@
 # MediaSimilarityFinder
 
 - [English](README.en.md) / [한국어](README.ko.md)
-- Current development version: 0.9.4.24 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32)
+- Current development version: 0.9.4.25 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32)

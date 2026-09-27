@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.24 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.25 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -135,6 +135,12 @@ if(MSF_BUILD_TESTS)
         target_link_libraries(msf_cuda_backend_test PRIVATE msf_core)
         add_test(NAME cuda_backend_test COMMAND msf_cuda_backend_test)
     endif()
+    # D9b: the optimized verify path must be double-identical to the
+    # preserved pre-optimization reference on the same input. Registered in
+    # both trees because the verify path is shared CPU/GPU code.
+    add_executable(msf_verify_parity_test tests/verify_parity_test.cpp)
+    target_link_libraries(msf_verify_parity_test PRIVATE msf_core)
+    add_test(NAME verify_parity_test COMMAND msf_verify_parity_test)
     # D9a: analyze internal stage split + verify counters. Registered in both
     # trees — this is pure CPU matching work, so it must be proven where no
     # GPU exists at all.
@@ -386,7 +392,7 @@ if(MSF_BUILD_GUI)
       add_test(NAME ui_settings_verify COMMAND msf_ui_settings_test --probe-verify "${MSF_UI_SETTINGS_DIR}" 640 480)
       set_tests_properties(ui_settings_verify PROPERTIES DEPENDS ui_settings_write)
       add_test(NAME ui_reference_order_test COMMAND msf_ui_settings_test --ref-order)
-      # 0.9.4.24 settings-identity migration. Every phase is its own process so
+      # 0.9.4.25 settings-identity migration. Every phase is its own process so
       # a same-process QSettings cache can never make a broken migration pass.
       set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")
       set(MSF_MIGRATE_BOTH_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate-both")

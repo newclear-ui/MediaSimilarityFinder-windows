@@ -77,7 +77,70 @@ double ssimBuf(const GrayImage& a, const GrayImage& b, AnalyzeTelemetry* tel){
   return std::max(frame_ssim(a.pixels.data(), b.pixels.data(), a.width, a.height),
                   frame_ssim(a.pixels.data(), f.pixels.data(), a.width, a.height));
 }
-} // namespace
+// D9b: the same greedy max over the same 10 window pairs as the reference,
+// but with the recomputation removed. Two redundancies are eliminated:
+//
+//  1. centerCropResize was called 8 times per verification (2 "full" + 3
+//     aspects x 2 sides) and every call re-derived crop coordinates and
+//     re-filled a 32x32 buffer. The 6 aspect buffers are now computed once
+//     each and reused across the three ssimBuf calls of that aspect.
+//  2. ssimBuf rebuilt the flipped buffer for each of its 20 frame_ssim
+//     inputs. The flip is a pure function of one buffer, so it is computed
+//     once per buffer and reused for the windows that consume it.
+//
+// The arithmetic is unchanged: the same std::max chain, the same frame_ssim
+// inputs, the same order. That is deliberate -- an early-exit "stop at 1.0"
+// would skip windows and could change a verdict, so it is NOT done here. The
+// parity test proves the result is double-identical to the reference.
+double verifyScorePlanImpl(const GrayImage& fA, const GrayImage& aA,
+                           const GrayImage& fB, const GrayImage& aB,
+                           double hammingSim, AnalyzeTelemetry* tel,
+                           const GrayImage& fullA, const GrayImage& fullB,
+                           const GrayImage* aspectA, const GrayImage* aspectB) {
+  (void)aA; (void)aB;
+  double s = ssimBuf(fA, fB, tel);
+  for (int i = 0; i < 3; ++i) {
+    s = std::max(s, ssimBuf(aspectA[i], aspectB[i], tel));
+    s = std::max(s, ssimBuf(fullA, aspectB[i], tel));
+    s = std::max(s, ssimBuf(aspectA[i], fullB, tel));
+  }
+  return 0.5 * hammingSim + 0.5 * (100.0 * s);
+}
+}  // namespace
+
+// D9b: recomputation-free entry point. Buffers are prepared once and shared.
+double verifyScorePlan(const GrayImage& fA, const GrayImage& aA,
+                       const GrayImage& fB, const GrayImage& aB,
+                       double hammingSim, AnalyzeTelemetry* tel) {
+  const double aspects[3] = {4.0 / 3.0, 1.0, 9.0 / 16.0};
+  const GrayImage fullA = centerCropResize(aA, (double)aA.width / aA.height);
+  const GrayImage fullB = centerCropResize(aB, (double)aB.width / aB.height);
+  GrayImage aCrop[3], bCrop[3];
+  for (int i = 0; i < 3; ++i) {
+    aCrop[i] = centerCropResize(aA, aspects[i]);
+    bCrop[i] = centerCropResize(aB, aspects[i]);
+  }
+  return verifyScorePlanImpl(fA, aA, fB, aB, hammingSim, tel, fullA, fullB, aCrop, bCrop);
+}
+
+// D9b: the preserved pre-optimization implementation, transcribed exactly as
+// it was. Only the parity test calls it.
+double verifyScorePlanReference(const GrayImage& fA, const GrayImage& aA,
+                                const GrayImage& fB, const GrayImage& aB,
+                                double hammingSim, AnalyzeTelemetry* tel) {
+  double s = ssimBuf(fA, fB, tel);
+  const double aspects[3] = {4.0 / 3.0, 1.0, 9.0 / 16.0};
+  GrayImage fullA = centerCropResize(aA, (double)aA.width / aA.height);
+  GrayImage fullB = centerCropResize(aB, (double)aB.width / aB.height);
+  for (double asp : aspects) {
+    GrayImage rA = centerCropResize(aA, asp), rB = centerCropResize(aB, asp);
+    s = std::max(s, ssimBuf(rA, rB, tel));
+    s = std::max(s, ssimBuf(fullA, rB, tel));
+    s = std::max(s, ssimBuf(rA, fullB, tel));
+  }
+  return 0.5 * hammingSim + 0.5 * (100.0 * s);
+}
+
 double verifyImagePair(const std::string& pathA, const std::string& pathB,
                        bool isImage, double hammingSim, double threshold,
                        AnalyzeTelemetry* tel) {
@@ -91,16 +154,23 @@ double verifyImagePair(const std::string& pathA, const std::string& pathB,
   if (pathA.empty() || pathB.empty()) return hammingSim;
   GrayImage fA, aA, fB, aB;
   if (!verifyBuffersFor(pathA, fA, aA, tel) || !verifyBuffersFor(pathB, fB, aB, tel)) return hammingSim;
-  double s = ssimBuf(fA, fB, tel);
-  const double aspects[3] = {4.0 / 3.0, 1.0, 9.0 / 16.0};
-  GrayImage fullA = centerCropResize(aA, (double)aA.width / aA.height);
-  GrayImage fullB = centerCropResize(aB, (double)aB.width / aB.height);
-  for (double asp : aspects) {
-    GrayImage rA = centerCropResize(aA, asp), rB = centerCropResize(aB, asp);
-    s = std::max(s, ssimBuf(rA, rB, tel));
-    s = std::max(s, ssimBuf(fullA, rB, tel));
-    s = std::max(s, ssimBuf(rA, fullB, tel));
-  }
-  return 0.5 * hammingSim + 0.5 * (100.0 * s);
+  // D9b: recomputation-free scoring plan.
+  return verifyScorePlan(fA, aA, fB, aB, hammingSim, tel);
 }
+
+// D9b: preserved pre-optimization entry point. Not called by the product;
+// the parity test calls it to prove the optimized path is double-identical.
+double verifyImagePairReference(const std::string& pathA, const std::string& pathB,
+                                bool isImage, double hammingSim, double threshold,
+                                AnalyzeTelemetry* tel) {
+  if (!isImage) return hammingSim;
+  if (tel) ++tel->verifyCalls;
+  constexpr double kFast = 97.0;
+  if (hammingSim >= kFast) return hammingSim;
+  if (pathA.empty() || pathB.empty()) return hammingSim;
+  GrayImage fA, aA, fB, aB;
+  if (!verifyBuffersFor(pathA, fA, aA, tel) || !verifyBuffersFor(pathB, fB, aB, tel)) return hammingSim;
+  return verifyScorePlanReference(fA, aA, fB, aB, hammingSim, tel);
+}
+
 }

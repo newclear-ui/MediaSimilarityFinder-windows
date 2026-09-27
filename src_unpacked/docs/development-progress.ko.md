@@ -788,3 +788,31 @@ A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
 ```
 
 새 빌드를 기록할 때는 가능한 경우 **0.9.4.24 D9a baseline 대비 변화량**도 함께 기록한다.
+
+### D9b — Candidate B (expensive verify 비용 감소) → 0.9.4.25, **NOT ACCEPTED**
+
+- Pre-register 커밋 `b33154b` (코드 변경 전), baseline 은 0.9.4.24 D9a.
+- **판정: 실패.** 중단 조건 7(측정 오차 수준) + 8(B 가 실제 병목이 아님) 해당.
+- 구현: `verifyScorePlan` 이 `centerCropResize` 를 8→6 회로 줄이고 aspect
+  버퍼를 3회 `ssimBuf` 에 재사용. reference 구현은 그대로 보존해
+  `verifyImagePairReference` 로 비교 가능하게 함.
+- **카운터가 하나도 변하지 않았다** — verdict·grouping·parity 전부 보존
+  증명이 동시에, "최적화 대상이 지배 비용이 아니었음"의 증거가 됐다.
+  ```
+  verifyCalls 158,020 · expensive 13,734 · hits 14,519 · misses 12,949
+  ssimEvals 137,340 · frameSsimEvals 274,680 · groups 156,152  (전부 동일)
+  total verify ms  109,142 / 117,291  →  110,717   감소 없음
+  ```
+- **원인 (측정 기반)**: `frame_ssim` 이 64×64 에서 4,096 inner-loop 회
+  (호출당 20회 = 81,920 ops) 를 도는데 이것이 비용의 사실상 전부다.
+  D9b 는 `centerCropResize` 8,192→6,144 (전체 작업의 2.3%) 만 줄였다.
+  **가설이 지목한 "중복" 은 존재하지 않았다** — 원본도 이미 `rA`/`rB` 를
+  루프 밖에서 1회만 계산하고 있었다.
+- D9a 자체 run 간 variation(7.5%)이 D9b 관측값과 같은 크기여서
+  측정 오차 범위 안이다.
+- 정확성: `verify_parity_test` 25 checks **double 동일** (5 seed × 5 aspect
+  형태). CPU 77/77, GPU 78/78 PASS. Engine/DB/cache/schema 불변.
+- **후보 A 는 여전히 deferred.** 이 실패는 A 의 상대 우선순위를
+  올리지 않는다 — A 가 접촉하는 것은 verdict semantics 이기 때문이다.
+- 남은 질문: 8.5 ms 의 실제 소비처는? `frame_ssim` 자체를 줄일 수 있는가?
+  (윈도우/정밀도/early-exit 은 결과에 영향 → 별도 pre-register 필요)

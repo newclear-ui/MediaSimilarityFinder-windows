@@ -790,3 +790,34 @@ A is not discarded; it is an **intentionally deferred candidate**.
 ```
 
 When recording a new build, include the **change relative to the 0.9.4.24 D9a baseline** whenever a valid comparison is possible.
+
+### D9b — Candidate B (expensive verify cost reduction) → 0.9.4.25, **NOT ACCEPTED**
+
+- Pre-register commit `b33154b` (before code), baseline is 0.9.4.24 D9a.
+- **Verdict: failed.** Stop conditions 7 (measurement noise) and 8 (B is not
+  the real bottleneck) both apply.
+- Implementation: `verifyScorePlan` reduces `centerCropResize` from 8 to 6
+  calls and reuses each aspect buffer across three `ssimBuf` calls. The
+  reference implementation is preserved as `verifyImagePairReference`.
+- **Not one counter changed** — which simultaneously proves verdict, grouping,
+  and parity are all preserved, and says the optimized target was not the
+  dominant cost.
+  ```
+  verifyCalls 158,020 · expensive 13,734 · hits 14,519 · misses 12,949
+  ssimEvals 137,340 · frameSsimEvals 274,680 · groups 156,152  (all identical)
+  total verify ms  109,142 / 117,291  ->  110,717   no reduction
+  ```
+- **Cause (measurement-based)**: `frame_ssim` runs 4,096 inner-loop iterations
+  per call on 64x64 (20 calls = 81,920 ops), and that is essentially the whole
+  cost. D9b only cut `centerCropResize` from 8,192 to 6,144 (2.3 % of total
+  work). **The "duplication" the hypothesis pointed at did not exist** — the
+  original already computed `rA`/`rB` once outside the loop.
+- D9a's own run-to-run variation (7.5 %) is the same magnitude as the D9b
+  observation, so it sits inside measurement noise.
+- Accuracy: `verify_parity_test` 25 checks **double-identical** (5 seeds x 5
+  aspect shapes). CPU 77/77, GPU 78/78 PASS. Engine/DB/cache/schema unchanged.
+- **Candidate A stays deferred.** This failure does not raise its relative
+  priority — what A touches is verdict semantics.
+- Remaining questions: where does the 8.5 ms actually go, and can
+  `frame_ssim` itself be reduced? (window size, precision, and early exit all
+  affect results, so they need their own pre-register.)

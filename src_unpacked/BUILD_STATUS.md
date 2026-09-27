@@ -1,17 +1,47 @@
 # Build Status
 
-- Current development version: **0.9.4.24**
+- Current development version: **0.9.4.25**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.24 — QSettings Organization rename + safe one-time settings migration**
-- Active node: **I / D9a PASS (0.9.4.23); 0.9.4.24 is a settings-identity change outside the D telemetry sequence**
-- Last completed Windows build/test line: **0.9.4.24**
-- Last completed v0.9.4.24 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.24 test run: **CTest 77/77 PASS (GPU)**
-- Last completed v0.9.4.24 validation: 5 cross-process settings-migration tests (plant / verify / both-preserved / none) + real `--smoke` in a temp portable dir for cases A, B, C; `--version` 0.9.4.24; `--smoke` PASS both
-- CPU-only validation: Release build PASS; **CTest 76/76 PASS**; CUDA disabled and CPU fallback verified
-- Settings identity: organization `MediaSimilarityFinder-ui`, application `MediaSimilarityFinder`, INI next to the exe. Legacy `newclear-ui` migrated once; never overwritten when the new location already exists. Engine/DB/verdict semantics unchanged
+- Current: **0.9.4.25 — D9b Candidate B (expensive verify cost reduction): NOT ACCEPTED, parity held but no cost reduction**
+- Active node: **I / D9a PASS; D9b Candidate B failed on evidence; Candidate A still deferred**
+- Last completed Windows build/test line: **0.9.4.25**
+- Last completed v0.9.4.25 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.25 test run: **CTest 78/78 PASS (GPU)**
+- Last completed v0.9.4.25 validation: `verify_parity_test` 25 checks (optimized path double-identical to the preserved pre-D9b reference); CPU 77/77, GPU 78/78; counters all unchanged vs 0.9.4.24 D9a
+- CPU-only validation: Release build PASS; **CTest 77/77 PASS**; CUDA disabled and CPU fallback verified
+- D9b scope note: **no optimization accepted.** `centerCropResize` 8→6 calls and aspect-buffer reuse only; verdict semantics, candidate semantics, thresholds, SSIM formula, crop semantics, DB/cache/schema all unchanged
+
+### D9b measured result — Candidate B NOT ACCEPTED
+
+| Metric | 0.9.4.24 D9a | 0.9.4.25 D9b | Verdict |
+|---|---:|---:|---|
+| verifyCalls | 158,020 | 158,020 | identical |
+| expensive verifies | 13,734 | 13,734 | identical |
+| verifyDecodeMisses | 12,949 | 12,949 | identical |
+| verifyCacheHits | 14,519 | 14,519 | identical |
+| verifyHitRate | 0.528579 | 0.528579 | identical |
+| ssimEvals | 137,340 | 137,340 | identical |
+| frameSsimEvals | 274,680 | 274,680 | identical |
+| groups | 156,152 | 156,152 | identical |
+| total verify ms | 109,142 / 117,291 | 110,717 | no reduction |
+| ms / verify call | 0.69 ~ 0.74 | 0.7007 | unchanged |
+
+**Not one counter changed** — verdict, grouping, and parity are all preserved,
+and simultaneously this shows the optimized target was not the dominant cost.
+
+Cause: `frame_ssim` runs 4,096 inner-loop iterations per call (20 calls =
+81,920 ops) and that is essentially the whole cost. D9b cut
+`centerCropResize` from 8,192 to 6,144 pixels, i.e. **2.3 % of the work**.
+The duplication the hypothesis pointed at did not exist — the original
+already computed each aspect buffer once outside the loop. D9a's own run-to-run
+variation (7.5 %) is the same magnitude as the D9b observation, so it sits
+inside measurement noise.
+
+**Candidate A (candidate arrival reduction) remains deferred.** This failure
+does not raise its relative priority, because what A touches is verdict semantics.
+
 
 ### D9a measured findings (RTX 3080 Ti, D8b dataset `9b113848…4253c`, cold index)
 
