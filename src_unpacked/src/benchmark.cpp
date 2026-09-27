@@ -156,6 +156,10 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   imgDecodeNs_ = 0; imgHashNs_ = 0; imgCropNs_ = 0; imgGpuNs_ = 0;
   imgQueueWaitNs_ = 0; imgTransferNs_ = 0; imgExecNs_ = 0; imgPackNs_ = 0; imgCpuHashNs_ = 0;
   imgBatchCount_ = 0; imgBatchItems_ = 0; imgBatchMaxDepth_ = 0;
+  imgH2dNs_ = 0; imgKernelNs_ = 0; imgD2hNs_ = 0; imgSyncNs_ = 0; imgGpuTotalNs_ = 0;
+  imgGpuTimedBatches_ = 0;
+  imgH2dRecorded_ = imgKernelRecorded_ = imgD2hRecorded_ = false;
+  imgSyncRecorded_ = imgGpuTotalRecorded_ = false;
   imgDecodeRecorded_ = imgHashRecorded_ = imgCropRecorded_ = imgGpuRecorded_ = false;
   imgQueueWaitRecorded_ = imgTransferRecorded_ = imgExecRecorded_ = false;
   vidCount_ = 0; vidBytes_ = 0; vidFrames_ = 0; vidBuildNs_ = 0;
@@ -247,6 +251,23 @@ void BenchmarkRecorder::addImageTransferMs(double ms) {
 void BenchmarkRecorder::addImageExecMs(double ms) {
   imgExecNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
   imgExecRecorded_ = true;
+}
+// D4a: one call per GPU batch that the backend could actually time. The
+// recorded flags are set only here, so a backend that cannot time anything
+// leaves every D4a metric at not_measured.
+void BenchmarkRecorder::addImageGpuDeviceTiming(double h2dDeviceMs, double kernelDeviceMs,
+                                                double d2hDeviceMs, double syncHostMs,
+                                                double hostTotalMs, bool usedGpu) {
+  if (usedGpu) {
+    imgH2dNs_.fetch_add((long long)(h2dDeviceMs * 1e6), std::memory_order_relaxed);
+    imgKernelNs_.fetch_add((long long)(kernelDeviceMs * 1e6), std::memory_order_relaxed);
+    imgD2hNs_.fetch_add((long long)(d2hDeviceMs * 1e6), std::memory_order_relaxed);
+    imgSyncNs_.fetch_add((long long)(syncHostMs * 1e6), std::memory_order_relaxed);
+    imgGpuTotalNs_.fetch_add((long long)(hostTotalMs * 1e6), std::memory_order_relaxed);
+    imgGpuTimedBatches_.fetch_add(1, std::memory_order_relaxed);
+    imgH2dRecorded_ = imgKernelRecorded_ = imgD2hRecorded_ = true;
+    imgSyncRecorded_ = imgGpuTotalRecorded_ = true;
+  }
 }
 void BenchmarkRecorder::recordWalkerEnqueue(std::size_t depthAfterPush) {
   walkQueued_.fetch_add(1, std::memory_order_relaxed);
@@ -506,6 +527,20 @@ std::string BenchmarkRecorder::toJson() const {
     << ",\"gpuQueueWaitState\":\"" << measureStateName(imgQueueWaitRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"gpuTransferState\":\"" << measureStateName(imgTransferRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"gpuExecState\":\"" << measureStateName(imgExecRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    // D4a: backend-internal split. Device time per boundary, plus the host
+    // wait that actually blocks the caller. Each keeps its own state so an
+    // untimed backend stays not_measured instead of 0.
+    << ",\"gpuH2dDeviceMs\":" << (double)imgH2dNs_.load() / 1e6
+    << ",\"gpuKernelDeviceMs\":" << (double)imgKernelNs_.load() / 1e6
+    << ",\"gpuD2hDeviceMs\":" << (double)imgD2hNs_.load() / 1e6
+    << ",\"gpuSyncHostMs\":" << (double)imgSyncNs_.load() / 1e6
+    << ",\"gpuHostTotalMs\":" << (double)imgGpuTotalNs_.load() / 1e6
+    << ",\"gpuTimedBatches\":" << imgGpuTimedBatches_.load()
+    << ",\"gpuH2dState\":\"" << measureStateName(imgH2dRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"gpuKernelState\":\"" << measureStateName(imgKernelRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"gpuD2hState\":\"" << measureStateName(imgD2hRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"gpuSyncState\":\"" << measureStateName(imgSyncRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"gpuHostTotalState\":\"" << measureStateName(imgGpuTotalRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"meanDecodeMs\":" << (imgN ? imgDecodeMs / imgN : 0) << ",\"meanHashMs\":" << (imgN ? imgHashMs / imgN : 0)
     << ",\"slowest\":[";
   {

@@ -149,3 +149,4 @@ Previous implementation/design snapshots are preserved under `../architecture/le
 - v0.9.4.17 — D1b gate: walker-queue and video-range observability, schema v4
 - v0.9.4.18 — D2 barrier review: video completion-order join, maxRangeFileMs, schema v5
 - v0.9.4.19 — D3-Minimal: bounded walker queue, backpressure, cancel/pause safety, schema v6
+- v0.9.4.20 — D4a: CUDA backend internal timing (h2d/kernel/d2h device split + host wait), schema v7

@@ -149,3 +149,4 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 - v0.9.4.17 — D1b 게이트: walker queue·video range 관측, schema v4
 - v0.9.4.18 — D2 barrier 검토: video completion-order join, maxRangeFileMs, schema v5
 - v0.9.4.19 — D3-Minimal: bounded walker queue, backpressure, 취소/일시정지 안전, schema v6
+- v0.9.4.20 — D4a: CUDA 백엔드 내부 타이밍(h2d/kernel/d2h device 분리 + host 대기), schema v7

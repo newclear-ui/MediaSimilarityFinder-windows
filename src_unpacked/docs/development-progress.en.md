@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.19 |
+| Reference code | 0.9.4.20 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — Pipeline / Queue (D3-Minimal PASS → Full D3 deferred) |
-| Current phase | Node D in progress → Full D3 only on measured imbalance; representative scan evidence still open (D8 dataset work) |
-| Current version | 0.9.4.19 |
+| Current node | D — Pipeline / Queue (D4a backend internal timing PASS) |
+| Current phase | Node D in progress → D4b overlap decision needs a representative dataset; D8 fixtures and full D3 topology still open |
+| Current version | 0.9.4.20 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -498,3 +498,14 @@ Once source implementation begins, update:
 - Telemetry: `walker.capacity` (config) + `walker.blockedTicks` (waits while full). Schema v6.
 - Validation: CPU 67/67, GPU 68/68 (unit: capacity/FIFO/block-resume/cancel/shutdown; 60-file cap-16 integration with bound + 1770-pair parity; pause-toggled parity); `--version`/`--smoke` on both.
 - Pre-register outcome: no throughput regression observed; memory bound holds by construction; rollback triggers untouched. Full D3 stays deferred (no measured imbalance).
+
+### D4a — CUDA Backend Internal Timing (→ 0.9.4.20, PASS)
+- **Measure only.** No overlap, no double/triple buffering, no pinned memory, no new stream topology, no scheduler change. D4b remains undecided.
+- Pre-register committed before any code change (`ec7cff6`), so the ordering is auditable.
+- `cuda_backend.cu`: six `cudaEvent_t` recorded inline at each boundary (H2D, kernel, D2H) on the same stream; created once at backend create, destroyed at destroy. Event record/elapsed failure disables timing only — the hash result and the function's return value are untouched (`measurement failure != GPU processing failure`).
+- New vendor-neutral `GpuBackend::HashTiming` (out-param, defaulted) is the only thing crossing the abstraction boundary; no CUDA type reaches the engine, pipeline, or recorder.
+- `syncHostMs` is a **directly measured** host wall time inside `cudaStreamSynchronize`, deliberately *not* `hostTotal - device sum` (that subtraction mixes enqueue and scheduling overhead into device numbers).
+- Telemetry: `gpuH2dDeviceMs` / `gpuKernelDeviceMs` / `gpuD2hDeviceMs` / `gpuSyncHostMs` / `gpuHostTotalMs` / `gpuTimedBatches`, each with its own state. Schema v7. Existing `addGpuBatchMs()` key and meaning preserved.
+- New `gpu_timing_test` registered in **both** trees (so the recorder contract is proven where CUDA does not exist): key existence, measured/not_measured state flips, non-negativity plus one loose upper bound, CPU-build `measured == false`, and hash-vs-CPU parity as the instrumentation-does-not-change-results guard. No exact host-vs-device summation equality is asserted.
+- Validation: CPU 68/68, GPU 69/69; `--version` 0.9.4.20 and `--smoke` PASS on both. Pre-register rollback triggers: none fired.
+- Real measurement (RTX 3080 Ti, synthetic, pageable): kernel device time ~0.24 ms at both 16 and 256 images (does not scale with batch), H2D scales with data, `syncHost` ~0.013 ms, and a constant ~0.27 ms host-side gap. Observation only — not a D4b verdict, because a small synthetic probe is not a representative dataset.

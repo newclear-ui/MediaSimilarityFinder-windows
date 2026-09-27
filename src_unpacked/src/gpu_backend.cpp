@@ -6,6 +6,13 @@
 extern "C" void* msf_cuda_backend_create();
 extern "C" void msf_cuda_backend_destroy(void*);
 extern "C" bool msf_cuda_backend_hash_batch(void*,const std::uint8_t*,std::uint64_t,std::uint64_t*);
+// D4a: plain POD out-param so no CUDA type crosses the abstraction boundary.
+struct CudaBackendHashTiming {
+    int measured;
+    double h2dDeviceMs, kernelDeviceMs, d2hDeviceMs;
+    double syncHostMs, hostTotalMs;
+};
+extern "C" void msf_cuda_backend_hash_timing(void*,CudaBackendHashTiming*);
 extern "C" bool msf_cuda_backend_ssim_batch(void*,const std::uint8_t*,const std::uint8_t*,std::uint64_t,double*);
 #endif
 
@@ -92,11 +99,25 @@ std::size_t GpuBackend::recommendedBatchSize(std::size_t requested) const {    r
     const std::size_t byMemory=std::max<std::size_t>(1,budget/bytesPerImage);
     return std::min(requested,byMemory);
 }
-bool GpuBackend::hashBatch(const std::uint8_t* g,std::uint64_t n,std::uint64_t* out) const {
+bool GpuBackend::hashBatch(const std::uint8_t* g,std::uint64_t n,std::uint64_t* out,HashTiming* timing) const {
     std::lock_guard<std::mutex> lock(hashMutex_);
+    if(timing) *timing=HashTiming{};
     if(!g||!out||n==0||!available()) return false;
 #ifdef MSF_HAS_CUDA
-    return msf_cuda_backend_hash_batch(impl_->cuda,g,n,out);
+    if(!msf_cuda_backend_hash_batch(impl_->cuda,g,n,out)) return false;
+    if(timing){
+        CudaBackendHashTiming t{};
+        msf_cuda_backend_hash_timing(impl_->cuda,&t);
+        if(t.measured){
+            timing->measured=true;
+            timing->h2dDeviceMs=t.h2dDeviceMs;
+            timing->kernelDeviceMs=t.kernelDeviceMs;
+            timing->d2hDeviceMs=t.d2hDeviceMs;
+            timing->syncHostMs=t.syncHostMs;
+            timing->hostTotalMs=t.hostTotalMs;
+        }
+    }
+    return true;
 #else
     return false;
 #endif

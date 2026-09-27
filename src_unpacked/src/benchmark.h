@@ -104,7 +104,9 @@ public:
   // v4: D1b walker-queue and video-range keys.
   // v5: D2 per-range slowest-file key (maxRangeFileMs).
   // v6: D3-Minimal walker capacity + blocked ticks.
-  static constexpr int kBenchmarkSchemaVersion = 6;
+  // v7: D4a backend-internal GPU timing split (h2d/kernel/d2h device ms,
+  //     host sync wait, host total) with per-metric states.
+  static constexpr int kBenchmarkSchemaVersion = 7;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);
@@ -132,6 +134,14 @@ public:
   void addImageGpuQueueMs(double ms);
   void addImageTransferMs(double ms);
   void addImageExecMs(double ms);
+  // D4a: backend-internal timing for one GPU hash batch. The device-side
+  // values come from timing points inside the GPU backend; syncMs and
+  // totalMs are host wall time. Never call with partial data: either the
+  // backend measured the whole call or the recorder is left untouched so the
+  // metrics stay not_measured (never a zero standing in for missing time).
+  void addImageGpuDeviceTiming(double h2dDeviceMs, double kernelDeviceMs,
+                               double d2hDeviceMs, double syncHostMs,
+                               double hostTotalMs, bool usedGpu);
   // Node D1b: walker-queue and video-range observability. Depth values are
   // passed in by the engine (exact queue.size() under its lock); the
   // recorder only accumulates counts and the maximum.
@@ -185,7 +195,14 @@ private:
   std::atomic<std::uint64_t> imgCount_{0}, imgBytes_{0}, imgGpu_{0};
   std::atomic<long long> imgDecodeNs_{0}, imgHashNs_{0}, imgCropNs_{0}, imgGpuNs_{0};
   std::atomic<long long> imgQueueWaitNs_{0}, imgTransferNs_{0}, imgExecNs_{0}, imgPackNs_{0}, imgCpuHashNs_{0};
-  std::atomic<std::uint64_t> imgBatchCount_{0}, imgBatchItems_{0}, imgBatchMaxDepth_{0};
+    std::atomic<std::uint64_t> imgBatchCount_{0}, imgBatchItems_{0}, imgBatchMaxDepth_{0};
+    // D4a: per-batch backend-internal timing. Kept separate per boundary so
+    // the JSON can show which element dominates instead of one lumped value.
+    std::atomic<long long> imgH2dNs_{0}, imgKernelNs_{0}, imgD2hNs_{0};
+    std::atomic<long long> imgSyncNs_{0}, imgGpuTotalNs_{0};
+    std::atomic<std::uint64_t> imgGpuTimedBatches_{0};
+    bool imgH2dRecorded_ = false, imgKernelRecorded_ = false, imgD2hRecorded_ = false;
+    bool imgSyncRecorded_ = false, imgGpuTotalRecorded_ = false;
   bool imgDecodeRecorded_ = false, imgHashRecorded_ = false, imgCropRecorded_ = false, imgGpuRecorded_ = false;
   bool imgQueueWaitRecorded_ = false, imgTransferRecorded_ = false, imgExecRecorded_ = false;
   std::atomic<std::uint64_t> vidCount_{0}, vidBytes_{0}, vidFrames_{0};

@@ -1,16 +1,17 @@
 # Build Status
 
-- Current development version: **0.9.4.19**
+- Current development version: **0.9.4.20**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.19 — D3-Minimal (bounded walker queue, backpressure, cancel/pause safety, schema v6)**
-- Active Node D substep: **D3-Minimal PASS → Full D3 deferred pending measured imbalance**
-- Last completed Windows build/test line: **0.9.4.19**
-- Last completed v0.9.4.19 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.19 test run: **CTest 68/68 PASS (GPU)**
-- Last completed v0.9.4.19 validation: WalkerQueue unit (capacity/FIFO/block-resume/cancel/shutdown) + 60-file cap-16 integration (bound/parity) + pause-toggled parity; `--version` 0.9.4.19
-- CPU-only validation: Release build PASS; **CTest 67/67 PASS**; CUDA disabled and CPU fallback verified
+- Current: **0.9.4.20 — D4a Backend Internal Timing (cudaEvent h2d/kernel/d2h split + host wait, schema v7)**
+- Active Node D substep: **D4a PASS → D4b overlap decision deferred to a representative dataset**
+- Last completed Windows build/test line: **0.9.4.20**
+- Last completed v0.9.4.20 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.20 test run: **CTest 69/69 PASS (GPU)**
+- Last completed v0.9.4.20 validation: `gpu_timing_test` (recorder contract both trees + real CUDA h2d/kernel/d2h/syncHost/hostTotal on RTX 3080 Ti); `--version` 0.9.4.20; `--smoke` PASS both
+- CPU-only validation: Release build PASS; **CTest 68/68 PASS**; CUDA disabled and CPU fallback verified
+- D4a scope note: **no overlap, no double/triple buffering, no pinned memory, no new stream topology** — measurement only
 - GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + version title observed, process terminated cleanly); slot-path workflow automated PASS (`scan_workflow_test`); automated validation of human operation NOT_VALIDATED (environment limit) — development lead user-reports direct confirmation of run → search → report display in a real Windows session
 - Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in
 - Build entry points: `scripts/build_windows_gpu.ps1` (canonical, clean `build-windows-gpu` tree) and `scripts/build_windows_cpu.ps1`; `scripts/build_windows_cuda.ps1` remains a deprecated alias path

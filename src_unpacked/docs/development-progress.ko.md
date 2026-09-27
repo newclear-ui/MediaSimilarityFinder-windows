@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.19 |
+| 기준 코드 | 0.9.4.20 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | D — Pipeline / Queue (D3-Minimal 통과 → Full D3 보류) |
-| 현재 단계 | Node D 진행 중 → Full D3는 실측 imbalance 확인 후, 대표 스캔 증거는 미결 (D8 dataset 과제) |
-| 현재 버전 | 0.9.4.19 |
+| 현재 노드 | D — Pipeline / Queue (D4a 백엔드 내부 타이밍 통과) |
+| 현재 단계 | Node D 진행 중 → D4b overlap 판단은 대표 dataset 필요, D8 fixture와 Full D3 topology 미결 |
+| 현재 버전 | 0.9.4.20 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -499,3 +499,31 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
   pause 토글 parity), 양쪽 `--version`/`--smoke`.
 - Pre-register 결과: throughput 회귀 없음, 메모리 상한은 구조적 보장,
   롤백 트리거 미발동. Full D3 계속 보류 (실측 imbalance 없음).
+
+### D4a — CUDA 백엔드 내부 타이밍 (→ 0.9.4.20, 통과)
+- **계측만 한다.** overlap 없음, double/triple buffering 없음, pinned memory
+  없음, 새 stream topology 없음, Scheduler 변경 없음. D4b는 미결.
+- 코드 변경 전에 pre-register를 커밋(`ec7cff6`)해 순서를 감사 가능하게 함.
+- `cuda_backend.cu`: 경계마다 6개 `cudaEvent_t` 를 같은 stream에 인라인
+  기록 (H2D, kernel, D2H). backend 생성 시 1회 생성, 소멸 시 해제.
+  event 기록/elapsed 실패는 **계측만** 비활성화 — 해시 결과와 함수 반환값은
+  불변 (`measurement failure != GPU processing failure`).
+- vendor-neutral `GpuBackend::HashTiming` (기본값 있는 out-param)만 추상화
+  경계를 넘음. CUDA 타입이 엔진/파이프라인/recorder에 닿지 않음.
+- `syncHostMs` 는 `cudaStreamSynchronize` 내부의 **직접 측정** host wall
+  time. `hostTotal - device 합` 으로 계산하지 않음 (그 뺄셈은 enqueue와
+  scheduling 오버헤드를 device 값에 섞는다).
+- telemetry: `gpuH2dDeviceMs` / `gpuKernelDeviceMs` / `gpuD2hDeviceMs` /
+  `gpuSyncHostMs` / `gpuHostTotalMs` / `gpuTimedBatches`, 각각 독립 state.
+  schema v7. 기존 `addGpuBatchMs()` 키와 의미 유지.
+- 신규 `gpu_timing_test` 를 **양쪽 트리에** 등록 (CUDA가 없는 쪽에서
+  recorder 계약 증명): 키 존재, measured/not_measured 전환, 비음수 + 느슨한
+  상한 1개, CPU 빌드 `measured == false`, 그리고 계측이 결과를 바꾸지
+  않음을 증명하는 hash-vs-CPU parity. host/device 합산 정확 일치는
+  단언하지 않는다.
+- 검증: CPU 68/68, GPU 69/69; 양쪽 `--version` 0.9.4.20, `--smoke` PASS.
+  pre-register 롤백 트리거 미발동.
+- 실측(RTX 3080 Ti, 합성, pageable): 16장·256장 모두 kernel device ≈0.24 ms
+  (배치에 비례해 증가하지 않음), H2D는 데이터량에 비례, `syncHost` ≈0.013 ms,
+  host 측 갭 ≈0.27 ms 일정. **관찰이며 D4b 판정 아님** — 소규모 합성 프로브는
+  대표 dataset이 아님.

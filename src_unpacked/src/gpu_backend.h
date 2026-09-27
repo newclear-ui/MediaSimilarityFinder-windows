@@ -52,8 +52,25 @@ public:
     // calibrates the bandwidth side by measurement.
     static constexpr std::size_t kTransferBytesPerUnit = 1032;
     std::size_t recommendedBatchSize(std::size_t requested=256) const;
+    // D4a: backend-internal timing evidence for one hashBatch call.
+    // Vendor-neutral plain values: the device-side numbers come from
+    // timing points inside the backend, the host-side numbers are host wall
+    // time. No backend type crosses this boundary.
+    //   h2dDeviceMs / kernelDeviceMs / d2hDeviceMs = device execution time
+    //   syncHostMs  = host wall time inside the backend's completion wait
+    //   hostTotalMs = host wall time of the whole backend call
+    // `measured == false` means the backend could not time this call;
+    // callers must then leave their recorder untouched (never encode 0).
+    // Note: `sync` is NOT derived as hostTotal - h2d - kernel - d2h; that
+    // subtraction mixes enqueue and scheduling overhead into the device
+    // numbers. syncHostMs is a separately measured host-side quantity.
+    struct HashTiming {
+        bool measured=false;
+        double h2dDeviceMs=0, kernelDeviceMs=0, d2hDeviceMs=0;
+        double syncHostMs=0, hostTotalMs=0;
+    };
     bool hashBatch(const std::uint8_t* grayscale,std::uint64_t count,
-                   std::uint64_t* hashes) const;
+                   std::uint64_t* hashes, HashTiming* timing=nullptr) const;
     bool ssimBatch(const std::uint8_t* a,const std::uint8_t* b,
                    std::uint64_t count,double* scores) const;
 private:

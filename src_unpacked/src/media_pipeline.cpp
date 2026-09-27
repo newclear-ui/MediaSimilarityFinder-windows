@@ -74,9 +74,18 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         if(gpuReady){
             if(activity) activity->store(true,std::memory_order_relaxed);
             const auto gt0=std::chrono::steady_clock::now();
-            used=gpu_.hashBatch(block,n,hashes.data());
+            GpuBackend::HashTiming timing;
+            used=gpu_.hashBatch(block,n,hashes.data(),&timing);
             const double gpuMs=msSince(gt0);
-            if(bench) bench->addGpuBatchMs(gpuMs);
+            if(bench){
+                bench->addGpuBatchMs(gpuMs);
+                // D4a: only recorded when the backend actually timed the call.
+                // An untimed (or failed) batch leaves the metrics not_measured.
+                if(timing.measured)
+                    bench->addImageGpuDeviceTiming(timing.h2dDeviceMs,timing.kernelDeviceMs,
+                                                  timing.d2hDeviceMs,timing.syncHostMs,
+                                                  timing.hostTotalMs,true);
+            }
             for(std::size_t k=0;k<n;++k) hMs[base+k]=gpuMs/(double)n;
             if(!used && activity) activity->store(false,std::memory_order_relaxed);
         }

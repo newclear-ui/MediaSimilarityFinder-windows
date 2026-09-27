@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include <cstdint>
+#include <chrono>
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -109,7 +110,74 @@ struct CudaBackendState {
     std::uint8_t* ssimB=nullptr;
     double* ssimOut=nullptr;
     std::size_t ssimCapacity=0;
+    // D4a: internal timing. One event per boundary, recorded on the same
+    // stream so elapsed times reflect real execution order. Created once and
+    // reused; per-call creation would add overhead to the measured value.
+    // timingReady == false is a supported state: hashing still works and the
+    // caller simply sees measured=false (never a zero standing in for time).
+    cudaEvent_t evH2dStart=nullptr, evH2dEnd=nullptr;
+    cudaEvent_t evKernelStart=nullptr, evKernelEnd=nullptr;
+    cudaEvent_t evD2hStart=nullptr, evD2hEnd=nullptr;
+    bool timingReady=false;
+    struct HashTiming {
+        bool measured=false;
+        double h2dDeviceMs=0, kernelDeviceMs=0, d2hDeviceMs=0;
+        double syncHostMs=0, hostTotalMs=0;
+    } lastTiming{};
 };
+
+static double hostNowMs(){
+    using namespace std::chrono;
+    return duration<double,std::milli>(steady_clock::now().time_since_epoch()).count();
+}
+
+static bool ensure_timing_events(CudaBackendState* s){
+    if(s->timingReady) return true;
+    cudaEvent_t* slots[6]={&s->evH2dStart,&s->evH2dEnd,&s->evKernelStart,
+                           &s->evKernelEnd,&s->evD2hStart,&s->evD2hEnd};
+    for(auto* slot:slots){
+        if(*slot) continue;
+        if(cudaEventCreateWithFlags(slot,cudaEventDefault)!=cudaSuccess){ *slot=nullptr; return false; }
+    }
+    s->timingReady=true; return true;
+}
+// D4a: a plain C POD so the .cu never leaks CUDA types upward.
+struct CudaBackendHashTiming {
+    int measured;
+    double h2dDeviceMs, kernelDeviceMs, d2hDeviceMs;
+    double syncHostMs, hostTotalMs;
+};
+
+// Events are recorded inline at each boundary, never batched up front, so the
+// deltas reflect the real stream order. A record failure is latched into the
+// same flag and only disables timing; the hash path is untouched afterwards.
+static bool rec(cudaEvent_t ev,cudaStream_t stream,bool active){
+    if(!active) return true;
+    return cudaEventRecord(ev,stream)==cudaSuccess;
+}
+
+// Device elapsed times come from the event pair deltas. syncHostMs is the
+// host wall time between "everything enqueued" and "stream sync returned",
+// i.e. how long the host actually waited. It is NOT hostTotal - device sum.
+static void collect_timing(CudaBackendState* s,double hostStart,double hostEnqueued,double hostEnd){
+    float h2d=0.0f, kern=0.0f, d2h=0.0f;
+    if(cudaEventElapsedTime(&h2d,s->evH2dStart,s->evH2dEnd)!=cudaSuccess) return;
+    if(cudaEventElapsedTime(&kern,s->evKernelStart,s->evKernelEnd)!=cudaSuccess) return;
+    if(cudaEventElapsedTime(&d2h,s->evD2hStart,s->evD2hEnd)!=cudaSuccess) return;
+    s->lastTiming.measured=true;
+    s->lastTiming.h2dDeviceMs=h2d;
+    s->lastTiming.kernelDeviceMs=kern;
+    s->lastTiming.d2hDeviceMs=d2h;
+    s->lastTiming.syncHostMs=hostEnd-hostEnqueued;
+    s->lastTiming.hostTotalMs=hostEnd-hostStart;
+}
+
+static void destroy_timing_events(CudaBackendState* s){
+    cudaEvent_t* slots[6]={&s->evH2dStart,&s->evH2dEnd,&s->evKernelStart,
+                           &s->evKernelEnd,&s->evD2hStart,&s->evD2hEnd};
+    for(auto* slot:slots){ if(*slot){ cudaEventDestroy(*slot); *slot=nullptr; } }
+    s->timingReady=false;
+}
 
 static bool ensure_tables(CudaBackendState* s){
     if(s->tablesReady) return true;
@@ -133,6 +201,7 @@ extern "C" void* msf_cuda_backend_create(){
     auto* s=new CudaBackendState{};
     if(cudaStreamCreateWithFlags(&s->stream,cudaStreamNonBlocking)!=cudaSuccess){ delete s; return nullptr; }
     if(!ensure_tables(s)){ cudaStreamDestroy(s->stream); delete s; return nullptr; }
+    ensure_timing_events(s);   // D4a: optional. Failure only disables timing.
     return s;
 }
 extern "C" void msf_cuda_backend_destroy(void* p){
@@ -140,6 +209,7 @@ extern "C" void msf_cuda_backend_destroy(void* p){
     if(s->stream) cudaStreamSynchronize(s->stream);
     if(s->di) cudaFree(s->di); if(s->do_) cudaFree(s->do_);
     if(s->ssimA) cudaFree(s->ssimA); if(s->ssimB) cudaFree(s->ssimB); if(s->ssimOut) cudaFree(s->ssimOut);
+    destroy_timing_events(s);
     if(s->stream) cudaStreamDestroy(s->stream); delete s;
 }
 
@@ -173,9 +243,36 @@ extern "C" bool msf_cuda_backend_hash_batch(void* p,const std::uint8_t* in,std::
     if(!ensure_capacity(s,static_cast<std::size_t>(count)*1024,static_cast<std::size_t>(count)*sizeof(std::uint64_t))) return false;
     const std::size_t inputBytes=static_cast<std::size_t>(count)*1024;
     const std::size_t outputBytes=static_cast<std::size_t>(count)*sizeof(std::uint64_t);
+    // D4a: timing is best-effort and never changes the hash result or this
+    // function's success value. `tm` only latches off if a record fails.
+    bool tm=s->timingReady;
+    s->lastTiming=CudaBackendState::HashTiming{};
+    const double hostStart=hostNowMs();
+    tm=rec(s->evH2dStart,s->stream,tm);
     if(cudaMemcpyAsync(s->di,in,inputBytes,cudaMemcpyHostToDevice,s->stream)!=cudaSuccess) return false;
+    tm=rec(s->evH2dEnd,s->stream,tm);
+    tm=rec(s->evKernelStart,s->stream,tm);
     msf_phash_kernel<<<static_cast<unsigned>(count),256,0,s->stream>>>(s->di,count,s->do_);
     if(cudaGetLastError()!=cudaSuccess) return false;
+    tm=rec(s->evKernelEnd,s->stream,tm);
+    tm=rec(s->evD2hStart,s->stream,tm);
     if(cudaMemcpyAsync(out,s->do_,outputBytes,cudaMemcpyDeviceToHost,s->stream)!=cudaSuccess) return false;
-    return cudaStreamSynchronize(s->stream)==cudaSuccess;
+    tm=rec(s->evD2hEnd,s->stream,tm);
+    const double hostEnqueued=hostNowMs();
+    const bool ok=cudaStreamSynchronize(s->stream)==cudaSuccess;
+    const double hostEnd=hostNowMs();
+    if(tm&&ok) collect_timing(s,hostStart,hostEnqueued,hostEnd);
+    return ok;
+}
+extern "C" void msf_cuda_backend_hash_timing(void* p,CudaBackendHashTiming* out){
+    if(!out) return;
+    *out=CudaBackendHashTiming{};
+    auto* s=static_cast<CudaBackendState*>(p);
+    if(!s||!s->lastTiming.measured) return;
+    out->measured=1;
+    out->h2dDeviceMs=s->lastTiming.h2dDeviceMs;
+    out->kernelDeviceMs=s->lastTiming.kernelDeviceMs;
+    out->d2hDeviceMs=s->lastTiming.d2hDeviceMs;
+    out->syncHostMs=s->lastTiming.syncHostMs;
+    out->hostTotalMs=s->lastTiming.hostTotalMs;
 }
