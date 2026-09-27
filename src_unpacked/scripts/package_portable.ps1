@@ -4,6 +4,12 @@ param(
   [string]$OutputDir = "portable-release"
 )
 $ErrorActionPreference = "Stop"
+# Read the version once and reuse it, so the archive name, portable.json and
+# this script can never disagree the way a hardcoded string would.
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$version = (Select-String -Path (Join-Path $repoRoot "CMakeLists.txt") -Pattern 'project\([^\)]*VERSION (\d+\.\d+\.\d+\.\d+)' |
+  Select-Object -First 1).Matches[0].Groups[1].Value
+if (-not $version) { throw "Could not read the version from CMakeLists.txt." }
 $exe = Join-Path $BuildDir "$Configuration\MediaSimilarityFinder.exe"
 if (-not (Test-Path $exe)) { throw "Executable not found: $exe" }
 Remove-Item $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -78,10 +84,21 @@ $smoke = Start-Process -FilePath (Join-Path $OutputDir "MediaSimilarityFinder.ex
 if ($smoke.ExitCode -ne 0) { throw "Portable smoke failed: $($smoke.ExitCode)" }
 @{
   product = "MediaSimilarityFinder"
-    version = "0.9.4.25"
+    version = $version
   mode = "portable"
   indexRoot = "Index"
 } | ConvertTo-Json | Set-Content (Join-Path $OutputDir "portable.json") -Encoding UTF8
-$zip = "MediaSimilarityFinder-v0.9.4.25-Portable-Windows-x64.zip"
-Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $zip -Force
-Write-Host "Portable package created: $zip"
+
+# The compiled backup lives in the repository-root backup/ folder, the same
+# place the source backup from scripts/backup_src.ps1 is written. Keeping both
+# kinds side by side in one folder is what makes "back up the build" a single
+# lookup. Build the zip in a temp path first so a failure cannot leave a
+# half-written archive sitting in backup/.
+$backupDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "backup"
+if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+$zip = "MediaSimilarityFinder-v$version-Portable-Windows-x64.zip"
+$zipPath = Join-Path $backupDir $zip
+$tmpZip = Join-Path $env:TEMP $zip
+Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $tmpZip -Force
+Move-Item -LiteralPath $tmpZip -Destination $zipPath -Force
+Write-Host "Portable package created: $zipPath"

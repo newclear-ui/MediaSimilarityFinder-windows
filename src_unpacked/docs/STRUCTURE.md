@@ -9,7 +9,8 @@
 - CMakeLists.txt — 빌드/테스트 정의, 버전(project(... VERSION ...))은 여기서 시작.
 - CMakePresets.json — x64 MSVC 프리셋.
 - scripts/ — build_windows_cpu.ps1(CPU 빌드), build_windows_gpu.ps1(GPU 빌드, 0.9.4.x 목표),
-  package_portable.ps1(포터블 패키징, 버전 문자열을 여기서도 상향),
+  package_portable.ps1(포터블 패키징 → 저장소 루트 backup/MediaSimilarityFinder-v<버전>-Portable-Windows-x64.zip,
+  exe/DLL/ffmpeg 수집 후 smoke 통과 확인, 개수 3개 회전),
   backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 3개 회전).
 - gui/ — Qt 위젯 앱. main.cpp(kVersion 포함), mainwindow.h/.cpp(한글 포함),
   video_decoder.h/.cpp.

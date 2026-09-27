@@ -10,14 +10,21 @@
    - `README.ko.md` / `README.en.md` 버전 목록도 양쪽 갱신
    - 상세 규칙은 `src_unpacked/AGENTS.md` 참조
 
-2. **소스 백업 zip — 세션/에이전트가 바뀌어도 항상 유지 (예외 없음)**
-   - 버전 변경 시점에 `src_unpacked/scripts/backup_src.ps1`을 반드시 실행해 zip 백업을 남긴다.
-     - `powershell -ExecutionPolicy Bypass -File scripts/backup_src.ps1` (cwd = `src_unpacked`)
-   - 파일명 `MediaSimilarityFinder-v<버전>-src.zip`, 위치는 저장소 루트 `backup/`.
-   - **내용물은 GitHub과 동일해야 한다.** zip은 `git archive`로만 만든다(워킹트리 복사 금지). 코드와 문서를 모두 포함한다.
-   - 실행 전 `HEAD == origin/main`, 미커밋 tracked 변경 없음을 스크립트가 검증하고 위반 시 중단한다.
-   - **회전: 백업은 최대 3개 보존.** 신규 zip 생성 시 가장 오래된 1개를 휴지통으로 보낸다. 3개 초과분은 다음 빌드에서 회전 대상.
-   - 생성 후 `git ls-tree` + `git hash-object`로 파일 목록과 내용의 byte 단위 일치를 검증해 보고한다.
+2. **소스/컴파일 백업 zip — 세션/에이전트가 바뀌어도 항상 유지 (예외 없음)**
+   - 버전 변경 시점에 **두 종류**의 zip 백업을 남긴다. 둘 다 저장소 루트 `backup/` 에 모은다.
+     1. **소스 백업** — `powershell -ExecutionPolicy Bypass -File scripts/backup_src.ps1` (cwd = `src_unpacked`)
+        - 파일명 `MediaSimilarityFinder-v<버전>-src.zip`
+     2. **컴파일(포터블) 백업** — `powershell -ExecutionPolicy Bypass -File scripts/package_portable.ps1` (cwd = `src_unpacked`)
+        - 파일명 `MediaSimilarityFinder-v<버전>-Portable-Windows-x64.zip`
+        - 스크립트가 exe/DLL/ffmpeg를 모아 smoke 테스트를 통과시킨 뒤 zip 으로 만든다.
+   - **소스 zip은 GitHub과 동일해야 한다.** `git archive`로만 만든다(워킹트리 복사 금지). 코드와 문서를 모두 포함한다.
+     - 실행 전 `HEAD == origin/main`, 미커밋 tracked 변경 없음을 스크립트가 검증하고 위반 시 중단한다.
+   - **포터블 zip은 빌드 산출물이다.** Git 대상이 아니며, smoke 테스트를 통과한 exe 를 담는다.
+   - **회전: 종류별로 최대 3개 보존.** `-src` 와 `-Portable` 는 서로 독립적으로 회전한다.
+     신규 zip 생성 시 초과분을 **휴지통으로 보낸다**(삭제 금지).
+   - 생성 후 소스 zip은 `git ls-tree` + `git hash-object`로 파일 목록과 내용의 byte 단위 일치를 검증해 보고한다.
+   - 포터블 zip은 `Expand` 후 엔트리 수와 exe 존재를 확인한다.
+   - **포터블 zip을 `src_unpacked/` 에 만들지 않는다.** 항상 `backup/` 으로 바로 쓴다(임시 파일 경유).
    - 상세 규칙과 근거는 `src_unpacked/AGENTS.md` 4번 항목 참조.
 
 3. **사용자 지시 폴더 `지시/` — 사용자가 직접 관리 (커밋 금지)**

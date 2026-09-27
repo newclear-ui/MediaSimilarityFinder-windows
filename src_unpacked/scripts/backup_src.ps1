@@ -41,14 +41,18 @@ Write-Host "Created $zipName from $head"
 
 # Rotate: keep the newest $Keep, recycle the rest. Sorting on name works because
 # the version segment is zero-padded and dotted, so lexical order is version order.
-$all = Get-ChildItem $backupDir -Filter "MediaSimilarityFinder-v*-src.zip" | Sort-Object Name
-if ($all.Count -gt $Keep) {
-  foreach ($old in $all[0..($all.Count - $Keep - 1)]) {
-    Add-Type -AssemblyName Microsoft.VisualBasic
-    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
-      $old.FullName, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
-      [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
-    Write-Host "Recycled $($old.Name)"
+# Each kind rotates independently, so a build with no portable package does not
+# push out a source backup and vice versa.
+foreach ($kind in @("-src.zip", "-Portable-Windows-x64.zip")) {
+  $all = @(Get-ChildItem $backupDir -Filter "MediaSimilarityFinder-v*$kind" | Sort-Object Name)
+  if ($all.Count -gt $Keep) {
+    foreach ($old in $all[0..($all.Count - $Keep - 1)]) {
+      Add-Type -AssemblyName Microsoft.VisualBasic
+      [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+        $old.FullName, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+        [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+      Write-Host "Recycled $($old.Name)"
+    }
   }
 }
 

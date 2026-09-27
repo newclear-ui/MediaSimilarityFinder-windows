@@ -12,7 +12,7 @@
 - Last completed v0.9.4.25 validation: `verify_parity_test` 25 checks (optimized path double-identical to the preserved pre-D9b reference); CPU 77/77, GPU 78/78; counters all unchanged vs 0.9.4.24 D9a
 - CPU-only validation: Release build PASS; **CTest 77/77 PASS**; CUDA disabled and CPU fallback verified
 - D9b scope note: **no optimization accepted.** `centerCropResize` 8→6 calls and aspect-buffer reuse only; verdict semantics, candidate semantics, thresholds, SSIM formula, crop semantics, DB/cache/schema all unchanged
-- Source backup zip: **3 kept, max 3, oldest recycled.** `backup/MediaSimilarityFinder-v<version>-src.zip`, built by `scripts/backup_src.ps1` with `git archive` only so the contents are byte-identical to GitHub. Current: `MediaSimilarityFinder-v0.9.4.25-src.zip` (0.95 MB, commit `cff1aae`, 514 files verified byte-identical). The rule is a session- and agent-independent long-term item in AGENTS.md (root item 2, `src_unpacked` item 4)
+- Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Source: `MediaSimilarityFinder-v0.9.4.25-src.zip` (0.96 MB, 529 files verified byte-identical to GitHub). Compiled: `MediaSimilarityFinder-v0.9.4.19-Portable-Windows-x64.zip` and `-v0.9.4.20-...` (42.54 MB each, 85 entries, exe present) relocated here from src_unpacked/. `package_portable.ps1` now writes portable zips straight to `backup/`; both kinds rotate independently at 3. Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
 
 ### D9b measured result — Candidate B NOT ACCEPTED
 
