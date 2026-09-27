@@ -677,6 +677,38 @@ Once source implementation begins, update:
   no buffer reuse). Caveat: this dataset uses synthetic deterministic
   fingerprints, so a real library's candidate ratio will differ.
 
+### 0.9.4.24 — QSettings Organization Name Change (PASS, identity only)
+- Not part of the D telemetry sequence; a narrow portable-UI-identity change.
+- The QSettings organization name **is** the settings folder name, so the old
+  value `newclear-ui` was a GitHub account name shipping in the product.
+  Renamed to `MediaSimilarityFinder-ui`; application name, executable, and
+  CMake target all unchanged. `setDefaultFormat`/`setPath` untouched.
+- Investigation first: there was exactly **one** active-code occurrence; the
+  other hits were repository-owner labels and historical build-history docs.
+  The QuickLook registry lookup uses `NativeFormat` with an explicit path, so
+  it is unrelated and was deliberately not touched.
+- A plain rename would make existing users' UI state look reset, so migration
+  is the substance of this work. It runs inside `initAppSettings()` right
+  after the identity is set, because `MainWindow` immediately reads
+  `ui/ignored`.
+- Deletion policy is strictly ordered: copy → open the new INI through a real
+  QSettings → assert `status() == NoError` → assert `ui/mainGeom` and
+  `ui/splitter` exist → **only then** remove the legacy INI, and remove the
+  legacy directory only if it is empty. On any failure the legacy file is
+  preserved, so no path can lose a user's settings. When the new location
+  already exists it wins and legacy is left untouched, which also makes the
+  migration idempotent.
+- Tests: 5 cross-process phases in `ui_settings_test` (plant / verify /
+  both-present / none), split across processes because a same-process
+  read-back would pass from QSettings' in-memory cache even with broken disk
+  persistence. The existing cross-process round-trip still passes under the
+  new identity.
+- Also validated for real: a temporary portable directory with the actual
+  `--smoke` run for cases A (new only), B (legacy only, 11 keys preserved and
+  legacy removed), and C (both present, new wins, legacy preserved).
+- Validation: CPU 76/76, GPU 77/77; `--version` 0.9.4.24 and `--smoke` PASS on
+  both. Engine 1.5.0 / DB 1.0.3 / cache v9 unchanged.
+
 ### D9b — Locked future-build comparison baseline and candidate priority
 
 After D9b, all related builds must **remember and compare against the 0.9.4.24 D9a baseline**.
@@ -758,35 +790,3 @@ A is not discarded; it is an **intentionally deferred candidate**.
 ```
 
 When recording a new build, include the **change relative to the 0.9.4.24 D9a baseline** whenever a valid comparison is possible.
-
-### 0.9.4.24 — QSettings Organization Name Change (PASS, identity only)
-- Not part of the D telemetry sequence; a narrow portable-UI-identity change.
-- The QSettings organization name **is** the settings folder name, so the old
-  value `newclear-ui` was a GitHub account name shipping in the product.
-  Renamed to `MediaSimilarityFinder-ui`; application name, executable, and
-  CMake target all unchanged. `setDefaultFormat`/`setPath` untouched.
-- Investigation first: there was exactly **one** active-code occurrence; the
-  other hits were repository-owner labels and historical build-history docs.
-  The QuickLook registry lookup uses `NativeFormat` with an explicit path, so
-  it is unrelated and was deliberately not touched.
-- A plain rename would make existing users' UI state look reset, so migration
-  is the substance of this work. It runs inside `initAppSettings()` right
-  after the identity is set, because `MainWindow` immediately reads
-  `ui/ignored`.
-- Deletion policy is strictly ordered: copy → open the new INI through a real
-  QSettings → assert `status() == NoError` → assert `ui/mainGeom` and
-  `ui/splitter` exist → **only then** remove the legacy INI, and remove the
-  legacy directory only if it is empty. On any failure the legacy file is
-  preserved, so no path can lose a user's settings. When the new location
-  already exists it wins and legacy is left untouched, which also makes the
-  migration idempotent.
-- Tests: 5 cross-process phases in `ui_settings_test` (plant / verify /
-  both-present / none), split across processes because a same-process
-  read-back would pass from QSettings' in-memory cache even with broken disk
-  persistence. The existing cross-process round-trip still passes under the
-  new identity.
-- Also validated for real: a temporary portable directory with the actual
-  `--smoke` run for cases A (new only), B (legacy only, 11 keys preserved and
-  legacy removed), and C (both present, new wins, legacy preserved).
-- Validation: CPU 76/76, GPU 77/77; `--version` 0.9.4.24 and `--smoke` PASS on
-  both. Engine 1.5.0 / DB 1.0.3 / cache v9 unchanged.
