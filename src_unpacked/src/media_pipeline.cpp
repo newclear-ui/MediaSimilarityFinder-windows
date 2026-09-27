@@ -48,13 +48,15 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
     });
     std::vector<std::uint8_t> packed; std::vector<std::size_t> map;
     if(bench) bench->beginImageBatch(paths.size());
-    const auto packT0 = std::chrono::steady_clock::now();
     for(std::size_t i=0;i<paths.size();++i){
         out[i].path=paths[i];
         if(!dec[i].ok) continue;
-        map.push_back(i); packed.insert(packed.end(),dec[i].img.pixels.begin(),dec[i].img.pixels.end());
+        map.push_back(i);
     }
     if(map.empty()){ if(bench) bench->endImageBatch(); return out; }
+    const auto packT0 = std::chrono::steady_clock::now();
+    for(const auto oi : map)
+        packed.insert(packed.end(),dec[oi].img.pixels.begin(),dec[oi].img.pixels.end());
     if(bench) bench->addImagePackMs(msSince(packT0));
     gpuBatchSize=std::max<std::size_t>(1,gpuBatchSize);
     const bool gpuReady = preferGpu && gpu_.available();
@@ -81,7 +83,9 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         parallelFor(n,[&](std::size_t k){
             const auto t0=std::chrono::steady_clock::now();
             const auto h=perceptual_hash_pair_32(block+k*1024);
-            if(!used){ hashes[k]=h.normal; hMs[base+k]=msSince(t0); if(bench) bench->addImageCpuHashMs(hMs[base+k]); }
+            const double cpuHashMs = msSince(t0);
+            if(!used){ hashes[k]=h.normal; hMs[base+k]=cpuHashMs; }
+            if(bench) bench->addImageCpuHashMs(cpuHashMs);
             mirrors[k]=h.mirrored;
         });
         for(std::size_t k=0;k<n;++k){ auto oi=map[base+k]; out[oi].fingerprint=hashes[k];
@@ -89,7 +93,6 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
             out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; usedF[base+k]=used?1:0; }
     }
     if(activity) activity->store(false,std::memory_order_relaxed);
-    if(bench) bench->endImageBatch();
     // Crop pass decodes a second, larger frame per image; parallelize it the
     // same way. Each task writes only its own output slot.
     parallelFor(map.size(), [&](std::size_t m){
@@ -103,6 +106,7 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         }
         if(bench) bench->addImage(dec[oi].bytes, dec[oi].decodeMs, hMs[m], msSince(t0), usedF[m]!=0, paths[oi]);
     });
+    if(bench) bench->endImageBatch();
     return out;
 }
 }
