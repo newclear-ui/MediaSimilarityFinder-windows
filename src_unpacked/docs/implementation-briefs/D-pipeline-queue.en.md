@@ -13,7 +13,7 @@ D = how allocated work actually flows through the pipeline
 
 This document is the detailed implementation contract for D. It does not claim that every target structure already exists in the current source. Work proceeds as **current-structure inspection → instrumentation → bottleneck evidence → limited change → regression validation**.
 
-The current D entry point is the completed Node C state at 0.9.4.13. The official preserved baseline 0.9.2.32 must not be modified.
+The current D entry point is the completed Node C state at 0.9.4.14. The official preserved baseline 0.9.2.32 must not be modified.
 
 ---
 
@@ -118,32 +118,36 @@ D1 must connect actual events to telemetry fields. Unmeasured fields remain `not
 
 ```
 D0 Design Review
- |
- v
-D1 Pipeline Observability
- |
- v
+  |
+  v
+D1a Image-Path Observability (synchronous boundaries, first)
+  |
+  v
+D1b Walker/Video Observability (async, next)
+  |
+  v
 D2 Barrier / Serialization Reduction
- |
- v
+  |
+  v
 D3 Queue Optimization
- |
- v
+  |
+  v
 D4 Transfer / Compute Overlap
- |
- v
+  |
+  v
 D5 Batching Optimization
- |
- v
+  |
+  v
 D6 Worker Starvation / Dependency Analysis
- |
- v
-D7 Scheduler Execution Binding
- |
- v
+  |
+  v
+D7 Scheduler Execution Binding (allocation-proportional dispatch;
+  the full version depends on D3 infrastructure — see D7)
+  |
+  v
 D8 End-to-End Validation
- |
- v
+  |
+  v
 D-Gate
 ```
 
@@ -184,60 +188,35 @@ Performance claims must use the same conditions as the D baseline.
 
 ---
 
-# D1 — Pipeline Observability
+# D1a — Image-Path Observability (first)
 
-## Purpose
+Do not pack D1 into a single gate: keep the project gate discipline
+(one gate = one verifiable unit, as in B1–B7 and C1–C4) inside D too.
 
-The first D implementation changes as little execution behavior as possible. Its purpose is to **make current bottlenecks observable**.
+D1a covers synchronous boundaries and is relatively easy. Instrument the
+existing `MediaPipeline::imageBatch()` boundaries (decode → pack → hash
+→ crop/thumbnail) as they are.
 
 ### Queue telemetry
 
-For each real queue or bounded work handoff, measure where practical:
+Centered on bounded image-path handoffs:
 
-- enqueue count
-- dequeue count
-- current depth
-- maximum depth
-- wait count
-- cumulative wait time
-- producer blocked time
-- consumer idle time
+- enqueue/dequeue count (per batch)
+- batch depth (in-flight batches)
+- wait count / cumulative wait time
 
-Do not encode an unmeasured queue as zero.
+### Worker telemetry (group-level aggregation first)
 
-### Worker telemetry
-
-At worker-group level initially, record:
-
-- active time
-- idle time
-- wait time
-- task count
-- completions
-- cancellation observation
-- failure/fallback count
-
-Per-thread telemetry is optional if its overhead is justified.
+- decode worker active/idle/wait
+- hash path (GPU vs CPU fallback) task count
+- crop/thumbnail task count
 
 ### Stage telemetry
 
-Use actual pipeline boundaries:
-
-```
-decode
-  ↓
-pack/transform
-  ↓
-hash
-  ↓
-crop/thumbnail
-  ↓
-persist
-  ↓
-candidate/match
-```
-
-Record start/end or cumulative duration.
+- decode / pack / hash / crop+thumbnail cumulative durations
+- GPU batch time (reuse existing `addGpuBatchMs`)
+- persist / candidate·match stages sit on the engine-scan side, so they
+  are observed together with D1b (outside imageBatch, outside D1a scope)
 
 ### Overlap telemetry
 
@@ -253,24 +232,56 @@ Crop                ──────
 
 D1 should retain enough interval or group-level evidence to identify overlap.
 
-### Transfer telemetry
+### D1a exit criteria
 
-For GPU paths, where supported:
-
-- transfer count
-- bytes
-- elapsed time
-- direction
-- batch association
-
-Do not report transfer time as zero merely because a CUDA transfer event has not yet been instrumented.
-
-### D1 exit criteria
-
-- current walker queue is observable
 - image decode/hash/crop boundaries are observable
-- video stage is observable
 - queue wait, worker wait, and stage duration can be distinguished
+- unmeasured and actual zero are distinct
+- search results remain unchanged
+
+---
+
+# D1b — Walker/Video Observability (next)
+
+The async region is harder than D1a. Do not force intra-decode open.
+
+### Walker queue
+
+For the real queue between the directory-walk producer and the scan
+consumer:
+
+- enqueue/dequeue count, current/maximum depth
+- producer blocked time, consumer idle time
+
+Do not interpret this queue as a CPU/GPU execution queue (§3.2 holds).
+
+### Video path
+
+`VideoDecoder::framesAt()` decodes linearly after a single seek, so no
+frame-level stage boundaries exist in code. Prioritize range level:
+
+- range total time (reuse existing `buildMs`)
+- decodedFrames / sampledFrames / keptFrames (reuse existing
+  `VideoBuildStats`)
+
+Defer intra-decode decomposition: forcing it here would pull E (Adaptive
+Video Decode Planner) work into D ahead of order.
+
+### Transfer observability (shared D1a/D1b note)
+
+Wrapping `hashBatch()` calls host-side inevitably bundles
+"transfer + kernel execution" (self-admitted in the B5 build-history:
+the kernel was never opened). `cuda_backend.cu` has no `cudaEvent_t`
+internal timers, so measured elapsed transfer time needs **internal
+timing points under the backend abstraction**. Apply the "implemented
+under the backend abstraction" condition from D4 to the D1
+observability clause as well. Without internal hooks, transfer time
+stays `not_measured`, never zero.
+
+### D1b exit criteria
+
+- walker queue is observable
+- video range level is observable
 - unmeasured and actual zero are distinct
 - search results remain unchanged
 
@@ -479,11 +490,18 @@ Simply adding workers is not the default D solution.
 
 ---
 
-# D7 — Scheduler Execution Binding
+# D7 — Scheduler Execution Binding (allocation-proportional dispatch)
 
 ## Purpose
 
 Safely map B's abstract allocation into pipeline execution.
+
+**Boundary with B7 (important):** fresh-read binding of decisions is
+already closed by B7 (0.9.4.8, `schedUseGpuNow`). Redoing it here would
+repeat completed work. D7 has exactly one remaining job: **executing
+real work split by the shares ratio.** Today only the binary `gpuUsed`
+is passed, so a 70/30 split never reaches execution (recorded in
+telemetry only — verified against code).
 
 Preferred:
 
@@ -509,6 +527,17 @@ Scheduler -> 3 GPU workers
 ```
 
 The Scheduler should not need to know the worker topology.
+
+### D3 dependency (loose coupling)
+
+The full version (mid-batch re-adjustment, backpressure, cancellation
+responsiveness) needs D3 queue infrastructure. But a thin version is
+possible without D3: when building today's `for(k=from;k<to;++k)`
+batches, statically split leading indices to the GPU path and trailing
+ones to the CPU path by gpuShare (no re-adjustment). So D3 is not a hard
+predecessor of D7 — "crude without D3, proper with D3". Documenting the
+order anyway pins the full version's precondition on D3 and blocks
+later improvisation ("let's do a thin D7 before D3").
 
 Rules:
 
@@ -568,7 +597,12 @@ Validate:
 - crop/mirror parity
 - incremental-scan parity
 
-Comparisons must use the same dataset, DB/cache state, build configuration, Resource Mode, backend/driver, background load, and storage condition.
+Comparisons must use the same dataset (record a dataset fingerprint in the
+benchmark JSON as comparison evidence; the standard dataset itself is
+defined at D0/D8 — the current `test_sample_img_vid/` root placeholder is
+empty and needs fixtures before it can serve as an asset), DB/cache state,
+build configuration, Resource Mode, backend/driver, background load, and
+storage condition.
 
 Single-run claims are insufficient; repetitions and variation must be recorded.
 
@@ -685,6 +719,20 @@ D must not:
 ## 8. Test Strategy
 
 D tests prioritize structural contracts and state transitions over absolute performance values on one machine.
+
+### Pre-register
+
+Record the following before changing code in each D stage. Objectivity
+comes from pre-committed numbers, not post-hoc "less effective than
+hoped":
+
+- measured bottleneck (cite D1 evidence)
+- expected gain (numeric range)
+- rollback criteria (revert below this)
+
+Place 1–2 lines of "expected gain / rollback criteria" directly under
+the "Why the change was needed" item in `docs/build-history/<version>.en.md`.
+This executes the D2 exit rule ("do not keep changes without benefit").
 
 ### Unit tests
 
@@ -840,9 +888,13 @@ Implementation Brief defines the D contract. Build History records what actually
 ```
 D0 baseline freeze
    ↓
-D1 observability
+D1a image observability
    ↓
-D1 regression
+D1a regression
+   ↓
+D1b walker/video observability
+   ↓
+D1b regression
    ↓
 D2 barrier reduction
    ↓
@@ -873,6 +925,6 @@ D8 end-to-end validation
 D-Gate
 ```
 
-**Do not begin large D2–D6 topology changes before D1 observability is established.**
+**Do not begin large D2–D6 topology changes before D1a/D1b observability is established.**
 
 The current source already contains a walker queue, bounded asynchronous decode/video processing, and GPU batching. Therefore the first D implementation should not invent a new execution architecture; it should first **measure the execution architecture that already exists**.

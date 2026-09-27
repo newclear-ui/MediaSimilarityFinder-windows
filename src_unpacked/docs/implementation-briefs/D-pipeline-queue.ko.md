@@ -13,7 +13,7 @@ D = 배분된 작업을 실제 pipeline에서 어떻게 흘려보낼 것인가
 
 이 문서는 D의 상세 구현 계약이다. 문서에 적힌 구조가 모두 현재 코드에 이미 구현되어 있다는 의미가 아니다. **현재 구조 → 계측 → 병목 확인 → 제한된 변경 → 회귀검증** 순서로 진행한다.
 
-현재 저장소의 D 진입 기준은 0.9.4.13 / Node C 완료 상태다. 공식 보존 기준선 0.9.2.32는 변경하지 않는다.
+현재 저장소의 D 진입 기준은 0.9.4.14 / Node C 완료 상태다. 공식 보존 기준선 0.9.2.32는 변경하지 않는다.
 
 ---
 
@@ -120,32 +120,36 @@ D는 다음 순서로 진행한다.
 
 ```
 D0 Design Review
- |
- v
-D1 Pipeline Observability
- |
- v
+  |
+  v
+D1a Image-Path Observability (동기 경계, 먼저)
+  |
+  v
+D1b Walker/Video Observability (async, 다음)
+  |
+  v
 D2 Barrier / Serialization Reduction
- |
- v
+  |
+  v
 D3 Queue Optimization
- |
- v
+  |
+  v
 D4 Transfer / Compute Overlap
- |
- v
+  |
+  v
 D5 Batching Optimization
- |
- v
+  |
+  v
 D6 Worker Starvation / Dependency Analysis
- |
- v
-D7 Scheduler Execution Binding
- |
- v
+  |
+  v
+D7 Scheduler Execution Binding (allocation-proportional dispatch;
+  정식 버전은 D3 인프라에 의존 — D7절 참조)
+  |
+  v
 D8 End-to-End Validation
- |
- v
+  |
+  v
 D-Gate
 ```
 
@@ -188,62 +192,35 @@ D에서 성능이 개선되었다고 주장하려면 D 이전 baseline과 동일
 
 ---
 
-# D1 — Pipeline Observability
+# D1a — Image-Path Observability (먼저)
 
-## 목적
+D1은 한 게이트에 몰아넣지 않고 둘로 나눈다. 프로젝트의 게이트 규율
+(B1~B7, C1~C4: 한 게이트 = 검증 가능한 작은 단위)을 D에서도 유지한다.
 
-첫 D 구현은 성능을 바꾸는 것이 아니라 **현재 병목을 관측 가능하게 만드는 것**이다.
+D1a는 동기 경계라 상대적으로 쉽다. `MediaPipeline::imageBatch()`의
+기존 경계(decode → pack → hash → crop/thumbnail)를 그대로 계측한다.
 
-### 1) Queue telemetry
+### Queue telemetry
 
-각 실제 queue 또는 bounded work handoff에 대해 가능하면 다음을 기록한다.
+이미지 경로의 bounded handoff 중심으로 다음을 기록한다.
+- enqueue/dequeue count (batch 단위)
+- batch depth (진행 중 batch 수)
+- wait count / cumulative wait time
 
-- enqueue count
-- dequeue count
-- current depth
-- maximum depth
-- wait count
-- cumulative wait time
-- producer blocked time
-- consumer idle time
+### Worker telemetry (group 단위 집계 우선)
 
-측정 대상이 아닌 queue는 값을 임의로 0으로 만들지 않는다.
+- decode worker active/idle/wait
+- hash path (GPU vs CPU fallback) task count
+- crop/thumbnail task count
 
-### 2) Worker telemetry
+### Stage telemetry
 
-각 worker class에 대해:
+- decode / pack / hash / crop+thumbnail 누적 duration
+- GPU batch time (기존 `addGpuBatchMs` 재사용)
+- persist / candidate·match 단계는 엔진 스캔 측 경계라 D1b에서 함께
+  관측한다 (imageBatch 밖이므로 D1a 범위 밖)
 
-- active time
-- idle time
-- wait time
-- task count
-- task completion
-- cancellation observation
-- failure/fallback count
-
-정확한 thread별 telemetry가 비용이 크다면 worker group 단위 집계부터 시작한다.
-
-### 3) Stage telemetry
-
-현재 pipeline stage 경계를 기준으로:
-
-```
-decode
-  ↓
-pack/transform
-  ↓
-hash
-  ↓
-crop/thumbnail
-  ↓
-persist
-  ↓
-candidate/match
-```
-
-각 stage에 대해 start/end 또는 누적 duration을 기록한다.
-
-### 4) Overlap telemetry
+### Overlap telemetry
 
 단순히 stage duration을 더하는 것과 실제 wall time은 다르다.
 
@@ -257,26 +234,53 @@ Crop                ──────
 
 겹치는 구간을 식별할 수 있도록 stage activity interval 또는 group-level overlap evidence를 기록한다.
 
-### 5) Transfer telemetry
+### D1a 종료 조건
 
-가능한 GPU 경로에서:
-
-- transfer count
-- bytes
-- elapsed time
-- direction
-- batch association
-
-을 기록한다.
-
-실제 CUDA transfer event가 없는 상태에서 “전송 시간이 0”이라고 기록하지 않는다.
-
-### D1 종료 조건
-
-- 현재 walker queue가 관측 가능
 - image decode/hash/crop 경계가 관측 가능
-- video stage가 관측 가능
 - queue wait / worker wait / stage duration을 구분 가능
+- 미측정 상태와 실제 0을 구분
+- 기존 검색 결과 불변
+
+---
+
+# D1b — Walker/Video Observability (다음)
+
+async 영역이라 D1a보다 어렵다. 무리하게 intra-decode를 열지 않는다.
+
+### Walker queue
+
+directory-walk producer와 scan consumer 사이의 실제 queue에 대해:
+
+- enqueue/dequeue count, current/maximum depth
+- producer blocked time, consumer idle time
+
+이 queue를 CPU/GPU execution queue로 해석하지 않는다 (§3.2 유지).
+
+### Video 경로
+
+`VideoDecoder::framesAt()`는 seek 1회 후 선형 디코드라 프레임 단위
+stage 경계가 코드에 없다. 따라서 range 수준을 우선한다:
+
+- range 총 소요시간 (기존 `buildMs` 재사용)
+- decodedFrames / sampledFrames / keptFrames (기존 `VideoBuildStats` 재사용)
+
+intra-decode stage 분해는 후순위로 미룬다. 여기서 무리하면 E(Adaptive
+Video Decode Planner)의 작업을 D가 선행 침범하게 된다.
+
+### Transfer 관측 (D1a/D1b 공통 주의)
+
+host-side에서 `hashBatch()` 호출을 감싸 재면 "전송+커널 실행"이 뭉쳐서
+나온다 (B5 build-history 자인: 커널 내부를 뜯지 않았음).
+`cuda_backend.cu`에 `cudaEvent_t` 기반 내부 타이머가 전혀 없으므로,
+elapsed transfer time의 실측은 **backend abstraction 아래의 내부
+timing point**가 필요하다. D4에만 있던 "backend abstraction 아래에서
+구현" 조건을 D1 관측 절에도 동일하게 적용한다. 내부 후크가 없으면
+transfer time은 `not_measured`로 남기고 0을 기록하지 않는다.
+
+### D1b 종료 조건
+
+- walker queue가 관측 가능
+- video range 수준이 관측 가능
 - 미측정 상태와 실제 0을 구분
 - 기존 검색 결과 불변
 
@@ -512,11 +516,44 @@ CPU result 대기
 
 ---
 
-# D7 — Scheduler Execution Binding
+# D7 — Scheduler Execution Binding (allocation-proportional dispatch)
 
 ## 목적
 
 B Scheduler의 추상 allocation을 실제 pipeline 실행으로 안전하게 연결한다.
+
+**B7과의 경계 (중요):** decision의 fresh read 바인딩은 B7 (0.9.4.8,
+`schedUseGpuNow`)에서 이미 닫혔다. D7이 같은 일을 다시 하면 재수행이
+된다. D7의 남은 일은 딱 하나다: **shares 비율대로 실제 작업을 쪼개
+집행하는 것.** 오늘은 `gpuUsed` 이진값만 전달되어 70/30 같은 배분이
+실행에 반영되지 않는다 (telemetry에만 기록됨 — 코드 대조 확인됨).
+
+예:
+
+```
+Scheduler
+    |
+    v
+CPU share / GPU share
+    |
+    v
+Pipeline policy
+    |
+    +--> CPU work (share만큼)
+    |
+    +--> GPU work (share만큼)
+```
+
+### D3 의존성 (느슨한 결합)
+
+제대로 된 버전(배치 도중 재조정, backpressure, 취소 반응성)은 D3의
+큐 인프라가 필요하다. 그러나 최소 버전은 D3 없이 가능하다: 지금의
+`for(k=from;k<to;++k)` 배치 생성 시 gpuShare 비율만큼 앞쪽 인덱스는
+GPU 경로, 뒤쪽은 CPU 경로로 나누는 정적 분할 (재조정 없음).
+따라서 "D3가 D7의 필수 선행"이 아니라 "D3 없이 조잡한 버전, D3
+있으면 제대로 된 버전"이다. 순서를 문서화하는 이유: 나중에 "D7을
+D3보다 먼저 얇게 하자"는 임기응변을 막기 위해, 정식 버전의 선행조건이
+D3임을 여기에 못박는다.
 
 예:
 
@@ -603,7 +640,10 @@ D는 B의 share 계산식을 변경하지 않는다.
 
 동일한:
 
-- dataset
+- dataset (+ dataset fingerprint를 benchmark JSON에 기록 — 같은 조건
+  비교의 증거. 표준 dataset 자체는 D0/D8에서 정의하며, 현재 루트의
+  `test_sample_img_vid/`는 빈 플레이스홀더라 자산으로 쓰려면
+  픽스처부터 채워야 한다)
 - DB/cache 상태
 - build configuration
 - Resource Mode
@@ -732,6 +772,19 @@ D는 hardware decoder 구현을 선행하지 않는다.
 # 8. 테스트 전략
 
 D 테스트는 특정 PC의 절대 성능값보다 **구조적 계약과 상태 전이**를 우선한다.
+
+### 사전 등록 (pre-register)
+
+각 D 단계의 코드 변경 전에 다음을 먼저 기록한다. 사후 "효과가
+없네요"가 아니라 사전 숫자로 객관성을 확보한다.
+
+- 측정된 병목 (D1 증거 인용)
+- 예상 이득 (수치 범위)
+- 롤백 기준 (이 수치에 못 미치면 revert)
+
+`docs/build-history/<version>.ko.md`의 "변경 필요성" 항목 바로 아래에
+"예상 이득 / 롤백 기준" 1~2줄을 둔다. D2 종료조건의 "효과 없는 변경은
+유지하지 않는다"를 실행하는 방식이다.
 
 ### 단위 테스트
 
@@ -889,9 +942,13 @@ Build History는 실제 변경만 기록하고, 이 Implementation Brief는 D의
 ```
 D0 baseline freeze
    ↓
-D1 observability
+D1a image observability
    ↓
-D1 regression
+D1a regression
+   ↓
+D1b walker/video observability
+   ↓
+D1b regression
    ↓
 D2 barrier reduction
    ↓
@@ -922,6 +979,6 @@ D8 end-to-end validation
 D-Gate
 ```
 
-특히 **D1 관측성이 확보되기 전에는 D2~D6의 대규모 구조 변경을 시작하지 않는다.**
+특히 **D1a/D1b 관측성이 확보되기 전에는 D2~D6의 대규모 구조 변경을 시작하지 않는다.**
 
 현재 코드에는 이미 walker queue, bounded async decode/video processing, GPU batch가 있으므로 D의 첫 구현은 새로운 실행 구조를 만드는 것이 아니라 **현재 실행 구조를 정확히 측정하는 것**이 우선이다.
