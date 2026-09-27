@@ -151,6 +151,12 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_dataset_e2e_test tests/dataset_e2e_test.cpp)
     target_link_libraries(msf_dataset_e2e_test PRIVATE msf_core)
     add_test(NAME dataset_e2e_test COMMAND msf_dataset_e2e_test)
+    # D8b review probe: repeated standard-dataset runs, reporting
+    # distributions. Not a CTest case -- it is decision input, and it takes
+    # a root/app-dir plus a run count. Fails loudly if the dataset is not
+    # measured, so a decision can never rest on a missing input.
+    add_executable(msf_dataset_baseline tests/dataset_baseline.cpp)
+    target_link_libraries(msf_dataset_baseline PRIVATE msf_core)
     # D4a: backend-internal timing contract. Registered in both trees on
     # purpose — the recorder half must be proven where CUDA does not exist.
     add_executable(msf_gpu_timing_test tests/gpu_timing_test.cpp)
