@@ -118,6 +118,11 @@ public:
   void addPersistenceMs(double ms);
   void addImage(std::uint64_t bytes, double decodeMs, double hashMs, double cropMs, bool usedGpu, const std::string& path);
   void addGpuBatchMs(double ms);
+  // Node D1a image batch boundary observability.
+  void beginImageBatch(std::size_t items);
+  void endImageBatch();
+  void addImagePackMs(double ms);
+  void addImageCpuHashMs(double ms);
   // Node A image GPU sub-stages (structure only until queue/transfer split lands).
   void addImageGpuQueueMs(double ms);
   void addImageTransferMs(double ms);
@@ -161,7 +166,8 @@ private:
   bool candidateIndexRecorded_ = false, similarityRecorded_ = false, persistenceRecorded_ = false;
   std::atomic<std::uint64_t> imgCount_{0}, imgBytes_{0}, imgGpu_{0};
   std::atomic<long long> imgDecodeNs_{0}, imgHashNs_{0}, imgCropNs_{0}, imgGpuNs_{0};
-  std::atomic<long long> imgQueueWaitNs_{0}, imgTransferNs_{0}, imgExecNs_{0};
+  std::atomic<long long> imgQueueWaitNs_{0}, imgTransferNs_{0}, imgExecNs_{0}, imgPackNs_{0}, imgCpuHashNs_{0};
+  std::atomic<std::uint64_t> imgBatchCount_{0}, imgBatchItems_{0}, imgBatchMaxDepth_{0};
   bool imgDecodeRecorded_ = false, imgHashRecorded_ = false, imgCropRecorded_ = false, imgGpuRecorded_ = false;
   bool imgQueueWaitRecorded_ = false, imgTransferRecorded_ = false, imgExecRecorded_ = false;
   std::atomic<std::uint64_t> vidCount_{0}, vidBytes_{0}, vidFrames_{0};
