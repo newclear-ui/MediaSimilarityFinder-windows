@@ -7,6 +7,7 @@
 #include "media_pipeline.h"
 #include "video_fingerprint.h"
 #include "monitor.h"
+#include "walker_queue.h"
 #include "similarity.h"
 #include <filesystem>
 #include <unordered_map>
@@ -14,10 +15,8 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
-#include <condition_variable>
 #include <ctime>
 #include <mutex>
-#include <queue>
 #include <thread>
 #include <future>
 namespace msf {
@@ -449,10 +448,13 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  };
  const bool liveMatch = control && (bool)control->onMatch;
  std::vector<FileState> changedVideos;
- std::vector<std::string> imageBatch; imageBatch.reserve(gpuBatch);
- std::size_t videoBase=0;
- std::mutex queueMutex; std::condition_variable queueCv;
- std::queue<FileState> queue; std::atomic_bool walkDone{false};
+  std::vector<std::string> imageBatch; imageBatch.reserve(gpuBatch);
+  std::size_t videoBase=0;
+  // D3-Minimal: bounded walker queue (test override or production default).
+  WalkerQueue queue(control && control->walkerQueueCapacity ? control->walkerQueueCapacity
+                                                            : WalkerQueue::kDefaultCapacity);
+  bench_.setWalkerCapacity(queue.capacity());
+  std::atomic_bool walkDone{false};
  bool failed=false, cancelled=false, walkCompleted=false;
  std::size_t lastCommitDone=0, lastCommitScanned=0;
  // Checkpoints persist completed work so interruption (cancel/crash) never
@@ -600,19 +602,27 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    cb.onProgress=[control](std::size_t n){ if(control->listing) control->listing(n); };
    cb.cancel=&control->cancel; cb.pause=&control->pause;
   }
-   cb.onFile=[&](FileState&& f){ {std::lock_guard<std::mutex> g(queueMutex); queue.push(std::move(f)); bench_.recordWalkerEnqueue(queue.size());} queueCv.notify_one(); };
-  s.scan_stream(root, excl, cb);
-  walkDone.store(true); queueCv.notify_all();
- });
+   cb.onFile=[&](FileState&& f){
+    // D3-Minimal: bounded push with cancel-aware backpressure. A dropped
+    // file (cancel/shutdown) was never analyzed, so the next scan sees it
+    // as new — identical to an unwalked file on cancel.
+    bool waited=false;
+    const auto pr=queue.push(std::move(f), control?&control->cancel:nullptr, &waited);
+    if(waited) bench_.noteWalkerBlocked();
+    if(pr==WalkerQueue::PushResult::Pushed) bench_.recordWalkerEnqueue(queue.size());
+   };
+   s.scan_stream(root, excl, cb);
+   walkDone.store(true); queue.shutdown();
+  });
   while(!failed && !cancelled){
    FileState x; bool have=false;
-   { std::unique_lock<std::mutex> g(queueMutex);
+   {
     // D1b: a 50 ms timeout with an empty queue while the walker is alive is
     // a genuine consumer-idle poll (starved tick). Spurious wakeups and the
     // drained exit are not counted.
-    const bool woke = queueCv.wait_for(g,std::chrono::milliseconds(50),[&]{return !queue.empty()||walkDone.load();});
-    if(!queue.empty()){ x=std::move(queue.front()); queue.pop(); bench_.recordWalkerDequeue(queue.size()); have=true; }
-    else if(!woke && !walkDone.load()) bench_.noteWalkerStarved(); }
+    const bool dataReady = queue.waitForData(50);
+    if(queue.tryPop(x)){ bench_.recordWalkerDequeue(queue.size()); have=true; }
+    else if(!dataReady && !walkDone.load()) bench_.noteWalkerStarved(); }
    if(have) processOne(std::move(x));
   if(stopped(control)) cancelled=true;
   else if(walkDone.load() && queue.empty()){ if(!benchWalkTimed){ benchWalkTimed=true; bench_.addWalkMs(benchMsSince()); } walkCompleted=true; break; }
@@ -625,7 +635,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(!processVideoRange(videoBase,videoBase+n)) failed=true; else videoBase+=n;
    bench_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
   }
- walker.join();
+  // D3-Minimal: wake any producer blocked at this point on every exit
+  // path (failed/cancelled/normal). Idempotent; join cannot hang on it.
+  queue.shutdown();
+  walker.join();
   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.completed=false; return finishScan(false); }
  // Deleted detection needs the complete seen set: only on fully walked scans.
  // Previously indexed files that no longer exist are removed then. Ignored rows

@@ -51,6 +51,9 @@ struct ScanControl {
   // Kind selection: set false to skip images or videos entirely (GUI option).
   bool scanImages=true, scanVideos=true;
   bool benchmarkEnabled=true;
+  // Walker-queue capacity override for tests (0 = production default).
+  // Lets regression tests force the bounded path with small file sets.
+  std::size_t walkerQueueCapacity=0;
   double revalidateMs=0;
   std::string buildVersion;
 };

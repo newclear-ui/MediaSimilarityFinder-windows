@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.18 |
+| Reference code | 0.9.4.19 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — Pipeline / Queue (D2 barrier review done → next D3) |
-| Current phase | Node D in progress → D3 per D brief (queue work needs D1b depth evidence) |
-| Current version | 0.9.4.18 |
+| Current node | D — Pipeline / Queue (D3-Minimal PASS → Full D3 deferred) |
+| Current phase | Node D in progress → Full D3 only on measured imbalance; representative scan evidence still open (D8 dataset work) |
+| Current version | 0.9.4.19 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -491,3 +491,10 @@ Once source implementation begins, update:
 - Non-candidates documented with dependency reasons: image phase joins, walker poll, DB single-writer, final matching boundary.
 - Schema v5 (new-key rule). No topology change.
 - Validation: CPU 66/66, GPU 67/67 (parity proves order-independence); `--version`/`--smoke` on both. Next: D3 (queues on D1b depth evidence).
+
+### D3-Minimal — Bounded Walker Queue (→ 0.9.4.19, PASS)
+- `WalkerQueue` (~90 lines): capacity + cancel-aware backpressure only. Pause stays scanner-side; waits re-check on a 100 ms bound. Capacity 4096 as safety bound (never optimal claim).
+- Engine: bounded push with cancel drop semantics, pop notify, single `shutdown()` before join (all exits). `ScanControl::walkerQueueCapacity` test override (0 = default).
+- Telemetry: `walker.capacity` (config) + `walker.blockedTicks` (waits while full). Schema v6.
+- Validation: CPU 67/67, GPU 68/68 (unit: capacity/FIFO/block-resume/cancel/shutdown; 60-file cap-16 integration with bound + 1770-pair parity; pause-toggled parity); `--version`/`--smoke` on both.
+- Pre-register outcome: no throughput regression observed; memory bound holds by construction; rollback triggers untouched. Full D3 stays deferred (no measured imbalance).

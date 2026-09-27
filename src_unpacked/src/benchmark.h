@@ -103,7 +103,8 @@ public:
   // batchItems, batchMaxDepth, batchState).
   // v4: D1b walker-queue and video-range keys.
   // v5: D2 per-range slowest-file key (maxRangeFileMs).
-  static constexpr int kBenchmarkSchemaVersion = 5;
+  // v6: D3-Minimal walker capacity + blocked ticks.
+  static constexpr int kBenchmarkSchemaVersion = 6;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);
@@ -137,6 +138,10 @@ public:
   void recordWalkerEnqueue(std::size_t depthAfterPush);
   void recordWalkerDequeue(std::size_t depthAfterPop);
   void noteWalkerStarved();
+  // D3-Minimal: capacity is config (like sampleMs), blockedTicks counts
+  // producer waits entered while full (100 ms units, roughly).
+  void setWalkerCapacity(std::size_t capacity);
+  void noteWalkerBlocked();
   // D1b range count/files; D2 adds the slowest file in the range so join
   // waste (rangeWall - maxFile) is quantifiable from JSON alone.
   void recordVideoRange(std::size_t files, double maxFileMs);
@@ -198,6 +203,7 @@ private:
   // polls while the walker is alive as starved ticks.
   std::atomic<std::uint64_t> walkQueued_{0}, walkDequeued_{0}, walkMaxDepth_{0};
   std::atomic<std::uint64_t> walkStarved_{0};
+  std::atomic<std::uint64_t> walkCapacity_{0}, walkBlocked_{0};
   std::atomic<double> vidPlaySec_{0};
   mutable std::mutex slowMutex_;
   std::vector<SlowFile> slowImages_, slowVideos_;

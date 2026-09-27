@@ -62,6 +62,10 @@ public slots:
   void run(); void pause(); void resume(); void cancel();
   void setIgnored(const QSet<QString>& s);
   void setBenchmark(bool b) { benchmark_ = b; }
+  // D3-Minimal test hook: walker-queue capacity override (0 = production
+  // default). Lets regression tests force the bounded path with small file
+  // sets. Never set by production UI code.
+  void setWalkerQueueCapacity(std::size_t n) { walkerCapOverride_ = n; }
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
   const msf::MediaSearchEngine& scanEngine() const { return engine_; }
   qulonglong gpuDone() const { return gpuDone_.load(); }
@@ -98,6 +102,7 @@ private:
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction
   bool benchmark_=true;
+  std::size_t walkerCapOverride_=0; // see setWalkerQueueCapacity
 };
 
 // A duplicate group built incrementally from streamed matches.

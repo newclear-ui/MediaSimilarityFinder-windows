@@ -148,3 +148,4 @@ Previous implementation/design snapshots are preserved under `../architecture/le
 - v0.9.4.16 — D1a gate: schema v3 restoration, version-string completion, full-suite validation
 - v0.9.4.17 — D1b gate: walker-queue and video-range observability, schema v4
 - v0.9.4.18 — D2 barrier review: video completion-order join, maxRangeFileMs, schema v5
+- v0.9.4.19 — D3-Minimal: bounded walker queue, backpressure, cancel/pause safety, schema v6

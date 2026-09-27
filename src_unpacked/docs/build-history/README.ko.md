@@ -148,3 +148,4 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 - v0.9.4.16 — D1a 게이트: schema v3 복구, 버전 문자열 완성, 전체 스위트 검증
 - v0.9.4.17 — D1b 게이트: walker queue·video range 관측, schema v4
 - v0.9.4.18 — D2 barrier 검토: video completion-order join, maxRangeFileMs, schema v5
+- v0.9.4.19 — D3-Minimal: bounded walker queue, backpressure, 취소/일시정지 안전, schema v6

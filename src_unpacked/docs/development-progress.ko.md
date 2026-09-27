@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.18 |
+| 기준 코드 | 0.9.4.19 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | D — Pipeline / Queue (D2 barrier 검토 완료 → 다음 D3) |
-| 현재 단계 | Node D 진행 중 → D3는 D brief 기준 (D1b depth 증거 기반 queue 작업) |
-| 현재 버전 | 0.9.4.18 |
+| 현재 노드 | D — Pipeline / Queue (D3-Minimal 통과 → Full D3 보류) |
+| 현재 단계 | Node D 진행 중 → Full D3는 실측 imbalance 확인 후, 대표 스캔 증거는 미결 (D8 dataset 과제) |
+| 현재 버전 | 0.9.4.19 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -484,3 +484,18 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
 - schema v5 (신규 키 규칙). topology 변경 없음.
 - 검증: CPU 66/66, GPU 67/67 (parity가 순서 무관 입증),
   양쪽 `--version`/`--smoke`. 다음 D3 (D1b depth 증거 기반 queue).
+
+### D3-Minimal — Bounded Walker Queue (→ 0.9.4.19, 통과)
+- `WalkerQueue` (~90줄): capacity + cancel-aware backpressure 전용.
+  pause는 scanner 측 유지, 대기는 100ms bound 재확인.
+  capacity 4096은 안전 bound (최적 주장 금지).
+- 엔진: bounded push + cancel drop 의미, pop notify, join 전 단일
+  `shutdown()` (모든 exit 통과). `ScanControl::walkerQueueCapacity`
+  테스트 오버라이드 (0 = 기본값).
+- telemetry: `walker.capacity` (설정값) + `walker.blockedTicks`
+  (full 대기 진입). schema v6.
+- 검증: CPU 67/67, GPU 68/68 (unit: capacity/FIFO/block-resume/
+  cancel/shutdown, 60파일 cap-16 통합 bound + 1770쌍 parity,
+  pause 토글 parity), 양쪽 `--version`/`--smoke`.
+- Pre-register 결과: throughput 회귀 없음, 메모리 상한은 구조적 보장,
+  롤백 트리거 미발동. Full D3 계속 보류 (실측 imbalance 없음).
