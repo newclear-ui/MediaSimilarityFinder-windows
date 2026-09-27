@@ -44,7 +44,7 @@ MediaSimilarityFinder는 CPU와 GPU를 함께 활용하는 프로그램이며, G
 - 0.9.1.x: CPU 베이스라인
 - 0.9.2.x: GPU 및 고급 검색 개발
 - 0.9.3.x: 벤치마크·패키징·정확도 후속
-- 0.9.4.x: Node A 기반/계측 (현재 개발선)
+- 0.9.4.x: Node A → B → C → D → I 분석/계측까지의 현재 개발선
 - 1.0.0: CPU + GPU 완성 목표
 
 빌드 기록은 docs/build-history/에 한글/영문으로 관리(CTest GPU 77개 / CPU 76개). 아키텍처 문서는 docs/architecture/ 참조.

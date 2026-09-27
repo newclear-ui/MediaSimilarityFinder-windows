@@ -44,7 +44,7 @@ See [CPU/GPU Adaptive Resource Scheduling](docs/architecture/resource-scheduling
 - 0.9.1.x: CPU baseline
 - 0.9.2.x: GPU and advanced search development
 - 0.9.3.x: benchmark, packaging, and accuracy follow-ups
-- 0.9.4.x: Node A foundation/instrumentation (current development line)
+- 0.9.4.x: current development line covering Node A → B → C → D → I analysis/measurement
 - 1.0.0: CPU + GPU complete target
 
 Build history is maintained under docs/build-history/ in Korean and English (77 GPU / 76 CPU CTest tests). Architecture documents are under docs/architecture/.

@@ -1,5 +1,19 @@
 # Development Roadmap — 0.9.4 Development Line
 
+## Document Naming and Structure Rules
+
+The canonical naming/location and role-separation rules are defined in `docs/document-naming.ko.md` / `.en.md`.
+
+Key rules:
+- `development-roadmap.ko/.en.md` and `development-progress.ko/.en.md` keep fixed names.
+- Implementation Brief uses `<Node>-<topic>.ko.md` + `.en.md`.
+- Build History uses `<version>.ko.md` + `.en.md` and is not renamed.
+- Work Log uses `docs/worklog/<development-line>.ko.md` + `.en.md` as one cumulative file per development line; do not encode version ranges in the filename.
+- Architecture documents are topic-based; a version suffix is allowed only for explicit historical/audit snapshots.
+- New/moved documents must update the KO/EN pair, internal links, `STRUCTURE.md`, and `llms.txt` together.
+
+See [Document Naming and Structure Rules](document-naming.en.md) for the full rule set.
+
 ## Document hierarchy
 
 Roadmap and detailed implementation briefs have different roles.

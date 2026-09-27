@@ -1,5 +1,19 @@
 # Development Roadmap — 0.9.4 개발선
 
+## 문서 네이밍 및 구조 규칙
+
+문서의 정식 이름·위치와 역할 분리는 `docs/document-naming.ko.md` / `.en.md`가 기준이다.
+
+핵심 규칙:
+- `development-roadmap.ko/.en.md`, `development-progress.ko/.en.md`는 고정 이름을 사용한다.
+- Implementation Brief는 `<Node>-<topic>.ko.md` + `.en.md`를 사용한다.
+- Build History는 `<version>.ko.md` + `.en.md`를 사용하며 이름을 바꾸지 않는다.
+- Work Log는 `docs/worklog/<development-line>.ko.md` + `.en.md`로 개발선 단위로 누적한다. 버전 범위를 파일명에 넣지 않는다.
+- Architecture는 주제 중심 이름을 사용하고, 역사적 snapshot이 필요한 경우에만 버전 suffix를 허용한다.
+- 새 문서/이동 시 KO/EN 쌍, 내부 링크, `STRUCTURE.md`, `llms.txt`를 함께 갱신한다.
+
+자세한 규칙: [Document Naming and Structure Rules](document-naming.ko.md)
+
 ## 문서 계층
 
 Roadmap과 세부 implementation brief는 역할을 분리합니다.
