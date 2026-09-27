@@ -49,6 +49,9 @@ START
 [D] Pipeline / Queue Optimization
   |
   v
+[I] Analyze / Matching Performance        <-- inserted after D8b evidence (see Node I)
+  |
+  v
 [E] Adaptive Video Decode Planner
   |
   v
@@ -156,6 +159,50 @@ Detailed implementation:
 - `docs/implementation-briefs/D-pipeline-queue.en.md`
 
 B and D keep separate responsibilities: B is allocation policy; D is execution pipeline.
+
+**Node D outcome (recorded 0.9.4.22):** D1a/D1b observability, D2 barrier
+review, D3-Minimal bounded walker queue, D4a backend internal timing, and
+D8a/D8b reproducible + scaled dataset were completed. Measured on 2,700
+files: `walker maxDepth` 964/4096 with `blocked_ticks` 0, and the GPU batch at
+0.026 % of engine wall. **D3+D4 addressable ceiling is 0.044 %**, so D4b
+overlap and Full D3 topology are deferred on evidence rather than assumption.
+D produced the structure; the remaining cost lives outside its scope.
+
+## Node I — Analyze / Matching Performance
+
+**Change-management record (required by the Roadmap's own rule).**
+
+1. **Problem recorded in Progress:** at 0.9.4.22, the stage breakdown showed
+   `analyze` consuming **98.62 %** of engine wall, with walk 1.40 %, image
+   stage 0.59 %, and GPU batch 0.04 %.
+2. **Original path and root cause:** D was expected to keep optimizing the
+   pipeline. Measurement showed D-owned work is 0.044 % of wall, so the
+   original path had no headroom. Root cause: the dominant stage was never
+   owned by any node, and it is the final matching/grouping stage
+   (`MediaPipeline::analyze`), which is outside the D brief by design.
+3. **Roadmap updated:** Node I inserted between D and E.
+4. **Reason recorded in both KO and EN:** the bottleneck is real and measured,
+   but unowned; leaving it unowned would mean the 0.9.4 line has no
+   meaningful performance work left despite a 100× measured gap.
+5. **Continue on the new path.**
+
+Goal:
+Make the stage that dominates a scan observable, then reduce its cost —
+without changing any search verdict.
+
+Scope:
+- `analyze` internal stage decomposition (index build / candidate scan /
+  image SSIM verification / video temporal)
+- verify-stage counters: calls, cache hits, decode misses, SSIM evaluations
+- optimization of that stage **only after** the decomposition identifies the
+  cause
+
+Out of scope:
+- search verdict semantics, thresholds, SSIM algorithm definition
+- anything D already measured and deferred
+
+Detailed implementation:
+- `docs/build-history/0.9.4.23.ko.md` / `.en.md` (D9a pre-register)
 
 ## Node E — Adaptive Video Decode Planner
 

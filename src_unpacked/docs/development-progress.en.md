@@ -13,8 +13,8 @@ The Roadmap is the structural direction. Progress records the actual position, p
 | Reference code | 0.9.4.22 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — Pipeline / Queue (D8b measured; D4b + Full D3 deferred on evidence) |
-| Current phase | Node D measurement complete → D has no addressable headroom on this workload; the real bottleneck (`analyze`) is outside the D brief and needs its own node |
+| Current node | D — measured and closed on evidence → **D9 (Analyze / Matching) opened** |
+| Current phase | **D9a implementation pending.** D8b showed `analyze` is 98.62 % of engine wall with no internal decomposition, so D9a adds per-stage measurement first; no optimization is attempted while unmeasured |
 | Current version | 0.9.4.22 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
@@ -32,6 +32,9 @@ The Roadmap is the structural direction. Progress records the actual position, p
  |
  v
 [D] Pipeline / Queue Optimization
+ |
+ v
+[I] Analyze / Matching Performance (opened after D8b evidence; Node D closed on measurement)
  |
  v
 [E] Adaptive Video Decode Planner
@@ -276,6 +279,9 @@ Current B/C/D briefs:
 - `docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md`
 - `docs/implementation-briefs/C-calibration-profile.ko.md / .en.md`
 - `docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md`
+
+Node I is documented in the Roadmap (change-management record) and its first
+step in `docs/build-history/0.9.4.23.ko.md / .en.md`.
 
 The active implementation target is B. B begins with small, verifiable B1 steps. D pipeline internals must not be implemented prematurely inside B.
 
@@ -590,3 +596,33 @@ Once source implementation begins, update:
   and GPU share was still 0.026 %. For the GPU path to matter, images would
   need to be far larger (no crop/thumbnail cost) or hash batches far more
   numerous.
+
+### D9a — Analyze Internal Observability (→ v0.9.4.23, pre-register committed, implementation pending)
+- **New node, opened because D ran out of owned work.** D8b proved the
+  bottleneck (`analyze`, 98.62 % of engine wall) is outside the D brief, so
+  continuing D could not produce a meaningful gain.
+- Pre-register committed before any code change (`0fc3344`).
+- **Measurement only.** No cache enlargement, no parallelization, no SSIM
+  algorithm change, no candidate-generation change, no threshold change.
+- Current state: `analyze` is recorded as a **single** number
+  (`bench_.addAnalyzeMs` at `media_search_engine.cpp:702-703`). The
+  benchmark `matches` section gives counts but **no internal time split**, so
+  "too many pairs" / "each pair is slow" / "the cache never hits" cannot be
+  told apart.
+- Code inspection produced a grounded hypothesis to test, not to act on:
+  `verifyImagePair` (`image_verify.cpp`) re-decodes both files (up to 4
+  decodes/pair) and runs up to 20 `frame_ssim` evaluations per grey-zone
+  pair, while `kVerifyCacheMax = 32` hard-caps the verify cache — against
+  2,700 files that is effectively a miss per pair. **Still a hypothesis;
+  the code is not touched until per-stage times exist.**
+- Planned telemetry: `analyzeIndexMs` / `analyzeScanMs` / `analyzeVerifyMs` /
+  `analyzeVideoMs`, plus `verifyCalls` / `verifyDecodeMisses` /
+  `verifyCacheHits` / `ssimEvals` / `frameSsimEvals` / `videoTemporalPairs`,
+  and two derived values that make the call — **`verifyHitRate`** (≈0 confirms
+  the cache-size cause) and **`msPerVerifyCall`** (separates "many pairs" from
+  "each pair is slow").
+- Success criterion: the instrumentation **identifies which bottleneck it
+  is**, whichever it turns out to be. Being right about the cause is the
+  deliverable, not a speedup.
+- Current version stays 0.9.4.22 — a version represents a *validated* code
+  state, and no code has changed yet.

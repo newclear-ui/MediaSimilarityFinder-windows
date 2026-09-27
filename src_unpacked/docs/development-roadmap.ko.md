@@ -42,6 +42,9 @@ START
 [D] Pipeline / Queue Optimization
   |
   v
+[I] Analyze / Matching Performance        <-- D8b 근거 이후 삽입 (Node I 참조)
+  |
+  v
 [E] Adaptive Video Decode Planner
   |
   v
@@ -172,6 +175,48 @@ D는 **신규 pipeline/queue 설계**입니다. Scheduler가 결정한 작업을
 - `docs/implementation-briefs/D-pipeline-queue.ko.md`
 
 B와 D는 역할을 섞지 않습니다. B는 allocation policy, D는 execution pipeline입니다.
+
+**Node D 결과 (0.9.4.22 기록):** D1a/D1b 관측, D2 barrier 검토, D3-Minimal
+bounded walker queue, D4a 백엔드 내부 타이밍, D8a/D8b 재현+규모 dataset
+완료. 2,700 파일 실측 기준 `walker maxDepth` 964/4096 · `blocked_ticks` 0,
+GPU batch 는 엔진 wall 의 0.026 %. **D3+D4 addressable ceiling 은 0.044 %**
+이므로 D4b overlap 과 Full D3 topology 는 가정이 아니라 근거로 보류한다.
+D 는 구조를 만들었고, 남은 비용은 그 범위 밖에 있다.
+
+## Node I — Analyze / Matching Performance
+
+**변경 관리 기록 (Roadmap 자체 규칙에 따라 기재).**
+
+1. **Progress 에 기록한 문제:** 0.9.4.22 시점 stage 분해에서 `analyze` 가
+   엔진 wall 의 **98.62 %** 를 차지했고, walk 1.40 %, image stage 0.59 %,
+   GPU batch 0.04 % 였다.
+2. **기존 경로와 원인:** D 가 파이프라인 최적화를 계속할 것으로 기대했다.
+   실측 결과 D 가 소유한 작업은 벽시계의 0.044 % 뿐이어서 기존 경로에
+   여지가 없었다. 원인: 지배적 단계가 **어떤 노드도 소유하지 않았고**,
+   그 단계는 최종 매칭/그룹화(`MediaPipeline::analyze`)로 D brief 범위 밖이
+   의도된 설계였다.
+3. **Roadmap 갱신:** D 와 E 사이에 Node I 삽입.
+4. **양쪽(KO/EN)에 기록한 이유:** 병목은 실측된 것이지만 소유자가 없었다.
+   소유자를 두지 않으면 100배 이상의 실측 격차가 있어도 0.9.4 라인에
+   의미 있는 성능 작업이 남아 있지 않게 된다.
+5. **새 경로로 계속.**
+
+목표:
+스캔을 지배하는 단계를 관측 가능하게 만든 뒤, 그 비용을 줄인다 —
+단, 어떤 search verdict 도 바꾸지 않고.
+
+범위:
+- `analyze` 내부 stage 분해 (index build / candidate scan / image SSIM
+  검증 / video temporal)
+- verify 단계 카운터: 호출, 캐시 적중, 디코드 미스, SSIM 계산 횟수
+- 위 분해로 원인이 식별된 **뒤에만** 그 단계 최적화
+
+범위 밖:
+- search verdict semantics, threshold, SSIM 알고리즘 정의
+- D 가 이미 측정하고 보류한 항목
+
+세부 구현:
+- `docs/build-history/0.9.4.23.ko.md` / `.en.md` (D9a pre-register)
 
 ## Node E — Adaptive Video Decode Planner
 

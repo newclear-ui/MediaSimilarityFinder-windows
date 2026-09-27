@@ -13,8 +13,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 기준 코드 | 0.9.4.22 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | D — Pipeline / Queue (D8b 측정 완료, D4b + Full D3 근거 기반 보류) |
-| 현재 단계 | Node D 계측 완료 → 이 workload 에서 D가 다룰 여지는 거의 없음. 진짜 병목(`analyze`)은 D brief 범위 밖이라 별도 노드 필요 |
+| 현재 노드 | D — 근거 기반 측정 후 종료 → **D9 (Analyze / Matching) 개설** |
+| 현재 단계 | **D9a 구현 대기.** D8b 에서 `analyze` 가 엔진 wall 의 98.62 % 이며 내부 분해가 없음을 확인했으므로, D9a 가 stage 별 계측을 먼저 추가한다. 미측정 상태에서는 최적화를 시도하지 않는다 |
 | 현재 버전 | 0.9.4.22 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
@@ -32,6 +32,9 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
  |
  v
 [D] Pipeline / Queue Optimization
+ |
+ v
+[I] Analyze / Matching Performance (D8b 근거 이후 개설, Node D 는 측정으로 종료)
  |
  v
 [E] Adaptive Video Decode Planner
@@ -602,3 +605,29 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
 - 정직한 범위: `bulk` 이미지는 queue 관찰에 *유리하도록* 크기를 정했고,
   그래도 GPU share 는 0.026 % 였다. GPU 경로가 의미를 가지려면 이미지가 훨씬
   크거나(crop/thumbnail 비용 없음) hash batch 가 훨씬 많아야 한다.
+
+### D9a — Analyze 내부 관측 (→ v0.9.4.23, pre-register 커밋 완료, 구현 대기)
+- **신규 노드.** D8b 가 병목(`analyze`, 엔진 wall 98.62 %)이 D brief 범위 밖임을
+  실측으로 보여줬으므로, D 를 더 진행해도 의미 있는 이득이 나올 수 없어 개설.
+- 코드 변경 전에 pre-register 커밋(`0fc3344`).
+- **계측만 한다.** 캐시 확대 없음, 병렬화 없음, SSIM 알고리즘 변경 없음,
+  후보 생성 변경 없음, threshold 변경 없음.
+- 현재 상태: `analyze` 는 **단일 수치**로만 기록된다
+  (`media_search_engine.cpp:702-703` 의 `bench_.addAnalyzeMs`).
+  benchmark `matches` 섹션은 개수를 주지만 **내부 시간 분해가 없어서**
+  "쌍이 많다" / "쌍 하나가 느리다" / "캐시가 안 맞는다" 를 구분할 수 없다.
+- 코드 조사로 나온 건 **검증할 가설**이지 행동 근거가 아니다:
+  `verifyImagePair`(`image_verify.cpp`)는 gray-zone 쌍마다 두 파일을 재디코드
+  하고(쌍당 최대 4회) `frame_ssim` 을 최대 20회 계산하는데,
+  `kVerifyCacheMax = 32` 로 verify 캐시가 hard cap 된다. 2,700 파일 기준
+  사실상 쌍마다 미스다. **여전히 가설이며, stage 별 시간이 나오기 전까지
+  코드는 건드리지 않는다.**
+- 예정 telemetry: `analyzeIndexMs` / `analyzeScanMs` / `analyzeVerifyMs` /
+  `analyzeVideoMs`, 그리고 `verifyCalls` / `verifyDecodeMisses` /
+  `verifyCacheHits` / `ssimEvals` / `frameSsimEvals` / `videoTemporalPairs`.
+  판정의 핵심은 파생값 2개 — **`verifyHitRate`** (≈0 이면 캐시 용량 원인 확정)
+  와 **`msPerVerifyCall`** ("쌍이 많다" vs "쌍 하나가 느리다" 분리).
+- 성공 기준: 계측이 **어떤 병목인지 식별해내는 것**이며, 무엇이든 상관없다.
+  deliverable 은 속도향이 아니라 원인 규명이다.
+- 현재 버전은 0.9.4.22 유지 — 버전은 *검증된* 코드 상태를 뜻하며 아직
+  코드 변경이 없다.

@@ -5,7 +5,9 @@
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
 - Current: **0.9.4.22 — D8b Scaled Dataset / Walker Queue Evidence (measurement only, no product change)**
-- Active Node D substep: **D8b PASS → D4b overlap and Full D3 topology deferred on measured evidence; real bottleneck is outside Node D**
+- Active node: **D measured and closed on evidence → Node I (Analyze / Matching) opened; D9a pre-register committed (`0fc3344`), implementation PENDING**
+- Planned next version: **0.9.4.23 — D9a Analyze Internal Observability (measurement only)**
+- Current version stays 0.9.4.22 because a version represents a *validated* code state, and no code has changed yet
 - Last completed Windows build/test line: **0.9.4.22**
 - Last completed v0.9.4.22 build: Core + GUI Release build PASS (CPU and GPU trees)
 - Last completed v0.9.4.22 test run: **CTest 71/71 PASS (GPU)**
