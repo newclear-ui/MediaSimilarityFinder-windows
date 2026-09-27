@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.22 |
+| Reference code | 0.9.4.23 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — measured and closed on evidence → **D9 (Analyze / Matching) opened** |
-| Current phase | **D9a implementation pending.** D8b showed `analyze` is 98.62 % of engine wall with no internal decomposition, so D9a adds per-stage measurement first; no optimization is attempted while unmeasured |
-| Current version | 0.9.4.22 |
+| Current node | I — Analyze / Matching Performance (D9a PASS) |
+| Current phase | Node I in progress → `verify` is **99.67 %** of analyze and the "cache capacity 32" hypothesis is **refuted** (hit rate 0.53); the next substep must pre-register before touching the verify path |
+| Current version | 0.9.4.23 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -626,3 +626,53 @@ Once source implementation begins, update:
   deliverable, not a speedup.
 - Current version stays 0.9.4.22 — a version represents a *validated* code
   state, and no code has changed yet.
+
+### D9a — Analyze Internal Observability (→ 0.9.4.23, PASS, measurement only)
+- Pre-register committed before any code change (`0fc3344`).
+- **Measurement only.** Verify cache still 32, no parallelization, no
+  SSIM/index/threshold/grouping change, no Scheduler/CUDA change.
+- Architecture: `src/analyze_telemetry.h` is a plain Qt-free data carrier that
+  depends on nothing — not the recorder, not the pipeline, not the verify
+  code. `image_verify` and `scan_pipeline` fill it; the engine copies it in.
+  **No recorder pointer ever travels downward**, satisfying the brief's
+  explicit no-strong-coupling requirement.
+- **Stage sum cannot exceed analyzeMs by construction.** `flushVideo()` also
+  runs inside the candidate loop, so nested timers would overlap. Video time
+  is accumulated and excluded, and `scanMs` is defined as the remainder:
+  `scanMs = total - index - verify - video` (clamped at 0). The four slices
+  therefore sum to the total exactly, and scan honestly absorbs unattributed
+  control overhead instead of pretending it belongs to an unmeasured stage.
+- Counters count events, never estimates. `verifyCalls` excludes video pairs
+  (they return before doing work); misses/hits are per *lookup* (2 per call);
+  `ssimEvals` counts invocations while `frameSsimEvals` counts actual
+  `frame_ssim` executions, so the gap between them is itself a measurement.
+  Derived values are `null` + `not_measured` when their denominator is zero —
+  no 0.0 is manufactured by dividing by zero.
+- Schema v8 → v9. New `analyze_telemetry_test` in both trees, **41 checks**.
+- **Measured** (RTX 3080 Ti, D8b dataset `9b113848…4253c`, cold index):
+  - `index` 3.2 ms (0.00 %), `scan` 350.8 ms (0.32 %), **`verify` 109,142.3 ms
+    (99.67 %)**, `video` `not_measured` (no video in the dataset — not a fake 0)
+  - substage sum 109,496.3 ≤ analyzeMs 109,501.9 → the rule holds
+  - `verifyCalls` 158,020 · `misses` 12,949 · `hits` 14,519 · **`verifyHitRate`
+    0.5286** · `msPerVerifyCall` 0.69–0.74 ms · `ssimEvals` 137,340 ·
+    `frameSsimEvals` 274,680
+  - **Counters are internally consistent**: `ssimEvals/10 == (misses+hits)/2 ==
+    13,734` exactly, so 13,734 calls did the full decode+SSIM path
+- **Hypothesis verdicts.** "verifyImagePair dominates" → **confirmed**
+  (99.67 %). "kVerifyCacheMax = 32 causes re-decodes" → **refuted**: the hit
+  rate is 52.9 %, not ≈0, because candidate pairs arrive clustered in index
+  order. A code-reading hypothesis overturned by measurement — the reason the
+  pre-register demanded measurement first.
+- **Actual dominant structure:** of the 158,020 calls reaching the gate, ~91.3 %
+  short-circuit at kFast and ~8.7 % (13,734) run decode + SSIM at ~8.5 ms each,
+  producing 117 s. So the bottleneck is **candidate-pair volume reaching the
+  gate, not per-call cost**.
+- Parity: `groups` 156,152 identical to 0.9.4.22, and `analyze_telemetry_test`
+  asserts instrumented vs uninstrumented `verifyImagePair` are double-identical.
+- Validation: CPU 71/71, GPU 72/72; `--version` 0.9.4.23 and `--smoke` PASS on
+  both. All six pre-register rollback criteria clear.
+- Next candidates identified but **not** implemented: lower the 4.3 % arrival
+  rate, or lower the 8.5 ms per expensive verification (4 decodes + 20
+  `frame_ssim`, of which 9 of 10 `ssimBuf` calls are aspect combinations with
+  no buffer reuse). Caveat: this dataset uses synthetic deterministic
+  fingerprints, so a real library's candidate ratio will differ.

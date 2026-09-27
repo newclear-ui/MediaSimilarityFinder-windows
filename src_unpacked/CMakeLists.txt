@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.22 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.23 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -135,6 +135,12 @@ if(MSF_BUILD_TESTS)
         target_link_libraries(msf_cuda_backend_test PRIVATE msf_core)
         add_test(NAME cuda_backend_test COMMAND msf_cuda_backend_test)
     endif()
+    # D9a: analyze internal stage split + verify counters. Registered in both
+    # trees — this is pure CPU matching work, so it must be proven where no
+    # GPU exists at all.
+    add_executable(msf_analyze_telemetry_test tests/analyze_telemetry_test.cpp)
+    target_link_libraries(msf_analyze_telemetry_test PRIVATE msf_core)
+    add_test(NAME analyze_telemetry_test COMMAND msf_analyze_telemetry_test)
     # D8a: dataset identity contract. Registered in both trees — the
     # reproducibility properties must hold where no GPU exists at all.
     add_executable(msf_dataset_fingerprint_test tests/dataset_fingerprint_test.cpp)

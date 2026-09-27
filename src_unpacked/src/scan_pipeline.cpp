@@ -4,6 +4,7 @@
 #include "image_verify.h"
 #include "video_fingerprint.h"
 #include <algorithm>
+#include <chrono>
 #include <future>
 #include <thread>
 #include <unordered_set>
@@ -107,10 +108,23 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
  return analyze(maxDistance, onMatch, {});
 }
 ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop){
-  ScanStats s; s.files=files_.size();
+   ScanStats s; s.files=files_.size();
+  // D9a: the analyze total is the parent of every sub-stage below, so the
+  // sub-stages are defined as non-overlapping slices of it. index/verify/video
+  // are accumulated at their own call sites; scan is the remainder. That
+  // makes index+scan+verify+video equal the total by construction, which is
+  // what keeps the sum from ever exceeding analyzeMs.
+  const auto analyzeT0=std::chrono::steady_clock::now();
+  const auto msSince=[](const std::chrono::steady_clock::time_point& t){
+    return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t).count(); };
+  double indexMs=0,verifyMs=0,videoMs=0;
+  AnalyzeTelemetry tel;
+  s.analyze.analyzeRan=true;
  imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
  imageMap_.clear(); videoMap_.clear(); imageMap_.reserve(files_.size()); videoMap_.reserve(files_.size());
+ const auto indexT0=std::chrono::steady_clock::now();
  for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,i,f);imageMap_.push_back(i);}else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,i,f);videoMap_.push_back(i); for(auto a:f.anchors) if(a) videoIdx_.add(i,a);}++s.indexed;}
+ indexMs=msSince(indexT0);
  const auto possible=[](std::size_t n){return n>1?n*(n-1)/2:0;};s.possiblePairs=possible(imageMap_.size())+possible(videoMap_.size());
  // Stream candidate pairs instead of materializing the output of all eight indexes.
  // This is important for bucket-heavy datasets where the pair count can be millions.
@@ -157,6 +171,15 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   };
   auto flushVideo=[&](){
     if(pendingVideo.empty()) return;
+    // D9a: the temporal stage is entered only when there is real work, so
+    // videoMs is a measurement rather than a structural zero. Its time is
+    // accumulated and subtracted from the scan remainder below, because
+    // flushVideo also runs *inside* the candidate loop. The scope guard adds
+    // the elapsed time on every exit path, including the prompt-stop return
+    // below, so a cancelled flush is not silently recorded as 0 ms.
+    tel.videoStageEntered=true;
+    const auto vt0=std::chrono::steady_clock::now();
+    struct VideoTimeGuard { const std::chrono::steady_clock::time_point& t0; double& acc; ~VideoTimeGuard(){ acc += std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); } } vguard{vt0, videoMs};
     unsigned hw=std::thread::hardware_concurrency(); if(hw<2)hw=2; if(hw>16)hw=16;
     const std::size_t chunk=64;
     for(std::size_t b=0;b<pendingVideo.size();b+=chunk){
@@ -205,24 +228,31 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind)return;
     const bool isVideo=(files_[i].kind==MediaKind::Video);
     if(isVideo) ++s.videoCandidates;
-    double sim=best(files_[i],files_[j]);
-    if(!isVideo){
-     if(sim>=threshold){
-      const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold);
-      if(v>=threshold){MediaMatch match{i,j,v}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
-      return;
+     double sim=best(files_[i],files_[j]);
+     if(!isVideo){
+      if(sim>=threshold){
+       // D9a: time the verification call itself, including the kFast
+       // short-circuit, so analyzeVerifyMs and verifyCalls share a numerator
+       // and denominator for msPerVerifyCall.
+       const auto vt1=std::chrono::steady_clock::now();
+       const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&tel);
+       verifyMs+=msSince(vt1);
+       if(v>=threshold){MediaMatch match{i,j,v}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
+       return;
+      }
+     } else {
+      // Video short-circuit needs a full-frame hit. Crop-only hits fall through
+      // to the trigger/temporal path below, where duration, anchors, DTW, and
+      // SSIM decide (crop_temporal_score still catches true cropped duplicates).
+      const double full=bestFull(files_[i],files_[j]);
+      if(full>=threshold){
+       const auto vt1=std::chrono::steady_clock::now();
+       const double v=verifyImagePair(files_[i].path,files_[j].path,false,full,threshold,&tel);
+       verifyMs+=msSince(vt1);
+       if(v>=threshold){MediaMatch match{i,j,full}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
+       return;
+      }
      }
-    } else {
-     // Video short-circuit needs a full-frame hit. Crop-only hits fall through
-     // to the trigger/temporal path below, where duration, anchors, DTW, and
-     // SSIM decide (crop_temporal_score still catches true cropped duplicates).
-     const double full=bestFull(files_[i],files_[j]);
-     if(full>=threshold){
-      const double v=verifyImagePair(files_[i].path,files_[j].path,false,full,threshold);
-      if(v>=threshold){MediaMatch match{i,j,full}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
-      return;
-     }
-    }
 if(isVideo){
       const double trigger=std::max(0.0,threshold-12.0);
       double gate=sim;
@@ -230,6 +260,7 @@ if(isVideo){
        const bool anchorMatched=anchorSim(files_[i],files_[j])>=trigger;
        if(gate>=trigger&&(durationGate(files_[i],files_[j])||anchorMatched)){
         pendingVideo.push_back({i,j});
+        ++tel.videoTemporalPairs;
         if(pendingVideo.size()>=4096) flushVideo();
       }
     }
@@ -261,6 +292,25 @@ if(isVideo){
     // the caller observes the stop through its own control flag.
   }
   if(s.possiblePairs)s.candidateReductionPercent=100.0*(1.0-(double)s.candidates/s.possiblePairs);
+  // D9a: close out the stage split. scan is deliberately the remainder of the
+  // analyze total after index, verify and video, so the four slices sum to the
+  // total exactly and can never exceed it -- which is what the D9a timing
+  // rule requires. It also means scan honestly absorbs the unattributed
+  // control overhead (poll, callbacks, bookkeeping) rather than pretending
+  // that overhead belongs to a stage it was never measured in.
+  const double totalMs=msSince(analyzeT0);
+  double scanMs=totalMs-indexMs-verifyMs-videoMs;
+  if(scanMs<0) scanMs=0;   // timer noise guard; never report negative time
+  s.analyze.indexMs=indexMs;
+  s.analyze.scanMs=scanMs;
+  s.analyze.verifyMs=verifyMs;
+  s.analyze.videoMs=videoMs;
+  s.analyze.verifyCalls=tel.verifyCalls;
+  s.analyze.verifyDecodeMisses=tel.verifyDecodeMisses;
+  s.analyze.verifyCacheHits=tel.verifyCacheHits;
+  s.analyze.ssimEvals=tel.ssimEvals;
+  s.analyze.frameSsimEvals=tel.frameSsimEvals;
+  s.analyze.videoTemporalPairs=tel.videoTemporalPairs;
   return s;
 }
 const std::vector<MediaFile>& ScanPipeline::files()const{return files_;}

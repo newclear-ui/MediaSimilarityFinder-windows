@@ -152,3 +152,4 @@ Previous implementation/design snapshots are preserved under `../architecture/le
 - v0.9.4.20 — D4a: CUDA backend internal timing (h2d/kernel/d2h device split + host wait), schema v7
 - v0.9.4.21 — D8a: reproducible dataset + dataset fingerprint in benchmark JSON, schema v8
 - v0.9.4.22 — D8b: scaled dataset (2700 files) + walker queue / stage breakdown evidence; D4b and Full D3 deferred on measurement
+- v0.9.4.23 — D9a: analyze internal stage split + verify/SSIM counters, schema v9; "cache capacity 32" hypothesis refuted by measurement

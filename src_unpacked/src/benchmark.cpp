@@ -151,6 +151,10 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   // the real one immediately after start(); until then the JSON must say
   // not_available rather than carry a stale value from a previous run.
   datasetFp_ = DatasetFingerprint{};
+  // Same rule for the D9a analyze split: a fresh run must never inherit the
+  // previous run's stage times or verify counters.
+  analyzeTel_ = AnalyzeTelemetry{};
+  analyzeTelRecorded_ = false;
   startedAt_ = localTimeStr();
   static std::atomic<std::uint64_t> runCounter{0};
   runId_ = startedAt_ + "-" + std::to_string(runCounter.fetch_add(1, std::memory_order_relaxed) + 1);
@@ -217,6 +221,11 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
 }
 void BenchmarkRecorder::addImageStageMs(double ms) { imageStageMs_ += ms; imageStageRecorded_ = true; }
 void BenchmarkRecorder::addVideoStageMs(double ms) { videoStageMs_ += ms; videoStageRecorded_ = true; }
+void BenchmarkRecorder::setAnalyzeTelemetry(const AnalyzeTelemetry& t) {
+  analyzeTel_ = t;
+  analyzeTelRecorded_ = true;
+}
+
 void BenchmarkRecorder::addAnalyzeMs(double ms) { analyzeMs_ += ms; analyzeRecorded_ = true; }
 void BenchmarkRecorder::addWalkMs(double ms) { walkMs_ += ms; walkRecorded_ = true; }
 void BenchmarkRecorder::addRevalidateMs(double ms) { revalidateMs_ += ms; revalidateRecorded_ = true; }
@@ -632,7 +641,45 @@ std::string BenchmarkRecorder::toJson() const {
   o << "]},";
   o << "\"matches\":{\"candidates\":" << candidates_ << ",\"pairs\":" << streamedMatches_.load(std::memory_order_relaxed)
     << ",\"retainedPairs\":" << matches_ << ",\"groups\":" << groups_
-    << ",\"reductionPct\":" << reductionPct_ << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_ << "},";
+    << ",\"reductionPct\":" << reductionPct_     << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_ << "},";
+  // D9a: analyze internal split. The four stage times are non-overlapping
+  // slices of the analyze total, so their sum never exceeds it. A stage that
+  // was never entered is not_measured rather than 0 -- "measured as 0 ms"
+  // and "did not run" are different claims.
+  {
+    const bool ran = analyzeTelRecorded_ && analyzeTel_.analyzeRan;
+    const bool verifyLookups = analyzeTel_.verifyCacheHits + analyzeTel_.verifyDecodeMisses > 0;
+    const bool hasVerify = ran && analyzeTel_.verifyCalls > 0;
+    std::ostringstream a;
+    a << std::fixed << std::setprecision(3);
+    a << "\"analyze\":{\"state\":\"" << measureStateName(ran ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"indexMs\":" << analyzeTel_.indexMs << ",\"indexState\":\""
+      << measureStateName(ran ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"scanMs\":" << analyzeTel_.scanMs << ",\"scanState\":\""
+      << measureStateName(ran ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"verifyMs\":" << analyzeTel_.verifyMs << ",\"verifyState\":\""
+      << measureStateName(ran ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"videoMs\":" << analyzeTel_.videoMs << ",\"videoState\":\""
+      << measureStateName(analyzeTel_.videoStageEntered ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"verifyCalls\":" << analyzeTel_.verifyCalls
+      << ",\"verifyDecodeMisses\":" << analyzeTel_.verifyDecodeMisses
+      << ",\"verifyCacheHits\":" << analyzeTel_.verifyCacheHits;
+    a << ",\"verifyState_counters\":\"" << measureStateName(hasVerify ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    // Derived only when their denominators are real. Dividing by zero would
+    // manufacture a 0.0 that reads like a measurement.
+    a << ",\"verifyHitRate\":";
+    if (verifyLookups) a << (double)analyzeTel_.verifyCacheHits / (double)(analyzeTel_.verifyCacheHits + analyzeTel_.verifyDecodeMisses);
+    else a << "null";
+    a << ",\"verifyHitRateState\":\"" << measureStateName(verifyLookups ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"msPerVerifyCall\":";
+    if (hasVerify) a << (analyzeTel_.verifyMs / (double)analyzeTel_.verifyCalls);
+    else a << "null";
+    a << ",\"msPerVerifyCallState\":\"" << measureStateName(hasVerify ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    a << ",\"ssimEvals\":" << analyzeTel_.ssimEvals
+      << ",\"frameSsimEvals\":" << analyzeTel_.frameSsimEvals
+      << ",\"videoTemporalPairs\":" << analyzeTel_.videoTemporalPairs << "},";
+    o << a.str();
+  }
   auto stageObj = [&](const char* name, double ms, bool recorded) {
     o << "\"" << name << "\":{\"ms\":" << ms << ",\"state\":\"" << measureStateName(recorded ? MeasureState::Measured : MeasureState::NotMeasured) << "\"},";
   };

@@ -684,9 +684,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   };
   ScanStats st;
   const auto benchAT0=std::chrono::steady_clock::now();
-   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
-    if(benchOn) bench_.addStreamedMatch();
-    SearchMatchRef ref{m.left,m.right,m.percent};
+  st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
+   if(benchOn) bench_.addStreamedMatch();
+   SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
    if(control && control->onMatch) {
      SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
@@ -701,6 +701,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     }
   }, stopCheck);
   bench_.addAnalyzeMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchAT0).count());
+  // D9a: hand the analyze stage split to the recorder. Copy only -- the
+  // pipeline fills a plain struct and no recorder pointer ever travels down
+  // into ScanPipeline or the verification code.
+  if(benchOn) bench_.setAnalyzeTelemetry(st.analyze);
   // A stop during analyze() aborts the pair loops above (partial matches were
   // already streamed via onMatch); mark the report incomplete like every
   // other stop path. analyze() itself never propagates. Only completed scans

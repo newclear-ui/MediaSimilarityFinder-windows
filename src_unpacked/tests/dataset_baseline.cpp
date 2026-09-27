@@ -194,11 +194,71 @@ int main(int argc, char** argv) {
     std::printf("(outer host wall incl. process setup/teardown: %.1f ms)\n", meanOf(wall));
   }
 
+  // --- D9a: analyze internal split. This is the point of Node I, so it is
+  // printed unconditionally rather than hidden behind an env var. ---
+  {
+    const double idx = numIn(lastJson, "analyze", "indexMs");
+    const double scn = numIn(lastJson, "analyze", "scanMs");
+    const double vfy = numIn(lastJson, "analyze", "verifyMs");
+    const double vid = numIn(lastJson, "analyze", "videoMs");
+    const double calls = numIn(lastJson, "analyze", "verifyCalls");
+    const double misses = numIn(lastJson, "analyze", "verifyDecodeMisses");
+    const double hits = numIn(lastJson, "analyze", "verifyCacheHits");
+    const double ssim = numIn(lastJson, "analyze", "ssimEvals");
+    const double fssim = numIn(lastJson, "analyze", "frameSsimEvals");
+    const double vpairs = numIn(lastJson, "analyze", "videoTemporalPairs");
+    bool f1 = false;
+    const double analyzeMs = numAfter(lastJson, "analyzeMs", f1);
+    const double sub = idx + scn + vfy + vid;
+    std::printf("\n--- D9a: analyze internal split ---\n");
+    std::printf("  indexMs            %10.1f   state=%s\n", idx,
+                strAfter(lastJson, "indexState").c_str());
+    std::printf("  scanMs             %10.1f   state=%s (remainder: enumeration + Hamming + overhead)\n",
+                scn, strAfter(lastJson, "scanState").c_str());
+    std::printf("  verifyMs           %10.1f   state=%s\n", vfy,
+                strAfter(lastJson, "verifyState").c_str());
+    std::printf("  videoMs            %10.1f   state=%s\n", vid,
+                strAfter(lastJson, "videoState").c_str());
+    std::printf("  substage sum       %10.1f   vs analyzeMs %.1f -> %s\n", sub, analyzeMs,
+                sub <= analyzeMs + 1.0 ? "OK (<=)" : "VIOLATION");
+    if (analyzeMs > 0)
+      std::printf("  share of analyze   index %.2f%%  scan %.2f%%  verify %.2f%%  video %.2f%%\n",
+                  100.0 * idx / analyzeMs, 100.0 * scn / analyzeMs, 100.0 * vfy / analyzeMs,
+                  100.0 * vid / analyzeMs);
+    std::printf("verifyCalls          %.0f\n", calls);
+    std::printf("verifyDecodeMisses   %.0f\n", misses);
+    std::printf("verifyCacheHits      %.0f\n", hits);
+    if (hits + misses > 0)
+      std::printf("verifyHitRate        %.6f  (state=%s)\n", hits / (hits + misses),
+                  strAfter(lastJson, "verifyHitRateState").c_str());
+    else
+      std::printf("verifyHitRate        (no lookups; state=%s)\n",
+                  strAfter(lastJson, "verifyHitRateState").c_str());
+    if (calls > 0)
+      std::printf("msPerVerifyCall      %.6f ms\n", vfy / calls);
+    else
+      std::printf("msPerVerifyCall      (no verify calls)\n");
+    std::printf("ssimEvals            %.0f\n", ssim);
+    std::printf("frameSsimEvals       %.0f\n", fssim);
+    std::printf("videoTemporalPairs   %.0f\n", vpairs);
+    if (calls > 0) std::printf("ssimEvals/verifyCall %.2f\n", ssim / calls);
+  }
+
   if (std::getenv("MSF_BASELINE_DUMP_WALKER")) {
     const std::size_t wp = lastJson.find("\"walker\":");
     if (wp != std::string::npos)
       std::printf("walker_json=%s\n",
                   lastJson.substr(wp, lastJson.find('}', wp) - wp + 1).c_str());
+  }
+  // D9a: the analyze split is the point of this node, so it is always printed
+  // rather than hidden behind an env var.
+  if (std::getenv("MSF_BASELINE_DUMP_ANALYZE")) {
+    const std::size_t ap = lastJson.find("\"analyze\":");
+    if (ap != std::string::npos) {
+      const std::size_t end = lastJson.find("},", ap);
+      std::printf("analyze_json=%s\n",
+                  lastJson.substr(ap, (end == std::string::npos ? ap + 900 : end) - ap + 1).c_str());
+    }
   }
   return 0;
 }

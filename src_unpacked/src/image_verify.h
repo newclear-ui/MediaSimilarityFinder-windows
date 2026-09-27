@@ -1,4 +1,5 @@
 #pragma once
+#include "analyze_telemetry.h"
 #include <string>
 namespace msf {
 // Second-stage structural verification for IMAGE pairs that passed L1 Hamming.
@@ -17,6 +18,11 @@ namespace msf {
 // (legacy behavior).
 // Decode failures fall back to the Hamming score (legacy behavior).
 // Non-image pairs pass through unchanged (videos keep their temporal L2/L3).
+//
+// D9a: `tel` is an optional counter sink. It is a plain data struct, never a
+// recorder, so verification code takes no dependency on engine telemetry.
+// Callers that do not care omit it and the behavior is byte-identical.
 double verifyImagePair(const std::string& pathA, const std::string& pathB,
-                       bool isImage, double hammingSim, double threshold);
+                       bool isImage, double hammingSim, double threshold,
+                       AnalyzeTelemetry* tel = nullptr);
 }

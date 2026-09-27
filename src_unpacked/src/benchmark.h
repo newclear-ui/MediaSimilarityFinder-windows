@@ -1,4 +1,5 @@
 #pragma once
+#include "analyze_telemetry.h"
 #include "dataset_fingerprint.h"
 #include <atomic>
 #include <cstddef>
@@ -109,7 +110,9 @@ public:
   //     host sync wait, host total) with per-metric states.
   // v8: D8a dataset identity (fingerprint + version + counts + state) so
   //     repeated runs can prove they used the same input data.
-  static constexpr int kBenchmarkSchemaVersion = 8;
+  // v9: D9a analyze internal stage split (index/scan/verify/video) plus
+  //     verify cache/SSIM counters and their derived rates.
+  static constexpr int kBenchmarkSchemaVersion = 9;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);
@@ -124,6 +127,11 @@ public:
   void addImageStageMs(double ms);
   void addVideoStageMs(double ms);
   void addAnalyzeMs(double ms);
+  // D9a: analyze internal stage split + verify counters. The engine copies
+  // the sink filled by ScanPipeline; the recorder only renders it, so
+  // verification code never depends on engine telemetry. A stage that never
+  // ran is reported not_measured, never 0.
+  void setAnalyzeTelemetry(const AnalyzeTelemetry& t);
   void addWalkMs(double ms);
   void addRevalidateMs(double ms);
   // Node A global stages (additive; unrecorded stages stay NotMeasured).
@@ -192,6 +200,8 @@ private:
   bool started_ = false;
   BenchmarkConfig cfg_;
   DatasetFingerprint datasetFp_{};
+  AnalyzeTelemetry analyzeTel_{};
+  bool analyzeTelRecorded_ = false;
   std::string startedAt_;
   std::string runId_;
   double wallMs_ = 0;

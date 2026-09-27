@@ -1,18 +1,38 @@
 # Build Status
 
-- Current development version: **0.9.4.22**
+- Current development version: **0.9.4.23**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.22 — D8b Scaled Dataset / Walker Queue Evidence (measurement only, no product change)**
-- Active node: **D measured and closed on evidence → Node I (Analyze / Matching) opened; D9a pre-register committed (`0fc3344`), implementation PENDING**
-- Planned next version: **0.9.4.23 — D9a Analyze Internal Observability (measurement only)**
-- Current version stays 0.9.4.22 because a version represents a *validated* code state, and no code has changed yet
-- Last completed Windows build/test line: **0.9.4.22**
-- Last completed v0.9.4.22 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.22 test run: **CTest 71/71 PASS (GPU)**
-- CPU-only validation: Release build PASS; **CTest 70/70 PASS**; CUDA disabled and CPU fallback verified
-- D8b scope note: **no product code change** — generator scale (`-Scale full`) + stage-breakdown reporting in the review probe only
+- Current: **0.9.4.23 — D9a Analyze Internal Observability (measurement only, schema v9)**
+- Active node: **I / D9a PASS → next substep must pre-register before touching the verify path**
+- Last completed Windows build/test line: **0.9.4.23**
+- Last completed v0.9.4.23 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.23 test run: **CTest 72/72 PASS (GPU)**
+- Last completed v0.9.4.23 validation: `analyze_telemetry_test` 41 checks (both trees) + real D8b-dataset measurement; `--version` 0.9.4.23; `--smoke` PASS both
+- CPU-only validation: Release build PASS; **CTest 71/71 PASS**; CUDA disabled and CPU fallback verified
+- D9a scope note: **no optimization.** verify cache still 32, no parallelization, no SSIM/index/threshold/grouping change, no Scheduler/CUDA change
+
+### D9a measured findings (RTX 3080 Ti, D8b dataset `9b113848…4253c`, cold index)
+
+Analyze internal split (of 109,501 ms analyze):
+
+| Stage | ms | Share | State |
+| --- | --- | --- | --- |
+| index | 3.2 | 0.00 % | measured |
+| scan | 350.8 | 0.32 % | measured |
+| **verify** | **109,142.3** | **99.67 %** | measured |
+| video | 0.0 | 0.00 % | **not_measured** (no video in dataset) |
+
+- `verifyCalls` 158,020 · `verifyDecodeMisses` 12,949 · `verifyCacheHits` 14,519
+- **`verifyHitRate` 0.5286 — the "cache capacity 32 is the cause" hypothesis is REFUTED**
+- `msPerVerifyCall` 0.69–0.74 ms · `ssimEvals` 137,340 · `frameSsimEvals` 274,680
+- Internal consistency: `ssimEvals/10 == (misses+hits)/2 == 13,734` exactly
+- Actual dominant structure: 158,020 calls reach the gate; ~91.3 % short-circuit
+  at kFast, ~8.7 % (13,734) run decode+SSIM at ~8.5 ms each → 117 s. **The
+  bottleneck is candidate-pair volume reaching the gate, not per-call cost.**
+- Parity: `groups` 156,152 identical to 0.9.4.22; instrumented vs uninstrumented
+  `verifyImagePair` returns a double-identical value
 - Standard dataset: `test_sample_img_vid/` (generated, not committed) — fingerprint `9b1138489827804b24bdfb645e4b72c5a3ab3fa79b8b8ba1b2d5cd051614253c`, 2700 files, 36,007,560 bytes, 95 dirs, fingerprintVersion 1
 
 ### D8b measured findings (RTX 3080 Ti, 3 runs, cold index each)

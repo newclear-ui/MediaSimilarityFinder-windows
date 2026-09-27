@@ -1,5 +1,6 @@
 #pragma once
 #include "candidate_index.h"
+#include "analyze_telemetry.h"
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -11,7 +12,10 @@ class GpuBackend;
 enum class MediaKind { Unknown, Image, Video };
 struct MediaFile { std::string path; MediaKind kind=MediaKind::Unknown; std::uint64_t size=0,modified=0,fingerprint=0,mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0,mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0; double duration=0; std::vector<std::uint64_t> anchors; };
 struct MediaMatch { std::size_t left=0,right=0; double percent=0; };
-struct ScanStats { std::size_t files=0,indexed=0,candidates=0,groups=0,possiblePairs=0; double candidateReductionPercent=0; std::vector<MediaMatch> matches; std::size_t videoCandidates=0,videoTemporalChecks=0; };
+struct ScanStats { std::size_t files=0,indexed=0,candidates=0,groups=0,possiblePairs=0; double candidateReductionPercent=0; std::vector<MediaMatch> matches; std::size_t videoCandidates=0,videoTemporalChecks=0;
+  // D9a: per-stage timing and verify counters from the batch analyze() pass.
+  // Additive; every existing consumer keeps reading the fields above.
+  AnalyzeTelemetry analyze{}; };
 class ScanPipeline {
  std::vector<MediaFile> files_;
  // Running candidate indexes shared by batch analyze() and incremental

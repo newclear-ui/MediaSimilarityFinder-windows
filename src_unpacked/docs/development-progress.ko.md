@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.22 |
+| 기준 코드 | 0.9.4.23 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | D — 근거 기반 측정 후 종료 → **D9 (Analyze / Matching) 개설** |
-| 현재 단계 | **D9a 구현 대기.** D8b 에서 `analyze` 가 엔진 wall 의 98.62 % 이며 내부 분해가 없음을 확인했으므로, D9a 가 stage 별 계측을 먼저 추가한다. 미측정 상태에서는 최적화를 시도하지 않는다 |
-| 현재 버전 | 0.9.4.22 |
+| 현재 노드 | I — Analyze / Matching Performance (D9a 통과) |
+| 현재 단계 | Node I 진행 중 → `verify` 가 analyze 의 **99.67 %** 이며 "캐시 용량 32" 가설은 **기각**(적중률 0.53). 다음 substep 은 verify 경로 손대기 전 pre-register 필수 |
+| 현재 버전 | 0.9.4.23 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -631,3 +631,51 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
   deliverable 은 속도향이 아니라 원인 규명이다.
 - 현재 버전은 0.9.4.22 유지 — 버전은 *검증된* 코드 상태를 뜻하며 아직
   코드 변경이 없다.
+
+### D9a — Analyze 내부 관측 (→ 0.9.4.23, 통과, 계측만)
+- 코드 변경 전에 pre-register 커밋(`0fc3344`).
+- **계측만 한다.** verify 캐시 32 그대로, 병렬화 없음, SSIM/index/threshold/
+  grouping 변경 없음, Scheduler/CUDA 변경 없음.
+- 구조: `src/analyze_telemetry.h` 는 **아무것도에 의존하지 않는** 순수
+  Qt-free 데이터 캐리어다. recorder·pipeline·verify 코드 어느 것도
+  참조하지 않는다. `image_verify` 와 `scan_pipeline` 이 채우고 엔진이
+  복사해 넣는다. **recorder 포인터는 아래로 절대 내려가지 않는다** —
+  프롬프트의 강한 결합 금지 요구사항 충족.
+- **stage 합이 analyzeMs 를 넘을 수 없는 것은 구조적 보장이다.**
+  `flushVideo()` 가 candidate loop 안에서도 호출되므로 중첩 타이머는 겹친다.
+  그래서 video 시간을 누적해 제외하고 `scanMs` 을 **나머지로 정의**한다:
+  `scanMs = total - index - verify - video` (음수면 0). 4개 슬라이스가 총합과
+  정확히 같아지며, scan 은 attribution 안 된 제어 오버헤드를 **정직하게
+  흡수**한다 — 측정되지 않은 stage 소속인 것처럼 꾸미지 않는다.
+- 카운터는 추정이 아니라 이벤트 개수다. `verifyCalls` 는 video 쌍을 제외
+  (작업 없이 반환), misses/hits 는 *조회* 기준(호당 2회), `ssimEvals` 는
+  호출 수, `frameSsimEvals` 는 실제 실행 수라 둘 사이 간격 자체가 측정값이다.
+  파생값은 분모가 0 이면 `null` + `not_measured` — 0 나눗셈으로 0.0 을
+  만들어내지 않는다.
+- schema v8 → v9. 신규 `analyze_telemetry_test` **양쪽 트리**, **41 checks**.
+- **실측** (RTX 3080 Ti, D8b dataset `9b113848…4253c`, cold index):
+  - `index` 3.2 ms (0.00 %), `scan` 350.8 ms (0.32 %), **`verify` 109,142.3 ms
+    (99.67 %)**, `video` `not_measured` (dataset 에 video 없음 — 0 위장 아님)
+  - substage 합 109,496.3 ≤ analyzeMs 109,501.9 → 규칙 성립
+  - `verifyCalls` 158,020 · `misses` 12,949 · `hits` 14,519 · **`verifyHitRate`
+    0.5286** · `msPerVerifyCall` 0.69–0.74 ms · `ssimEvals` 137,340 ·
+    `frameSsimEvals` 274,680
+  - **카운터 내부 정합성**: `ssimEvals/10 == (misses+hits)/2 == 13,734` 이
+    정확히 일치 → 13,734 건이 decode+SSIM 전체 경로를 수행
+- **가설 판정.** "verifyImagePair 가 지배" → **확인**(99.67 %).
+  "kVerifyCacheMax = 32 가 재디코드 원인" → **기각**: 적중률 52.9 % 로
+  ≈0 이 아니다. 후보 쌍이 인덱스 순으로 집중 방문되기 때문이다.
+  **코드만 읽고 세운 가설이 측정으로 뒤집혔다** — pre-register 가 계측을
+  먼저 요구한 이유가 이것이다.
+- **실제 지배 구조:** verify 게이트에 도달한 158,020 건 중 ~91.3 % 는
+  kFast 단축, ~8.7 %(13,734)만 decode+SSIM 을 각 ~8.5 ms 에 수행해 117 초를
+  만든다. 즉 병목은 **verify 게이트에 도달하는 후보 쌍의 수**지, 건당 비용이
+  아니다.
+- parity: `groups` 156,152 로 0.9.4.22 와 동일, `analyze_telemetry_test` 가
+  계측 유무 `verifyImagePair` 반환값이 double 동일함을 단언.
+- 검증: CPU 71/71, GPU 72/72; 양쪽 `--version` 0.9.4.23, `--smoke` PASS.
+  pre-register 롤백 기준 6항목 무발동.
+- 식별되었으나 **구현하지 않은** 다음 후보: 4.3 % 도착률 낮추기, 또는 비싼
+  검증 1건의 8.5 ms 낮추기(디코드 4회 + `frame_ssim` 20회, `ssimBuf` 10회 중
+  9회가 aspect 조합이며 buffer 재사용 없음). 단 dataset 이 합성
+  deterministic fingerprint 이므로 실사용 라이브러리의 후보 비율은 다를 수 있다.
