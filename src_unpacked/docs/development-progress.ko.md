@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.20 |
+| 기준 코드 | 0.9.4.21 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | D — Pipeline / Queue (D4a 백엔드 내부 타이밍 통과) |
-| 현재 단계 | Node D 진행 중 → D4b overlap 판단은 대표 dataset 필요, D8 fixture와 Full D3 topology 미결 |
-| 현재 버전 | 0.9.4.20 |
+| 현재 노드 | D — Pipeline / Queue (D8a 재현 가능 dataset 기반 통과) |
+| 현재 단계 | Node D 진행 중 → D4b overlap, Full D3 queue, D8 end-to-end 를 동일 dataset fingerprint 로 비교 가능해짐. 세 갈래 모두 아직 미결 |
+| 현재 버전 | 0.9.4.21 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -527,3 +527,43 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
   (배치에 비례해 증가하지 않음), H2D는 데이터량에 비례, `syncHost` ≈0.013 ms,
   host 측 갭 ≈0.27 ms 일정. **관찰이며 D4b 판정 아님** — 소규모 합성 프로브는
   대표 dataset이 아님.
+
+### D8a — 재현 가능한 Dataset 기반 / Dataset Fingerprint (→ 0.9.4.21, 통과)
+- **최적화가 아니라 기반 구축.** 병목은 코드가 아니었다. "동일 조건에서 두 상태를
+  비교한다"가 표현 불가능했고, D4b·Full D3·D8이 모두 같은 근거 부재에 막혀 있었다.
+- fixture / 코드 변경 전에 pre-register 커밋(`26cef86`).
+- 지시대로 코드보다 조사先行. 설계를 결정한 핵심 발견:
+  저장소는 **바이너리 asset을 커밋하지 않는다** (트랙 495개 전부 텍스트),
+  모든 테스트가 runtime 생성 관례, `msf_core` 에 **암호 해시 없음**
+  (Qt `QCryptographicHash` 는 GUI 전용·비노출, openssl 없음),
+  모든 video fixture 가 ffmpeg 를 쓰는데 그 출력이 **byte 비재현적**이다.
+- 따라서 dataset 은 **커밋하지 않고 생성**한다
+  (`scripts/prepare_dataset.ps1`): 손으로 만든 8x8 BMP 60개, 두 구조 —
+  `images/exact` 48 (12그룹 x 4 byte 동일) + `images/varied` 12 (시드 전부 다름).
+  clock·환경·random 을 읽지 않고 모든 바이트가 `(seed, x, y)` 의 순수 함수.
+- **video 는 이번 단계에서 제외**하고 별도 후속 작업으로 문서화:
+  ffmpeg 이 encoder/creation-time metadata 를 mix하므로 content hash 가
+  실행마다 흔들려 이 단계의 목적을 정면으로 파괴한다.
+- `src/dataset_fingerprint.{h,cpp}`: 자체 SHA-256 (NIST 벡터 4종으로 검증 —
+  digest 가 조금만 틀려도 모든 fingerprint 가 조용히 흔들린다),
+  manifest 는 `canonical relative path + size + SHA-256(content)` 를 byte 순서로
+  정렬 후 해시. 절대경로·timestamp·pid·하드웨어명은 없으므로 동일 내용의
+  복사본은 다른 root 에서도 동일 fingerprint. 파일 전체를 읽는다 —
+  scanner 의 `quick()` 은 첫 64 KiB 만 덮고 파일 동일성 용도다.
+- Benchmark JSON: `meta.dataset` 에 `fingerprint` / `fingerprintVersion` /
+  `fileCount` / `totalBytes` / `state`. `root` 는 **위치**로 그대로 유지.
+  미측정은 `"fingerprint": null` + `not_available`, 절대 0 이 아님. schema v8.
+  엔진이 `bench_.start()` 직후 연결.
+- 신규: `dataset_fingerprint_test` (A~F, 37 checks, 양쪽 트리) +
+  `dataset_e2e_test` (실제 엔진 스캔이 독립 계산과 동일 fingerprint 를 기록,
+  `scanned != 0` 도 단언).
+- dataset: fingerprint `f01d5c77…d7c`, 60 파일, 14,760 바이트, version 1.
+  분리된 실행에서 재현 확인.
+- 테스트가 찾아낸 수정 2건 (가정한 것이 아님): 처음 쓴 SHA-256 기대값이
+  틀렸음(구현이 정상이었고 별도 벡터 집합으로 교차 확인), 그리고 리포트 파일을
+  처음엔 dataset root **안쪽**에 썼는데 다음 manifest walk 에 포함되어
+  설명하려는 fingerprint 를 바꿔버리므로 root **옆**에 쓰도록 수정.
+- 검증: CPU 70/70, GPU 71/71; 양쪽 `--version` 0.9.4.21, `--smoke` PASS.
+  pre-register 롤백 기준 7항목 전부 무발동.
+- **D4b overlap 과 Full D3 topology 는 아직 구현하지 않았다.**
+  둘 다 이제 이 fingerprint 기준으로 판단 가능하다.

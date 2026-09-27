@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.20 |
+| Reference code | 0.9.4.21 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | D — Pipeline / Queue (D4a backend internal timing PASS) |
-| Current phase | Node D in progress → D4b overlap decision needs a representative dataset; D8 fixtures and full D3 topology still open |
-| Current version | 0.9.4.20 |
+| Current node | D — Pipeline / Queue (D8a reproducible dataset foundation PASS) |
+| Current phase | Node D in progress → D4b overlap, Full D3 queue, and D8 end-to-end are now comparable on one dataset fingerprint; all three remain undecided |
+| Current version | 0.9.4.21 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -509,3 +509,48 @@ Once source implementation begins, update:
 - New `gpu_timing_test` registered in **both** trees (so the recorder contract is proven where CUDA does not exist): key existence, measured/not_measured state flips, non-negativity plus one loose upper bound, CPU-build `measured == false`, and hash-vs-CPU parity as the instrumentation-does-not-change-results guard. No exact host-vs-device summation equality is asserted.
 - Validation: CPU 68/68, GPU 69/69; `--version` 0.9.4.20 and `--smoke` PASS on both. Pre-register rollback triggers: none fired.
 - Real measurement (RTX 3080 Ti, synthetic, pageable): kernel device time ~0.24 ms at both 16 and 256 images (does not scale with batch), H2D scales with data, `syncHost` ~0.013 ms, and a constant ~0.27 ms host-side gap. Observation only — not a D4b verdict, because a small synthetic probe is not a representative dataset.
+
+### D8a — Reproducible Dataset Foundation / Dataset Fingerprint (→ 0.9.4.21, PASS)
+- **Foundation, not optimization.** The blocker was never code: "compare two
+  states under identical conditions" was not expressible. D4b, Full D3, and D8
+  were all blocked on the same missing evidence.
+- Pre-register committed before any fixture or code change (`26cef86`).
+- Investigation first, as the task required. Key findings that shaped the
+  design: the repo commits **no binary assets** (495 tracked files, all text);
+  every test generates media at runtime; `msf_core` has **no cryptographic
+  hash** (Qt `QCryptographicHash` is GUI-only and not exposed, no openssl);
+  every video fixture shells out to ffmpeg, whose output is **not byte
+  reproducible**.
+- Dataset is therefore **generated, not committed**
+  (`scripts/prepare_dataset.ps1`): 60 hand-rolled 8x8 BMP files, two
+  structures — `images/exact` 48 (12 groups × 4 byte-identical) and
+  `images/varied` 12 (distinct seeds). Reads no clock, environment, or random
+  source; every byte is a pure function of `(seed, x, y)`.
+- **Video excluded at this stage** and documented as separate future work:
+  ffmpeg muxes encoder/creation-time metadata, so a content hash over it would
+  drift between runs and defeat the point of the whole step.
+- `src/dataset_fingerprint.{h,cpp}`: self-contained SHA-256 (validated against
+  4 NIST vectors — a subtly wrong digest would make every fingerprint drift
+  silently), manifest of `canonical relative path + size + SHA-256(content)`
+  sorted by byte order, then hashed. No absolute path, timestamp, pid, or
+  hardware name, so two copies of the same content under different roots
+  share a fingerprint. Whole files are read: the scanner's `quick()` covers
+  only the first 64 KiB and serves file identity, not dataset identity.
+- Benchmark JSON: `meta.dataset` with `fingerprint` / `fingerprintVersion` /
+  `fileCount` / `totalBytes` / `state`. `root` stays as the *location* and is
+  untouched. Unmeasured is `"fingerprint": null` + `not_available`, never 0.
+  Schema v8. Engine attaches it right after `bench_.start()`.
+- New: `dataset_fingerprint_test` (A–F, 37 checks, both trees) and
+  `dataset_e2e_test` (real engine scan records the same fingerprint an
+  independent computation produces; also asserts `scanned != 0`).
+- Reported dataset: fingerprint `f01d5c77…d7c`, 60 files, 14,760 bytes,
+  fingerprintVersion 1. Reproduced across separate runs.
+- Two fixes found by the tests rather than assumed: the SHA-256 test vectors
+  I first wrote had a wrong expected value (the implementation was right —
+  checked against a second vector set), and a reporting file initially
+  written *inside* the dataset root would have joined the next manifest walk
+  and changed the fingerprint it described, so it is written beside the root.
+- Validation: CPU 70/70, GPU 71/71; `--version` 0.9.4.21 and `--smoke` PASS on
+  both. All seven pre-register rollback criteria clear.
+- **D4b overlap and Full D3 topology are still not implemented.** Both are
+  now decidable against this fingerprint.

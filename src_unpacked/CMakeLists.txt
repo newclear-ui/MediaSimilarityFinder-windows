@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.20 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.21 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -32,6 +32,7 @@ add_library(msf_core STATIC
     src/video_fingerprint.cpp
     src/resource_policy.cpp
     src/gpu_backend.cpp
+    src/dataset_fingerprint.cpp
     src/similarity_engine.cpp
     src/candidate_index.cpp
     src/scan_pipeline.cpp
@@ -134,6 +135,22 @@ if(MSF_BUILD_TESTS)
         target_link_libraries(msf_cuda_backend_test PRIVATE msf_core)
         add_test(NAME cuda_backend_test COMMAND msf_cuda_backend_test)
     endif()
+    # D8a: dataset identity contract. Registered in both trees — the
+    # reproducibility properties must hold where no GPU exists at all.
+    add_executable(msf_dataset_fingerprint_test tests/dataset_fingerprint_test.cpp)
+    target_link_libraries(msf_dataset_fingerprint_test PRIVATE msf_core)
+    add_test(NAME dataset_fingerprint_test COMMAND msf_dataset_fingerprint_test)
+    # D8a: reports the identity of a prepared dataset root, so the value
+    # recorded in build-history can be reproduced from any checkout. It also
+    # writes a <root>/dataset_fingerprint.json that a scan's benchmark JSON
+    # can be compared against.
+    add_executable(msf_dataset_report tests/dataset_report.cpp)
+    target_link_libraries(msf_dataset_report PRIVATE msf_core)
+    # Real engine scan: proves the fingerprint a scan records matches the one
+    # computed independently for the same root.
+    add_executable(msf_dataset_e2e_test tests/dataset_e2e_test.cpp)
+    target_link_libraries(msf_dataset_e2e_test PRIVATE msf_core)
+    add_test(NAME dataset_e2e_test COMMAND msf_dataset_e2e_test)
     # D4a: backend-internal timing contract. Registered in both trees on
     # purpose — the recorder half must be proven where CUDA does not exist.
     add_executable(msf_gpu_timing_test tests/gpu_timing_test.cpp)

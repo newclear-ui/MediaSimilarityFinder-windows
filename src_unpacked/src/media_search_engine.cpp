@@ -345,6 +345,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const bool benchOn = !control || control->benchmarkEnabled;
   bcfg.detail = benchOn;
   bench_.start(bcfg);
+  // D8a: attach the identity of the bytes under this root so a later reader
+  // can tell "same data" from "same path". A missing or unreadable root
+  // records not_available/failed instead of a zero. This is telemetry only
+  // and never influences scan behavior.
+  bench_.setDatasetFingerprint(msf::computeDatasetFingerprint(root));
   if(benchOn) bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
   if(control) bench_.addRevalidateMs(control->revalidateMs);
   // C2: record the calibration run that fed this scan (if any). Skipped

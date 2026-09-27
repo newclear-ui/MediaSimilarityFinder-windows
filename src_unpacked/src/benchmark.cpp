@@ -140,9 +140,17 @@ void BenchmarkRecorder::abortUnfinished() {
     finalize(false, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
   }
 }
+void BenchmarkRecorder::setDatasetFingerprint(const DatasetFingerprint& fp) {
+  datasetFp_ = fp;
+}
+
 void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   stopSampler();
   cfg_ = cfg;
+  // Each run starts from an unmeasured dataset identity. The caller attaches
+  // the real one immediately after start(); until then the JSON must say
+  // not_available rather than carry a stale value from a previous run.
+  datasetFp_ = DatasetFingerprint{};
   startedAt_ = localTimeStr();
   static std::atomic<std::uint64_t> runCounter{0};
   runId_ = startedAt_ + "-" + std::to_string(runCounter.fetch_add(1, std::memory_order_relaxed) + 1);
@@ -494,7 +502,17 @@ std::string BenchmarkRecorder::toJson() const {
   o << "{\"meta\":{\"app\":\"MediaSimilarityFinder\",\"build\":\"" << escapeJson(cfg_.build) << "\","
     << "\"engine\":\"" << escapeJson(cfg_.engine) << "\",\"db\":\"" << escapeJson(cfg_.db) << "\","
     << "\"startedAt\":\"" << startedAt_ << "\",\"completed\":" << (completed_ ? "true" : "false") << ","
+    // root is a location. dataset is the identity of the bytes under it, so
+    // two runs can prove they used the same input. Fingerprint is null unless
+    // it was actually measured; a missing root stays not_available, never 0.
     << "\"root\":\"" << escapeJson(cfg_.root) << "\""
+    << ",\"dataset\":{\"state\":\"" << escapeJson(datasetFp_.state) << "\""
+    << ",\"fingerprintVersion\":" << kDatasetFingerprintVersion
+    << ",\"fingerprint\":"
+    << (datasetFp_.fingerprint.empty() ? std::string("null")
+                                       : ("\"" + datasetFp_.fingerprint + "\""))
+    << ",\"fileCount\":" << datasetFp_.fileCount
+    << ",\"totalBytes\":" << datasetFp_.totalBytes << "}"
     << ",\"schemaVersion\":" << kBenchmarkSchemaVersion << ",\"runId\":\"" << escapeJson(runId_) << "\""
     << ",\"cancelled\":" << (cancelled_ ? "true" : "false") << ",\"paused\":" << (paused_ ? "true" : "false")
     << ",\"failed\":" << (failed_ ? "true" : "false") << ",\"failedStage\":\"" << escapeJson(failedStage_) << "\""

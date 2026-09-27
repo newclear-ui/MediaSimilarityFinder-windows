@@ -54,7 +54,12 @@ static int recorderUnmeasured() {
   if (!ok(js.find("\"gpuSyncState\":\"not_measured\"") != std::string::npos, "sync not_measured when untimed")) return 10;
   if (!ok(js.find("\"gpuHostTotalState\":\"not_measured\"") != std::string::npos, "hostTotal not_measured when untimed")) return 11;
   if (!ok(js.find("\"gpuTimedBatches\":0") != std::string::npos, "zero timed batches when untimed")) return 12;
-  if (!ok(js.find("\"schemaVersion\":7") != std::string::npos, "schemaVersion 7")) return 13;
+  // D8a bumped the schema for the dataset section; the D4a keys are additive,
+  // so this tracks the current schema rather than pinning D4a's own number.
+  if (!ok(js.find("\"schemaVersion\":" +
+                  std::to_string(msf::BenchmarkRecorder::kBenchmarkSchemaVersion)) !=
+              std::string::npos,
+          "schemaVersion matches the recorder constant")) return 13;
   // A batch counted as GPU work but never timed must not flip a state.
   rec.addImageGpuDeviceTiming(0.0, 0.0, 0.0, 0.0, 0.0, /*usedGpu=*/false);
   const std::string js2 = rec.toJson();

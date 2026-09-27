@@ -1,4 +1,5 @@
 #pragma once
+#include "dataset_fingerprint.h"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -106,11 +107,18 @@ public:
   // v6: D3-Minimal walker capacity + blocked ticks.
   // v7: D4a backend-internal GPU timing split (h2d/kernel/d2h device ms,
   //     host sync wait, host total) with per-metric states.
-  static constexpr int kBenchmarkSchemaVersion = 7;
+  // v8: D8a dataset identity (fingerprint + version + counts + state) so
+  //     repeated runs can prove they used the same input data.
+  static constexpr int kBenchmarkSchemaVersion = 8;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
   void start(const BenchmarkConfig& cfg);
   void reset();
+  // D8a: attaches dataset identity. Called by the engine right after start()
+  // so every run carries proof of which input data produced it. A
+  // non-"measured" result records state + null fingerprint, never a zero.
+  void setDatasetFingerprint(const DatasetFingerprint& fp);
+  const DatasetFingerprint& datasetFingerprint() const { return datasetFp_; }
   bool sampling() const { return sampling_.load(std::memory_order_relaxed); }
   bool finished() const { return finished_; }
   void addImageStageMs(double ms);
@@ -183,6 +191,7 @@ private:
   void sampleOnce(double tMs);
   bool started_ = false;
   BenchmarkConfig cfg_;
+  DatasetFingerprint datasetFp_{};
   std::string startedAt_;
   std::string runId_;
   double wallMs_ = 0;

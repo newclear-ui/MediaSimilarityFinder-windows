@@ -111,6 +111,9 @@ const std::vector<MediaFile>& files() const { return files_; }
   bool hasSchedulerDecision() const { return scheduler_.hasDecision(); }
   void beginBenchmark(const BenchmarkConfig& cfg, bool withSampler);
   void abortBenchmark() { bench_.abortUnfinished(); }
+  // D8a: the dataset identity recorded by the last scan. Lets a caller (and
+  // a test) confirm which input bytes produced the telemetry it is reading.
+  const DatasetFingerprint& lastBenchmarkDataset() const { return bench_.datasetFingerprint(); }
   bool getColorThumb(const std::string& path, int& w, int& h, std::vector<unsigned char>& bgra) const;
   bool getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const;
   private:
