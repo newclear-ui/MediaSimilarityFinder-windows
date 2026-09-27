@@ -154,7 +154,8 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   candidateIndexRecorded_ = similarityRecorded_ = persistenceRecorded_ = false;
   imgCount_ = 0; imgBytes_ = 0; imgGpu_ = 0;
   imgDecodeNs_ = 0; imgHashNs_ = 0; imgCropNs_ = 0; imgGpuNs_ = 0;
-  imgQueueWaitNs_ = 0; imgTransferNs_ = 0; imgExecNs_ = 0;
+  imgQueueWaitNs_ = 0; imgTransferNs_ = 0; imgExecNs_ = 0; imgPackNs_ = 0; imgCpuHashNs_ = 0;
+  imgBatchCount_ = 0; imgBatchItems_ = 0; imgBatchMaxDepth_ = 0;
   imgDecodeRecorded_ = imgHashRecorded_ = imgCropRecorded_ = imgGpuRecorded_ = false;
   imgQueueWaitRecorded_ = imgTransferRecorded_ = imgExecRecorded_ = false;
   vidCount_ = 0; vidBytes_ = 0; vidFrames_ = 0; vidBuildNs_ = 0;
@@ -219,6 +220,14 @@ void BenchmarkRecorder::addImage(std::uint64_t bytes, double decodeMs, double ha
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowImages_, std::move(item));
 }
+void BenchmarkRecorder::beginImageBatch(std::size_t items) {
+  imgBatchCount_.fetch_add(1, std::memory_order_relaxed);
+  imgBatchItems_.fetch_add(items, std::memory_order_relaxed);
+  imgBatchMaxDepth_.store(1, std::memory_order_relaxed);
+}
+void BenchmarkRecorder::endImageBatch() {}
+void BenchmarkRecorder::addImagePackMs(double ms) { imgPackNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed); }
+void BenchmarkRecorder::addImageCpuHashMs(double ms) { imgCpuHashNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed); }
 void BenchmarkRecorder::addGpuBatchMs(double ms) {
   imgGpuNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
   imgGpuRecorded_ = true;
@@ -455,6 +464,12 @@ std::string BenchmarkRecorder::toJson() const {
     << ",\"gpuQueueWaitMs\":" << (double)imgQueueWaitNs_.load() / 1e6
     << ",\"gpuTransferMs\":" << (double)imgTransferNs_.load() / 1e6
     << ",\"gpuExecMs\":" << (double)imgExecNs_.load() / 1e6
+    << ",\"packMs\":" << (double)imgPackNs_.load() / 1e6
+    << ",\"cpuHashMs\":" << (double)imgCpuHashNs_.load() / 1e6
+    << ",\"batchCount\":" << imgBatchCount_.load()
+    << ",\"batchItems\":" << imgBatchItems_.load()
+    << ",\"batchMaxDepth\":" << imgBatchMaxDepth_.load()
+    << ",\"batchState\":\"" << measureStateName(imgBatchCount_.load() > 0 ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"decodeState\":\"" << measureStateName(imgDecodeRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"hashState\":\"" << measureStateName(imgHashRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     << ",\"gpuQueueWaitState\":\"" << measureStateName(imgQueueWaitRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
