@@ -47,6 +47,9 @@ struct ProfileUpdateRecord {
 };
 struct PerformanceProfile {
   static constexpr int kProfileVersion = 1;
+  // Normal development default for staleness checks (classify/initialEstimate
+  // maxAgeDays); negative age stays reserved for explicit diagnostics.
+  static constexpr long long kDefaultMaxAgeDays = 30;
   // Opaque stable id: FNV-1a hex over the canonical identity. Same hardware
   // unit -> same id across restarts; identity VERDICTS use fields, not id.
   std::string id;
@@ -85,15 +88,13 @@ public:
   void clear() { profile_ = PerformanceProfile{}; has_ = false; }
   static std::string deriveId(const ProfileIdentity& id);
   static const char* matchName(ProfileMatch m);
-  // Order: Missing -> Hard -> Stale -> Soft -> Exact. The normal development
-  // default is 30 days; negative age is reserved for explicit diagnostics.
+  // Order: Missing -> Hard -> Stale -> Soft -> Exact (see classify).
   ProfileMatch classify(const ProfileIdentity& current, long long maxAgeDays, long long nowSec) const;
   // Usable only when the verdict is Exact/Soft AND both throughputs are
   // measured. Pair-or-nothing: overriding one baseline while keeping the
   // other would corrupt the scheduler ratio. CPU-only machines therefore
   // never yield an estimate (their GPU path is fallback by construction).
   InitialEstimate initialEstimate(const ProfileIdentity& current, long long maxAgeDays, long long nowSec) const;
-  static constexpr long long kDefaultMaxAgeDays = 30;
 private:
   PerformanceProfile profile_;
   bool has_ = false;

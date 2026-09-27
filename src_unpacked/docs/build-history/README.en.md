@@ -142,3 +142,4 @@ See the version-specific `.ko.md` / `.en.md` files for details.
 Previous implementation/design snapshots are preserved under `../architecture/legacy/`.
 
 | 0.9.4.13 | Node C4.1 Calibration Lifecycle Fix — GPU OFF→ON metric-gap, 30-day stale policy, CPU/GPU identity completion — **GPT Fix** |
+| 0.9.4.14 | C4.1 build recovery (kDefaultMaxAgeDays declaration site, msf:: prefix in test) |

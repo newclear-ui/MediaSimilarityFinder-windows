@@ -1,16 +1,16 @@
 # Build Status
 
-- Current development version: **0.9.4.13**
+- Current development version: **0.9.4.14**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.4.13 — Node C4.1 Calibration Lifecycle Fix (engine 1.5.0, video cache v9)
-- Active Node C substep: C4.1 fix — validation pending on current Windows CPU/GPU trees
-- Last completed Windows build/test line: **0.9.4.12**
-- Last completed v0.9.4.12 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.12 test run: **CTest 67/67 PASS (GPU)**
-- Last completed v0.9.4.12 validation: 17-combination evidence mapping; calibrationUsableForUpdate helper; Exact long silence + failure-keeps-file assertions; `--version` 0.9.4.12
-- CPU-only validation: Release build PASS; **CTest 64/64 PASS**; CUDA disabled and CPU fallback verified
+- Current: 0.9.4.14 — C4.1 build recovery (engine 1.5.0, video cache v9)
+- Active Node C substep: C4.1 fix validated on current Windows CPU/GPU trees
+- Last completed Windows build/test line: **0.9.4.14**
+- Last completed v0.9.4.14 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.14 test run: **CTest 67/67 PASS (GPU)**
+- Last completed v0.9.4.14 validation: kDefaultMaxAgeDays declaration-site fix; msf:: prefix fix; `--version` 0.9.4.14
+- CPU-only validation: Release build PASS; **CTest 66/66 PASS**; CUDA disabled and CPU fallback verified
 - GUI execution evidence split (automation vs interactive): offscreen `--smoke` PASS on both trees; real windowed launch PASS (OS window handle + version title observed, process terminated cleanly); slot-path workflow automated PASS (`scan_workflow_test`); automated validation of human operation NOT_VALIDATED (environment limit) — development lead user-reports direct confirmation of run → search → report display in a real Windows session
 - Windows build scripts: default `-BuildParallelism 1` avoids vcpkg `z-applocal` output-copy races; higher parallelism remains opt-in
 - Build entry points: `scripts/build_windows_gpu.ps1` (canonical, clean `build-windows-gpu` tree) and `scripts/build_windows_cpu.ps1`; `scripts/build_windows_cuda.ps1` remains a deprecated alias path
@@ -20,6 +20,6 @@
 - Last completed v0.9.2.63 Windows Qt6 GUI runtime: VERIFIED on Windows (MediaSimilarityFinder.exe --version exit 0 with Qt6\plugins deployed; windowed run not exercised in that validation session)
 - NVIDIA CUDA runtime: VERIFIED on RTX 3080 Ti (Toolkit 13.4, sm_86; cuda_backend_test green, kernels unchanged)
 
-See docs/build-history/0.9.4.8.ko.md and .en.md for the current development changes. Official baseline: docs/build-history/0.9.2.32.ko.md and .en.md.
+See docs/build-history/0.9.4.14.ko.md and .en.md for the current development changes. Official baseline: docs/build-history/0.9.2.32.ko.md and .en.md.
 
-- **GPT Fix (v0.9.4.13):** source changes committed; CPU/GPU Release rebuild and CTest validation are pending, so no new PASS count is claimed.
+- **GPT Fix (v0.9.4.13):** source changes committed with validation honestly marked pending (no PASS claimed); 0.9.4.14 establishes the missing validation.

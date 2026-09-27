@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.13 |
+| Reference code | 0.9.4.14 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | C — Calibration / INI Performance Profile (C4 gate PASS → next gate D) |
+| Current node | C — Calibration / INI Performance Profile (C4.1 fix validated → next gate D) |
 | Current phase | Node C done → D kickoff per D brief (D1 observability first) |
-| Current version | 0.9.4.13 |
+| Current version | 0.9.4.14 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -470,6 +470,6 @@ Once source implementation begins, update:
 **This is not a prediction document; it is the state record that prevents loss of the current development position.**
 
 
-### C4.1 — Calibration Lifecycle Fix (→ 0.9.4.13)
+### C4.1 — Calibration Lifecycle Fix (→ 0.9.4.13, validated in 0.9.4.14)
 - **GPT Fix:** GPU OFF→ON incomplete-profile lifecycle, default 30-day stale enforcement, CPU model/GPU driver identity completion, and failed-retry preservation.
-- Windows CPU/GPU Release build and full CTest validation: **PENDING**.
+- Windows CPU/GPU Release build and full CTest validation: **PASS in 0.9.4.14** (CPU 66/66, GPU 67/67) after moving `kDefaultMaxAgeDays` to `PerformanceProfile` and prefixing the test reference. Details: `docs/build-history/0.9.4.14.en.md`.
