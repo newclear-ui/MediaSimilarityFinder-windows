@@ -47,12 +47,15 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         std::error_code ec; dec[i].bytes=(unsigned long long)std::filesystem::file_size(path_from_utf8(paths[i]),ec);
     });
     std::vector<std::uint8_t> packed; std::vector<std::size_t> map;
+    if(bench) bench->beginImageBatch(paths.size());
+    const auto packT0 = std::chrono::steady_clock::now();
     for(std::size_t i=0;i<paths.size();++i){
         out[i].path=paths[i];
         if(!dec[i].ok) continue;
         map.push_back(i); packed.insert(packed.end(),dec[i].img.pixels.begin(),dec[i].img.pixels.end());
     }
-    if(map.empty()) return out;
+    if(map.empty()){ if(bench) bench->endImageBatch(); return out; }
+    if(bench) bench->addImagePackMs(msSince(packT0));
     gpuBatchSize=std::max<std::size_t>(1,gpuBatchSize);
     const bool gpuReady = preferGpu && gpu_.available();
     if(preferGpu){
@@ -78,7 +81,7 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         parallelFor(n,[&](std::size_t k){
             const auto t0=std::chrono::steady_clock::now();
             const auto h=perceptual_hash_pair_32(block+k*1024);
-            if(!used){ hashes[k]=h.normal; hMs[base+k]=msSince(t0); }
+            if(!used){ hashes[k]=h.normal; hMs[base+k]=msSince(t0); if(bench) bench->addImageCpuHashMs(hMs[base+k]); }
             mirrors[k]=h.mirrored;
         });
         for(std::size_t k=0;k<n;++k){ auto oi=map[base+k]; out[oi].fingerprint=hashes[k];
@@ -86,6 +89,7 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
             out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; usedF[base+k]=used?1:0; }
     }
     if(activity) activity->store(false,std::memory_order_relaxed);
+    if(bench) bench->endImageBatch();
     // Crop pass decodes a second, larger frame per image; parallelize it the
     // same way. Each task writes only its own output slot.
     parallelFor(map.size(), [&](std::size_t m){
