@@ -281,7 +281,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
   if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.23\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.23\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.24\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.24\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -563,11 +563,75 @@ QVector<LiveMatch> ScanWorker::takePending() {
 // state (window size, splitter, headers, view mode, ...) persists across
 // runs. INI next to the executable keeps portable builds truly portable
 // instead of depending on the Windows registry.
+//
+// 0.9.4.24: the organization name is the product name instead of a personal
+// handle, because it is the on-disk folder name and therefore part of what a
+// user sees in the portable distribution. The application name was already
+// product-based and is unchanged.
+static const char* const kSettingsOrganization = "MediaSimilarityFinder-ui";
+// Pre-0.9.4.24 organization. Kept only to migrate its INI once; it must never
+// become the active identity again.
+static const char* const kLegacySettingsOrganization = "newclear-ui";
+static const char* const kSettingsApplication = "MediaSimilarityFinder";
+
+namespace {
+// Keys whose presence proves the migrated copy is readable, not merely
+// present. A file that copied but is empty or truncated would fail here
+// instead of silently resetting the user's UI to defaults.
+const char* const kMigrationProbeKeys[] = {"ui/mainGeom", "ui/splitter"};
+constexpr int kMigrationProbeCount = 2;
+
+bool migrationCopyLegacySettings(const QString& portableDir) {
+  const QString legacyIni =
+      QDir(portableDir).filePath(QString::fromLatin1(kLegacySettingsOrganization) + QLatin1Char('/') +
+                                 QLatin1String(kSettingsApplication) + QLatin1String(".ini"));
+  if (!QFileInfo::exists(legacyIni)) return false;   // Case A: nothing to do.
+
+  const QString targetDir =
+      QDir(portableDir).filePath(QString::fromLatin1(kSettingsOrganization));
+  const QString targetIni = QDir(targetDir).filePath(QLatin1String(kSettingsApplication) + QLatin1String(".ini"));
+
+  // Case C: a new-location file already exists. Never overwrite it: the new
+  // location wins and the legacy file is preserved untouched, so no data can
+  // be lost. This also makes the whole operation idempotent.
+  if (QFileInfo::exists(targetIni)) return false;
+
+  // Case D: if the new directory cannot be created, do not touch the legacy
+  // file. The app still starts and simply writes to whatever path Qt uses.
+  if (!QDir().mkpath(targetDir)) return false;
+  if (!QFile::copy(legacyIni, targetIni)) return false;   // legacy preserved
+
+  // Verify before removing anything (Section 5 ordering). A copy that cannot
+  // be opened, or that lost its keys, is treated as a failed migration.
+  {
+    QSettings probe;
+    probe.sync();
+    if (probe.status() != QSettings::NoError) { QFile::remove(targetIni); return false; }
+    for (int i = 0; i < kMigrationProbeCount; ++i)
+      if (!probe.contains(QString::fromLatin1(kMigrationProbeKeys[i]))) {
+        QFile::remove(targetIni);
+        return false;
+      }
+  }
+
+  // Only now is the legacy file removable. The directory is removed only when
+  // it is left empty, so an unexpected file inside it keeps the whole thing.
+  QFile::remove(legacyIni);
+  QDir legacyDir(portableDir);
+  legacyDir.cd(QString::fromLatin1(kLegacySettingsOrganization));
+  if (legacyDir.isEmpty()) legacyDir.rmdir(".");
+  return true;
+}
+}  // namespace
+
 void initAppSettings(const QString& portableDir) {
-  QCoreApplication::setOrganizationName("newclear-ui");
-  QCoreApplication::setApplicationName("MediaSimilarityFinder");
+  QCoreApplication::setOrganizationName(QString::fromLatin1(kSettingsOrganization));
+  QCoreApplication::setApplicationName(QString::fromLatin1(kSettingsApplication));
   QSettings::setDefaultFormat(QSettings::IniFormat);
   QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, portableDir);
+  // Runs after the identity is set, because the copy is validated by opening
+  // the new file through QSettings, and before any caller reads a value.
+  migrationCopyLegacySettings(portableDir);
 }
 MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
@@ -665,7 +729,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-    setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.23"));
+    setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.24"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -1048,7 +1112,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.23"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.24"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));

@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.23 |
+| 기준 코드 | 0.9.4.24 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
 | 현재 노드 | I — Analyze / Matching Performance (D9a 통과) |
 | 현재 단계 | Node I 진행 중 → `verify` 가 analyze 의 **99.67 %** 이며 "캐시 용량 32" 가설은 **기각**(적중률 0.53). 다음 substep 은 verify 경로 손대기 전 pre-register 필수 |
-| 현재 버전 | 0.9.4.23 |
+| 현재 버전 | 0.9.4.24 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -679,3 +679,30 @@ OpenCode는 새 작업을 시작할 때 다음을 먼저 읽습니다.
   검증 1건의 8.5 ms 낮추기(디코드 4회 + `frame_ssim` 20회, `ssimBuf` 10회 중
   9회가 aspect 조합이며 buffer 재사용 없음). 단 dataset 이 합성
   deterministic fingerprint 이므로 실사용 라이브러리의 후보 비율은 다를 수 있다.
+
+### 0.9.4.24 — QSettings Organization 이름 변경 (통과, identity 만)
+- D 계측 순서와 무관한, 포터블 UI identity 한정 변경.
+- QSettings organization 이름이 곧 설정 폴더명이므로, 기존 값 `newclear-ui` 는
+  GitHub 계정명이 그대로 배포물에 나가고 있었다. `MediaSimilarityFinder-ui`
+  로 변경했고 application name·executable·CMake target 은 모두 유지.
+  `setDefaultFormat`/`setPath` 는 손대지 않았다.
+- 조사 선행: 활성 코드 사용처는 **정확히 1곳**이었고, 나머지는 저장소 owner
+  표기와 역사 build-history 문서였다. QuickLook 레지스트리 조회는
+  `NativeFormat` + 명시 path 라서 무관하며 의도적으로 건드리지 않았다.
+- 단순 rename 은 기존 사용자의 UI 상태를 초기화된 것처럼 보이게 하므로,
+  migration 이 이번 작업의 실체다. `MainWindow` 가 곧바로 `ui/ignored` 를
+  읽으므로 identity 설정 직후 `initAppSettings()` 내부에서 실행한다.
+- 삭제 정책은 엄격한 순서: 복사 → 실제 QSettings 로 새 INI open →
+  `status() == NoError` 확인 → `ui/mainGeom`·`ui/splitter` 존재 확인 →
+  **그때만** legacy INI 제거, legacy 디렉터리는 비었을 때만 rmdir.
+  어떤 실패 경로에서도 legacy 가 보존되므로 사용자 설정이 사라질 수 없다.
+  새 위치가 이미 있으면 그쪽이 승리하고 legacy 는 그대로 두므로 idempotent 하다.
+- 테스트: `ui_settings_test` 에 cross-process 5단계(plant / verify /
+  both / none). 같은 프로세스 read-back 은 디스크 영속성이 깨져도 QSettings
+  인메모리 캐시로 통과할 수 있어 프로세스를 분리했다. 기존 cross-process
+  round-trip 은 새 identity 아래에서도 계속 통과한다.
+- 실환경 검증도 수행: 임시 portable 디렉터리 + 실제 `--smoke` 실행으로
+  Case A(신규만), B(legacy 만 — 11개 key 보존·legacy 제거), C(양쪽 — 신규 승리·
+  legacy 보존) 확인.
+- 검증: CPU 76/76, GPU 77/77; 양쪽 `--version` 0.9.4.24, `--smoke` PASS.
+  Engine 1.5.0 / DB 1.0.3 / cache v9 불변.

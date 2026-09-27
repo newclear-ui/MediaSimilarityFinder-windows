@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.23 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.24 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -386,6 +386,20 @@ if(MSF_BUILD_GUI)
       add_test(NAME ui_settings_verify COMMAND msf_ui_settings_test --probe-verify "${MSF_UI_SETTINGS_DIR}" 640 480)
       set_tests_properties(ui_settings_verify PROPERTIES DEPENDS ui_settings_write)
       add_test(NAME ui_reference_order_test COMMAND msf_ui_settings_test --ref-order)
+      # 0.9.4.24 settings-identity migration. Every phase is its own process so
+      # a same-process QSettings cache can never make a broken migration pass.
+      set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")
+      set(MSF_MIGRATE_BOTH_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate-both")
+      set(MSF_MIGRATE_NONE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate-none")
+      add_test(NAME ui_settings_migrate_plant COMMAND msf_ui_settings_test --migrate-plant "${MSF_MIGRATE_DIR}")
+      add_test(NAME ui_settings_migrate_verify COMMAND msf_ui_settings_test --migrate-verify "${MSF_MIGRATE_DIR}")
+      set_tests_properties(ui_settings_migrate_verify PROPERTIES DEPENDS ui_settings_migrate_plant)
+      # Both locations present: the new one must win and the legacy one survive.
+      add_test(NAME ui_settings_migrate_both_plant COMMAND msf_ui_settings_test --migrate-plant-new-only "${MSF_MIGRATE_BOTH_DIR}")
+      add_test(NAME ui_settings_migrate_both_verify COMMAND msf_ui_settings_test --migrate-both-verify "${MSF_MIGRATE_BOTH_DIR}")
+      set_tests_properties(ui_settings_migrate_both_verify PROPERTIES DEPENDS ui_settings_migrate_both_plant)
+      # No legacy file: nothing may be invented, and the new INI must appear.
+      add_test(NAME ui_settings_migrate_none_verify COMMAND msf_ui_settings_test --migrate-none-verify "${MSF_MIGRATE_NONE_DIR}")
       # Worker streaming + persistence probe: real scan over identical BMPs,
       # asserts live matches stream AND survive in a fresh engine handle.
       add_executable(msf_scan_streaming_test tests/scan_streaming_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
@@ -432,7 +446,7 @@ if(MSF_BUILD_GUI)
         add_test(NAME reveal_window_test COMMAND msf_reveal_window_test)
         set_tests_properties(reveal_window_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
       endif()
-      set_tests_properties(ui_settings_write ui_settings_verify ui_reference_order_test scan_streaming_test scan_workflow_test walker_queue_test video_scan_e2e_test view_mode_probe thumb_layout_test quicklook_pipe_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
+      set_tests_properties(ui_settings_write ui_settings_verify ui_reference_order_test ui_settings_migrate_plant ui_settings_migrate_verify ui_settings_migrate_both_plant ui_settings_migrate_both_verify ui_settings_migrate_none_verify scan_streaming_test scan_workflow_test walker_queue_test video_scan_e2e_test view_mode_probe thumb_layout_test quicklook_pipe_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
     endif()
   else()
     message(STATUS "Qt6 not found; GUI target skipped")

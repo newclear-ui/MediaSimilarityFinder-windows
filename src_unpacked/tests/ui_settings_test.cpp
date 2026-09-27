@@ -12,10 +12,66 @@
 // persists, which is exactly the bug this guards against).
 #include "mainwindow.h"
 #include <QApplication>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSettings>
 #include <QDir>
 #include <iostream>
+
+// 0.9.4.24 legacy settings migration. Same cross-process discipline as the
+// round-trip probe above, and for the same reason: a same-process read-back
+// would be served from QSettings' in-memory cache and would pass even if the
+// migration never touched disk.
+//
+// --migrate <dir>: a prior process planted a legacy newclear-ui INI with real
+//    values. This process runs initAppSettings() and must end up with those
+//    values readable from the NEW location, and the legacy INI gone.
+// --migrate-none <dir>: no legacy file. initAppSettings() must not create one
+//    and must not invent settings.
+// --migrate-both <dir>: both locations already hold different values. The new
+//    location must win and the legacy file must survive untouched.
+namespace {
+const char* const kNewOrg = "MediaSimilarityFinder-ui";
+const char* const kLegacyOrg = "newclear-ui";
+const char* const kApp = "MediaSimilarityFinder";
+
+QString iniPath(const QString& root, const char* org) {
+  return QDir(root).filePath(QString::fromLatin1(org) + QLatin1Char('/') + QLatin1String(kApp) +
+                            QLatin1String(".ini"));
+}
+
+// Writes an INI directly, bypassing QSettings entirely, so the fixture is a
+// real file on disk exactly like a pre-upgrade user's, and no in-process cache
+// can exist. QSettings cannot be constructed without a QCoreApplication, which
+// is the whole point: the plant phase must not have one.
+bool plantIni(const QString& path, const QMap<QString, QString>& values) {
+  const QFileInfo fi(path);
+  if (!QDir().mkpath(fi.absolutePath())) return false;
+  QFile f(path);
+  if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+  QString currentGroup;
+  for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
+    const QString key = it.key();
+    const int slash = key.lastIndexOf(QLatin1Char('/'));
+    const QString group = slash < 0 ? QString() : key.left(slash);
+    const QString leaf = slash < 0 ? key : key.mid(slash + 1);
+    if (group != currentGroup) {
+      currentGroup = group;
+      if (!currentGroup.isEmpty()) {
+        const QByteArray header = ("[" + currentGroup + "]\n").toUtf8();
+        if (f.write(header) < 0) return false;
+      }
+    }
+    // QByteArray values round-trip as base64 in INI; plain ASCII markers keep
+    // the fixture readable and the assertions unambiguous.
+    const QByteArray line = (leaf + "=" + it.value() + "\n").toUtf8();
+    if (f.write(line) < 0) return false;
+  }
+  f.close();
+  return QFileInfo::exists(path);
+}
+}  // namespace
 
 int main(int argc, char** argv) {
   if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--ref-order") {
@@ -28,6 +84,115 @@ int main(int argc, char** argv) {
     MainWindow::sortTiedReferencePaths(paths, pix, siz);
     if (paths != QStringList({"c", "b", "a", "d"})) { std::cerr << "bad reference order\n"; return 1; }
     std::cout << "reference_order=ok\n"; return 0;
+  }
+  // Migration probes run before the MainWindow probe argument check because
+  // they never build a window: they only exercise the settings bootstrap.
+  if (argc == 3) {
+    const QString mode = QString::fromLocal8Bit(argv[1]);
+    const QString dir = QString::fromLocal8Bit(argv[2]);
+    const QString legacyIni = iniPath(dir, kLegacyOrg);
+    const QString newIni = iniPath(dir, kNewOrg);
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+
+    if (mode == "--migrate-plant" || mode == "--migrate-plant-new-only") {
+      // A plant phase must start from a known-clean slate: a leftover file
+      // from an earlier run would otherwise make the fixture assert something
+      // that is no longer true. Clearing here is what makes the phase
+      // repeatable instead of single-use.
+      QDir root(dir);
+      if (root.exists()) root.removeRecursively();
+      if (QFileInfo::exists(newIni)) { std::cerr << "new ini must not exist yet\n"; return 1; }
+      if (mode == "--migrate-plant") {
+        // No QApplication: this process only plants a file on disk, so nothing
+        // can be served from an in-process QSettings cache later.
+        if (!plantIni(legacyIni, {{"ui/mainGeom", "planted-geom"},
+                                   {"ui/splitter", "planted-splitter"},
+                                   {"ui/language", "en"},
+                                   {"monitor/thresholdPercent", "42"},
+                                   {"monitor/stableSeconds", "7"}})) {
+          std::cerr << "plant failed\n"; return 1;
+        }
+        std::cout << "migrate_plant=ok\n"; return 0;
+      }
+      if (!plantIni(newIni, {{"ui/mainGeom", "new-value"},
+                             {"ui/splitter", "new-splitter"}})) {
+        std::cerr << "plant new failed\n"; return 1;
+      }
+      if (!plantIni(legacyIni, {{"ui/mainGeom", "legacy-value"},
+                                 {"ui/splitter", "legacy-splitter"}})) {
+        std::cerr << "plant legacy failed\n"; return 1;
+      }
+      std::cout << "migrate_plant_both=ok\n"; return 0;
+    }
+    QApplication app(argc, argv);
+    // Every verify phase goes through the real bootstrap, which is what runs
+    // the migration. The plant phases deliberately do not.
+    initAppSettings(dir);
+    if (mode == "--migrate-verify") {
+      if (QFileInfo::exists(legacyIni)) { std::cerr << "legacy ini not cleaned up\n"; return 1; }
+      if (!QFileInfo::exists(newIni)) { std::cerr << "new ini not created\n"; return 1; }
+      // The active identity must be the product name, and the settings must
+      // be readable from the new location with the values intact.
+      if (QCoreApplication::organizationName() != QLatin1String(kNewOrg)) {
+        std::cerr << "wrong organization: " << QCoreApplication::organizationName().toStdString() << "\n"; return 1;
+      }
+      QSettings st;
+      st.sync();
+      if (st.status() != QSettings::NoError) { std::cerr << "migrated settings unreadable\n"; return 1; }
+      if (st.value("ui/mainGeom").toString() != "planted-geom") {
+        std::cerr << "mainGeom not migrated\n"; return 1;
+      }
+      if (st.value("ui/splitter").toString() != "planted-splitter") {
+        std::cerr << "splitter not migrated\n"; return 1;
+      }
+      if (st.value("ui/language").toString() != "en") { std::cerr << "language not migrated\n"; return 1; }
+      if (st.value("monitor/thresholdPercent").toInt() != 42) { std::cerr << "threshold not migrated\n"; return 1; }
+      if (st.value("monitor/stableSeconds").toInt() != 7) { std::cerr << "stableSeconds not migrated\n"; return 1; }
+      if (st.fileName() != QDir::toNativeSeparators(newIni) &&
+          QFileInfo(st.fileName()) != QFileInfo(newIni)) {
+        std::cerr << "active settings file is not the new location: " << st.fileName().toStdString() << "\n"; return 1;
+      }
+      // Re-running the bootstrap must be a no-op, not a second overwrite.
+      initAppSettings(dir);
+      if (QFileInfo::exists(legacyIni)) { std::cerr << "idempotence broke: legacy reappeared\n"; return 1; }
+      std::cout << "migrate_verify=ok\n"; return 0;
+    }
+    if (mode == "--migrate-none-verify") {
+      // Same repeatable-start discipline as the plant phases: a leftover file
+      // would make "no legacy ini" true by accident rather than by design.
+      // The QApplication already created above is reused; creating a second one
+      // here would tear down Qt state that the outer instance still owns.
+      {
+        QDir root(dir);
+        if (root.exists()) root.removeRecursively();
+        QDir().mkpath(dir);
+      }
+      initAppSettings(dir);
+      if (QFileInfo::exists(legacyIni)) { std::cerr << "legacy ini must not be created\n"; return 1; }
+      if (QCoreApplication::organizationName() != QLatin1String(kNewOrg)) {
+        std::cerr << "wrong organization\n"; return 1;
+      }
+      // A fresh QSettings in the new location must be writable, which is what
+      // proves the new identity resolves to a real path.
+      QSettings st;
+      st.setValue("ui/language", "ko");
+      st.sync();
+      if (st.status() != QSettings::NoError) { std::cerr << "new ini not writable\n"; return 1; }
+      if (!QFileInfo::exists(newIni)) { std::cerr << "new ini not created\n"; return 1; }
+      if (QFileInfo::exists(legacyIni)) { std::cerr << "legacy dir must not be created\n"; return 1; }
+      std::cout << "migrate_none_verify=ok\n"; return 0;
+    }
+    if (mode == "--migrate-both-verify") {
+      // The new location must win and the legacy file must be preserved.
+      if (!QFileInfo::exists(legacyIni)) { std::cerr << "legacy ini was destroyed\n"; return 1; }
+      QSettings st;
+      st.sync();
+      if (st.value("ui/mainGeom").toString() != "new-value") {
+        std::cerr << "new location did not win\n"; return 1;
+      }
+      std::cout << "migrate_both_verify=ok\n"; return 0;
+    }
+    std::cerr << "unknown migration mode\n"; return 2;
   }
   if (argc != 5) { std::cerr << "usage: ui_settings_test --probe-write|--probe-verify <dir> <W> <H>\n"; return 2; }
   const QString mode = QString::fromLocal8Bit(argv[1]);

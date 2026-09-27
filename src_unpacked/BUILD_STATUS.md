@@ -1,17 +1,17 @@
 # Build Status
 
-- Current development version: **0.9.4.23**
+- Current development version: **0.9.4.24**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.23 — D9a Analyze Internal Observability (measurement only, schema v9)**
-- Active node: **I / D9a PASS → next substep must pre-register before touching the verify path**
-- Last completed Windows build/test line: **0.9.4.23**
-- Last completed v0.9.4.23 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.23 test run: **CTest 72/72 PASS (GPU)**
-- Last completed v0.9.4.23 validation: `analyze_telemetry_test` 41 checks (both trees) + real D8b-dataset measurement; `--version` 0.9.4.23; `--smoke` PASS both
-- CPU-only validation: Release build PASS; **CTest 71/71 PASS**; CUDA disabled and CPU fallback verified
-- D9a scope note: **no optimization.** verify cache still 32, no parallelization, no SSIM/index/threshold/grouping change, no Scheduler/CUDA change
+- Current: **0.9.4.24 — QSettings Organization rename + safe one-time settings migration**
+- Active node: **I / D9a PASS (0.9.4.23); 0.9.4.24 is a settings-identity change outside the D telemetry sequence**
+- Last completed Windows build/test line: **0.9.4.24**
+- Last completed v0.9.4.24 build: Core + GUI Release build PASS (CPU and GPU trees)
+- Last completed v0.9.4.24 test run: **CTest 77/77 PASS (GPU)**
+- Last completed v0.9.4.24 validation: 5 cross-process settings-migration tests (plant / verify / both-preserved / none) + real `--smoke` in a temp portable dir for cases A, B, C; `--version` 0.9.4.24; `--smoke` PASS both
+- CPU-only validation: Release build PASS; **CTest 76/76 PASS**; CUDA disabled and CPU fallback verified
+- Settings identity: organization `MediaSimilarityFinder-ui`, application `MediaSimilarityFinder`, INI next to the exe. Legacy `newclear-ui` migrated once; never overwritten when the new location already exists. Engine/DB/verdict semantics unchanged
 
 ### D9a measured findings (RTX 3080 Ti, D8b dataset `9b113848…4253c`, cold index)
 

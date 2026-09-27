@@ -153,3 +153,4 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 - v0.9.4.21 — D8a: 재현 가능한 dataset + benchmark JSON dataset fingerprint, schema v8
 - v0.9.4.22 — D8b: dataset 규모 확장(2700파일) + walker queue / stage 분해 증거, D4b·Full D3 근거 기반 보류
 - v0.9.4.23 — D9a: analyze 내부 stage 분해 + verify/SSIM 카운터, schema v9. "캐시 용량 32" 가설은 측정으로 기각
+- v0.9.4.24 — QSettings organization 을 `MediaSimilarityFinder-ui` 로 변경 + 기존 설정 안전한 1회 자동 마이그레이션
