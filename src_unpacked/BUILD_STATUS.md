@@ -1,11 +1,11 @@
 # Build Status
 
-- Current development version: **0.9.4.14**
+- Current development version: **0.9.4.15**
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: 0.9.4.14 — C4.1 build recovery (engine 1.5.0, video cache v9)
-- Active Node C substep: C4.1 fix validated on current Windows CPU/GPU trees
+- Current: **0.9.4.15 — Node D1a Image-Path Observability (implementation started)**
+- Active Node D substep: **D1a Image-Path Observability — implementation started; build/test validation pending**
 - Last completed Windows build/test line: **0.9.4.14**
 - Last completed v0.9.4.14 build: Core + GUI Release build PASS (CPU and GPU trees)
 - Last completed v0.9.4.14 test run: **CTest 67/67 PASS (GPU)**
@@ -23,3 +23,14 @@
 See docs/build-history/0.9.4.14.ko.md and .en.md for the current development changes. Official baseline: docs/build-history/0.9.2.32.ko.md and .en.md.
 
 - **GPT Fix (v0.9.4.13):** source changes committed with validation honestly marked pending (no PASS claimed); 0.9.4.14 establishes the missing validation.
+
+
+## Node D0 / D1a status
+
+- D0 baseline frozen at v0.9.4.14.
+- v0.9.2.32 remains untouched.
+- v0.9.4.15 is the first Node D1a implementation line.
+- D1a is limited to the existing imageBatch synchronous boundary and existing BenchmarkRecorder telemetry.
+- Scheduler share policy, Profile/Calibration, CUDA backend, video, similarity, DB/cache, and queue topology are unchanged.
+- Transfer timing remains not_measured until backend-internal hooks exist; hashBatch elapsed time is not labeled as transfer time.
+- v0.9.4.15 build/test validation is PENDING.
