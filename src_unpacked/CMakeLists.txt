@@ -291,6 +291,14 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_test tests/benchmark_test.cpp)
     target_link_libraries(msf_benchmark_test PRIVATE msf_core)
     add_test(NAME benchmark_test COMMAND msf_benchmark_test)
+    # Benchmark schema compatibility probe. Deliberately links Qt::Core and
+    # parses the record with QJsonDocument, because that is the only structured
+    # reader of benchmark JSON in the project (gui/mainwindow.cpp). The
+    # benchmark_test substring matching cannot answer whether an old consumer
+    # tolerates new fields, so this one does.
+    add_executable(msf_benchmark_schema_test tests/benchmark_schema_test.cpp)
+    target_link_libraries(msf_benchmark_schema_test PRIVATE msf_core Qt6::Core)
+    add_test(NAME benchmark_schema_test COMMAND msf_benchmark_schema_test)
     add_executable(msf_video_degenerate_hash_test tests/video_degenerate_hash_test.cpp)
     target_link_libraries(msf_video_degenerate_hash_test PRIVATE msf_core)
     add_test(NAME video_degenerate_hash_test COMMAND msf_video_degenerate_hash_test)
