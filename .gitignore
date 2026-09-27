@@ -28,6 +28,10 @@ MediaSimilarityFinder-v*-Portable-*.zip
 # only duplicate the repo. Excluded so a backup can never nest inside the next.
 /backup/
 
+# User directive documents. The user writes and manages these directly; they
+# are never committed and must never be edited or deleted by the agent.
+/지시/
+
 # Runtime index/cache (program-owned, machine-local)
 /Index/
 /Cache/
