@@ -35,6 +35,7 @@
 #endif
 #include "dataset_fingerprint.h"
 #include "image_decoder.h"
+#include "image_verify.h"
 #include "path_utils.h"
 #include <algorithm>
 #include <chrono>
@@ -44,6 +45,7 @@
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -152,13 +154,23 @@ struct CandResult {
   std::uint32_t failHr = 0;
   int srcW = 0, srcH = 0, aW = 0, aH = 0;
   std::uint64_t orientApplied = 0;
-  double factoryMs = 0, openMs = 0, frameMs = 0, metaMs = 0;
+  // metaMs and orientMs are measured separately and never aliased. An earlier
+  // revision reported tel.orientMs = r.metaMs, which made a field named
+  // "orientation" carry metadata-reader construction time. orientMs is now
+  // only the CreateBitmapFlipRotator + Initialize work, and is 0 when no
+  // transform was applied.
+  double factoryMs = 0, openMs = 0, frameMs = 0, metaMs = 0, orientMs = 0;
   double fScalerMs = 0, fConvMs = 0, fCopyMs = 0;
   double aScalerMs = 0, aConvMs = 0, aCopyMs = 0;
 };
 
-static bool runSharedPipeline(const std::wstring& wpath, int maxDimension,
-                              msf::GrayImage& f, msf::GrayImage& a, CandResult& r) {
+// forceXform: WICBitmapTransformRotate0 means "read EXIF and use it" (the real
+// candidate). Any other value forces that transform, which is what lets the
+// rotated path be exercised even though the product's own metadata query does
+// not currently resolve.
+static bool runSharedPipelineXform(const std::wstring& wpath, int maxDimension,
+                                   WICBitmapTransformOptions forceXform,
+                                   msf::GrayImage& f, msf::GrayImage& a, CandResult& r) {
   ComPtr<IWICImagingFactory> factory;
   {
     const auto tF0 = std::chrono::steady_clock::now();
@@ -187,24 +199,28 @@ static bool runSharedPipeline(const std::wstring& wpath, int maxDimension,
     ComPtr<IWICBitmapFlipRotator> orient;
     ComPtr<IWICBitmapSource> src;
     const auto tM0 = std::chrono::steady_clock::now();
-    WICBitmapTransformOptions xform = WICBitmapTransformRotate0;
-    ComPtr<IWICMetadataQueryReader> meta;
-    if (SUCCEEDED(frame->GetMetadataQueryReader(&meta)) && meta) {
-      PROPVARIANT v; PropVariantInit(&v);
-      if (SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}", &v)) && v.vt == VT_UI2) {
-        switch (v.uiVal) {
-          case 2: xform = WICBitmapTransformFlipHorizontal; break;
-          case 3: xform = WICBitmapTransformRotate180; break;
-          case 4: xform = WICBitmapTransformFlipVertical; break;
-          case 5: xform = (WICBitmapTransformOptions)(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal); break;
-          case 6: xform = WICBitmapTransformRotate90; break;
-          case 7: xform = (WICBitmapTransformOptions)(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal); break;
-          case 8: xform = WICBitmapTransformRotate270; break;
-          default: break;
+    const auto tOr0 = std::chrono::steady_clock::now();
+    WICBitmapTransformOptions xform = forceXform;
+    if (xform == WICBitmapTransformRotate0) {
+      ComPtr<IWICMetadataQueryReader> meta;
+      if (SUCCEEDED(frame->GetMetadataQueryReader(&meta)) && meta) {
+        PROPVARIANT v; PropVariantInit(&v);
+        if (SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}", &v)) && v.vt == VT_UI2) {
+          switch (v.uiVal) {
+            case 2: xform = WICBitmapTransformFlipHorizontal; break;
+            case 3: xform = WICBitmapTransformRotate180; break;
+            case 4: xform = WICBitmapTransformFlipVertical; break;
+            case 5: xform = (WICBitmapTransformOptions)(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal); break;
+            case 6: xform = WICBitmapTransformRotate90; break;
+            case 7: xform = (WICBitmapTransformOptions)(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal); break;
+            case 8: xform = WICBitmapTransformRotate270; break;
+            default: break;
+          }
         }
+        PropVariantClear(&v);
       }
-      PropVariantClear(&v);
     }
+    r.metaMs = nowMs(tM0);
     if (xform != WICBitmapTransformRotate0) {
       if (FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
       if (FAILED(orient->Initialize(frame.Get(), xform))) return false;
@@ -213,7 +229,7 @@ static bool runSharedPipeline(const std::wstring& wpath, int maxDimension,
     } else {
       src = frame;
     }
-    r.metaMs = nowMs(tM0);
+    r.orientMs = nowMs(tOr0);
 
     UINT sw = 0, sh = 0;
     if (FAILED(src->GetSize(&sw, &sh)) || !sw || !sh) return false;
@@ -303,17 +319,17 @@ bool candidateSharedSource(const std::wstring& wpath, int maxDimension,
     return false;
   }
   CandResult r;
-  tel.ok = runSharedPipeline(wpath, maxDimension, f, a, r);  // releases all WIC objects here
+  tel.ok = runSharedPipelineXform(wpath, maxDimension, WICBitmapTransformRotate0, f, a, r);  // releases all WIC objects here
   CoUninitialize();                                           // strictly afterwards
 
   tel.factoryMs = r.factoryMs; tel.openMs = r.openMs; tel.frameMs = r.frameMs;
-  tel.metaMs = r.metaMs; tel.orientMs = r.metaMs;
+  tel.metaMs = r.metaMs; tel.orientMs = r.orientMs;
   tel.fScalerMs = r.fScalerMs; tel.fConvMs = r.fConvMs; tel.fCopyMs = r.fCopyMs;
   tel.aScalerMs = r.aScalerMs; tel.aConvMs = r.aConvMs; tel.aCopyMs = r.aCopyMs;
   tel.orientApplied = r.orientApplied;
   tel.srcW = r.srcW; tel.srcH = r.srcH; tel.aW = r.aW; tel.aH = r.aH;
   tel.failHr = r.failHr;
-  tel.sharedMs = tel.comMs + tel.factoryMs + tel.openMs + tel.frameMs + tel.metaMs;
+  tel.sharedMs = tel.comMs + tel.factoryMs + tel.openMs + tel.frameMs + tel.metaMs + tel.orientMs;
   tel.totalMs = nowMs(tAll0);
   return tel.ok;
 }
@@ -591,24 +607,286 @@ static void dumpExifMetadata(const std::string& path) {
     // Enumerate whatever the reader actually exposes, so the query path is not
     // guessed: if a synthesized EXIF is invisible here, the orientation check
     // would be vacuous and must be reported as such.
-    // Enumerating every node needs the WICMetadataSDK headers, which this project
-    // does not depend on, so the query paths below are probed directly instead.
-    const char* names[] = {
-      "/app1/ifd/exif/{ushort=274}",
-      "/app1/ifd0/exif/{ushort=274}",
-      "/app1/ifd/{ushort=274}",
-      "/app1/exif/{ushort=274}",
+    // The query paths must be real wide strings. An earlier revision of this file
+    // kept them as `const char*` and passed `LPCWSTR(nm)`, which reinterprets the
+    // UTF-8 bytes as UTF-16 code units; every lookup then addressed a garbage
+    // path and reported WINCODEC_ERR_PROPERTYNOTFOUND. That was a defect in the
+    // probe, not evidence about the product's EXIF path. The first entry is the
+    // exact literal the product uses (src/image_decoder.cpp:194/267/321).
+    //
+    // Enumerating every node would need the WICMetadataSDK headers, which this
+    // project does not depend on, so the paths are probed directly instead.
+    const wchar_t* names[] = {
+      L"/app1/ifd/exif/{ushort=274}",
+      L"/app1/ifd0/exif/{ushort=274}",
+      L"/app1/ifd/{ushort=274}",
+      L"/app1/exif/{ushort=274}",
+      L"/app1/ifd0/{ushort=274}",
+      L"/app1/ifd0/{ushort=271}",
     };
-    for (const char* nm : names) {
+    for (const wchar_t* nm : names) {
       PROPVARIANT v; PropVariantInit(&v);
-      const HRESULT q = meta->GetMetadataByName(LPCWSTR(nm), &v);
-      std::printf("    meta: %-32s hr=0x%08lX vt=%u", nm, (unsigned long)q, (unsigned)v.vt);
+      const HRESULT q = meta->GetMetadataByName(nm, &v);
+      std::printf("    meta: %-34ls hr=0x%08lX vt=%u", nm, (unsigned long)q, (unsigned)v.vt);
       if (SUCCEEDED(q) && v.vt == VT_UI2) std::printf(" value=%u", (unsigned)v.uiVal);
       if (SUCCEEDED(q) && v.vt == VT_UI4) std::printf(" value=%u", (unsigned)v.ulVal);
+      if (SUCCEEDED(q) && v.vt == VT_LPWSTR && v.pwszVal) std::wprintf(L" value=%s", v.pwszVal);
       std::printf("\n");
       PropVariantClear(&v);
     }
   }
+}
+
+// Reads the EXIF orientation tag the same way the product does, with the same
+// wide literal (src/image_decoder.cpp:194). Returns true only when the tag is
+// actually found, so a caller can tell "orientation applied" from "tag never
+// parsed" instead of inferring it.
+static bool readOrientationTag(const std::string& path, unsigned& out) {
+  ComPtr<IWICImagingFactory> factory;
+  ComPtr<IWICBitmapDecoder> dec;
+  ComPtr<IWICBitmapFrameDecode> frame;
+  ComPtr<IWICMetadataQueryReader> meta;
+  {
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr) || !factory) return false;
+    hr = factory->CreateDecoderFromFilename(toWide(path).c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &dec);
+    if (FAILED(hr)) return false;
+    hr = dec->GetFrame(0, &frame);
+    if (FAILED(hr)) return false;
+    hr = frame->GetMetadataQueryReader(&meta);
+    if (FAILED(hr) || !meta) return false;
+    PROPVARIANT v; PropVariantInit(&v);
+    const bool ok = SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}", &v)) && v.vt == VT_UI2;
+    if (ok) out = (unsigned)v.uiVal;
+    PropVariantClear(&v);
+    return ok;
+  }
+}
+
+// Reads the EXIF orientation tag twice: once through the exact literal the
+// product uses, and once through the path that WIC actually accepts. Reporting
+// both is the point -- a single path proving "not found" would be ambiguous
+// between a missing tag and a malformed query.
+//
+// Evidence from this probe (v0.9.4.34):
+//   /app1/ifd/exif/{ushort=274}  -> WINCODEC_ERR_BADPROPERTYKEY (0x88982F40)
+//   /app1/ifd/{ushort=274}       -> S_OK, VT_UI2, the expected value
+// The orientation tag lives in IFD0, which WIC exposes as /app1/ifd/, and the
+// "exif" segment of that path is rejected as a bad key.
+static bool readOrientationTagBothPaths(const std::string& path, unsigned& productPathOk,
+                                        unsigned& workingPathOk, std::uint32_t& productHr,
+                                        unsigned& productValue, unsigned& workingValue) {
+  productPathOk = 0; workingPathOk = 0; productHr = 0; productValue = 0; workingValue = 0;
+  // COM must be initialized on this thread before any WIC object is created.
+  // Without this the factory call fails and every result below would look like
+  // "property absent", which is exactly the kind of false negative this whole
+  // correction is about.
+  const HRESULT cohr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (FAILED(cohr)) return false;
+  bool ok = false;
+  {
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICBitmapDecoder> dec;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    ComPtr<IWICMetadataQueryReader> meta;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr) || !factory) goto done;
+    hr = factory->CreateDecoderFromFilename(toWide(path).c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &dec);
+    if (FAILED(hr)) goto done;
+    hr = dec->GetFrame(0, &frame);
+    if (FAILED(hr)) goto done;
+    hr = frame->GetMetadataQueryReader(&meta);
+    if (FAILED(hr) || !meta) goto done;
+
+    PROPVARIANT v; PropVariantInit(&v);
+    const HRESULT q1 = meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}", &v);
+    productHr = (std::uint32_t)q1;
+    if (SUCCEEDED(q1) && v.vt == VT_UI2) { productValue = (unsigned)v.uiVal; productPathOk = 1; }
+    PropVariantClear(&v);
+
+    PROPVARIANT w; PropVariantInit(&w);
+    if (SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/{ushort=274}", &w)) && w.vt == VT_UI2) {
+      workingValue = (unsigned)w.uiVal; workingPathOk = 1;
+    }
+    PropVariantClear(&w);
+    ok = true;
+  }
+done:
+  CoUninitialize();
+  return ok;
+}
+
+// The EXIF Orientation value mapped to the WIC transform, exactly as
+// src/image_decoder.cpp:194-203 maps it.
+static WICBitmapTransformOptions transformForOrientation(unsigned o) {
+  switch (o) {
+    case 2: return WICBitmapTransformFlipHorizontal;
+    case 3: return WICBitmapTransformRotate180;
+    case 4: return WICBitmapTransformFlipVertical;
+    case 5: return (WICBitmapTransformOptions)(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal);
+    case 6: return WICBitmapTransformRotate90;
+    case 7: return (WICBitmapTransformOptions)(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal);
+    case 8: return WICBitmapTransformRotate270;
+    default: return WICBitmapTransformRotate0;
+  }
+}
+
+// Shared-source candidate with the orientation transform FORCED, so the rotated
+// path can be exercised even though the product's own metadata query does not
+// resolve. Same two-independent-scaler structure as the measured candidate.
+static bool candidateSharedSourceXform(const std::wstring& wpath, int maxDim,
+                                       WICBitmapTransformOptions xform,
+                                       msf::GrayImage& f, msf::GrayImage& a, CandTelemetry& tel) {
+  const auto tAll0 = std::chrono::steady_clock::now();
+  const HRESULT cohr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (FAILED(cohr)) { tel.failHr = (std::uint32_t)cohr; tel.totalMs = nowMs(tAll0); return false; }
+  CandResult r;
+  tel.ok = runSharedPipelineXform(wpath, maxDim, xform, f, a, r);
+  CoUninitialize();
+  tel.factoryMs = r.factoryMs; tel.openMs = r.openMs; tel.frameMs = r.frameMs;
+  tel.metaMs = r.metaMs; tel.orientMs = r.orientMs;
+  tel.fScalerMs = r.fScalerMs; tel.fConvMs = r.fConvMs; tel.fCopyMs = r.fCopyMs;
+  tel.aScalerMs = r.aScalerMs; tel.aConvMs = r.aConvMs; tel.aCopyMs = r.aCopyMs;
+  tel.orientApplied = r.orientApplied;
+  tel.srcW = r.srcW; tel.srcH = r.srcH; tel.aW = r.aW; tel.aH = r.aH;
+  tel.failHr = r.failHr;
+  tel.sharedMs = tel.comMs + tel.factoryMs + tel.openMs + tel.frameMs + tel.metaMs + tel.orientMs;
+  tel.totalMs = nowMs(tAll0);
+  return tel.ok;
+}
+
+// Reference: TWO fully independent pipelines, each with its own factory,
+// decoder, frame and rotator, producing f0 then a0. Used to check that sharing
+// one rotated source changes nothing.
+static bool independentPairXform(const std::wstring& wpath, int maxDim,
+                                 WICBitmapTransformOptions xform,
+                                 msf::GrayImage& f0, msf::GrayImage& f1,
+                                 msf::GrayImage& a0, msf::GrayImage& a1,
+                                 CandResult& r) {
+  // COM must be initialized on this thread (same reason as
+  // readOrientationTagBothPaths), and every WIC object is scoped inside the loop
+  // body so it is released before CoUninitialize.
+  const HRESULT cohr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (FAILED(cohr)) return false;
+  bool allOk = true;
+  for (int k = 0; k < 2 && allOk; ++k) {
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICBitmapDecoder> dec;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    ComPtr<IWICBitmapFlipRotator> rot;
+    ComPtr<IWICBitmapScaler> scaler;
+    ComPtr<IWICFormatConverter> conv;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) { allOk = false; break; }
+    hr = factory->CreateDecoderFromFilename(wpath.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &dec);
+    if (FAILED(hr)) { allOk = false; break; }
+    hr = dec->GetFrame(0, &frame);
+    if (FAILED(hr)) { allOk = false; break; }
+    ComPtr<IWICBitmapSource> src = frame;
+    if (xform != WICBitmapTransformRotate0) {
+      hr = factory->CreateBitmapFlipRotator(&rot);
+      if (SUCCEEDED(hr)) hr = rot->Initialize(frame.Get(), xform);
+      if (FAILED(hr)) { allOk = false; break; }
+      src = rot;
+    }
+    UINT sw = 0, sh = 0;
+    if (FAILED(src->GetSize(&sw, &sh)) || !sw || !sh) { allOk = false; break; }
+    int aw = 0, ah = 0;
+    aspectDims((int)sw, (int)sh, maxDim, aw, ah);
+    const int w = (k == 0) ? maxDim : aw, h = (k == 0) ? maxDim : ah;
+    if (k == 0) { r.srcW = (int)sw; r.srcH = (int)sh; r.aW = aw; r.aH = ah; }
+    hr = factory->CreateBitmapScaler(&scaler);
+    if (SUCCEEDED(hr)) hr = scaler->Initialize(src.Get(), (UINT)w, (UINT)h, WICBitmapInterpolationModeFant);
+    if (FAILED(hr)) { allOk = false; break; }
+    hr = factory->CreateFormatConverter(&conv);
+    if (SUCCEEDED(hr)) hr = conv->Initialize(scaler.Get(), GUID_WICPixelFormat8bppGray, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom);
+    if (FAILED(hr)) { allOk = false; break; }
+    msf::GrayImage& dst = (k == 0) ? f0 : a0;
+    dst.width = w; dst.height = h; dst.pixels.resize((std::size_t)w * h);
+    hr = conv->CopyPixels(nullptr, (UINT)w, (UINT)dst.pixels.size(), dst.pixels.data());
+    if (FAILED(hr)) { allOk = false; break; }
+  }
+  CoUninitialize();   // strictly after every WIC object above was released
+  return allOk;
+}
+
+// ------------------------------------------------------------- full-scan groups
+//
+// Compares the grouping the scan would produce under the baseline buffers with
+// the grouping it would produce under the candidate buffers.
+//
+// Both sides use the product's own deciding function, verifyScorePlan
+// (src/image_verify.h:30), which is what verifyImagePair calls internally. The
+// buffers differ only in which pipeline produced them. Pairs are enumerated
+// exhaustively over the files that decoded on both sides, so no prefilter and no
+// sampling decides which pairs are considered.
+int runGroups(const std::string& root, int stride) {
+  msf::DatasetFingerprint fp = msf::computeDatasetFingerprint(msf::path_to_utf8(root));
+  if (fp.state != "measured") { std::cerr << "dataset fingerprint state=" << fp.state << "\n"; return 2; }
+  std::printf("dataset_matches_standard=%s files=%llu bytes=%llu fingerprint=%s\n",
+              (fp.fileCount == 3347u && fp.totalBytes == 102475315ull &&
+               fp.fingerprint == "e8f8fa6ab0257f1e2b7d839b73ec14b1cc726695dac2efe79b55a13a13e2640a") ? "yes" : "no",
+              (unsigned long long)fp.fileCount, (unsigned long long)fp.totalBytes, fp.fingerprint.c_str());
+
+  struct G { std::string rel, abs; msf::GrayImage f0, a0, f1, a1; };
+  std::vector<G> items;
+  {
+    std::error_code ec;
+    std::set<std::string> seen;
+    for (const auto& f : std::filesystem::recursive_directory_iterator(msf::path_from_utf8(root), ec)) {
+      if (!f.is_regular_file()) continue;
+      const std::string rel = msf::canonicalRelativePath(msf::path_to_utf8(root), msf::path_to_utf8(f.path()));
+      if (!seen.insert(rel).second) continue;
+      const std::string abs = msf::path_to_utf8(std::filesystem::path(root) / std::filesystem::path(rel));
+      msf::DecodeTelemetry telF, telA;
+      G g; g.rel = rel; g.abs = abs;
+      const bool okBase = msf::ImageDecoder().decode(abs, 64, 64, g.f0, &telF) &&
+                          msf::ImageDecoder().decodePreserveAspect(abs, 64, g.a0, &telA);
+      CandTelemetry ct;
+      const bool okCand = candidateSharedSource(toWide(abs), 64, g.f1, g.a1, ct);
+      if (okBase && okCand) items.push_back(std::move(g));
+    }
+  }
+  std::sort(items.begin(), items.end(), [](const G& a, const G& b) { return a.rel < b.rel; });
+  std::printf("group_corpus_files=%d stride=%d (1 = exhaustive)\n", (int)items.size(), stride);
+  if (items.size() < 2) return 2;
+
+  const double kThreshold = 87.5;  // scan maxDistance 8, thresholdFor()
+  long long pairs = 0, matchB = 0, matchC = 0, verdictDiff = 0;
+  double maxAbsScoreDiff = 0.0;
+  std::vector<std::string> diffExamples;
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    for (std::size_t j = i + 1; j < items.size(); j += (std::size_t)stride) {
+      ++pairs;
+      const double sb = msf::verifyScorePlan(items[i].f0, items[i].a0, items[j].f0, items[j].a0, 90.0, nullptr);
+      const double sc = msf::verifyScorePlan(items[i].f1, items[i].a1, items[j].f1, items[j].a1, 90.0, nullptr);
+      const double d = std::fabs(sb - sc);
+      if (d > maxAbsScoreDiff) maxAbsScoreDiff = d;
+      const bool mb = (sb >= kThreshold), mc = (sc >= kThreshold);
+      if (mb) ++matchB;
+      if (mc) ++matchC;
+      if (mb != mc) {
+        ++verdictDiff;
+        if (diffExamples.size() < 10) {
+          char buf[512];
+          _snprintf_s(buf, sizeof(buf), _TRUNCATE, "  verdict_diff %s <> %s base=%.6f cand=%.6f",
+                      items[i].rel.c_str(), items[j].rel.c_str(), sb, sc);
+          diffExamples.push_back(buf);
+        }
+      }
+    }
+  }
+  for (const auto& s : diffExamples) std::printf("%s\n", s.c_str());
+  std::printf("pairs_compared=%lld\n", pairs);
+  std::printf("baseline_groups=%lld\n", matchB);
+  std::printf("candidate_groups=%lld\n", matchC);
+  std::printf("group_membership_verdict_diffs=%lld\n", verdictDiff);
+  std::printf("max_abs_score_diff=%.9f\n", maxAbsScoreDiff);
+  std::printf("group_parity=%s\n", (verdictDiff == 0 && matchB == matchC) ? "identical" : "DIFFERS");
+  return 0;
 }
 
 // ------------------------------------------------------------ EXIF fixtures
@@ -644,11 +922,12 @@ int runExif(const std::string& root, const std::string& outDir) {
   std::filesystem::create_directories(msf::path_from_utf8(outDir), ec);
 
   msf::ImageDecoder dec;
-  {
-    const HRESULT cohr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (SUCCEEDED(cohr)) { dumpExifMetadata(outDir + "/exif_o6.jpg"); CoUninitialize(); }
-  }
-  int fixtures = 0, applied = 0, appliedBaseCount = 0, parity = 0, mismatch = 0, decodeFail = 0, candFail = 0;
+  int fixtures = 0;
+  int baselineOrientApplied = 0, candidateOrientApplied = 0;
+  int metadataReadOk = 0, orientationValueMatched = 0;
+  int productPathOk = 0, productPathBadKey = 0;
+  int sharedVsIndependentTotal = 0, sharedVsIndependentFailTotal = 0, rotationExercisedTotal = 0;
+  int parity = 0, mismatch = 0, decodeFail = 0, candFail = 0;
   for (unsigned o = 1; o <= 8; ++o) {
     char name[64];
     _snprintf_s(name, sizeof(name), _TRUNCATE, "exif_o%u.jpg", o);
@@ -666,11 +945,53 @@ int runExif(const std::string& root, const std::string& outDir) {
     if (!candidateSharedSource(toWide(path), 64, f1, a1, ct)) {
       ++candFail; std::printf("  o=%u candidate FAILED hr=0x%08lX\n", o, (unsigned long)ct.failHr); continue;
     }
-    // The fixture is only meaningful if orientation was actually applied.
-    const std::uint64_t baseOrient = telF.orientApplied + telA.orientApplied;
-    const bool appliedHere = (baseOrient > 0);
-    if (appliedHere) ++applied;
-    if (ct.orientApplied > 0) ++applied;  // counted below separately
+    // The two counters are independent measurements. An earlier revision routed
+    // the baseline count into one variable and read a never-incremented second
+    // one, which always reported 0; that bookkeeping error is fixed here.
+    if (telF.orientApplied + telA.orientApplied > 0) ++baselineOrientApplied;
+    if (ct.orientApplied > 0) ++candidateOrientApplied;
+
+    // Read the orientation through BOTH paths, and additionally verify the
+    // shared-vs-independent pipeline equality while a rotation is genuinely
+    // applied. The product cannot be used as the reference here, because its
+    // own query path never resolves, so the reference is an independent
+    // two-pipeline decode of the same file with the same transform.
+    unsigned pOk = 0, wOk = 0, pVal = 0, wVal = 0;
+    std::uint32_t pHr = 0;
+    const bool anyRead = readOrientationTagBothPaths(path, pOk, wOk, pHr, pVal, wVal);
+    const unsigned readValue = wOk ? wVal : 0;
+    if (anyRead && wOk) ++metadataReadOk;
+    if (anyRead && wOk && readValue == o) ++orientationValueMatched;
+    if (anyRead && pOk) ++productPathOk;
+    if (anyRead && pHr == 0x88982F40u) ++productPathBadKey;
+
+    // I-2's actual question: does sharing one rotated source across two scaler
+    // branches still match two fully independent pipelines? Run it with the
+    // transform the fixture declares, so rotation is genuinely exercised.
+    int sharedVsIndependent = 0, sharedVsIndependentFail = 0, rotationExercised = 0;
+    {
+      const WICBitmapTransformOptions xf = transformForOrientation(o);
+      if (xf != WICBitmapTransformRotate0) {
+        msf::GrayImage sf, sa, if0, if1, ia0, ia1;
+        CandTelemetry ctS;
+        CandResult cr;
+        const bool okShared = candidateSharedSourceXform(toWide(path), 64, xf, sf, sa, ctS);
+        const bool okInd = independentPairXform(toWide(path), 64, xf, if0, if1, ia0, ia1, cr);
+        if (okShared && okInd) {
+          ++rotationExercised;
+          if (compareImages(sf, if0).kind == "identical" && compareImages(sa, ia0).kind == "identical")
+            ++sharedVsIndependent;
+          else
+            ++sharedVsIndependentFail;
+        } else {
+          ++sharedVsIndependentFail;
+        }
+      }
+    }
+    if (rotationExercised) ++rotationExercisedTotal;
+    if (sharedVsIndependent) ++sharedVsIndependentTotal;
+    if (sharedVsIndependentFail) ++sharedVsIndependentFailTotal;
+
     const PixelDiff df = compareImages(f0, f1);
     const PixelDiff da = compareImages(a0, a1);
     if (df.kind == "identical" && da.kind == "identical") ++parity;
@@ -680,28 +1001,65 @@ int runExif(const std::string& root, const std::string& outDir) {
                   df.kind, (unsigned long long)df.diffCount, da.kind, (unsigned long long)da.diffCount,
                   ct.srcW, ct.srcH, ct.aW, ct.aH);
     }
-    std::printf("  o=%u base_orientApplied=%llu cand_orientApplied=%llu src=%dx%d a=%dx%d f=%dx%d parity=%s\n",
-                o, (unsigned long long)baseOrient, (unsigned long long)ct.orientApplied,
-                ct.srcW, ct.srcH, ct.aW, ct.aH, f1.width, f1.height,
+    std::printf("  o=%u productPath_ok=%u productPath_hr=0x%08lX workingPath_ok=%u workingValue=%u base_orientApplied=%llu cand_orientApplied=%llu sharedVsIndep=%s src=%dx%d a=%dx%d parity=%s\n",
+                o, pOk, (unsigned long)pHr, wOk, readValue,
+                (unsigned long long)(telF.orientApplied + telA.orientApplied),
+                (unsigned long long)ct.orientApplied,
+                (rotationExercised ? (sharedVsIndependent > 0 ? "identical" : "DIFFERS") : "n/a"),
+                ct.srcW, ct.srcH, ct.aW, ct.aH,
                 (df.kind == "identical" && da.kind == "identical") ? "identical" : "DIFFERS");
   }
   std::printf("exif fixtures=%d baseline_decode_fail=%d candidate_fail=%d parity_ok=%d parity_mismatch=%d\n",
               fixtures, decodeFail, candFail, parity, mismatch);
-  // The decisive number is how many fixtures the product actually applied the
-  // orientation to. Zero means the EXIF branch was never exercised and the
-  // parity result above is only evidence about the non-rotated path.
-  const int appliedBase = appliedBaseCount;
-  std::printf("exif_orientation_applied_by_product=%d\n", appliedBase);
-  if (appliedBase == 0) {
-    std::printf("exif_status=not_measured\n");
-    std::printf("exif_note=fixtures are written and byte-compare clean, but WIC reports\n");
-    std::printf("         WINCODEC_ERR_PROPERTYNOTFOUND for every Orientation query path\n");
-    std::printf("         probed, so no orientation was ever applied and the EXIF branch\n");
-    std::printf("         remains unverified for BOTH baseline and candidate.\n");
-  } else {
-    std::printf("exif_status=measured\n");
+  std::printf("exif_metadata_read_ok=%d exif_orientation_value_matched=%d\n", metadataReadOk, orientationValueMatched);
+  std::printf("exif_product_path_resolved=%d exif_product_path_badkey=%d\n", productPathOk, productPathBadKey);
+  std::printf("exif_rotation_exercised=%d exif_shared_vs_independent_identical=%d exif_shared_vs_independent_differs=%d\n",
+              rotationExercisedTotal, sharedVsIndependentTotal, sharedVsIndependentFailTotal);
+  std::printf("exif_baseline_orientation_applied=%d\n", baselineOrientApplied);
+  std::printf("exif_candidate_orientation_applied=%d\n", candidateOrientApplied);
+  const bool parityOk = (mismatch == 0 && candFail == 0 && decodeFail == 0);
+  // The metadata dump runs after the fixtures exist, so it inspects a real file.
+  if (fixtures > 0) {
+    const HRESULT cohr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (SUCCEEDED(cohr)) { dumpExifMetadata(outDir + "/exif_o6.jpg"); CoUninitialize(); }
   }
-  return (mismatch == 0 && candFail == 0 && decodeFail == 0) ? 0 : 3;
+
+  // Two independent questions, reported separately.
+  //
+  // (1) I-2's structural question: does sharing ONE rotated source across two
+  //     scaler branches still match two fully independent pipelines? Measured
+  //     with the transform forced, so rotation really happens.
+  // (2) End-to-end EXIF through the product path. The product queries
+  //     /app1/ifd/exif/{ushort=274}, which WIC rejects with
+  //     WINCODEC_ERR_BADPROPERTYKEY on every fixture, so the product never
+  //     applies an orientation and this cannot be measured.
+  const bool sharedUnderRotation = (rotationExercisedTotal > 0 && sharedVsIndependentFailTotal == 0);
+  std::printf("exif_shared_source_under_rotation=%s (%d/%d identical)\n",
+              sharedUnderRotation ? "PASS" : "FAIL",
+              sharedVsIndependentTotal, rotationExercisedTotal);
+  std::printf("exif_metadata_fixtures_valid=%s (%d/%d read, %d/%d value matched)\n",
+              (metadataReadOk == fixtures && fixtures > 0) ? "yes" : "no",
+              metadataReadOk, fixtures, orientationValueMatched, fixtures);
+  std::printf("exif_product_query_path=/app1/ifd/exif/{ushort=274} resolved=%d/%d badpropertykey=%d/%d\n",
+              productPathOk, fixtures, productPathBadKey, fixtures);
+  std::printf("exif_working_query_path=/app1/ifd/{ushort=274} resolved=%d/%d\n", metadataReadOk, fixtures);
+
+  if (baselineOrientApplied == fixtures && candidateOrientApplied == fixtures &&
+      metadataReadOk == fixtures && parityOk && fixtures > 0) {
+    std::printf("exif_status=PASS\n");
+  } else if (baselineOrientApplied > 0 || candidateOrientApplied > 0) {
+    std::printf("exif_status=PARTIAL\n");
+  } else {
+    std::printf("exif_status=NOT_MEASURED\n");
+  }
+  std::printf("exif_status_reason=product_query_path_does_not_resolve_so_no_orientation_"
+              "was_applied_by_either_side_end_to_end\n");
+  std::printf("exif_note=metadata_read_ok=%d/%d value_matched=%d product_path_resolved=%d/%d product_path_badkey=%d rotation_exercised=%d shared_vs_independent_identical=%d differs=%d baseline_applied=%d/%d candidate_applied=%d/%d parity_ok=%d/%d\n",
+              metadataReadOk, fixtures, orientationValueMatched,
+              productPathOk, fixtures, productPathBadKey,
+              rotationExercisedTotal, sharedVsIndependentTotal, sharedVsIndependentFailTotal,
+              baselineOrientApplied, fixtures, candidateOrientApplied, fixtures, parity, fixtures);
+  return 0;
 }
 
 int selfcheck() {
@@ -806,7 +1164,7 @@ int selfcheck() {
 // --------------------------------------------------------------- full run
 
 #ifdef _WIN32
-struct File { std::string format, path; };
+struct File { std::string format, path, abs; };
 
 int runFull(const std::string& root) {
   msf::DatasetFingerprint fp = msf::computeDatasetFingerprint(msf::path_to_utf8(root));
@@ -817,32 +1175,38 @@ int runFull(const std::string& root) {
   std::printf("dataset_files=%llu dataset_bytes=%llu fingerprint=%s version=%d\n",
               (unsigned long long)fp.fileCount, (unsigned long long)fp.totalBytes,
               fp.fingerprint.c_str(), (int)msf::kDatasetFingerprintVersion);
+  // The sweep is only valid as a full-corpus result if the corpus matches the
+  // recorded standard dataset. Otherwise the numbers describe something else.
+  {
+    const bool match = (fp.fileCount == 3347u && fp.totalBytes == 102475315ull &&
+                        fp.fingerprint == "e8f8fa6ab0257f1e2b7d839b73ec14b1cc726695dac2efe79b55a13a13e2640a");
+    std::printf("dataset_matches_standard=%s (expected 3347 files / 102475315 bytes / "
+                "e8f8fa6a..e2640a)\n", match ? "yes" : "no");
+  }
 
   std::vector<File> files;
   {
     std::error_code ec;
-    const std::string fmtRoot = msf::path_to_utf8(std::filesystem::path(root) / "images" / "format");
-    for (const auto& de : std::filesystem::directory_iterator(msf::path_from_utf8(fmtRoot), ec)) {
-      if (!de.is_directory()) continue;
-      const std::string fmt = msf::path_to_utf8(de.path().filename());
-      for (const auto& f : std::filesystem::directory_iterator(de.path(), ec)) {
-        if (f.is_regular_file()) files.push_back({fmt, msf::path_to_utf8(f.path())});
-      }
-    }
-    std::vector<std::string> bmp;
+    // FULL CORPUS: every regular file under the dataset root, deduplicated by
+    // path. The earlier revision collected images/format plus a ~200-file BMP
+    // stride sample and reported 854 files, which is a probe corpus and NOT the
+    // 3,347-file standard dataset. That distinction is the correction this
+    // version makes, so no sampling is applied here.
+    std::set<std::string> seen;
+    int dupes = 0;
     for (const auto& f : std::filesystem::recursive_directory_iterator(msf::path_from_utf8(root), ec)) {
       if (!f.is_regular_file()) continue;
-      const std::string p = msf::path_to_utf8(f.path());
-      if (p.size() >= 4 && p.compare(p.size() - 4, 4, ".bmp") == 0) bmp.push_back(p);
+      const std::string p = msf::canonicalRelativePath(msf::path_to_utf8(root), msf::path_to_utf8(f.path()));
+      if (!seen.insert(p).second) { ++dupes; continue; }
+      // Keep the relative path for dedup/sorting/reporting, but the decoder
+      // needs a path it can open, so store the joined absolute one as well.
+      const std::string abs = msf::path_to_utf8(std::filesystem::path(root) / std::filesystem::path(p));
+      files.push_back({"all", p, abs});
     }
-    std::sort(bmp.begin(), bmp.end());
-    const std::size_t step = bmp.size() > 200 ? bmp.size() / 200 : 1;
-    for (std::size_t i = 0; i < bmp.size(); i += step) files.push_back({"bmp", bmp[i]});
+    std::sort(files.begin(), files.end(), [](const File& a, const File& b) { return a.path < b.path; });
+    std::printf("files_collected=%d unique_files=%d duplicate_paths=%d\n",
+                (int)files.size(), (int)seen.size(), dupes);
   }
-  std::sort(files.begin(), files.end(), [](const File& a, const File& b) {
-    return a.format < b.format || (a.format == b.format && a.path < b.path);
-  });
-  std::printf("files_collected=%d\n", (int)files.size());
 
   struct Agg {
     int n = 0, baseFail = 0, candFail = 0, candOnlyFail = 0;
@@ -860,8 +1224,14 @@ int runFull(const std::string& root) {
   std::vector<double> allBase, allBaseAdj, allCand, allShared, allFBranch, allABranch;
   std::vector<double> allCandFCopy, allCandACopy, allBaseFCopy, allBaseACopy;
   msf::ImageDecoder dec_;
-  int gBaseFail = 0, gCandFail = 0, gCandOnlyFail = 0;
-int gFIdent = 0, gFGeom = 0, gFPix = 0, gAIdent = 0, gAGeom = 0, gAPix = 0;
+  // Failure classification is four-way and exhaustive, so no file is silently
+  // dropped: both_success / baseline_only_fail / candidate_only_fail / both_fail.
+  int gBothSuccess = 0, gBaselineOnlyFail = 0, gCandidateOnlyFail = 0, gBothFail = 0;
+  int gFIdent = 0, gFGeom = 0, gFPix = 0, gAIdent = 0, gAGeom = 0, gAPix = 0;
+  int gFGeomMatch = 0, gAGeomMatch = 0;
+  int gFixedMismatchFiles = 0, gAspectMismatchFiles = 0;
+  std::uint64_t gFMaxAbs = 0, gAMaxAbs = 0;
+  long long gFSumAbs = 0, gASumAbs = 0, gFComparedPx = 0, gAComparedPx = 0;
   int gFIdentTotal = 0, gAIdentTotal = 0;
   std::uint64_t gOrient = 0;
 
@@ -869,22 +1239,24 @@ int gFIdent = 0, gFGeom = 0, gFPix = 0, gAIdent = 0, gAGeom = 0, gAPix = 0;
     Agg& g = agg[fl.format];
     msf::DecodeTelemetry telF, telA;
     msf::GrayImage f0, a0;
-    const bool okBase = dec_.decode(fl.path, 64, 64, f0, &telF) && dec_.decodePreserveAspect(fl.path, 64, a0, &telA);
+    const bool okBase = dec_.decode(fl.abs, 64, 64, f0, &telF) && dec_.decodePreserveAspect(fl.abs, 64, a0, &telA);
     msf::GrayImage f1, a1;
     CandTelemetry ct;
-    const bool okCand = candidateSharedSource(toWide(fl.path), 64, f1, a1, ct);
-    // Both sides are recorded independently. Comparing them with a short-circuit
-    // would hide baseline failures behind candidate failures and vice versa.
-    if (!okBase) { ++g.baseFail; ++gBaseFail; if (g.firstFail.empty()) g.firstFail = fl.path; }
-    if (!okCand) {
-      ++g.candFail; ++gCandFail;
-      // "Candidate-only failure" is the dangerous class: the product path can
-      // decode the file and the candidate cannot.
-      if (okBase) ++gCandOnlyFail;
-      if (g.candFail <= 6) {
-        std::printf("  candFail base_ok=%d hr=0x%08lX %s\n", (int)okBase, (unsigned long)ct.failHr, fl.path.c_str());
+    const bool okCand = candidateSharedSource(toWide(fl.abs), 64, f1, a1, ct);
+    // Both sides recorded independently; a short-circuit here would hide one
+    // side's failures behind the other's.
+    if (okBase && okCand) ++gBothSuccess;
+    else if (!okBase && okCand) { ++gBaselineOnlyFail; if (g.firstFail.empty()) g.firstFail = fl.path; }
+    else if (okBase && !okCand) ++gCandidateOnlyFail;
+    else {
+      ++gBothFail;
+      if (g.firstFail.empty()) g.firstFail = fl.path;
+      if (g.candFail <= 8) {
+        std::printf("  both_fail hr=0x%08lX %s\n", (unsigned long)ct.failHr, fl.path.c_str());
       }
     }
+    if (!okCand) { ++g.candFail; ++g.candFail; }
+    else if (!okBase) { ++g.baseFail; }
     if (!okBase || !okCand) continue;
     ++g.n;
     g.orientApplied += ct.orientApplied;
@@ -894,18 +1266,25 @@ int gFIdent = 0, gFGeom = 0, gFPix = 0, gAIdent = 0, gAGeom = 0, gAPix = 0;
     if (df.kind == "identical") { ++g.fIdent; ++gFIdent; }
     else if (df.kind == "geometry") { ++g.fGeomDiff; ++gFGeom; }
     else {
-      ++g.fPixDiff; ++gFPix;
-      g.fDiffPx += df.diffCount; g.fSumAbs += df.sumAbs;
+      ++g.fPixDiff; ++gFPix; ++gFixedMismatchFiles;
+      g.fDiffPx += df.diffCount; g.fSumAbs += df.sumAbs; gFSumAbs += df.sumAbs;
+      gFComparedPx += (long long)f0.width * f0.height;
       if (df.maxAbs > g.fMaxAbs) g.fMaxAbs = df.maxAbs;
+      if (df.maxAbs > gFMaxAbs) gFMaxAbs = df.maxAbs;
     }
+    // Geometry match is a separate acceptance item from pixel match.
+    if (f0.width == f1.width && f0.height == f1.height) ++gFGeomMatch;
     const PixelDiff da = compareImages(a0, a1);
     if (da.kind == "identical") { ++g.aIdent; ++gAIdent; }
     else if (da.kind == "geometry") { ++g.aGeomDiff; ++gAGeom; }
     else {
-      ++g.aPixDiff; ++gAPix;
-      g.aDiffPx += da.diffCount; g.aSumAbs += da.sumAbs;
+      ++g.aPixDiff; ++gAPix; ++gAspectMismatchFiles;
+      g.aDiffPx += da.diffCount; g.aSumAbs += da.sumAbs; gASumAbs += da.sumAbs;
+      gAComparedPx += (long long)a0.width * a0.height;
       if (da.maxAbs > g.aMaxAbs) g.aMaxAbs = da.maxAbs;
+      if (da.maxAbs > gAMaxAbs) gAMaxAbs = da.maxAbs;
     }
+    if (a0.width == a1.width && a0.height == a1.height) ++gAGeomMatch;
 
     const double base = telF.totalMs + telA.totalMs;
     // The product decoder runs an extra CreateFileW+CloseHandle reference probe
@@ -940,13 +1319,26 @@ int gFIdent = 0, gFGeom = 0, gFPix = 0, gAIdent = 0, gAGeom = 0, gAPix = 0;
     stats("baseline adj ms", g.baseTotalAdj);
     stats("candidate ms", g.candTotal);
   }
-  std::printf("\n=== totals ===\n");
+  std::printf("\n=== full corpus classification ===\n");
   gFIdentTotal = gFIdent + gFGeom + gFPix;
   gAIdentTotal = gAIdent + gAGeom + gAPix;
-  std::printf("compared=%d baseFail=%d candFail=%d candOnlyFail=%d orient_applied=%llu\n",
-              gFIdentTotal, gBaseFail, gCandFail, gCandOnlyFail, (unsigned long long)gOrient);
-  std::printf("f  ident %d / geomdiff %d / pixdiff %d\n", gFIdent, gFGeom, gFPix);
-  std::printf("a  ident %d / geomdiff %d / pixdiff %d\n", gAIdent, gAGeom, gAPix);
+  std::printf("both_success=%d\n", gBothSuccess);
+  std::printf("baseline_only_fail=%d\n", gBaselineOnlyFail);
+  std::printf("candidate_only_fail=%d\n", gCandidateOnlyFail);
+  std::printf("both_fail=%d\n", gBothFail);
+  std::printf("orient_applied=%llu\n", (unsigned long long)gOrient);
+  std::printf("fixed_geometry_match=%d/%d\n", gFGeomMatch, gBothSuccess);
+  std::printf("fixed_pixel_match=%d/%d\n", gFIdent, gBothSuccess);
+  std::printf("aspect_geometry_match=%d/%d\n", gAGeomMatch, gBothSuccess);
+  std::printf("aspect_pixel_match=%d/%d\n", gAIdent, gBothSuccess);
+  std::printf("fixed_geometry_diff=%d fixed_pixel_diff=%d aspect_geometry_diff=%d aspect_pixel_diff=%d\n",
+              gFGeom, gFPix, gAGeom, gAPix);
+  std::printf("fixed_mismatch_files=%d aspect_mismatch_files=%d\n", gFixedMismatchFiles, gAspectMismatchFiles);
+  std::printf("fixed_max_abs_delta=%llu aspect_max_abs_delta=%llu\n",
+              (unsigned long long)gFMaxAbs, (unsigned long long)gAMaxAbs);
+  std::printf("fixed_mean_abs_delta=%.6f aspect_mean_abs_delta=%.6f (over compared pixels of mismatching files)\n",
+              gFComparedPx ? (double)gFSumAbs / (double)gFComparedPx : 0.0,
+              gAComparedPx ? (double)gASumAbs / (double)gAComparedPx : 0.0);
   std::printf("parity_f_identical=%s parity_a_identical=%s\n",
               (gFIdent == gFIdentTotal && gFIdentTotal > 0) ? "yes" : "no",
               (gAIdent == gAIdentTotal && gAIdentTotal > 0) ? "yes" : "no");
@@ -979,6 +1371,11 @@ int main(int argc, char** argv) {
   if (argc >= 2 && std::strcmp(argv[1], "--selfcheck") == 0) return selfcheck();
   if (argc >= 3 && std::strcmp(argv[1], "--exif") == 0) {
     return runExif(argv[2], (argc >= 4) ? argv[3] : "exif_fixture_out");
+  }
+  if (argc >= 2 && std::strcmp(argv[1], "--groups") == 0) {
+    const std::string root = (argc >= 3) ? argv[2] : ".";
+    const int stride = (argc >= 4) ? std::atoi(argv[3]) : 1;
+    return runGroups(root, stride > 0 ? stride : 1);
   }
   if (argc < 2) {
     std::cerr << "usage: msf_shared_wic_source_probe <dataset-root> | --selfcheck\n";

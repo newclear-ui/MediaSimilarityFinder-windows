@@ -2,7 +2,7 @@
 
 ## Current development version
 
-0.9.4.33 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, D3 follow-up stability investigation complete; I-2 shared WIC source candidate exactness PASS, production adoption NO)
+0.9.4.34 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, I-2 verification complete over the full 3,347-file standard dataset; candidate READY FOR PRODUCTION IMPLEMENTATION REVIEW, implementation not performed)
 
 Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing (currently NVIDIA CUDA backend), incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 

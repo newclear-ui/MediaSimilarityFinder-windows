@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.33 |
+| Reference code | 0.9.4.34 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | I — Analyze / Matching Performance (D9a through the I-2 candidate complete) |
-| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d cost decomposition → D1 open/factory cause → D2 WIC entry-path comparison (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (**PASS**). Two D3 follow-up candidates were taken in order. **I-1** (shared GrayImage + resize twice) was measured in 0.9.4.31 and investigated in 0.9.4.32, ending `DEFERRED` (its 2 verdict flips were a probe pairing artifact). **I-2** (shared WIC source + two independent scalers) reached **f/a geometry and byte identity across the dataset (849/849)** with zero geometry mismatches and a 40.8–42.6 % probe cost reduction in 0.9.4.33 — **exactness PASS / production adoption NO**. Remaining gaps: EXIF end-to-end verification `not_measured`, full-scan groups not compared. **Next: a separate I-2 production implementation brief, plus diagnosis of the EXIF fixture problem** |
-| Current version | 0.9.4.33 |
+| Current node | I — Analyze / Matching Performance (D9a through the I-2 verification complete) |
+| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC entry path (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (**PASS**). Two D3 follow-up candidates. **I-1** (shared GrayImage + resize twice) is `DEFERRED` across 0.9.4.31–0.9.4.32. **I-2** (shared WIC source + two independent scalers) was measured in 0.9.4.33 and verified in 0.9.4.34 — **3,341/3,341 byte identical** over the full standard dataset, `candidate_only_fail` 0, **0 verdict diffs across 5,579,470 exhaustive full-scan group pairs**, rotated shared source vs independent pipelines 7/7 identical, probe cost 47–49 % lower raw. Status is **READY FOR PRODUCTION IMPLEMENTATION REVIEW**; implementation is **NOT performed**. **Separate finding: the product EXIF query path `/app1/ifd/exif/{ushort=274}` is rejected by WIC with `BADPROPERTYKEY`** — a product defect unrelated to I-2, left unfixed and registered as its own task. **Next: decide the product EXIF path then verify end to end, verify scan-pipeline integration, write the production implementation brief** |
+| Current version | 0.9.4.34 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -1184,3 +1184,42 @@ The recording obligation and the required field list are defined in
   both trees, new probe `--selfcheck` 11 checks, existing probe selfcheck 14
   checks as a regression check. **No production code change.** Details:
   `docs/build-history/0.9.4.33.en.md`
+
+## 0.9.4.34 — I-2 Verification Completion (Full Corpus · EXIF Correction · Full-Scan Groups)
+
+- **Correction 1 — "whole dataset" wording error.** The 849 files in
+  v0.9.4.33 were not the 3,347-file standard dataset but a **probe corpus**
+  of `images/format` plus a BMP stride sample. Re-measured over the full
+  standard dataset: `both_success=3341, baseline_only_fail=0,
+  candidate_only_fail=0, both_fail=6` (the extra one is
+  `images/format/SOURCES.md`, a text file). f/a geometry and pixel are both
+  **3,341/3,341**.
+- **Correction 2 — two EXIF diagnostic defects.** (1) Query paths were kept as
+  `const char*` and passed with an `LPCWSTR` cast, producing **false
+  negatives**; re-measured with correct wide literals. (2) The printed applied
+  counter was a variable that was never incremented, so it always read 0. After
+  the fixes the **EXIF fixtures are 8/8 valid** with values matching 1–8.
+- **Incidental finding (product defect).** The path the product uses,
+  `/app1/ifd/exif/{ushort=274}`, is rejected by WIC with
+  `WINCODEC_ERR_BADPROPERTYKEY` (8/8). The working path is
+  `/app1/ifd/{ushort=274}`. This is a **product EXIF defect unrelated to I-2**;
+  production code was not changed here, so it remains unfixed. v0.9.4.33's
+  "the product EXIF path does not work" was not an observation and had no basis.
+- **The I-2 structure passes under rotation.** With the fixture's transform
+  forced so rotation genuinely happens, the shared-source candidate and two
+  fully independent pipelines are **7/7 byte identical** for f and a.
+- **Exhaustive full-scan groups.** Both sides use the product deciding function
+  `verifyScorePlan`, enumerated exhaustively with no prefilter:
+  `pairs_compared=5,579,470`, `baseline_groups=candidate_groups=457,126`,
+  `verdict_diffs=0`, `max_abs_score_diff=0.000000000`.
+- **Cost (full corpus 3,341; not comparable with the probe corpus)**
+  CPU raw 47.6–48.2 % / adjusted 32.0–32.6 %, GPU raw 47.2–48.9 % /
+  adjusted 31.5–32.2 %. The second `CopyPixels` dropping from 0.8354 to
+  0.2834 ms is an **observation in this environment and dataset**, not a
+  generalization.
+- **Verdict: `READY FOR PRODUCTION IMPLEMENTATION REVIEW`, implementation NOT
+  performed.** I-1 stays `DEFERRED`.
+- Verification: CPU 80/80 PASS, GPU 81/81 PASS, `--version`/`--smoke` exit 0 on
+  both trees, new probe selfcheck 11, existing probe 14, telemetry 25/29/71,
+  `git diff --check` clean. **No production code change.** Details:
+  `docs/build-history/0.9.4.34.en.md`

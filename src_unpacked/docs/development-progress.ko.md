@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.33 |
+| 기준 코드 | 0.9.4.34 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | I — Analyze / Matching Performance (D9a → I-2 후보까지 완료) |
-| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d 비용 분해 → D1 open/factory 원인 → D2 WIC 진입 경로 비교(**Path C `DEFERRED`**) → D3 중복 decode 계측(**PASS**). D3 후속 후보 두 개를 순서대로 다뤘다. **I-1**(공유 GrayImage + resize 2회)은 0.9.4.31 측정·0.9.4.32 안정성 조사를 거쳐 `DEFERRED`(verdict flip 2건은 probe pairing artifact 로 정정). **I-2**(공유 WIC source + 독립 2개 scaler)는 0.9.4.33 에서 **f/a geometry·byte 전량 parity(849/849)**, geometry 불일치 0건, probe 비용 40.8~42.6 % 감소를 확인 — **정확성 PASS / production 채택 NO**. 남은 구멍: EXIF 종단간 검증 `not_measured`, full-scan groups 미비교. **다음: I-2 production implementation brief 별도 작성 + EXIF fixture 원인 규명** |
-| 현재 버전 | 0.9.4.33 |
+| 현재 노드 | I — Analyze / Matching Performance (D9a → I-2 검증 보완 완료) |
+| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC 진입 경로(**Path C `DEFERRED`**) → D3 중복 decode 계측(**PASS**). D3 후속 후보는 두 개. **I-1**(공유 GrayImage + resize 2회)은 0.9.4.31~0.9.4.32 에 걸쳐 `DEFERRED`. **I-2**(공유 WIC source + 독립 2개 scaler)는 0.9.4.33 에서 측정 후 0.9.4.34 에서 검증 보완 완료 — 표준 dataset **3,341/3,341 byte 동일**, `candidate_only_fail` 0, **full-scan groups 전수 5,579,470쌍 verdict diff 0**, 회전 공유 source vs 독립 pipeline 7/7 동일, probe 비용 raw 47~49 % 감소. 판정은 **READY FOR PRODUCTION IMPLEMENTATION REVIEW**, 반영은 **미수행**. **별건 발견: 제품 EXIF query path `/app1/ifd/exif/{ushort=274}` 가 WIC `BADPROPERTYKEY` 로 거부된다** — I-2 와 무관한 제품 결함이며 수정하지 않고 별도 과제로 등록. **다음: 제품 EXIF path 결정 후 종단간 검증, scan 파이프라인 통합 검증, production implementation brief** |
+| 현재 버전 | 0.9.4.34 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -1138,5 +1138,42 @@ Current active investigation:
 - **판정: 정확성 PASS / production adoption NO.** threshold 조정이나 score
   tolerance 완화는 하지 않았고 필요하지도 않았다.
 - 검증: CPU 80/80 PASS, GPU 81/81 PASS, 양쪽 `--version`/`--smoke` exit 0,
-  새 probe `--selfcheck` 11 checks, 기존 probe selfcheck 14 checks 회귀 확인.
+  새   probe `--selfcheck` 11 checks, 기존 probe selfcheck 14 checks 회귀 확인.
   **생산 코드 변경 없음.** 상세: `docs/build-history/0.9.4.33.ko.md`
+
+## 0.9.4.34 — I-2 검증 보완 (전체 corpus · EXIF 정정 · full-scan groups)
+
+- **정정 1 — "전체 dataset" 표현 오류.** 0.9.4.33 의 849 파일은 표준
+  dataset 3,347 개가 아니라 `images/format` + BMP stride 샘플로 구성된
+  **probe corpus** 였다. 표준 dataset 전체로 재측정:
+  `both_success=3341, baseline_only_fail=0, candidate_only_fail=0, both_fail=6`
+  (추가된 1건은 `images/format/SOURCES.md` — 문서 파일). f/a
+  geometry·pixel 모두 **3,341/3,341**.
+- **정정 2 — EXIF 진단 결함 2건.**
+  ① query path 를 `const char*` 로 보관하고 `LPCWSTR` 캐스트로 조회 →
+     **허위 음성**(PROPERTYNOTFOUND). 올바른 wide 리터럴로 재측정.
+  ② applied counter 가 절대 증가하지 않는 변수를 출력 → 항상 0.
+  정정 후 **EXIF fixture 는 8/8 유효**했고 값이 1~8 로 일치했다.
+- **부수 발견 (제품 결함).** 제품이 쓰는
+  `/app1/ifd/exif/{ushort=274}` 는 WIC 가 `WINCODEC_ERR_BADPROPERTYKEY` 로
+  거부한다(8/8). 동작하는 경로는 `/app1/ifd/{ushort=274}` 다.
+  I-2 와 무관한 **제품 EXIF 경로 결함**이며, 이번에 production 코드를
+  변경하지 않았으므로 수정되지 않았다. 0.9.4.33 의 "제품 EXIF 가 동작하지
+  않는다" 는 관측이 아니었고 근거도 없었다.
+- **I-2 구조는 회전 하에서 통과.** fixture 가 선언한 변환을 강제 적용해
+  rotation 을 실제로 수행한 뒤, 공유 source + 독립 scaler 2개와 완전 독립
+  pipeline 2개를 f/a 모두 byte 비교 → **7/7 동일**.
+- **full-scan groups 전수 비교.** 양쪽 모두 제품 판정 함수 `verifyScorePlan`
+  사용, prefilter 없이 전수 열거. `pairs_compared=5,579,470`,
+  `baseline_groups=candidate_groups=457,126`, `verdict_diffs=0`,
+  `max_abs_score_diff=0.000000000`.
+- **성능 (full corpus 3,341 기준, probe corpus 와 비교 불가)**
+  CPU raw 47.6~48.2 % / adjusted 32.0~32.6 %, GPU raw 47.2~48.9 % /
+  adjusted 31.5~32.2 %. 두 번째 `CopyPixels` 가 평균 0.8354→0.2834 ms 로
+  감소하는 것은 **이 환경·이 데이터셋에서의 관측**이며 일반화하지 않는다.
+- **판정: `READY FOR PRODUCTION IMPLEMENTATION REVIEW`, 반영 미수행.**
+  I-1 은 `DEFERRED` 유지.
+- 검증: CPU 80/80 PASS, GPU 81/81 PASS, 양쪽 `--version`/`--smoke` exit 0,
+  새 probe selfcheck 11, 기존 probe 14, telemetry 25/29/71,
+  `git diff --check` 통과. **생산 코드 변경 없음.**
+  상세: `docs/build-history/0.9.4.34.ko.md`

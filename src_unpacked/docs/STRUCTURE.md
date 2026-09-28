@@ -80,6 +80,21 @@
 - GPU backend별 알고리즘은 독립적으로 유지하며 CPU fallback을 보존한다. 상위 engine에 vendor-specific GPU API를 직접 확산하지 않는다.
 
 
+## 소스 편집 규칙 (UTF-8)
+
+- **UTF-8 C++/문서 소스는 PowerShell 텍스트 왕복(`Get-Content` → `Set-Content`)
+  으로 수정하지 않는다.** Windows PowerShell 5.1 의 `Get-Content` 는 BOM 이
+  없는 파일을 시스템 ANSI 코드페이지로 읽으므로, UTF-8 한국어가 깨지고
+  다시 UTF-8 로 쓰면서 원본과 다른 바이트가 된다. 2026-09-29 실제로
+  `gui/mainwindow.cpp` 의 한국어 222 줄이 이 방식으로 손상되었다가
+  `git restore` 후 바이트 보존 방식으로 복구된 사례가 있다.
+- 안전한 방법: 저장소 편집 도구를 사용하거나, 바이트를 그대로 다루는
+  재인코딩 없는 경로를 쓴다(예: ISO-8859-1 의 1:1 바이트 매핑으로 읽고 쓰기).
+  읽고 쓴 뒤 반드시 원본 line ending 과 BOM 유무를 확인한다.
+- 수정 후 `git diff --numstat` 로 변경 줄 수가 의도한 크기인지 확인하고,
+  한글이 들어간 파일은 UTF-8 상태로 남았는지 확인한다.
+
+
 ## Active implementation briefs
 
 - docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — Node B staged Scheduler implementation scope and gate.
