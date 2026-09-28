@@ -27,6 +27,55 @@ inline double d9dMs(std::chrono::steady_clock::time_point a,
                     std::chrono::steady_clock::time_point b) {
   return std::chrono::duration<double, std::milli>(b - a).count();
 }
+
+// D1: create the WIC factory, recording whether CLSID_WICImagingFactory2
+// actually works or whether every call is paying for a failed attempt plus a
+// fallback. The HRESULT of the first attempt was previously discarded, so the
+// project did not know which of the two it was paying for.
+//
+// This is the identical two-step pattern the three call sites already used; it
+// is only factored out so all three report the same counters. The COM
+// activation order and the fallback condition are unchanged.
+#ifdef _WIN32
+inline HRESULT createWicFactory(IWICImagingFactory** out, DecodeTelemetry* tel) {
+  const auto t0 = std::chrono::steady_clock::now();
+  HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory2, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(out));
+  const auto t1 = std::chrono::steady_clock::now();
+  if (tel) {
+    ++tel->factory2Attempts;
+    tel->factory2Ms += d9dMs(t0, t1);
+    if (SUCCEEDED(hr)) {
+      ++tel->factory2Successes;
+    } else {
+      ++tel->factory2Fallbacks;
+      if (tel->factory2FirstFailHr == 0) tel->factory2FirstFailHr = (std::uint32_t)hr;
+    }
+  }
+  if (FAILED(hr)) {
+    hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                          CLSCTX_INPROC_SERVER, IID_PPV_ARGS(out));
+    if (tel) tel->factoryFallbackMs += d9dMs(t1, std::chrono::steady_clock::now());
+  }
+  return hr;
+}
+
+// D1: reference probe for the OS cost of opening the file, so the WIC-specific
+// part of the single opaque CreateDecoderFromFilename call can be separated
+// from it. Opens and immediately closes a handle; it does not touch the decode
+// path, the image bytes, or any result, and its outcome never gates the decode.
+inline void probeOsFileOpen(const wchar_t* wpath, DecodeTelemetry* tel) {
+  if (!tel) return;
+  const auto t0 = std::chrono::steady_clock::now();
+  HANDLE h = CreateFileW(wpath, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  const bool ok = (h != INVALID_HANDLE_VALUE);
+  if (ok) CloseHandle(h);
+  tel->osFileOpenProbeMs += d9dMs(t0, std::chrono::steady_clock::now());
+  ++tel->osFileOpenProbeCount;
+  if (!ok) ++tel->osFileOpenProbeFails;
+}
+#endif
 // Minimal P5 grayscale reader shared by all platforms. On Windows it is the
 // fallback for formats WIC cannot decode (e.g. PGM test fixtures); on other
 // platforms it is the primary reader.
@@ -104,18 +153,25 @@ bool decodeWicFile(const wchar_t* wpath,int w,int h,GrayImage& out,DecodeTelemet
     // D9d: each timer wraps one WIC step and nothing else. The steps are
     // sequential and mutually exclusive, so the buckets reconstruct the WIC
     // function's time without double counting; "other" is the remainder.
-    const auto t0=std::chrono::steady_clock::now();
+    // D1: factory2 and fallback are timed separately and sum to factoryMs.
+    // The helper accumulates into the running totals, so only this call's
+    // delta may be added here. Adding the totals themselves would count the
+    // first attempt once, the second twice, and so on, which is what a first
+    // implementation did and why factoryMs came out in the hundreds of
+    // millions of ms.
     ComPtr<IWICImagingFactory> factory;
-    HRESULT hr=CoCreateInstance(CLSID_WICImagingFactory2,nullptr,CLSCTX_INPROC_SERVER,
-                        IID_PPV_ARGS(&factory));
-    if(FAILED(hr)) hr=CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,
-                                       IID_PPV_ARGS(&factory));
-    const auto t1=std::chrono::steady_clock::now(); if(tel) tel->factoryMs+=d9dMs(t0,t1);
+    const double f2Before = tel ? tel->factory2Ms : 0.0;
+    const double fbBefore = tel ? tel->factoryFallbackMs : 0.0;
+    HRESULT hr=createWicFactory(&factory,tel);
+    if(tel) tel->factoryMs += (tel->factory2Ms - f2Before) + (tel->factoryFallbackMs - fbBefore);
     if(FAILED(hr))return false;
+    // D1: reference probe first, so its cost never lands inside openMs.
+    probeOsFileOpen(wpath,tel);
+    const auto t1=std::chrono::steady_clock::now();
     ComPtr<IWICBitmapDecoder> dec;
     hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,
           WICDecodeMetadataCacheOnDemand,&dec);
-    const auto t2=std::chrono::steady_clock::now(); if(tel) tel->openMs+=d9dMs(t1,t2);
+    const auto t2=std::chrono::steady_clock::now(); if(tel){ tel->openMs+=d9dMs(t1,t2); if(FAILED(hr)){ ++tel->openHrFailCount; if(tel->openHrFirstFailCode==0) tel->openHrFirstFailCode=(std::uint32_t)hr; } }
     if(FAILED(hr))return false;
     // EXIF orientation: the fingerprint must describe the image as displayed.
     // QImageReader::setAutoTransform(true) does this in the display lane, but
@@ -181,13 +237,19 @@ bool decodeWicFileAspect(const wchar_t* wpath,int maxDimension,GrayImage& out,De
     // D9d: same six WIC steps as decodeWicFile, timed at the same boundaries.
     // decode and decodePreserveAspect are reported separately even though the
     // two bodies are near-identical, because the callers pay for both.
-    const auto tA0=std::chrono::steady_clock::now();
+    // D1: factory2 vs fallback split, and the OS open reference probe.
     ComPtr<IWICImagingFactory> factory;
-    HRESULT hr=CoCreateInstance(CLSID_WICImagingFactory2,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)); if(FAILED(hr)) hr=CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory));
-    const auto tA1=std::chrono::steady_clock::now(); if(tel) tel->factoryMs+=d9dMs(tA0,tA1);
+    // Delta, not the running total -- see the note in decodeWicFile.
+    const double aF2Before = tel ? tel->factory2Ms : 0.0;
+    const double aFbBefore = tel ? tel->factoryFallbackMs : 0.0;
+    HRESULT hr=createWicFactory(&factory,tel);
+    if(tel) tel->factoryMs += (tel->factory2Ms - aF2Before) + (tel->factoryFallbackMs - aFbBefore);
     if(FAILED(hr))return false;
+    probeOsFileOpen(wpath,tel);
+    const auto tA1=std::chrono::steady_clock::now();
     ComPtr<IWICBitmapDecoder> dec; hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&dec);
-    const auto tA2=std::chrono::steady_clock::now(); if(tel) tel->openMs+=d9dMs(tA1,tA2);
+    const auto tA2=std::chrono::steady_clock::now();
+    if(tel){ tel->openMs+=d9dMs(tA1,tA2); if(FAILED(hr)){ ++tel->openHrFailCount; if(tel->openHrFirstFailCode==0) tel->openHrFirstFailCode=(std::uint32_t)hr; } }
     if(FAILED(hr))return false;
     ComPtr<IWICBitmapFlipRotator> orient;
     ComPtr<IWICBitmapSource> src;

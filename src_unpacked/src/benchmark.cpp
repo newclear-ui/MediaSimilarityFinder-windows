@@ -746,6 +746,23 @@ std::string BenchmarkRecorder::toJson() const {
     a << ",\"cacheMutexWaitMs\":" << v.cacheMutexWaitMs
       << ",\"cacheMutexHoldMs\":" << v.cacheMutexHoldMs
       << ",\"cacheMutexAcquires\":" << v.cacheMutexAcquires;
+    // D1: why open and factory are expensive. factory2Ms + factoryFallbackMs
+    // reconstructs factoryMs, and the fallback count says whether the measured
+    // factory cost is one activation or two. osFileOpenProbeMs is a reference
+    // measurement, deliberately NOT part of the decode path.
+    a << ",\"factory2Attempts\":" << d.factory2Attempts
+      << ",\"factory2Successes\":" << d.factory2Successes
+      << ",\"factory2Fallbacks\":" << d.factory2Fallbacks
+      << ",\"factory2FirstFailHr\":" << d.factory2FirstFailHr
+      << ",\"factory2Ms\":" << d.factory2Ms
+      << ",\"factoryFallbackMs\":" << d.factoryFallbackMs;
+    a << ",\"factorySplitMs\":" << (d.factory2Ms + d.factoryFallbackMs)
+      << ",\"factorySplitOverMs\":" << (d.factory2Ms + d.factoryFallbackMs - d.factoryMs);
+    a << ",\"osFileOpenProbeMs\":" << d.osFileOpenProbeMs
+      << ",\"osFileOpenProbeCount\":" << d.osFileOpenProbeCount
+      << ",\"osFileOpenProbeFails\":" << d.osFileOpenProbeFails
+      << ",\"openHrFailCount\":" << d.openHrFailCount
+      << ",\"openHrFirstFailCode\":" << d.openHrFirstFailCode;
     a << "},";
     o << a.str();
   }

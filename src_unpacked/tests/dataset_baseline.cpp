@@ -3,6 +3,7 @@
 #include "dataset_fingerprint.h"
 #include "path_utils.h"
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -363,6 +364,79 @@ int main(int argc, char** argv) {
         std::printf("  wait share of lock time   %.2f%%   hold %.2f%%\n",
                     100.0 * mWait / (mWait + mHold), 100.0 * mHold / (mWait + mHold));
     }
+  }
+
+  // --- D1: why are open and factory expensive? Question B is answered by
+  // counting, not by timing: is CLSID_WICImagingFactory2 working at all? --- */
+  {
+    const double f2a = numIn(lastJson, "analyze", "factory2Attempts");
+    const double f2s = numIn(lastJson, "analyze", "factory2Successes");
+    const double f2f = numIn(lastJson, "analyze", "factory2Fallbacks");
+    const double f2hr = numIn(lastJson, "analyze", "factory2FirstFailHr");
+    const double f2ms = numIn(lastJson, "analyze", "factory2Ms");
+    const double fbm = numIn(lastJson, "analyze", "factoryFallbackMs");
+    const double fsplit = numIn(lastJson, "analyze", "factorySplitMs");
+    const double fover = numIn(lastJson, "analyze", "factorySplitOverMs");
+    const double probeMs = numIn(lastJson, "analyze", "osFileOpenProbeMs");
+    const double probeN = numIn(lastJson, "analyze", "osFileOpenProbeCount");
+    const double probeF = numIn(lastJson, "analyze", "osFileOpenProbeFails");
+    const double openFail = numIn(lastJson, "analyze", "openHrFailCount");
+    const double openHr = numIn(lastJson, "analyze", "openHrFirstFailCode");
+    const double decTotal = numIn(lastJson, "analyze", "decodeTotalMs");
+    const double openTotal = numIn(lastJson, "analyze", "decodeOpenMs");
+    const double facTotal = numIn(lastJson, "analyze", "decodeFactoryMs");
+    const double decCalls = numIn(lastJson, "analyze", "decodeCalls");
+    const double decAspect = numIn(lastJson, "analyze", "decodeAspectCalls");
+
+    std::printf("\n--- D1: WIC factory: does Factory2 actually work? ---\n");
+    if (f2a <= 0) {
+      std::printf("  (no factory attempts recorded)\n");
+    } else {
+      std::printf("  Factory2 attempts    %10.0f\n", f2a);
+      std::printf("  Factory2 successes   %10.0f  (%.2f%%)\n", f2s, 100.0 * f2s / f2a);
+      std::printf("  Factory2 fallbacks   %10.0f  (%.2f%%)\n", f2f, 100.0 * f2f / f2a);
+      if (f2hr != 0) {
+        char code[16];
+        std::snprintf(code, sizeof(code), "0x%08lX", (unsigned long)(std::uint32_t)f2hr);
+        std::printf("  first Factory2 fail HRESULT %s\n", code);
+        const std::uint32_t h = (std::uint32_t)f2hr;
+        if (h == 0x80040154u)      std::printf("    = REGDB_E_CLASSNOTREG  (class not registered)\n");
+        else if (h == 0x80040111u) std::printf("    = CLASS_E_CLASSNOTAVAILABLE\n");
+        else if (h == 0x800401fdu) std::printf("    = CO_E_OBJNOTCONNECTED\n");
+        else if (h == 0x80004005u) std::printf("    = E_FAIL\n");
+        else                       std::printf("    = (see HRESULT documentation)\n");
+      } else {
+        std::printf("  first Factory2 fail HRESULT (none observed)\n");
+      }
+      std::printf("  Factory2 attemptMs  %10.1f   %.4f ms/attempt\n", f2ms, f2ms / f2a);
+      std::printf("  fallback attemptMs  %10.1f   %.4f ms/attempt\n", fbm, fbm / f2a);
+      std::printf("  split %.1f vs factoryMs %.1f -> %s (over %.4f)\n", fsplit, facTotal,
+                  (fsplit <= facTotal + 1.0) ? "OK (<=)" : "VIOLATION", fover);
+    }
+
+    std::printf("\n--- D1: file open composition ---\n");
+    if (decCalls + decAspect <= 0) {
+      std::printf("  (no decode recorded)\n");
+    } else {
+      const double n = decCalls + decAspect;
+      std::printf("  CreateDecoderFromFilename total %10.1f ms  (%.4f ms/call)\n",
+                  openTotal, openTotal / n);
+      if (probeN > 0) {
+        std::printf("  OS CreateFileW reference      %10.1f ms  (%.4f ms/call)\n",
+                    probeMs, probeMs / probeN);
+        std::printf("    probe count %.0f, probe failures %.0f\n", probeN, probeF);
+        if (openTotal > probeMs)
+          std::printf("  WIC-specific remainder        %10.1f ms  (%.4f ms/call)  = %.1f%% of open\n",
+                      openTotal - probeMs, (openTotal - probeMs) / n,
+                      100.0 * (openTotal - probeMs) / openTotal);
+        else
+          std::printf("  WIC-specific remainder        (probe >= open; open total %.1f)\n", openTotal);
+      }
+      std::printf("  open HRESULT failures %.0f", openFail);
+      if (openHr != 0) std::printf("   first 0x%08lX", (unsigned long)(std::uint32_t)openHr);
+      std::printf("\n");
+    }
+    (void)decTotal;
   }
 
   if (std::getenv("MSF_BASELINE_DUMP_WALKER")) {

@@ -865,7 +865,7 @@ When recording a new build, include the **change relative to the 0.9.4.24 D9a ba
 ### D9d — Decode internal decomposition + cache mutex accounting → 0.9.4.26, **PASS**
 
 - Pre-register commit `6f0ee90`. **Measurement build, no optimization.**
-- **89.54 % of decode is two WIC COM construction calls: file open + factory.**
+- **89.55 % of decode is two WIC COM construction calls: file open + factory.**
   ```
   open    (CreateDecoderFromFilename)  71,865.2 ms  62.15 %  2.7749 ms/call
   factory (CoCreateInstance WIC)       31,674.5 ms  27.39 %  1.2230 ms/call
@@ -877,7 +877,7 @@ When recording a new build, include the **change relative to the 0.9.4.24 D9a ba
   orient                                 15.4 ms   0.01 %
   total                               115,628.4 ms  100.00 %  4.4654 ms/call
   ```
-  `open + factory` = 89.54 % of decode = **84.9 % of the whole expensive verify**.
+  `open + factory` = 89.55 % of decode = **84.9 % of the whole expensive verify**.
 - **Three targets refuted, with measurements**
   - `WICBitmapInterpolationModeFant` 0.32 %. Expensive by name, 369 ms in
     reality, and changing it would change resize quality, a verdict property.
@@ -909,3 +909,57 @@ When recording a new build, include the **change relative to the 0.9.4.24 D9a ba
 - Noise 6.3 % (5 runs, 117,392.9–124,839.3 ms). Call counts identical in all 5.
 - **Next: Candidate D1 — image decoder construction and file open.** The 2.77 ms
   `open` and 1.22 ms `factory` must be decomposed first. Not implemented here.
+
+### D1 — File open / WIC factory root-cause measurement → 0.9.4.27, **PASS**
+
+- Pre-register commit `f4f8ebd` (docs only, no source change).
+- **D9d figures re-verified (§7 of the directive)**: `open+factory` =
+  103,539.7 ms, i.e. **89.55 %** of decode 115,628.4 (the D9d documents said
+  89.54 %, the truncation of 89.5452 — **corrected to 89.55 %**) and
+  **84.93 %** of the 121,906.2 verify total (D9d's 84.9 % was correct). Both
+  documents updated.
+- **Question B — Factory2 works, the fallback never fires**
+  ```
+  Factory2 attempts  25,898
+  successes          25,898  (100.00 %)
+  fallbacks               0  (0.00 %)
+  ```
+  The measured factory cost is one activation, not two. The "the first attempt
+  is wasted" hypothesis is **refuted**. There is nothing to remove on this
+  machine. The fallback stays in the code as a portability guard.
+- **Question A — 97.8 % of `open` is WIC-internal, not OS file I/O**
+  ```
+  CreateDecoderFromFilename  68,000.8 ms  2.6257 ms/call
+  OS CreateFileW reference    1,490.5 ms  0.0576 ms/call
+  WIC-specific remainder     66,510.3 ms  2.5682 ms/call  = 97.8% of open
+  ```
+  The real OS cost of opening the file is 0.0576 ms (2.2 %); the rest is WIC's
+  own work. The name "file open" was misleading. Without the reference probe,
+  2.6 ms of COM work would have been attributed to opening a file and a file
+  handle optimization would have looked reasonable while doing nothing.
+- **A bug this build caught**: the first implementation reported
+  `factoryMs = 235,023,895 ms`. The helper accumulates into running totals and
+  the call site added those totals again on every call, growing quadratically.
+  Pre-register stop condition 5 (split does not reconstruct factoryMs) caught
+  it exactly. The fix takes the per-call delta. Recorded rather than quietly
+  fixed.
+- factory split: Factory2 attemptMs 17,769.0 (0.6861 ms/attempt), fallback 0,
+  `split 17,769.0 == factoryMs 17,769.0` over 0.0000.
+- **The factory reduction vs D9d (31,674.5 -> 17,769.0) is not a performance
+  improvement.** It is the same double-counting bug; recorded as a measurement
+  difference (neither regression nor improvement).
+- Run statistics (5): mean 119,608.3 / median 120,346.2 / min 116,839.9 /
+  max 121,273.4 / range 4,433.5 ms = 3.68 % of median.
+- Accuracy: all counters identical to D9a, **groups 156,152**, identical across
+  all 5 runs. D9c's verify sum holds (`sum 116,676.9 == verifyMs`, over
+  0.0000). The 12,949x2 double decode remains, as the Non-goals required.
+- Verification: parity 25 + instrumentation PASS, tr_keys 21 PASS (the GUI fix
+  did not regress), schema 29 `additive-read-confirmed` (v9 kept),
+  analyze_telemetry 41 PASS, CPU 79/79. GPU: core and all test targets pass.
+  **The GUI exe could not be relinked because a user session of 0.9.4.26 holds
+  the file lock** — left running rather than terminated (not a code failure, a
+  build-environment constraint).
+- **Two candidates removed by measurement**: removing the Factory2 fallback
+  (0 occurrences) and file handle/stream management (OS 2.2 %).
+- **Next**: WIC decoder construction. The 2.5682 ms WIC-internal portion must
+  be decomposed first.

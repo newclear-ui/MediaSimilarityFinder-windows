@@ -4,14 +4,54 @@
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
-- Current: **0.9.4.26 — D9c (PASS) + D9d (PASS) instrumentation. decode 94.86 % of the verify; inside it open 62.15 % + factory 27.39 %; cache mutex is not a bottleneck. GUI translation keys restored; benchmark schema v9 confirmed additive-read**
-- Active node: **I / D9a PASS; D9b Candidate B NOT ACCEPTED; D9c PASS (profiling); D9d PASS (measurement). Next: Candidate D1 (decoder construction + file open), which must first decompose them**
-- Last completed Windows build/test line: **0.9.4.26**
-- Last completed v0.9.4.26 build: Core + GUI Release build PASS (CPU and GPU trees)
-- Last completed v0.9.4.26 test run: **CTest 80/80 PASS (GPU)**, **79/79 PASS (CPU)**
-- Last completed v0.9.4.26 validation: `verify_parity_test` 25 checks + D9c `verify_instrumentation`; `ui_translation_keys_test` (new); `benchmark_schema_test` (new, 29 checks, `additive-read-confirmed`); every verify counter and groups 156,152 identical to 0.9.4.24 D9a across 5 runs; `--smoke` exit 0; `--version` 0.9.4.26
+- Current: **0.9.4.27 — D1 file open / WIC factory root-cause measurement (PASS). Factory2 succeeds 100% with 0 fallbacks; `open` is 97.8% WIC-internal, the OS file open is only 0.0576 ms. GUI translation fix and schema v9 additive confirmation carried over from 0.9.4.26**
+- Active node: **I / D9a PASS; D9b NOT ACCEPTED; D9c PASS; D9d PASS; D1 PASS (root cause). Next: decompose the 2.5682 ms WIC-internal portion of `open`, then a separate pre-register**
+- Last completed Windows build/test line: **0.9.4.27**
+- Last completed v0.9.4.27 build: Core + GUI Release build PASS (CPU tree). GPU tree: core and all test targets PASS; the GUI exe could not be relinked because a user session of 0.9.4.26 held the file lock
+- Last completed v0.9.4.27 test run: **CTest 79/79 PASS (CPU)**; GPU test targets all PASS individually
+- Last completed v0.9.4.27 validation: `verify_parity_test` 25 checks + D9c instrumentation; `ui_translation_keys_test` 21 keys; `benchmark_schema_test` 29 checks `additive-read-confirmed`; `analyze_telemetry_test` 41 checks; every verify counter and groups 156,152 identical to 0.9.4.24 D9a across 5 runs; `--version` 0.9.4.27
 - CPU-only validation: Release build PASS; **CTest 79/79 PASS**; CUDA disabled and CPU fallback verified
-- D9d scope note: **instrumentation only, no optimization.** `DecodeTelemetry` added to the decoder with an optional defaulted sink; timers placed around the six WIC steps; cache-mutex wait and hold measured at both lock sites. `decodeColorAspect` deliberately uninstrumented (UI thread). SSIM, window, precision, threshold, candidate, grouping, verdict, cache, decode, resize, crop, mirror, CPU-fallback, and CUDA semantics all unchanged. Engine 1.5.0 / DB 1.0.3 / cache v9 / schema v9 unchanged
+- D1 scope note: **root-cause measurement only, no optimization.** `createWicFactory` now records the previously discarded Factory2 HRESULT and counts attempts/successes/fallbacks; `probeOsFileOpen` times a plain `CreateFileW`+`CloseHandle` on the same path as a reference, excluded from `openMs`; open HRESULT failures recorded. The 3 `CoCreateInstance` sites are one helper with identical activation order and fallback condition. `schemaVersion` stays 9. Engine 1.5.0 / DB 1.0.3 / cache v9 unchanged. SSIM, threshold, candidate, grouping, verdict, cache, decode, resize, crop, mirror, CPU-fallback, CUDA semantics all unchanged
+
+### D1 measured result — the two questions answered
+
+```text
+Factory2 attempts      25,898
+Factory2 successes     25,898   100.00 %
+Factory2 fallbacks          0     0.00 %
+factory2 attemptMs    17,769.0 ms  0.6861 ms/attempt
+fallback attemptMs          0.0 ms
+split == factoryMs -> over 0.0000
+```
+
+`CLSID_WICImagingFactory2` succeeds on every call, so the fallback is dead code
+in practice and the measured factory cost is one activation, not two. The
+"wasted first attempt" hypothesis is refuted. The fallback stays as a portability
+guard.
+
+```text
+CreateDecoderFromFilename  68,000.8 ms  2.6257 ms/call
+OS CreateFileW reference    1,490.5 ms  0.0576 ms/call
+WIC-specific remainder     66,510.3 ms  2.5682 ms/call  = 97.8 % of open
+open HRESULT failures              0
+```
+
+The OS cost of opening the file is 2.2 % of `open`; 97.8 % is WIC's own decoder
+construction. "file open" was a misleading name for this cost.
+
+Candidates **deleted** by measurement: removing the Factory2 fallback (0
+occurrences) and file handle/stream management (OS 2.2 %).
+
+5 runs: mean 119,608.3 / median 120,346.2 / min 116,839.9 / max 121,273.4 /
+range 4,433.5 ms (3.68 % of median). The `factory` difference vs D9d
+(31,674.5 -> 17,769.0 ms) is a measurement difference from a double-counting bug
+that this build fixed, recorded as neither regression nor improvement.
+
+A pre-register stop condition earned its place here: the first implementation
+reported `factoryMs = 235,023,895 ms` because the shared helper accumulates into
+running totals and the call site re-added them each call. The
+"split must reconstruct factoryMs" check caught it immediately.
+
 
 ### D9d measured result — what the decode region is made of
 
@@ -30,7 +70,7 @@ per call, `decodeTotalMs` 115,628.4:
 | orient | 15.4 | 0.01 % | 0.0006 |
 | **total** | **115,628.4** | 100 % | **4.4654** |
 
-`open + factory` = 89.54 % of decode = **84.9 % of the whole expensive verify**.
+`open + factory` = 89.55 % of decode = **84.9 % of the whole expensive verify**.
 WIC succeeded 25,898 times, 0 PGM fallbacks, 0 failures, 0 orientations applied.
 
 Refuted with measurements, not left as opinions: `WICBitmapInterpolationModeFant`

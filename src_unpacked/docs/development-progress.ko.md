@@ -857,7 +857,7 @@ A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
 ### D9d — Decode 내부 분해 + cache mutex 계측 → 0.9.4.26, **PASS**
 
 - Pre-register commit `6f0ee90`. **measurement 빌드, 최적화 없음.**
-- **decode 내부 89.54 % 가 파일 open + WIC factory 생성 두 호출이다.**
+- **decode 내부 89.55 % 가 파일 open + WIC factory 생성 두 호출이다.**
   ```
   open    (CreateDecoderFromFilename)  71,865.2 ms  62.15 %  2.7749 ms/call
   factory (CoCreateInstance WIC)       31,674.5 ms  27.39 %  1.2230 ms/call
@@ -869,7 +869,7 @@ A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
   orient                                 15.4 ms   0.01 %
   합계                               115,628.4 ms  100.00 %  4.4654 ms/call
   ```
-  `open + factory` = decode 의 89.54 % = **expensive verify 전체의 84.9 %**.
+  `open + factory` = decode 의 89.55 % = **expensive verify 전체의 84.9 %**.
 - **기각된 목표 3가지 (측정 근거 있음)**
   - `WICBitmapInterpolationModeFant` 0.32 % — 이름은 비싸 보이지만 369 ms.
     바꾸면 resize quality 즉 verdict 속성이 바뀐다.
@@ -899,3 +899,49 @@ A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
 - noise 6.3 % (5회, 117,392.9–124,839.3 ms). 호출 횟수는 5회 모두 결정적.
 - **다음 후보 D1 — image decoder 생성과 file open.** 먼저 2.77 ms `open` 과
   1.22 ms `factory` 를 더 분해해야 한다. 구현하지 않았다.
+
+### D1 — File open / WIC factory 원인 계측 → 0.9.4.27, **PASS**
+
+- Pre-register commit `f4f8ebd` (docs only, 소스 변경 없음).
+- **D9d 수치 재검산 (§7 지시)**: `open+factory` = 103,539.7 ms.
+  decode 115,628.4 대비 **89.55 %** (D9d 문서는 89.5452 의 절삭 89.54 였음 →
+  **89.55 로 정정**), verify 합계 121,906.2 대비 **84.93 %** (D9d 표기 84.9 는
+  정확). 두 문서 모두 수정.
+- **질문 B — Factory2 는 정상 동작, fallback 은 0회**
+  ```
+  Factory2 attempts  25,898
+  successes          25,898  (100.00 %)
+  fallbacks               0  (0.00 %)
+  ```
+  측정된 factory 비용은 활성화 1회지 2회가 아니다. "실패하는 첫 시도가
+  낭비다"는 가설이 **기각**되었다. 이 머신에서 제거할 낭비가 없다. fallback 은
+  이식성 가드이므로 코드에 유지한다.
+- **질문 A — open 의 97.8 % 는 WIC 고유, OS 파일 I/O 아님**
+  ```
+  CreateDecoderFromFilename  68,000.8 ms  2.6257 ms/call
+  OS CreateFileW 참조        1,490.5 ms  0.0576 ms/call
+  WIC 고유 나머지           66,510.3 ms  2.5682 ms/call  = open 의 97.8 %
+  ```
+  실제 OS 파일 열기 비용은 0.0576 ms(2.2 %)뿐이고 나머지는 WIC 내부 작업이다.
+  "file open" 이라는 이름이 오해를 만들었다. 참조 프로브가 없었으면 2.6 ms 의
+  COM 작업이 "파일 열기"로 귀속되어 파일 핸들 최적화가 그럴듯해 보였을 것이다.
+- **이 작업이 잡은 버그**: 첫 구현이 `factoryMs = 235,023,895 ms` 보고.
+  헬퍼가 누적 합계에 기록하는데 호출 지점이 그 합계를 매번 다시 더해 제곱으로
+  증가. pre-register 중단 조건 5번(분해가 factoryMs 재구성 실패)이 정확히
+  이를 잡았다. 수정은 호출당 델타. 조용히 고치지 않고 기록함.
+- factory 분해: Factory2 attemptMs 17,769.0 (0.6861 ms/attempt), fallback 0.
+  `split 17,769.0 == factoryMs 17,769.0` over 0.0000.
+- **D9d 대비 factory 감소(31,674.5→17,769.0)는 성능 개선이 아니다.** 같은 이중
+  계수 버그의 영향이며 측정 차이로 기록한다(회귀도 개선도 아님).
+- 실행 통계(5회): mean 119,608.3 / median 120,346.2 / min 116,839.9 /
+  max 121,273.4 / range 4,433.5 ms = median 의 3.68 %.
+- 정합성: 전 카운터 D9a 동일, **groups 156,152**, 5회 동일. D9c verify 합계
+  유지(`sum 116,676.9 == verifyMs`, over 0.0000). 중복 decode 12,949x2 유지.
+- 검증: parity 25 PASS + instrumentation, tr_keys 21 PASS (GUI fix 회귀 없음),
+  schema 29 `additive-read-confirmed` (v9 유지), analyze_telemetry 41 PASS,
+  CPU 79/79 PASS. GPU 는 core + 전 test target 통과. **GUI exe 는 사용자가
+  실행 중인 0.9.4.26 세션이 파일 락을 잡고 있어 relink 불가** — 종료시키지
+  않고 그대로 두었다(코드 실패 아님, 빌드 환경 제약).
+- **측정으로 제거된 후보 2개**: Factory2 fallback 제거(0회), 파일 핸들/스트림
+  관리 최적화(OS 2.2 %).
+- **다음**: WIC decoder 생성. 2.5682 ms 의 WIC 고유 부분을 먼저 분해해야 한다.
