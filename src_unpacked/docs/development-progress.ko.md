@@ -965,9 +965,10 @@ Development Progress  현재 상태 요약 (수치 반복 금지)
 참조한다.
 
 ```
-D9a BASELINE → D9b NOT ACCEPTED → D9c PASS → D9d PASS → D1 PASS
+D9a BASELINE → D9b NOT ACCEPTED → D9c PASS → D9d PASS → D1 PASS → D2 PASS
 측정으로 기각된 것: cache 32 · scoring 중복 · Fant · EXIF
                      cache mutex · Factory2 fallback · raw OS file open
+보류된 것: 후보 A(DEFERRED) · 후보 C(Path C, DEFERRED)
 ```
 
 현재 상태 요약 (상세 수치는 Build History 참조)
@@ -977,10 +978,36 @@ D9b = NOT ACCEPTED   (정확성 보존, 성능 목표 미달)
 D9c = PASS           (decode 94.90 %)
 D9d = PASS           (open 62.15 % + factory 27.39 %)
 D1  = PASS           (Factory2 100 % 성공 / fallback 0 회, open 의 97.8 % WIC 고유)
+D2  = PASS           (7개 형식 전부 Stream 경로 최단, A 대비 16~30 % ↓)
+                       단, 절대 이득이 작고 HandleStream 유지보수 비용이 있어
+                       제품 채택하지 않음 → Path C = DEFERRED
 
 Current active investigation:
-WIC CreateDecoderFromFilename 내부 비용 (2.5682 ms, 아직 분해되지 않음)
+D3 = decode / decodePreserveAspect 중복 비용 계측
+     (miss 1건당 2회 decode 되는 구조의 실제 wall-clock 비용)
+     중복 제거는 D3 수치를 얻은 뒤 별도 optimization pre-register 로 판단.
 ```
+
+## D2 — WIC decoder 진입 경로 비교 (0.9.4.28, **PASS**)
+
+- 목표: `CreateDecoderFromFilename` vs `CreateDecoderFromFileHandle` vs
+  `CreateDecoderFromStream` 의 decoder 생성 비용 비교. **measurement-only.**
+- 결과: `CreateDecoderFromStream` 이 7개 형식(bmp/jpg/png/webp/gif/tiff/ico)
+  전부에서 decoder 단계 최단, combined 기준 A 대비 약 16~30 % 낮음.
+- **제품 채택하지 않음.** 절대 이득이 작음(파일당 ~0.02 ms) + 직접 구현한
+  `HandleStream` 유지보수 비용 + production full-path benchmark 미측정.
+  → **Path C = `DEFERRED`** (폐기 아님, 재검토 조건 명시).
+- **D1 과의 직접 비교 금지.** D1 의 2.6257 ms/call 은 코덱 DLL 최초 로드를
+  포함하고 D2 는 warm state 측정이다. **측정 조건이 다르므로 비교 불가하며,
+  성능 개선이 아니다.**
+- 구현 중 실제 버그 3건 발견 및 영구 기록: Path B handle lifetime
+  (use-after-close), Path C 잘못된 stream 연결, probe 의 `CoUninitialize()`
+  (COM 수명은 caller 소유).
+- dataset 에 TIFF 14 + ICO 12 추가 → 3,347 files / 102,475,315 bytes,
+  fingerprint `e8f8fa6a…e2640a`. dataset 이 바뀌었으므로 D2 절대 합계는
+  D1 과 직접 비교하지 않는다.
+- 검증: CPU 79/79 PASS, GPU 80/80 PASS, `--version` 0.9.4.28.
+- **다음**: D3 pre-register (`docs/build-history/0.9.4.29.*.md`) 를 별도로 작성.
 
 기록 의무와 필수 항목은 `AGENTS.md` 9번 항목과
 `docs/document-naming.*.md` 2-1절에 정의한다.

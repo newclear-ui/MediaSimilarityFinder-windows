@@ -985,9 +985,10 @@ The lineage and candidate states are in the **Performance / Tuning Experiment
 Index** in `docs/worklog/0.9.4.*.md`.
 
 ```
-D9a BASELINE -> D9b NOT ACCEPTED -> D9c PASS -> D9d PASS -> D1 PASS
+D9a BASELINE -> D9b NOT ACCEPTED -> D9c PASS -> D9d PASS -> D1 PASS -> D2 PASS
 Refuted by measurement: cache 32 · scoring duplication · Fant · EXIF
                         cache mutex · Factory2 fallback · raw OS file open
+Deferred: candidate A (DEFERRED) · candidate C (Path C, DEFERRED)
 ```
 
 Current state (details in Build History)
@@ -997,10 +998,42 @@ D9b = NOT ACCEPTED   (correctness preserved, performance objective not met)
 D9c = PASS           (decode 94.90 %)
 D9d = PASS           (open 62.15 % + factory 27.39 %)
 D1  = PASS           (Factory2 100 % success / 0 fallbacks, 97.8 % of open is WIC-internal)
+D2  = PASS           (Stream path shortest for all 7 formats, 16-30 % below A)
+                       but the absolute gain is small and HandleStream adds
+                       maintenance cost, so it is not adopted
+                       -> Path C = DEFERRED
 
 Current active investigation:
-the 2.5682 ms inside WIC CreateDecoderFromFilename, still undecomposed
+D3 = duplicate decode / decodePreserveAspect cost measurement
+     (the real wall-clock cost of decoding the same file twice per miss)
+     de-duplication is judged only after D3 numbers exist, in a separate
+     optimization pre-register.
 ```
+
+## D2 — WIC Decoder Entry-Path Comparison (0.9.4.28, **PASS**)
+
+- Goal: compare the decoder-creation cost of `CreateDecoderFromFilename` vs
+  `CreateDecoderFromFileHandle` vs `CreateDecoderFromStream`.
+  **Measurement-only.**
+- Result: `CreateDecoderFromStream` is the shortest at the decoder step for all
+  7 formats (bmp/jpg/png/webp/gif/tiff/ico), roughly 16–30 % below A on the
+  combined metric.
+- **Not adopted into the product.** The absolute gain is small (~0.02 ms per
+  file), the hand-written `HandleStream` carries maintenance cost, and there is
+  no production full-path benchmark yet. -> **Path C = `DEFERRED`** (not
+  discarded; revisit conditions recorded).
+- **Do not compare D1 and D2 directly.** D1's 2.6257 ms/call includes the
+  one-time codec DLL load while D2 measured a warm state. The conditions
+  differ, so they are not comparable and this is **not** a performance
+  improvement.
+- Three real bugs found while implementing, all permanently recorded: Path B
+  handle lifetime (use-after-close), Path C connecting the wrong stream, and
+  the probe calling `CoUninitialize()` (COM lifetime follows caller ownership).
+- Dataset extended with TIFF 14 + ICO 12 -> 3,347 files / 102,475,315 bytes,
+  fingerprint `e8f8fa6a…e2640a`. Because the dataset changed, D2 absolute
+  totals are not directly comparable to D1.
+- Verification: CPU 79/79 PASS, GPU 80/80 PASS, `--version` 0.9.4.28.
+- **Next**: a separate D3 pre-register in `docs/build-history/0.9.4.29.*.md`.
 
 The recording obligation and the required field list are defined in
 `AGENTS.md` item 9 and `docs/document-naming.*.md` section 2-1.

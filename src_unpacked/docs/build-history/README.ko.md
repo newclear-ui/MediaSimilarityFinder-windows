@@ -156,3 +156,5 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 - v0.9.4.24 — QSettings organization 을 `MediaSimilarityFinder-ui` 로 변경 + 기존 설정 안전한 1회 자동 마이그레이션
 - v0.9.4.25 — D9b 후보 B: **기각.** centerCropResize 8→6 + aspect 버퍼 재사용. parity 25건 double 동일, 카운터 D9a 와 모두 동일하나 비용 감소 없음 (frame_ssim 이 지배)
 - v0.9.4.26 — D9c: expensive verify 내부 비용 계측 (instrumentation). **PASS.** 8.564 ms 중 decode 94.90% / frame_ssim 0.55%. parity 유지, groups 156,152
+- v0.9.4.27 — D1: open / factory 원인 계측. **PASS.** Factory2 25,898회 전부 성공(fallback 0), OS `CreateFileW` 0.0576 ms, open 의 97.8% 가 WIC 고유
+- v0.9.4.28 — D2: WIC decoder 진입 경로 3종 비교 (measurement-only). **PASS.** 7개 형식 전부 `CreateDecoderFromStream` 이 decoder 단계 최단(A 대비 16~30% ↓). 단 제품 채택 아님 — **Path C = `DEFERRED`**. 구현 중 실제 버그 3건(handle lifetime / 잘못된 stream 연결 / COM lifetime) 발견 및 기록. dataset 에 TIFF 14 + ICO 12 추가 (3,347 files, `e8f8fa6a…e2640a`)
