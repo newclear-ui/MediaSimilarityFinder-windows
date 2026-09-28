@@ -8,7 +8,7 @@ int main() {
   if (rec.hasData()) return 1;
   msf::BenchmarkConfig cfg;
   cfg.root = "C:/media";
-   cfg.build = "0.9.4.31"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
+   cfg.build = "0.9.4.32"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
   cfg.distance = 8; cfg.cpuWorkers = 4; cfg.gpuBatch = 64; cfg.gpuBackend = "CUDA";
   cfg.scanImages = true; cfg.scanVideos = true; cfg.cudaAvailable = false;
   rec.start(cfg);
@@ -35,7 +35,7 @@ int main() {
     if (js.find(s) == std::string::npos) { std::cerr << "missing: " << s << "\n"; return false; }
     return true;
   };
-   if (!need("\"build\":\"0.9.4.31\"")) return 3;
+   if (!need("\"build\":\"0.9.4.32\"")) return 3;
   if (!need("\"completed\":true")) return 4;
   if (!need("\"count\":30")) return 5;
   if (!need("\"gpuHashed\":10")) return 6;
@@ -79,7 +79,7 @@ int main() {
    if (!need("\"gpuBackend\":\"CUDA\"")) return 34;
   // Node D1a: batch telemetry JSON regression.
   {
-    msf::BenchmarkRecorder rD; msf::BenchmarkConfig cD; cD.root = "C:/media"; cD.build = "0.9.4.31";
+    msf::BenchmarkRecorder rD; msf::BenchmarkConfig cD; cD.root = "C:/media"; cD.build = "0.9.4.32";
     rD.start(cD); rD.beginImageBatch(4); rD.addImagePackMs(2.5); rD.addImageCpuHashMs(1.25); rD.endImageBatch();
     rD.finalize(true, 4, 4, 0, 0, 0, 0, 0.0, 0, 0);
     const std::string jd = rD.toJson();
@@ -119,7 +119,7 @@ int main() {
    {
     msf::BenchmarkRecorder r4;
     msf::BenchmarkConfig c4;
-    c4.root = "C:/media"; c4.build = "0.9.4.31"; c4.engine = "1.5.0"; c4.db = "1.0.3";
+    c4.root = "C:/media"; c4.build = "0.9.4.32"; c4.engine = "1.5.0"; c4.db = "1.0.3";
     r4.start(c4);
     for (int i = 0; i < 5; ++i) r4.recordWalkerEnqueue((std::size_t)(i + 1));
     for (int i = 0; i < 3; ++i) r4.recordWalkerDequeue(1);
@@ -151,7 +151,7 @@ int main() {
   {
     msf::BenchmarkRecorder r2;
     msf::BenchmarkConfig c2;
-    c2.root = "C:/media"; c2.build = "0.9.4.31"; c2.engine = "1.5.0"; c2.db = "1.0.3";
+    c2.root = "C:/media"; c2.build = "0.9.4.32"; c2.engine = "1.5.0"; c2.db = "1.0.3";
     c2.distance = 8; c2.cpuWorkers = 2; c2.gpuBatch = 32; c2.gpuBackend = "CPU";
     r2.start(c2);
     r2.addVideo(1000ULL, 10.0, 5.0, 8, "v.mp4", 10, 12);
@@ -186,7 +186,7 @@ int main() {
   {
     msf::BenchmarkRecorder r3;
     msf::BenchmarkConfig c3;
-    c3.root = "relative/path"; c3.build = "0.9.4.31"; c3.engine = "1.5.0"; c3.db = "1.0.3";
+    c3.root = "relative/path"; c3.build = "0.9.4.32"; c3.engine = "1.5.0"; c3.db = "1.0.3";
     r3.start(c3);
     r3.finalize(true, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
     const std::string j3 = r3.toJson();

@@ -28,6 +28,7 @@
 #include "image_decoder.h"
 #include "image_verify.h"
 #include "path_utils.h"
+#include "video_fingerprint.h"  // frame_ssim, for the score-decomposition replica
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -77,22 +78,98 @@ void aspectDims(int sw, int sh, int maxDim, int& w, int& h) {
 
 enum class PixParity { kIdentical, kDifferent };
 // Compares two same-geometry buffers. Callers check geometry first; comparing
-// across geometries would conflate the two failure classes.
+// across geometries would conflate the two failure classes. sumAbs enables the
+// mean-absolute-delta statistic (§12 of the stability brief).
 PixParity comparePixels(const msf::GrayImage& a, const msf::GrayImage& b,
-                        std::uint64_t& diffCount, std::uint64_t& maxAbs) {
-  diffCount = 0; maxAbs = 0;
+                        std::uint64_t& diffCount, std::uint64_t& maxAbs, std::uint64_t& sumAbs) {
+  diffCount = 0; maxAbs = 0; sumAbs = 0;
   if (a.width != b.width || a.height != b.height ||
       a.pixels.size() != b.pixels.size() ||
       a.pixels.size() != (std::size_t)a.width * a.height)
     return PixParity::kDifferent;
   for (std::size_t i = 0; i < a.pixels.size(); ++i) {
     const unsigned d = (unsigned)std::abs((int)a.pixels[i] - (int)b.pixels[i]);
-    if (d) { ++diffCount; if (d > maxAbs) maxAbs = d; }
+    if (d) { ++diffCount; sumAbs += d; if (d > maxAbs) maxAbs = d; }
   }
   return diffCount == 0 ? PixParity::kIdentical : PixParity::kDifferent;
 }
 
 #ifdef _WIN32
+using Microsoft::WRL::ComPtr;
+
+// Score-decomposition replica. Mirrors image_verify.cpp flipBuf (:112-117)
+// and ssimBuf (:122-136) exactly, minus telemetry (file-local there, so the
+// probe cannot call them). Validity is self-checked: the max over the 10
+// windows must equal verifyScorePlan's total bit-exactly on every pair;
+// any mismatch invalidates the decomposition, not the product.
+void repFlip(const msf::GrayImage& src, msf::GrayImage& dst) {
+  dst.width = src.width; dst.height = src.height;
+  dst.pixels.resize(src.pixels.size());
+  for (int y = 0; y < src.height; ++y)
+    for (int x = 0; x < src.width; ++x)
+      dst.pixels[(std::size_t)y * src.width + x] =
+          src.pixels[(std::size_t)y * src.width + (src.width - 1 - x)];
+}
+double repSsim(const msf::GrayImage& a, const msf::GrayImage& b) {
+  if (a.width <= 0 || a.height <= 0 || a.width != b.width || a.height != b.height) return 0;
+  if (a.pixels.size() != (std::size_t)a.width * a.height || b.pixels.size() != a.pixels.size()) return 0;
+  msf::GrayImage f;
+  repFlip(b, f);
+  return std::max(msf::frame_ssim(a.pixels.data(), b.pixels.data(), a.width, a.height),
+                  msf::frame_ssim(a.pixels.data(), f.pixels.data(), a.width, a.height));
+}
+struct WindowScore { const char* name; double v; msf::GrayImage ca, cb; };
+// The 10 windows of verifyScorePlanImpl in the same order (:161-165). Crop
+// pairs are carried along so spatial analysis can run on the exact inputs.
+int repWindows(const msf::GrayImage& fA, const msf::GrayImage& aA,
+               const msf::GrayImage& fB, const msf::GrayImage& aB,
+               WindowScore* out) {
+  static const double kAspects[] = {4.0 / 3.0, 1.0, 9.0 / 16.0};
+  static const char* kNames[] = {"a43", "a11", "a916"};
+  static const char* kFullB[] = {"fullA-b43", "fullA-b11", "fullA-b916"};
+  static const char* kFullA[] = {"a43-fullB", "a11-fullB", "a916-fullB"};
+  const msf::GrayImage fullA = msf::centerCropResize(aA, (double)aA.width / aA.height);
+  const msf::GrayImage fullB = msf::centerCropResize(aB, (double)aB.width / aB.height);
+  int n = 0;
+  out[n] = {"f", repSsim(fA, fB), fA, fB}; ++n;
+  for (int i = 0; i < 3; ++i) {
+    msf::GrayImage ca = msf::centerCropResize(aA, kAspects[i]);
+    msf::GrayImage cb = msf::centerCropResize(aB, kAspects[i]);
+    out[n] = {kNames[i], repSsim(ca, cb), ca, cb}; ++n;
+    out[n] = {kFullB[i], repSsim(fullA, cb), fullA, cb}; ++n;
+    out[n] = {kFullA[i], repSsim(ca, fullB), ca, fullB}; ++n;
+  }
+  return n;  // 10
+}
+double repTotal(const WindowScore* w, int n) {
+  double s = w[0].v;
+  for (int i = 1; i < n; ++i) s = std::max(s, w[i].v);
+  return s;
+}
+// Quadrant means of |a-b| plus argmax location: localizes a difference to an
+// image region (center/edge evidence) without dumping pixel maps.
+struct SpatialStat {
+  double qmean[4] = {0, 0, 0, 0};  // TL TR BL BR
+  int argx = -1, argy = -1;
+  unsigned argd = 0;
+};
+SpatialStat spatialStat(const msf::GrayImage& a, const msf::GrayImage& b) {
+  SpatialStat s;
+  if (a.width != b.width || a.height != b.height || a.width <= 0) return s;
+  const int w = a.width, h = a.height;
+  std::uint64_t qsum[4] = {0, 0, 0, 0}, qn[4] = {0, 0, 0, 0};
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x) {
+      const unsigned d = (unsigned)std::abs((int)a.pixels[(std::size_t)y * w + x] -
+                                            (int)b.pixels[(std::size_t)y * w + x]);
+      const int q = (y >= h / 2 ? 2 : 0) + (x >= w / 2 ? 1 : 0);
+      qsum[q] += d; ++qn[q];
+      if (d > s.argd) { s.argd = d; s.argx = x; s.argy = y; }
+    }
+  for (int q = 0; q < 4; ++q) s.qmean[q] = qn[q] ? (double)qsum[q] / qn[q] : 0;
+  return s;
+}
+
 using Microsoft::WRL::ComPtr;
 
 // In-memory WIC Fant downscale grey->grey. Mirrors the scaler+converter+copy
@@ -171,20 +248,20 @@ int selfcheck() {
   { msf::GrayImage a, b;
     a.width = b.width = 4; a.height = b.height = 4;
     a.pixels.assign(16, 7); b.pixels.assign(16, 7);
-    std::uint64_t dc = 0, ma = 0;
-    expect(comparePixels(a, b, dc, ma) == PixParity::kIdentical && dc == 0,
+    std::uint64_t dc = 0, ma = 0, sa = 0;
+    expect(comparePixels(a, b, dc, ma, sa) == PixParity::kIdentical && dc == 0,
            "comparePixels identical buffers"); }
   { msf::GrayImage a, b;
     a.width = b.width = 4; a.height = b.height = 4;
     a.pixels.assign(16, 7); b.pixels.assign(16, 7); b.pixels[3] = 200;
-    std::uint64_t dc = 0, ma = 0;
-    expect(comparePixels(a, b, dc, ma) == PixParity::kDifferent && dc == 1 && ma == 193,
-           "comparePixels counts differing pixels and max abs diff"); }
+    std::uint64_t dc = 0, ma = 0, sa = 0;
+    expect(comparePixels(a, b, dc, ma, sa) == PixParity::kDifferent && dc == 1 && ma == 193 && sa == 193,
+           "comparePixels counts differing pixels, max abs diff, and sum"); }
   { msf::GrayImage a, b;
     a.width = 4; a.height = 4; a.pixels.assign(16, 7);
     b.width = 4; b.height = 5; b.pixels.assign(20, 7);
-    std::uint64_t dc = 0, ma = 0;
-    expect(comparePixels(a, b, dc, ma) == PixParity::kDifferent,
+    std::uint64_t dc = 0, ma = 0, sa = 0;
+    expect(comparePixels(a, b, dc, ma, sa) == PixParity::kDifferent,
            "comparePixels flags geometry mismatch without touching pixels"); }
 #ifdef _WIN32
   { msf::GrayImage src;
@@ -234,10 +311,11 @@ int main(int argc, char** argv) {
   if (argc >= 2 && std::strcmp(argv[1], "--selfcheck") == 0) return selfcheck();
 #ifdef _WIN32
   if (argc < 2) {
-    std::cerr << "usage: msf_shared_decode_probe <dataset-root>\n";
+    std::cerr << "usage: msf_shared_decode_probe <dataset-root> | --flips <dataset-root> | --selfcheck\n";
     return 2;
   }
-  const std::string root = argv[1];
+  const bool flipsMode = (argc >= 3 && std::strcmp(argv[1], "--flips") == 0);
+  const std::string root = flipsMode ? argv[2] : argv[1];
 
   const msf::DatasetFingerprint fp = msf::computeDatasetFingerprint(root);
   if (fp.state != "measured") {
@@ -247,6 +325,149 @@ int main(int argc, char** argv) {
   std::printf("dataset_fingerprint=%s files=%llu bytes=%llu version=%d\n", fp.fingerprint.c_str(),
               (unsigned long long)fp.fileCount, (unsigned long long)fp.totalBytes,
               msf::kDatasetFingerprintVersion);
+
+  if (flipsMode) {
+    // Flip-case forensics on the v0.9.4.31 R>=384 verdict flips. Re-runs the
+    // two TIFF near-duplicate pairs through baseline and candidate with
+    // per-window score decomposition, narrow R sweep, pixel statistics,
+    // EXIF/pgm counters, and a cache hit/miss split. Production paths are
+    // only called, never modified.
+    const char* kNames[4] = {"hpredict.tiff", "hpredict_packbits.tiff", "l1.tiff", "l1_xmp.tiff"};
+    struct FlipFile { std::string name, path; std::uint64_t bytes = 0; };
+    FlipFile ff[4];
+    for (int i = 0; i < 4; ++i) {
+      ff[i].name = kNames[i];
+      ff[i].path = msf::path_to_utf8(std::filesystem::path(root) / "images" / "format" / "tiff" / kNames[i]);
+      std::error_code ec;
+      if (!std::filesystem::is_regular_file(msf::path_from_utf8(ff[i].path), ec)) {
+        std::cerr << "flip file missing: " << ff[i].path << "\n";
+        return 3;
+      }
+      ff[i].bytes = (std::uint64_t)std::filesystem::file_size(msf::path_from_utf8(ff[i].path), ec);
+      std::printf("file %s bytes=%llu\n", ff[i].name.c_str(), (unsigned long long)ff[i].bytes);
+    }
+    ComPtr<IWICImagingFactory> factory;
+    {
+      HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER,
+                                    IID_PPV_ARGS(&factory));
+      if (FAILED(hr)) hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                             IID_PPV_ARGS(&factory));
+      if (FAILED(hr) || !factory) { std::cerr << "WIC factory creation failed\n"; return 2; }
+    }
+    msf::ImageDecoder dec;
+    struct Buf { msf::GrayImage f0, a0; msf::DecodeTelemetry telF, telA; bool ok = false; };
+    Buf base[4];
+    for (int i = 0; i < 4; ++i) {
+      base[i].ok = dec.decode(ff[i].path, 64, 64, base[i].f0, &base[i].telF) &&
+                   dec.decodePreserveAspect(ff[i].path, 64, base[i].a0, &base[i].telA);
+      std::printf("baseline %s ok=%d f0=%dx%d a0=%dx%d orient=%llu pgm=%llu\n", ff[i].name.c_str(),
+                  (int)base[i].ok, base[i].f0.width, base[i].f0.height, base[i].a0.width,
+                  base[i].a0.height, (unsigned long long)base[i].telA.orientApplied,
+                  (unsigned long long)base[i].telA.pgmFallbacks);
+      if (!base[i].ok) return 4;
+    }
+    const int kSweep[] = {128, 192, 256, 288, 320, 352, 384, 512};
+    const double kVerdict = 87.5;
+    const int kPairs[2][2] = {{1, 0}, {3, 2}};
+    // Pair order matches the full-run neighbor pairing (current file, previous
+    // file in sorted order): verifyScorePlan is NOT symmetric in A/B because of
+    // the fullA-aspectB / aspectA-fullB cross terms, so order must match
+    // exactly to reproduce the flip scores.
+    int decompMismatch = 0;
+    for (int R : kSweep) {
+      std::printf("\n--- R=%d ---\n", R);
+      msf::GrayImage shared[4], f1[4], a1[4];
+      int aw[4] = {0, 0, 0, 0}, ah[4] = {0, 0, 0, 0};
+      bool okAll = true;
+      for (int i = 0; i < 4; ++i) {
+        msf::DecodeTelemetry telS;
+        if (!dec.decodePreserveAspect(ff[i].path, R, shared[i], &telS)) { okAll = false; break; }
+        aspectDims(shared[i].width, shared[i].height, 64, aw[i], ah[i]);
+        DerivResult rf = wicScaleGray(factory.Get(), shared[i], 64, 64, f1[i]);
+        DerivResult ra = wicScaleGray(factory.Get(), shared[i], aw[i], ah[i], a1[i]);
+        if (!rf.ok || !ra.ok) { okAll = false; break; }
+        std::printf("cand %s shared=%dx%d a1=%dx%d orient=%llu pgm=%llu\n", ff[i].name.c_str(),
+                    shared[i].width, shared[i].height, aw[i], ah[i],
+                    (unsigned long long)telS.orientApplied, (unsigned long long)telS.pgmFallbacks);
+      }
+      if (!okAll) { std::printf("R=%d candidate derivation failed\n", R); continue; }
+      // f/a pixel stats with mean (§12).
+      for (int i = 0; i < 4; ++i) {
+        std::uint64_t dc = 0, ma = 0, sa = 0;
+        comparePixels(base[i].f0, f1[i], dc, ma, sa);
+        const double mean = 4096.0 ? (double)sa / 4096.0 : 0.0;
+        std::uint64_t dc2 = 0, ma2 = 0, sa2 = 0;
+        const char* ageo = "diff";
+        if (base[i].a0.width == aw[i] && base[i].a0.height == ah[i]) {
+          ageo = "same";
+          comparePixels(base[i].a0, a1[i], dc2, ma2, sa2);
+        }
+        const double amean = (aw[i] * ah[i]) ? (double)sa2 / (aw[i] * ah[i]) : 0.0;
+        std::printf("pix R=%d %s f diff=%llu max=%llu mean=%.3f | a geom=%s diff=%llu max=%llu mean=%.3f\n",
+                    R, ff[i].name.c_str(), (unsigned long long)dc, (unsigned long long)ma, mean,
+                    ageo, (unsigned long long)dc2, (unsigned long long)ma2, amean);
+      }
+      // Per-window score decomposition (§6), self-validated bit-exact.
+      for (int p = 0; p < 2; ++p) {
+        const int A = kPairs[p][0], B = kPairs[p][1];
+        WindowScore wb[10], wc[10];
+        const int nb = repWindows(base[A].f0, base[A].a0, base[B].f0, base[B].a0, wb);
+        const int nc = repWindows(f1[A], a1[A], f1[B], a1[B], wc);
+        const double planB = msf::verifyScorePlan(base[A].f0, base[A].a0, base[B].f0, base[B].a0, 90.0, nullptr);
+        const double planC = msf::verifyScorePlan(f1[A], a1[A], f1[B], a1[B], 90.0, nullptr);
+        const double repB = repTotal(wb, nb), repC = repTotal(wc, nc);
+        // verifyScorePlan blends hammingSim with the window max (:167), so the
+        // validation must apply the same blend — comparing raw maxima against
+        // the blended total would false-alarm on every pair.
+        const double blendB = 0.5 * 90.0 + 0.5 * 100.0 * repB;
+        const double blendC = 0.5 * 90.0 + 0.5 * 100.0 * repC;
+        if (blendB != planB || blendC != planC) {
+          ++decompMismatch;
+          std::printf("DECOMP-MISMATCH pair=%d R=%d base_rep=%.9f plan=%.9f cand_rep=%.9f plan=%.9f\n",
+                      p, R, blendB, planB, blendC, planC);
+        }
+        std::printf("pair=%d R=%d base=%.6f cand=%.6f delta=%+.6f verdict %d->%d dist_base=%+.2f dist_cand=%+.2f\n",
+                    p, R, planB, planC, planC - planB, (int)(planB >= kVerdict),
+                    (int)(planC >= kVerdict), planB - kVerdict, planC - kVerdict);
+        int wmax = 0;
+        for (int w = 0; w < nb; ++w) {
+          std::printf("  win %-10s base=%8.4f cand=%8.4f delta=%+8.4f\n",
+                      wb[w].name, wb[w].v, wc[w].v, wc[w].v - wb[w].v);
+          if (std::fabs(wc[w].v - wb[w].v) > std::fabs(wc[wmax].v - wb[wmax].v)) wmax = w;
+        }
+        // Spatial localization of the largest window delta (§13): quadrant
+        // means of |baseline crop - candidate crop| for both sides of the max
+        // window, plus the argmax pixel. Evidence only, no causal claim.
+        {
+          SpatialStat sa = spatialStat(wb[wmax].ca, wc[wmax].ca);
+          SpatialStat sb = spatialStat(wb[wmax].cb, wc[wmax].cb);
+          std::printf("  maxwin %s delta=%+.4f Aside TL=%.2f TR=%.2f BL=%.2f BR=%.2f arg=(%d,%d,%u)\n",
+                      wb[wmax].name, wc[wmax].v - wb[wmax].v,
+                      sa.qmean[0], sa.qmean[1], sa.qmean[2], sa.qmean[3],
+                      sa.argx, sa.argy, sa.argd);
+          std::printf("  maxwin %s delta=%+.4f Bside TL=%.2f TR=%.2f BL=%.2f BR=%.2f arg=(%d,%d,%u)\n",
+                      wb[wmax].name, wc[wmax].v - wb[wmax].v,
+                      sb.qmean[0], sb.qmean[1], sb.qmean[2], sb.qmean[3],
+                      sb.argx, sb.argy, sb.argd);
+        }
+      }
+    }
+    // Cache hit/miss split (§15): public verifyImagePair twice on one flip
+    // pair. First call misses, second hits (process-global cache).
+    {
+      msf::AnalyzeTelemetry t1, t2;
+      const double s1 = msf::verifyImagePair(ff[0].path, ff[1].path, true, 90.0, 87.5, &t1);
+      const double s2 = msf::verifyImagePair(ff[0].path, ff[1].path, true, 90.0, 87.5, &t2);
+      std::printf("cache miss: score=%.4f decodeMs=%.4f misses=%llu hits=%llu\n",
+                  s1, t1.verifyDecodeMs, (unsigned long long)t1.verifyDecodeMisses,
+                  (unsigned long long)t1.verifyCacheHits);
+      std::printf("cache hit : score=%.4f decodeMs=%.4f misses=%llu hits=%llu\n",
+                  s2, t2.verifyDecodeMs, (unsigned long long)t2.verifyDecodeMisses,
+                  (unsigned long long)t2.verifyCacheHits);
+    }
+    std::printf("decomp_mismatch=%d\n", decompMismatch);
+    return decompMismatch ? 5 : 0;
+  }
 
   // File collection: the whole multi-format corpus plus a stride sample of the
   // bulk BMP fixtures (the deterministic 8px-heavy set is the tiny-image
@@ -362,7 +583,15 @@ int main(int argc, char** argv) {
     std::map<std::string, Agg> agg;
     // Sliding window of one previous file enables neighbor-pair scoring while
     // streaming, so candidate buffers never accumulate for the whole corpus.
-    struct Prev { std::string format, path; msf::GrayImage f1, a1; bool valid = false; };
+    // The previous file's BASELINE buffers are kept alongside its candidate
+    // buffers: a verdict comparison is only valid between pure-baseline and
+    // pure-candidate pairs. Mixing baseline-A with candidate-B on the sBase
+    // side (as v0.9.4.31 did) measures neither world and its flips are void.
+    struct Prev {
+      std::string format, path;
+      msf::GrayImage f0, a0, f1, a1;
+      bool valid = false;
+    };
     std::map<std::string, Prev> prevByFormat;
     for (const FileBase& b : base) {
       Agg& g = agg[b.format];
@@ -391,8 +620,8 @@ int main(int argc, char** argv) {
 
       // f parity: geometry is fixed 64x64 by construction on both sides.
       {
-        std::uint64_t dc = 0, ma = 0;
-        if (comparePixels(b.f0, f1, dc, ma) == PixParity::kIdentical) ++g.fIdent;
+        std::uint64_t dc = 0, ma = 0, sa = 0;
+        if (comparePixels(b.f0, f1, dc, ma, sa) == PixParity::kIdentical) ++g.fIdent;
         else ++g.fDiff;
       }
       // a parity: geometry first, pixels only on equal geometry.
@@ -400,8 +629,8 @@ int main(int argc, char** argv) {
         bool geomSame = (b.a0.width == a1.width && b.a0.height == a1.height);
         if (geomSame) {
           ++g.aGeomSame;
-          std::uint64_t dc = 0, ma = 0;
-          if (comparePixels(b.a0, a1, dc, ma) == PixParity::kIdentical) ++g.aPixIdent;
+          std::uint64_t dc = 0, ma = 0, sa = 0;
+          if (comparePixels(b.a0, a1, dc, ma, sa) == PixParity::kIdentical) ++g.aPixIdent;
           else ++g.aPixDiff;
         } else {
           ++g.aGeomDiff;
@@ -412,8 +641,8 @@ int main(int argc, char** argv) {
         msf::GrayImage c0 = msf::centerCropResize(b.a0, asp);
         msf::GrayImage c1 = msf::centerCropResize(a1, asp);
         ++g.cropTotal;
-        std::uint64_t dc = 0, ma = 0;
-        if (c0.width == 32 && c0.height == 32 && comparePixels(c0, c1, dc, ma) == PixParity::kIdentical)
+        std::uint64_t dc = 0, ma = 0, sa = 0;
+        if (c0.width == 32 && c0.height == 32 && comparePixels(c0, c1, dc, ma, sa) == PixParity::kIdentical)
           ++g.cropMatch;
         else g.cropDiffPx += (long long)dc;
       }
@@ -432,7 +661,7 @@ int main(int argc, char** argv) {
       }
       Prev& pv = prevByFormat[b.format];
       if (pv.valid) {
-        const double sBase = msf::verifyScorePlan(b.f0, b.a0, pv.f1, pv.a1, 90.0, nullptr);
+        const double sBase = msf::verifyScorePlan(b.f0, b.a0, pv.f0, pv.a0, 90.0, nullptr);
         const double sCand = msf::verifyScorePlan(f1, a1, pv.f1, pv.a1, 90.0, nullptr);
         ++g.scorePairs;
         if (sBase == sCand) ++g.scoreExact;
@@ -444,7 +673,7 @@ int main(int argc, char** argv) {
                       R, b.path.c_str(), pv.path.c_str(), sBase, sCand);
         }
       }
-      pv = {b.format, b.path, f1, a1, true};
+      pv = {b.format, b.path, b.f0, b.a0, f1, a1, true};
     }
     for (auto& kv : agg) {
       const std::string& fmt = kv.first;
