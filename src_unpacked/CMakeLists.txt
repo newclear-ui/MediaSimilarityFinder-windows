@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.32 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.33 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -176,6 +176,14 @@ if(MSF_BUILD_TESTS)
     # --selfcheck mode covers the helper unit checks without a dataset.
     add_executable(msf_shared_decode_probe tests/shared_decode_probe.cpp)
     target_link_libraries(msf_shared_decode_probe PRIVATE msf_core)
+    # I-2 candidate probe: one shared WIC factory/decoder/frame/EXIF-orientation
+    # source feeding two independent scaler+converter+CopyPixels chains that
+    # produce f and a directly, with no intermediate GrayImage. Exactness-first:
+    # geometry and byte parity over the whole dataset, then cost. Not a CTest
+    # case for the same reason as msf_dataset_baseline (needs a dataset root
+    # argument and takes minutes); its --selfcheck mode needs no dataset.
+    add_executable(msf_shared_wic_source_probe tests/shared_wic_source_probe.cpp)
+    target_link_libraries(msf_shared_wic_source_probe PRIVATE msf_core)
     # D4a: backend-internal timing contract. Registered in both trees on
     # purpose — the recorder half must be proven where CUDA does not exist.
     add_executable(msf_gpu_timing_test tests/gpu_timing_test.cpp)

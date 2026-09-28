@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.32 |
+| Reference code | 0.9.4.33 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | I — Analyze / Matching Performance (D9a through the D3 follow-up candidate complete; next candidate under investigation) |
-| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d cost decomposition → D1 open/factory cause → D2 WIC entry-path comparison (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (the second decode is 49.60 % of `verifyDecodeMs`, **PASS**). The D3 follow-up "shared GrayImage + resize twice" candidate was measured in 0.9.4.31 (candidate `DEFERRED`) and its stability investigation completed in 0.9.4.32 (the 2 verdict flips are corrected as a probe pairing artifact; **pure-pair re-measurement gives 0 flips**). The pixel/geometry divergence cause is identified as the two-step Fant chain + intermediate 8-bit quantization + differing resampling chains. **Next candidate: one shared WIC source/frame feeding two independent scalers that produce f/a directly** — exact output parity is priority 1 |
-| Current version | 0.9.4.32 |
+| Current node | I — Analyze / Matching Performance (D9a through the I-2 candidate complete) |
+| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d cost decomposition → D1 open/factory cause → D2 WIC entry-path comparison (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (**PASS**). Two D3 follow-up candidates were taken in order. **I-1** (shared GrayImage + resize twice) was measured in 0.9.4.31 and investigated in 0.9.4.32, ending `DEFERRED` (its 2 verdict flips were a probe pairing artifact). **I-2** (shared WIC source + two independent scalers) reached **f/a geometry and byte identity across the dataset (849/849)** with zero geometry mismatches and a 40.8–42.6 % probe cost reduction in 0.9.4.33 — **exactness PASS / production adoption NO**. Remaining gaps: EXIF end-to-end verification `not_measured`, full-scan groups not compared. **Next: a separate I-2 production implementation brief, plus diagnosis of the EXIF fixture problem** |
+| Current version | 0.9.4.33 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -1143,3 +1143,44 @@ The recording obligation and the required field list are defined in
   probe `--selfcheck` 14 checks, `decomp_mismatch=0`.
 - Commit 16e1240 and tag v0.9.4.32 contain version-string updates only; no
   production algorithm change.
+
+## 0.9.4.33 — I-2: Shared WIC Source + Two Independent Scalers Candidate
+
+- Committed the pre-register
+  `docs/implementation-briefs/I-shared-wic-source.en.md` before the probe.
+- Candidate structure: the factory, decoder, frame and EXIF-orientation source
+  are created once, while the scaler/converter/`CopyPixels` triples are created
+  **independently** for f and for a. There is **no intermediate GrayImage**, so
+  I-1's two-step Fant chain is structurally absent.
+- **Exactness (whole dataset, identical across CPU 5 runs + GPU 5 runs)**
+  - f geometry 849/849, f byte 849/849
+  - a geometry 849/849, a byte 849/849
+  - **Zero** geometry or pixel mismatches (I-1 had 93 geometry mismatches at
+    R128 alone)
+  - baseline and candidate fail on the **same 5** files
+    (`WINCODEC_ERR_FRAMEMISSING`). **0 files fail only in the candidate.**
+- **Cost (measurement-only probe)**: CPU 40.8–42.2 %, GPU 41.5–42.6 % lower. The
+  second `CopyPixels` drops from 3.88 to 1.09 ms mean, so WIC does share the
+  real decode.
+- **Two real defects found during verification** (neither caught by
+  self-consistency): (1) `CoUninitialize` was called while WIC objects were
+  still alive, producing an access violation — exactly the failure the product
+  source warns about; fixed by making a helper own every WIC object so the
+  caller uninitializes only after it returns. (2) The loop's
+  `if (!okCand) continue` masked baseline failures, producing a misleading
+  `baseFail=0`; fixed by recording both sides independently plus a
+  `candOnlyFail` counter.
+- **EXIF end-to-end verification is `not_measured`**: the 8 synthesized fixtures
+  are byte identical, but the product applied orientation 0 times, so the EXIF
+  branch never ran. WIC returned `PROPERTYNOTFOUND` for all four query paths,
+  which is not a candidate-only problem — it also suggests the **product's own
+  EXIF path may never have executed** against this dataset. Registered as a
+  separate task.
+- No full-scan groups comparison was performed; it is deferred to the separate
+  production implementation brief given the EXIF gap.
+- **Verdict: exactness PASS / production adoption NO.** No threshold was tuned
+  and no score tolerance widened; neither was needed.
+- Verification: CPU 80/80 PASS, GPU 81/81 PASS, `--version`/`--smoke` exit 0 on
+  both trees, new probe `--selfcheck` 11 checks, existing probe selfcheck 14
+  checks as a regression check. **No production code change.** Details:
+  `docs/build-history/0.9.4.33.en.md`

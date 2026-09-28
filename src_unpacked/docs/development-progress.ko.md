@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.32 |
+| 기준 코드 | 0.9.4.33 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | I — Analyze / Matching Performance (D9a → D3 후속 후보까지 완료, 다음 후보 조사 중) |
-| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d 비용 분해 → D1 open/factory 원인 → D2 WIC 진입 경로 비교(**Path C `DEFERRED`**) → D3 중복 decode 계측(두 번째 decode 가 verifyDecodeMs 의 49.60 %, **PASS**). D3 후속 "공유 GrayImage + resize 2회" 후보는 0.9.4.31 에서 측정(전적 `DEFERRED`) → 0.9.4.32 에서 안정성 조사 완료(verdict flip 2건은 probe pairing artifact 로 정정, **순수 쌍 재측정 flip 0**). pixel/geometry divergence 원인은 2단계 Fant 체인 + 중간 8-bit 양자화 + 서로 다른 resampling chain 으로 규명. **다음 후보: 공유 WIC source/frame + 독립 2개 scaler 로 f/a 를 직접 생성** — exact output parity 가 1순위 |
-| 현재 버전 | 0.9.4.32 |
+| 현재 노드 | I — Analyze / Matching Performance (D9a → I-2 후보까지 완료) |
+| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d 비용 분해 → D1 open/factory 원인 → D2 WIC 진입 경로 비교(**Path C `DEFERRED`**) → D3 중복 decode 계측(**PASS**). D3 후속 후보 두 개를 순서대로 다뤘다. **I-1**(공유 GrayImage + resize 2회)은 0.9.4.31 측정·0.9.4.32 안정성 조사를 거쳐 `DEFERRED`(verdict flip 2건은 probe pairing artifact 로 정정). **I-2**(공유 WIC source + 독립 2개 scaler)는 0.9.4.33 에서 **f/a geometry·byte 전량 parity(849/849)**, geometry 불일치 0건, probe 비용 40.8~42.6 % 감소를 확인 — **정확성 PASS / production 채택 NO**. 남은 구멍: EXIF 종단간 검증 `not_measured`, full-scan groups 미비교. **다음: I-2 production implementation brief 별도 작성 + EXIF fixture 원인 규명** |
+| 현재 버전 | 0.9.4.33 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -1106,3 +1106,37 @@ Current active investigation:
 - 검증: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.32,
   probe `--selfcheck` 14 checks, `decomp_mismatch=0`.
 - 버전 문자열 갱신만으로 커밋 16e1240, 태그 v0.9.4.32. 생산 알고리즘 변경 없음.
+
+## 0.9.4.33 — I-2: 공유 WIC source + 독립 2개 scaler 후보
+
+- pre-register `docs/implementation-briefs/I-shared-wic-source.ko.md`를 probe
+  구현보다 먼저 커밋했다.
+- 후보 구조: factory·decoder·frame·EXIF orientation source 만 1회 공유하고,
+  scaler/converter/`CopyPixels` 는 f 용과 a 용으로 **각각 독립 생성**한다.
+  **중간 `GrayImage` 이 없다** — I-1 의 2단계 Fant 체인이 구조적으로 제거된다.
+- **정확성 (전체 dataset, CPU 5회 + GPU 5회 전부 동일)**
+  - f geometry 849/849, f byte 849/849
+  - a geometry 849/849, a byte 849/849
+  - geometry·pixel 불일치 **0건** (I-1 은 R128 에서 geometry 93건)
+  - baseline/후보가 **동일한 5개** 파일에서 둘 다 실패
+    (`WINCODEC_ERR_FRAMEMISSING`). **후보만 실패하는 파일 0건.**
+- **성능 (measurement-only probe)**: CPU 40.8~42.2 %, GPU 41.5~42.6 % 감소.
+  두 번째 `CopyPixels` 가 평균 3.88→1.09 ms — WIC 가 실제 decode 를 공유한다.
+- **검증 중 발견한 실제 결함 2건** (자기 정합성 검사로는 잡히지 않음):
+  ① 살아 있는 WIC 객체가 있는 상태에서 `CoUninitialize` 호출 → 접근 위반.
+     제품 소스가 경고하는 실패 그대로였고, WIC 객체를 헬퍼가 소유하도록
+     구조를 바꿔 해결. ② 루프의 `if (!okCand) continue` 가 baseline 실패를
+     상쇄해 `baseFail=0` 이라는 잘못된 결론을 만들 뻔했다. 양쪽 독립 기록 +
+     `candOnlyFail` 카운트로 수정.
+- **EXIF 종단간 검증은 `not_measured`**: 합성 fixture 8개가 byte 동일은
+  하나, 그러나 제품이 orientation 을 적용한 횟수가 0이라 EXIF 분기가
+  실행되지 않았다. WIC 가 4종 query path 전부에서 `PROPERTYNOTFOUND` 를
+  반환하며, 이는 후보만의 문제가 아니라 **제품 EXIF 경로가 dataset 에서
+  실행된 적이 없을 가능성**도 시사한다. 별도 과제로 등록.
+- full-scan groups 비교는 수행하지 않았다. EXIF 미검증을 감안하고 별도
+  production implementation brief 작성과 함께 판단한다.
+- **판정: 정확성 PASS / production adoption NO.** threshold 조정이나 score
+  tolerance 완화는 하지 않았고 필요하지도 않았다.
+- 검증: CPU 80/80 PASS, GPU 81/81 PASS, 양쪽 `--version`/`--smoke` exit 0,
+  새 probe `--selfcheck` 11 checks, 기존 probe selfcheck 14 checks 회귀 확인.
+  **생산 코드 변경 없음.** 상세: `docs/build-history/0.9.4.33.ko.md`
