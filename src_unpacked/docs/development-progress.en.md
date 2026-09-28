@@ -1006,12 +1006,14 @@ D3  = PASS           (second decode = 49.60 % of verifyDecodeMs, 39.19 % of veri
                        accuracy regression)
 
 Current active investigation:
-a follow-up optimization pre-register (not written yet)
+a follow-up optimization pre-register (written, before measurement)
   candidate: produce both f (fixed 32x32) and a (aspect) from one high-resolution
              decode plus two resizes
+  contract: `docs/implementation-briefs/I-decode-once-resize-twice.en.md`
   D3 only measured. No de-duplication, no cache, no call merging, no HandleStream
   adoption. This candidate carries a high accuracy risk (unchanged groups is the
-  acceptance condition), so it needs its own pre-register first.
+  acceptance condition), so results are recorded first and production adoption is
+  judged separately.
 ```
 
 ## D2 — WIC Decoder Entry-Path Comparison (0.9.4.28, **PASS**)

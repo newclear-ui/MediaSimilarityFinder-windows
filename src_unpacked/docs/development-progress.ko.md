@@ -984,11 +984,12 @@ D3  = PASS           (두 번째 decode = verifyDecodeMs 49.60 % / verifyMs 39.1
                        단 f/a 가 다른 지오메트리라 "제거" 는 정확성 회귀)
 
 Current active investigation:
-후속 optimization pre-register (아직 없음)
+후속 optimization pre-register (작성됨, 측정 전)
   후보: 고해상도 decode 1회 + resize 2회로 f(고정 32×32)와 a(aspect)를 모두 생성
+  계약: `docs/implementation-briefs/I-decode-once-resize-twice.ko.md`
   D3 은 계측만 했다. 중복 제거·캐시·호출 병합·HandleStream 채택은 하지 않았다.
-  이 후보는 accuracy risk 가 높으므로(groups 불변 확인이 수용 조건) 별도
-  pre-register 를 먼저 작성해야 한다.
+  이 후보는 accuracy risk 가 높으므로(groups 불변 확인이 수용 조건) 측정 결과를
+  먼저 기록한 뒤 별도로 생산 적용을 판단한다.
 ```
 
 ## D2 — WIC decoder 진입 경로 비교 (0.9.4.28, **PASS**)
