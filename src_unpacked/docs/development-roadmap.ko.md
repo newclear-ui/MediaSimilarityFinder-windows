@@ -8,7 +8,7 @@
 - `development-roadmap.ko/.en.md`, `development-progress.ko/.en.md`는 고정 이름을 사용한다.
 - Implementation Brief는 `<Node>-<topic>.ko.md` + `.en.md`를 사용한다.
 - Build History는 `<version>.ko.md` + `.en.md`를 사용하며 이름을 바꾸지 않는다.
-- Work Log는 `docs/worklog/<development-line>.ko.md` + `.en.md`로 개발선 단위로 누적한다. 버전 범위를 파일명에 넣지 않는다.
+- Work Log는 `docs/worklog/<development-line>.ko.md` + `.en.md`로 개발선 단위로 누적한다. 버전 범위를 파일명에 넣지 않는다. **Performance / Tuning Experiment Index** 를 포함해 실험 계보와 살아 있는/기각된 후보를 연결한다.
 - Architecture는 주제 중심 이름을 사용하고, 역사적 snapshot이 필요한 경우에만 버전 suffix를 허용한다.
 - 새 문서/이동 시 KO/EN 쌍, 내부 링크, `STRUCTURE.md`, `llms.txt`를 함께 갱신한다.
 
@@ -21,7 +21,7 @@ Roadmap과 세부 implementation brief는 역할을 분리합니다.
 - **Roadmap**: 전체 방향, 의존관계, Node 경계, 변경 관리 규칙.
 - **Progress**: 현재 실제 Node, blocker, 검증 상태, recovery history.
 - **Implementation Brief**: 현재 활성 Node를 구현하기 위한 집중된 기술 계약. 단계별 범위, 경계, telemetry, 종료 조건을 기록합니다.
-- **Build History**: 실제 버전에서 무엇을 변경했고 어떻게 검증했는지의 증거.
+- **Build History**: 실제 버전에서 무엇을 변경했고 어떻게 검증했는지의 증거. 성능 실험의 **상세 수치·실행 조건·기각 근거·향후 재검토 조건**을 보존하는 곳이며, 성공 여부와 무관하게 모든 튜닝/프로파일링 실험을 기록한다.
 
 현재 B/C/D 세부 문서:
 

@@ -73,7 +73,20 @@
 - 실제 버전의 변경과 검증은 `docs/build-history/<version>.ko.md` + `.en.md`에 기록한다.
 
 
-## 0.9.4.13 fix trace
+9. **성능 튜닝 / 프로파일링 실험의 장기 기록 (성공 여부와 무관)**
+
+- **모든 성능 튜닝·프로파일링·benchmark·microbenchmark·병목 분석·CPU/GPU 비용 분석·memory/I/O/decode·thread contention·cache 성능·알고리즘 최적화 후보 실험은, 성공했든 실패했든 기술 기록으로 보존한다.** 기각된 가설, 측정값, 실행 조건, 기각 사유, 향후 재검토 조건까지 남긴다.
+- **새로운 문서 종류를 만들지 않는다.** 전용 `docs/experiments/` 같은 디렉터리를 만들지 않는다. 상세 수치는 `docs/build-history/<version>.*`에, 실험 간 관계와 판단 흐름은 `docs/worklog/<line>.*`의 **Performance / Tuning Experiment Index**에 기록한다. 연결 순서는 `Implementation Brief → Build History → Work Log Index → Development Progress`다.
+- **문서 역할** — Implementation Brief=무엇을 시험할지 사전 정의, Build History=실제 변경·측정값·수치·기각 근거, Work Log=왜 그 후보를 선택/기각했고 다음은 무엇인가, Development Progress=현재 상태와 살아 있는 후보 요약.
+- **Build History 필수 기록 항목** — Experiment ID, Version, Date, Purpose, Hypothesis, Baseline, Target, 후보 선정 이유, Implementation, Dataset, Dataset fingerprint, Hardware, OS, Build configuration, Run count, Raw measured values, Mean, Median, Min, Max, Range, 파생 비율, Accuracy result, Verdict parity, CPU/GPU parity, Compatibility impact, Performance result, Status, Reason, Known limitation, **Future revisit condition**, Related experiments.
+- **측정하지 않은 값은 `N/A` 또는 `Not measured` 로 명시한다. 추정해서 채우지 않는다.**
+- **사용하는 상태값**: BASELINE / PASS / NOT ACCEPTED / REJECTED / DEFERRED / LOW PRIORITY / INCONCLUSIVE / SUPERSEDED.
+- **`NOT ACCEPTED` 와 `REJECTED` 는 "현재 조건에서 성공하지 못했다"는 뜻이지 "영구 폐기"가 아니다.** 코드 구조, 라이브러리, Windows/WIC, compiler/runtime, CPU/GPU, dataset, build configuration 이 바뀌면 다시 유효해질 수 있으므로 **삭제하지 않고 재검토 조건과 함께 유지한다.**
+- **과거 측정값은 임의로 덮어쓰지 않는다.** 명백한 오류(계산·단위·instrumentation bug·잘못된 fingerprint·문서 오기)만 수정하며, 수정 시 `원래 기록 → 오류 원인 → 수정된 값 → 수정 이유` 를 함께 남긴다. D1 의 factory telemetry bug 가 실제 사례다.
+- **Profiling telemetry 자체도 검증 대상이다.** 단계별 합이 원래 총합을 재구성하는지 검사하고, 그럴듯한 수치라는 이유로 자동 신뢰하지 않는다.
+- **측정 오차 범위의 차이는 개선으로 선언하지 않는다.** 실행 횟수(5회 이상 권장)와 median/min/max/range 를 기록한다.
+
+
 - **GPT Fix:** Node C4.1 calibration lifecycle correction. See docs/build-history/0.9.4.13.ko.md / .en.md.
 
 

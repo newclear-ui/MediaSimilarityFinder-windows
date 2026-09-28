@@ -27,6 +27,34 @@
 | Structure | `docs/STRUCTURE.md` | Repository/source structure summary |
 | LLM Index | `docs/llms.txt` | Key documents, structure, and raw-URL rules for LLM/automation |
 
+## 2-1. Document roles for performance tuning / profiling experiments
+
+Performance experiments are recorded through the **existing four document
+roles**, not a new document kind.
+
+| Document | Role |
+|---|---|
+| Implementation Brief | Pre-defines what will be tested (hypothesis, scope, risk) |
+| Build History | What was actually changed and measured, the resulting numbers, the refutation evidence and the revisit condition |
+| Work Log | Why a candidate was chosen or refuted and what comes next. Links experiments via the **Performance / Tuning Experiment Index** |
+| Development Progress | Current state and the surviving candidate, without repeating detailed numbers |
+
+Detailed figures and run conditions go in **Build History**; the continuous
+reasoning and the links between experiments go in the **Work Log Index**.
+
+- No dedicated `docs/experiments/` or `docs/optimization-history/` directory is
+  created.
+- Connection order: `Implementation Brief → Build History → Work Log Index →
+  Development Progress`
+- Successful optimizations are preserved alongside **refuted hypotheses,
+  measurements, run conditions, refutation reasons and future revisit
+  conditions**. `NOT ACCEPTED` / `REJECTED` / `DEFERRED` / `LOW PRIORITY` are
+  verdicts under the current conditions, not permanent retirements.
+- Values that were not measured are written as `N/A` or `Not measured` and are
+  never filled in by estimation.
+- The full required field list and the status vocabulary follow `AGENTS.md`
+  item 9.
+
 ## 3. Filename rules
 ### 3.1 Language suffix
 - Korean: `.ko.md`

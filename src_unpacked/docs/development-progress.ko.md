@@ -945,3 +945,42 @@ A는 폐기된 것이 아니라 **의도적으로 deferred된 후보**다.
 - **측정으로 제거된 후보 2개**: Factory2 fallback 제거(0회), 파일 핸들/스트림
   관리 최적화(OS 2.2 %).
 - **다음**: WIC decoder 생성. 2.5682 ms 의 WIC 고유 부분을 먼저 분해해야 한다.
+
+## 성능 실험 장기 기록 체계 (0.9.4.27 D1 이후)
+
+성능 튜닝/프로파일링 실험은 **성공 여부와 무관하게** 기술 기록으로 보존한다.
+새로운 문서 종류는 만들지 않고 다음 역할로 나누어 기록한다.
+
+```
+Implementation Brief  무엇을 시험할지 사전 정의
+Build History         실제 수치·실행 조건·기각 근거·재검토 조건  ← 상세 기록
+Work Log Index        실험 계보와 살아 있는/기각된 후보 연결
+Development Progress  현재 상태 요약 (수치 반복 금지)
+```
+
+**기각된 후보는 삭제하지 않는다.** `NOT ACCEPTED` / `REJECTED` / `DEFERRED` /
+`LOW PRIORITY` 는 현재 조건의 판정이지 영구 폐기가 아니며, 환경이 바뀌면 다시
+유효해질 수 있다. 계보와 후보 상태는
+`docs/worklog/0.9.4.*.md` 의 **Performance / Tuning Experiment Index** 를
+참조한다.
+
+```
+D9a BASELINE → D9b NOT ACCEPTED → D9c PASS → D9d PASS → D1 PASS
+측정으로 기각된 것: cache 32 · scoring 중복 · Fant · EXIF
+                     cache mutex · Factory2 fallback · raw OS file open
+```
+
+현재 상태 요약 (상세 수치는 Build History 참조)
+
+```text
+D9b = NOT ACCEPTED   (정확성 보존, 성능 목표 미달)
+D9c = PASS           (decode 94.90 %)
+D9d = PASS           (open 62.15 % + factory 27.39 %)
+D1  = PASS           (Factory2 100 % 성공 / fallback 0 회, open 의 97.8 % WIC 고유)
+
+Current active investigation:
+WIC CreateDecoderFromFilename 내부 비용 (2.5682 ms, 아직 분해되지 않음)
+```
+
+기록 의무와 필수 항목은 `AGENTS.md` 9번 항목과
+`docs/document-naming.*.md` 2-1절에 정의한다.

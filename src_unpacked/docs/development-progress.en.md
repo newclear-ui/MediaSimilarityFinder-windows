@@ -963,3 +963,44 @@ When recording a new build, include the **change relative to the 0.9.4.24 D9a ba
   (0 occurrences) and file handle/stream management (OS 2.2 %).
 - **Next**: WIC decoder construction. The 2.5682 ms WIC-internal portion must
   be decomposed first.
+
+## Long-term record system for performance experiments (after 0.9.4.27 D1)
+
+Performance tuning and profiling experiments are preserved as technical
+records **regardless of whether they succeeded**. No new document kind is
+introduced; the roles are split across the existing set.
+
+```
+Implementation Brief  pre-defines what will be tested
+Build History         actual numbers, run conditions, refutation evidence,
+                      revisit conditions            <- the detailed record
+Work Log Index        links the experiment lineage and surviving/refuted candidates
+Development Progress  current state summary only (no repeated numbers)
+```
+
+**Refuted candidates are not deleted.** `NOT ACCEPTED` / `REJECTED` /
+`DEFERRED` / `LOW PRIORITY` are verdicts under the current conditions, not
+permanent retirements, and can become valid again when the environment changes.
+The lineage and candidate states are in the **Performance / Tuning Experiment
+Index** in `docs/worklog/0.9.4.*.md`.
+
+```
+D9a BASELINE -> D9b NOT ACCEPTED -> D9c PASS -> D9d PASS -> D1 PASS
+Refuted by measurement: cache 32 · scoring duplication · Fant · EXIF
+                        cache mutex · Factory2 fallback · raw OS file open
+```
+
+Current state (details in Build History)
+
+```text
+D9b = NOT ACCEPTED   (correctness preserved, performance objective not met)
+D9c = PASS           (decode 94.90 %)
+D9d = PASS           (open 62.15 % + factory 27.39 %)
+D1  = PASS           (Factory2 100 % success / 0 fallbacks, 97.8 % of open is WIC-internal)
+
+Current active investigation:
+the 2.5682 ms inside WIC CreateDecoderFromFilename, still undecomposed
+```
+
+The recording obligation and the required field list are defined in
+`AGENTS.md` item 9 and `docs/document-naming.*.md` section 2-1.

@@ -29,6 +29,31 @@
 | Structure | `docs/STRUCTURE.md` | 실제 저장소/소스 구조 요약 |
 | LLM Index | `docs/llms.txt` | LLM/자동화 도구가 먼저 읽을 핵심 문서·구조·URL 규칙 |
 
+## 2-1. 성능 튜닝 / 프로파일링 실험 기록의 문서 역할
+
+성능 실험은 **새로운 문서 종류를 만들지 않고** 기존 네 종류의 역할로 기록한다.
+
+| 문서 | 역할 |
+|---|---|
+| Implementation Brief | 무엇을 시험할 것인지 사전 정의 (가설, 범위, 위험) |
+| Build History | 실제 무엇을 변경/측정했고 어떤 수치가 나왔는지, 기각 근거와 재검토 조건까지 |
+| Work Log | 왜 그 후보를 선택/기각했고 다음에 무엇을 할지. **Performance / Tuning Experiment Index** 로 실험 간 관계를 연결 |
+| Development Progress | 현재 상태와 살아 있는 후보 요약 (상세 수치 반복 금지) |
+
+상세 수치와 실행 조건은 **Build History**에, 실험의 연속적인 판단 과정과
+실험 간 연결은 **Work Log Index**에 남긴다.
+
+- `docs/experiments/`, `docs/optimization-history/` 같은 전용 디렉터리는
+  만들지 않는다.
+- 연결 순서: `Implementation Brief → Build History → Work Log Index →
+  Development Progress`
+- 성공한 최적화뿐 아니라 **기각된 가설·측정값·실행 조건·기각 사유·향후
+  재검토 조건**을 함께 보존한다. `NOT ACCEPTED` / `REJECTED` / `DEFERRED` /
+  `LOW PRIORITY` 는 현재 조건의 판정이며 영구 폐기가 아니다.
+- 측정하지 않은 값은 `N/A` 또는 `Not measured` 로 명시하고 추정으로 채우지
+  않는다.
+- 자세한 필수 기록 항목과 상태값 정의는 `AGENTS.md` 9번 항목을 따른다.
+
 ## 3. 파일명 규칙
 
 ### 3.1 언어 suffix

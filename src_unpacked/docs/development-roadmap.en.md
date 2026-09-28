@@ -8,7 +8,7 @@ Key rules:
 - `development-roadmap.ko/.en.md` and `development-progress.ko/.en.md` keep fixed names.
 - Implementation Brief uses `<Node>-<topic>.ko.md` + `.en.md`.
 - Build History uses `<version>.ko.md` + `.en.md` and is not renamed.
-- Work Log uses `docs/worklog/<development-line>.ko.md` + `.en.md` as one cumulative file per development line; do not encode version ranges in the filename.
+- Work Log uses `docs/worklog/<development-line>.ko.md` + `.en.md` as one cumulative file per development line; do not encode version ranges in the filename. It carries the **Performance / Tuning Experiment Index** linking the experiment lineage and the surviving / refuted candidates.
 - Architecture documents are topic-based; a version suffix is allowed only for explicit historical/audit snapshots.
 - New/moved documents must update the KO/EN pair, internal links, `STRUCTURE.md`, and `llms.txt` together.
 
@@ -21,7 +21,7 @@ Roadmap and detailed implementation briefs have different roles.
 - **Roadmap**: overall direction, dependency order, node boundaries, and change-management rules.
 - **Progress**: actual current node, blocker, validation state, and recovery history.
 - **Implementation Brief**: the focused engineering contract for the active node; it contains staged scope, boundaries, telemetry expectations, and exit criteria.
-- **Build History**: evidence of what was actually changed and validated in each version.
+- **Build History**: evidence of what was actually changed and validated in each version. This is where the **detailed numbers, run conditions, refutation evidence and future revisit conditions** of a performance experiment are preserved; every tuning and profiling experiment is recorded here regardless of whether it succeeded.
 
 Current B/C/D briefs:
 
