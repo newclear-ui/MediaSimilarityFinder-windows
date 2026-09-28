@@ -89,6 +89,21 @@
 
 - **GPT Fix:** Node C4.1 calibration lifecycle correction. See docs/build-history/0.9.4.13.ko.md / .en.md.
 
+10. **파일 삭제 — 직접 삭제 절대 금지, 항상 휴지통으로 (예외 없음)**
+   - **어떤 파일·폴더도 직접 삭제하지 않는다.** `Remove-Item`, `rm`, `del`, `rd`, `git clean`,
+     `git rm`, 파일시스템 API 하드 삭제 등 우회 경로도 금지한다.
+   - 삭제해야 하는 상황이면 **반드시 휴지통(Recycle Bin)으로 보낸다.** 사용자가 직접 비운다.
+   - 준삭제로 끝내지 않는다. 휴지통 이동 후 **경로·건수를 보고**하고, 무엇을 버렸는지 사용자에게 알린다.
+   - **적용 범위**: 소스·문서·dataset·테스트 픽스처·빌드 산출물·백업 zip·임시파일을 **전부 포함**한다.
+     "재생성 가능", "파일이므로 하드 삭제해도 된다" 는 이유로 예외를 만들지 않는다.
+     단, 빌드 디렉터리 전체 재생성(`prepare_dataset.ps1 -Root`)처럼 **대상 경로 자체가 재생성되는 작업**은
+     그 전에 대상·파일 수를 보고하고 **사용자 승인을 받아** 진행한다.
+   - **도구**: `scripts/safe_remove.ps1` 를 사용한다. 하드 삭제 기능이 없고 휴지통으로만 보낸다.
+   - **실수 사례 (2026-09-28)**: dataset fingerprint 갱신 목적으로 `prepare_dataset.ps1` 를 실행하면서
+     `-FingerprintOnly` 스위치를 쓰지 않아 dataset을 통째로 재생성하면서
+     `test_sample_img_vid/images/format` 의 수백 개 픽스처가 하드 삭제되었다.
+     원본 풀(`G:\Downloads\ss_twit`)에서 재선택하여 복구했으나, **지문만 갱신할 때는 반드시 `-FingerprintOnly`.**
+
 
 ## 문서 네이밍 및 구조
 
