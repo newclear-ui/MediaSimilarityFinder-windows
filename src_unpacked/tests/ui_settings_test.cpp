@@ -19,7 +19,7 @@
 #include <QDir>
 #include <iostream>
 
-// 0.9.4.27 legacy settings migration. Same cross-process discipline as the
+// 0.9.4.28 legacy settings migration. Same cross-process discipline as the
 // round-trip probe above, and for the same reason: a same-process read-back
 // would be served from QSettings' in-memory cache and would pass even if the
 // migration never touched disk.

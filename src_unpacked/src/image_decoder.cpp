@@ -7,8 +7,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <objbase.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#include <new>
 #include <vector>
 #pragma comment(lib,"windowscodecs.lib")
 #pragma comment(lib,"ole32.lib")
@@ -400,6 +402,256 @@ bool ImageDecoder::decodePreserveAspect(const std::string& path,int maxDimension
 }
 bool ImageDecoder::decodeColorAspect(const std::string&,int,ColorImage&) const {
   return false; // no color WIC outside Windows; callers fall back to file icons
+}
+
+// D2: measurement-only. On a non-WIC build this reports not_available rather
+// than fabricating zeros, so a zero is never mistaken for a measurement.
+void ImageDecoder::probeDecoderPaths(const std::string&, DecoderPathProbe& out) {
+  out = DecoderPathProbe{};
+  out.available = false;
+}
+#endif
+
+#ifdef _WIN32
+namespace {
+// Minimal IStream over a Win32 HANDLE, used only by the D2 Path C probe.
+//
+// Windows exposes no HANDLE -> IStream adapter (there is no
+// CreateStreamOnHANDLE in ole32), and IWICStream offers only
+// InitializeFromFilename / InitializeFromIStream. The whole point of Path C is
+// to hand WIC a handle the caller already opened, so a thin adapter is the
+// honest way to build that path. Seek/Read go straight to the file, and every
+// other operation reports that it is unsupported rather than pretending.
+class HandleStream final : public IStream {
+ public:
+  explicit HandleStream(HANDLE h) : h_(h) {}
+  // IUnknown
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+    if (!ppv) return E_POINTER;
+    if (riid == IID_IUnknown || riid == IID_IStream) { *ppv = static_cast<IStream*>(this); AddRef(); return S_OK; }
+    *ppv = nullptr;
+    return E_NOINTERFACE;
+  }
+  ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&ref_); }
+  ULONG STDMETHODCALLTYPE Release() override {
+    const ULONG n = InterlockedDecrement(&ref_);
+    if (!n) delete this;
+    return n;
+  }
+  // IStream
+  HRESULT STDMETHODCALLTYPE Read(void* pv, ULONG cb, ULONG* pcb) override {
+    if (!pv && cb) return E_POINTER;
+    if (h_ == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(ERROR_INVALID_HANDLE);
+    ULONG got = 0;
+    if (!ReadFile(h_, pv, cb, &got, nullptr)) return HRESULT_FROM_WIN32(GetLastError());
+    if (pcb) *pcb = got;
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE Write(const void*, ULONG, ULONG*) override { return STG_E_ACCESSDENIED; }
+  HRESULT STDMETHODCALLTYPE Seek(LARGE_INTEGER move, DWORD origin, ULARGE_INTEGER* pn) override {
+    if (h_ == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(ERROR_INVALID_HANDLE);
+    DWORD method = origin == STREAM_SEEK_SET   ? FILE_BEGIN
+                 : origin == STREAM_SEEK_CUR   ? FILE_CURRENT
+                 : origin == STREAM_SEEK_END   ? FILE_END
+                                              : 0xFFFFFFFFu;
+    if (method == 0xFFFFFFFFu) return STG_E_INVALIDFUNCTION;
+    // SetFilePointerEx reports the resulting absolute position, so there is no
+    // need for a second call to read the cursor back.
+    LARGE_INTEGER landed{};
+    if (!SetFilePointerEx(h_, move, pn ? &landed : nullptr, method)) {
+      return HRESULT_FROM_WIN32(GetLastError());
+    }
+    if (pn) pn->QuadPart = (ULONGLONG)landed.QuadPart;
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE SetSize(ULARGE_INTEGER) override { return STG_E_ACCESSDENIED; }
+  HRESULT STDMETHODCALLTYPE CopyTo(IStream* dst, ULARGE_INTEGER cb, ULARGE_INTEGER* pcbRead, ULARGE_INTEGER* pcbWrit) override {
+    if (!dst) return E_POINTER;
+    if (h_ == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(ERROR_INVALID_HANDLE);
+    ULARGE_INTEGER total = cb, doneRead{}, doneWrit{};
+    if (!total.QuadPart) {
+      // cb == 0 means "copy to the end of this stream", so bound the loop by
+      // the real file size rather than looping forever.
+      LARGE_INTEGER end{};
+      if (!GetFileSizeEx(h_, &end) || end.QuadPart < 0) return STG_E_ACCESSDENIED;
+      total.QuadPart = (ULONGLONG)end.QuadPart;
+    }
+    std::vector<unsigned char> buf(64 * 1024);
+    while (total.QuadPart > 0) {
+      const ULONG want = (ULONG)std::min<ULONGLONG>(buf.size(), total.QuadPart);
+      ULONG got = 0;
+      if (FAILED(Read(buf.data(), want, &got)) || !got) break;
+      ULONG put = 0;
+      const HRESULT hr = dst->Write(buf.data(), got, &put);
+      doneRead.QuadPart += got;
+      doneWrit.QuadPart += put;
+      if (FAILED(hr) || put != got) break;
+      total.QuadPart -= got;
+    }
+    if (pcbRead) *pcbRead = doneRead;
+    if (pcbWrit) *pcbWrit = doneWrit;
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE Commit(DWORD) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE Revert() override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE LockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD) override { return STG_E_ACCESSDENIED; }
+  HRESULT STDMETHODCALLTYPE UnlockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD) override { return STG_E_ACCESSDENIED; }
+  HRESULT STDMETHODCALLTYPE Stat(STATSTG* pst, DWORD) override {
+    if (!pst) return E_POINTER;
+    *pst = STATSTG{};
+    pst->type = STGTY_STREAM;
+    pst->grfMode = STGM_READ;
+    LARGE_INTEGER size{};
+    if (h_ != INVALID_HANDLE_VALUE && GetFileSizeEx(h_, &size) && size.QuadPart >= 0) {
+      pst->cbSize.QuadPart = (ULONGLONG)size.QuadPart;
+    }
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE Clone(IStream** ppstm) override {
+    if (!ppstm) return E_POINTER;
+    // WIC codecs are not expected to clone, but a second independent view over
+    // the same handle is cheap to hand out, so support it rather than fail.
+    HANDLE dup = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(), h_, GetCurrentProcess(), &dup, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS)) {
+      if (h_ == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+      *ppstm = nullptr;
+      return E_OUTOFMEMORY;
+    }
+    auto* s = new (std::nothrow) HandleStream(dup);
+    if (!s) { CloseHandle(dup); return E_OUTOFMEMORY; }
+    *ppstm = s;
+    return S_OK;
+  }
+  HANDLE handle() const { return h_; }
+ private:
+  HANDLE h_ = INVALID_HANDLE_VALUE;
+  volatile LONG ref_ = 1;
+};
+
+// D2: validates that a created decoder is actually usable, not merely
+// non-null. A decoder that cannot hand back a frame is a failure, and counting
+// it as a success would flatter whichever path is more permissive.
+inline void validateFrame(IWICBitmapDecoder* dec, DecoderPathTiming& t) {
+  if (!dec) return;
+  ComPtr<IWICBitmapFrameDecode> frame;
+  if (FAILED(dec->GetFrame(0, &frame)) || !frame) return;
+  UINT w = 0, h = 0;
+  if (FAILED(frame->GetSize(&w, &h)) || !w || !h) return;
+  t.width = (int)w;
+  t.height = (int)h;
+  t.ok = true;
+}
+}  // namespace
+
+// D2: measurement-only. Compares the three WIC decoder entry points on one
+// file. It is never reached from decode()/decodePreserveAspect(), so nothing it
+// measures can influence product behaviour.
+//
+// COM lifetime deliberately belongs to the caller. Calling CoUninitialize()
+// here faults on scope exit (the same Windows behaviour already documented
+// above decodeWicFile): releasing a WIC decoder can drop the last reference to
+// a codec DLL, and tearing the apartment down underneath it leaves the stack
+// unusable. This function therefore only initialises COM if nobody has, and
+// never uninitialises it; the owning process exits with the apartment intact.
+void ImageDecoder::probeDecoderPaths(const std::string& path, DecoderPathProbe& out) {
+  out = DecoderPathProbe{};
+  const int need = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+  if (!need) return;
+  std::wstring wp((std::size_t)need, L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wp.data(), need);
+
+  // Match the apartment production uses so the comparison stays apples to
+  // apples; S_FALSE / RPC_E_CHANGED_MODE both mean COM is usable already.
+  CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  out.available = true;
+
+  ComPtr<IWICImagingFactory> factory;
+  if (SUCCEEDED(createWicFactory(&factory, nullptr))) {
+    // Identical metadata options and vendor GUID to production
+    // decodeWicFile, so the only variable left is the entry point itself.
+    const WICDecodeOptions md = WICDecodeMetadataCacheOnDemand;
+    const GUID* vendor = nullptr;
+
+    // ---- Path A: the production entry point ----
+    {
+      auto& t = out.filename;
+      t.attempted = true;
+      ComPtr<IWICBitmapDecoder> dec;
+      const auto a0 = std::chrono::steady_clock::now();
+      t.hr = (std::uint32_t)factory->CreateDecoderFromFilename(
+          wp.c_str(), vendor, GENERIC_READ, md, &dec);
+      t.decoderMs = d9dMs(a0, std::chrono::steady_clock::now());
+      validateFrame(dec.Get(), t);
+      t.combinedMs = t.decoderMs;
+    }
+
+    // ---- Path B: the caller opens the file, WIC only wraps the handle ----
+    {
+      auto& t = out.fileHandle;
+      t.attempted = true;
+      const auto b0 = std::chrono::steady_clock::now();
+      HANDLE h = CreateFileW(wp.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (h == INVALID_HANDLE_VALUE) {
+        t.hr = (std::uint32_t)HRESULT_FROM_WIN32(GetLastError());
+        t.combinedMs = d9dMs(b0, std::chrono::steady_clock::now());
+        t.fileOpenMs = t.combinedMs;
+      } else {
+        const auto b1 = std::chrono::steady_clock::now();
+        t.fileOpenMs = d9dMs(b0, b1);
+        ComPtr<IWICBitmapDecoder> dec;
+        t.hr = (std::uint32_t)factory->CreateDecoderFromFileHandle(
+            (ULONG_PTR)h, vendor, md, &dec);
+        t.decoderMs = d9dMs(b1, std::chrono::steady_clock::now());
+        // The decoder still references the handle and may read from it inside
+        // GetFrame, so the handle has to outlive validation. Closing it first
+        // was a use-after-close.
+        validateFrame(dec.Get(), t);
+        dec.Reset();
+        CloseHandle(h);
+        t.combinedMs = t.fileOpenMs + t.decoderMs;
+      }
+    }
+
+    // ---- Path C: the caller opens the file and hands WIC a stream ----
+    {
+      auto& t = out.stream;
+      t.attempted = true;
+      const auto c0 = std::chrono::steady_clock::now();
+      HANDLE h = CreateFileW(wp.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (h == INVALID_HANDLE_VALUE) {
+        t.hr = (std::uint32_t)HRESULT_FROM_WIN32(GetLastError());
+        t.combinedMs = d9dMs(c0, std::chrono::steady_clock::now());
+        t.fileOpenMs = t.combinedMs;
+      } else {
+        const auto c1 = std::chrono::steady_clock::now();
+        t.fileOpenMs = d9dMs(c0, c1);
+        // The handle we opened has to be the one the decoder reads through,
+        // otherwise this path would measure a CreateFileW that is thrown away
+        // plus a second open hidden inside WIC. Windows offers no
+        // HANDLE -> IStream adapter, so HandleStream provides one.
+        HandleStream* raw = new (std::nothrow) HandleStream(h);
+        ComPtr<IStream> strm;
+        if (raw) strm.Attach(raw); else t.hr = (std::uint32_t)E_OUTOFMEMORY;
+        const auto c2 = std::chrono::steady_clock::now();
+        t.streamInitMs = d9dMs(c1, c2);
+        if (SUCCEEDED(t.hr) && strm) {
+          ComPtr<IWICBitmapDecoder> dec;
+          t.hr = (std::uint32_t)factory->CreateDecoderFromStream(
+              strm.Get(), vendor, md, &dec);
+          t.decoderMs = d9dMs(c2, std::chrono::steady_clock::now());
+          // Validate while the stream, and with it the handle, is still alive.
+          validateFrame(dec.Get(), t);
+          dec.Reset();
+        }
+        strm.Reset();
+        if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+        t.combinedMs = t.fileOpenMs + t.streamInitMs + t.decoderMs;
+      }
+    }
+  }
 }
 #endif
 bool ImageDecoder::dimensionsFast(const std::string& path,int& w,int& h) const {

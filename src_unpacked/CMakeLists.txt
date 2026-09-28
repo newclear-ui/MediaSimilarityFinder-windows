@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.27 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.28 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -404,7 +404,7 @@ if(MSF_BUILD_GUI)
       # own camelCase identifier, because trStr() falls back to returning the
       # key. colFile/colDate/viewGrid were missing and showed up that way.
       add_test(NAME ui_translation_keys_test COMMAND msf_ui_settings_test --tr-keys)
-      # 0.9.4.27 settings-identity migration. Every phase is its own process so
+      # 0.9.4.28 settings-identity migration. Every phase is its own process so
       # a same-process QSettings cache can never make a broken migration pass.
       set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")
       set(MSF_MIGRATE_BOTH_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate-both")

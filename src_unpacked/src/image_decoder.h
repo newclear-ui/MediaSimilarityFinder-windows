@@ -55,6 +55,34 @@ struct DecodeTelemetry {
   std::uint64_t openHrFailCount = 0;
   std::uint32_t openHrFirstFailCode = 0;
 };
+
+// ---------------------------------------------------------------- D2
+// Measurement-only probe. It is a separate entry point on purpose: it is never
+// called from decode()/decodePreserveAspect(), and it does not change what
+// production does. Its purpose is to compare the three WIC decoder entry
+// points on the same file with the same metadata options, so that "another
+// entry point might be cheaper" becomes a measurement instead of a guess.
+//
+// Every field is one call. combinedMs is the sum of that path's own
+// components and is reported next to them, never added to them.
+struct DecoderPathTiming {
+  bool attempted = false;
+  bool ok = false;              // decoder created AND GetFrame(0) yielded a size
+  std::uint32_t hr = 0;         // HRESULT of the decoder-creation call
+  int width = 0, height = 0;    // frame size, proving the decoder is usable
+   double fileOpenMs = 0;        // CreateFileW                      (B, C)
+   double streamCreateMs = 0;    // unused by D2: see DecoderPathProbe::stream
+   double streamInitMs = 0;      // IStream adapter construction      (C)
+  double decoderMs = 0;         // the decoder-creation call itself
+  double combinedMs = 0;        // sum of the above for this path
+};
+
+struct DecoderPathProbe {
+  DecoderPathTiming filename;   // Path A: CreateDecoderFromFilename
+  DecoderPathTiming fileHandle; // Path B: CreateFileW + CreateDecoderFromFileHandle
+   DecoderPathTiming stream;     // Path C: CreateFileW + IStream + CreateDecoderFromStream
+  bool available = false;       // false on non-WIC builds -> not_available, not 0
+};
 struct GrayImage { int width=0,height=0; std::vector<std::uint8_t> pixels; };
 struct ColorImage { int width=0,height=0; std::vector<std::uint8_t> bgra; }; // 4 bytes/px, B,G,R,A order
 class ImageDecoder {
@@ -70,5 +98,9 @@ public:
     // paying an ffprobe child per file (console flash + ~100ms on the UI
     // thread). Returns false for anything else (caller falls back).
     bool dimensionsFast(const std::string& path,int& w,int& h) const;
+    // D2 measurement-only probe. Compares the three WIC decoder entry points
+    // on one file. It is deliberately NOT a mode of decode(): production has no
+    // way to reach it, so nothing measured here can change product behaviour.
+    static void probeDecoderPaths(const std::string& path, DecoderPathProbe& out);
 };
 }

@@ -1,12 +1,17 @@
 #include "media_search_engine.h"
 #include "benchmark.h"
 #include "dataset_fingerprint.h"
+#include "image_decoder.h"
 #include "path_utils.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
+#include <map>
+#include <numeric>
+#include <vector>
 #include <iostream>
 #include <string>
 
@@ -59,7 +64,146 @@ double maxOf(const std::vector<double>& v) {
 }
 }  // namespace
 
+// D2 measurement driver. Deliberately a separate mode: the scan benchmark above
+// is the product path, and this probe is measurement-only. It never touches
+// the product decode path, and its numbers are reported separately.
+namespace {
+struct PathStat {
+  std::vector<double> aDecoder, aCombined;
+  std::vector<double> bFileOpen, bDecoder, bCombined;
+  std::vector<double> cFileOpen, cStreamInit, cDecoder, cCombined;
+  int aOk = 0, aFail = 0, bOk = 0, bFail = 0, cOk = 0, cFail = 0;
+  std::map<std::uint32_t, int> aHr, bHr, cHr;
+};
+
+void statLine(const char* label, std::vector<double> v, int n) {
+  if (v.empty()) { std::printf("  %-22s not_measured\n", label); return; }
+  std::vector<double> s = v;
+  std::sort(s.begin(), s.end());
+  const double mean = std::accumulate(s.begin(), s.end(), 0.0) / (double)s.size();
+  const double med = (s.size() % 2) ? s[s.size() / 2]
+                                     : (s[s.size() / 2 - 1] + s[s.size() / 2]) / 2.0;
+  std::printf("  %-22s mean %8.4f  median %8.4f  min %8.4f  max %8.4f  range %7.4f  n=%d\n",
+              label, mean, med, s.front(), s.back(), s.back() - s.front(), n);
+}
+}  // namespace
+
+static int runDecoderPathProbe(const std::string& root) {
+  // Sample per format from the images/format tree, and a sample of the bulk
+  // BMP set, so the pre-existing format is represented too.
+  struct Src { std::string label; std::vector<std::string> files; };
+  std::vector<Src> srcs;
+  const std::string fmtRoot = msf::path_to_utf8(std::filesystem::path(root) / "images" / "format");
+  std::map<std::string, std::vector<std::string>> byFmt;
+  std::error_code ec;
+  for (const auto& de : std::filesystem::directory_iterator(
+           msf::path_from_utf8(fmtRoot), ec)) {
+    if (!de.is_directory()) continue;
+    std::vector<std::string> v;
+    for (const auto& f : std::filesystem::directory_iterator(de.path(), ec)) {
+      if (f.is_regular_file()) v.push_back(msf::path_to_utf8(f.path()));
+    }
+    byFmt[msf::path_to_utf8(de.path().filename())] = v;
+  }
+  // Bulk BMP, stride-sampled so the probe stays quick.
+  std::vector<std::string> bmp;
+  {
+    std::vector<std::string> all;
+    for (const auto& f : std::filesystem::directory_iterator(
+             msf::path_from_utf8(msf::path_to_utf8(std::filesystem::path(root) / "bulk")), ec))
+      if (f.is_regular_file()) all.push_back(msf::path_to_utf8(f.path()));
+    std::sort(all.begin(), all.end());
+    const std::size_t step = all.size() > 200 ? all.size() / 200 : 1;
+    for (std::size_t i = 0; i < all.size(); i += step) bmp.push_back(all[i]);
+  }
+  for (auto& kv : byFmt) srcs.push_back({kv.first, kv.second});
+  srcs.push_back({"bmp", bmp});
+
+  std::printf("\n--- D2: WIC decoder entry-path probe (measurement only) ---\n");
+  std::map<std::string, PathStat> stats;
+  bool available = false;
+  for (const Src& s : srcs) {
+    if (s.files.empty()) { std::printf("format %-6s not present\n", s.label.c_str()); continue; }
+    PathStat& ps = stats[s.label];
+    // One warm-up per format, excluded, so first-call DLL/codec load does not
+    // land in the sample.
+    {
+      msf::DecoderPathProbe warm;
+      msf::ImageDecoder::probeDecoderPaths(s.files.front(), warm);
+      available = warm.available;
+    }
+    if (!available) { std::printf("probe not_available on this build\n"); return 4; }
+    for (const std::string& f : s.files) {
+      msf::DecoderPathProbe p;
+      msf::ImageDecoder::probeDecoderPaths(f, p);
+      auto& A = p.filename;
+      (A.ok ? ps.aOk : ps.aFail)++;
+      ps.aHr[A.hr]++;
+      if (A.attempted) { ps.aDecoder.push_back(A.decoderMs); ps.aCombined.push_back(A.combinedMs); }
+      auto& B = p.fileHandle;
+      (B.ok ? ps.bOk : ps.bFail)++;
+      ps.bHr[B.hr]++;
+      if (B.attempted) { ps.bFileOpen.push_back(B.fileOpenMs); ps.bDecoder.push_back(B.decoderMs);
+                         ps.bCombined.push_back(B.combinedMs); }
+      auto& C = p.stream;
+      (C.ok ? ps.cOk : ps.cFail)++;
+      ps.cHr[C.hr]++;
+      if (C.attempted) { ps.cFileOpen.push_back(C.fileOpenMs);
+                         ps.cStreamInit.push_back(C.streamInitMs); ps.cDecoder.push_back(C.decoderMs);
+                         ps.cCombined.push_back(C.combinedMs); }
+    }
+  }
+
+  std::printf("\n  %-6s %s\n", "path", "A=Filename  B=FileHandle  C=Stream   (ms, decoder-creation call only)");
+  for (auto& kv : stats) {
+    const std::string& f = kv.first;
+    PathStat& p = kv.second;
+    std::printf("\nformat %s   (A ok %d / fail %d, B ok %d / fail %d, C ok %d / fail %d)\n",
+                f.c_str(), p.aOk, p.aFail, p.bOk, p.bFail, p.cOk, p.cFail);
+    statLine("A decoder", p.aDecoder, (int)p.aDecoder.size());
+    statLine("B fileOpen", p.bFileOpen, (int)p.bFileOpen.size());
+    statLine("B decoder", p.bDecoder, (int)p.bDecoder.size());
+    statLine("B combined", p.bCombined, (int)p.bCombined.size());
+    statLine("C fileOpen", p.cFileOpen, (int)p.cFileOpen.size());
+    statLine("C streamInit", p.cStreamInit, (int)p.cStreamInit.size());
+    statLine("C decoder", p.cDecoder, (int)p.cDecoder.size());
+    statLine("C combined", p.cCombined, (int)p.cCombined.size());
+    for (const char* tag : {"A", "B", "C"}) {
+      const auto& m = (std::strcmp(tag, "A") == 0) ? p.aHr : (std::strcmp(tag, "B") == 0) ? p.bHr : p.cHr;
+      std::printf("  HRESULT %s:", tag);
+      for (const auto& kv2 : m) {
+        if (kv2.first == 0) std::printf(" S_OK x%d", kv2.second);
+        else std::printf(" 0x%08lX x%d", (unsigned long)kv2.first, kv2.second);
+      }
+      std::printf("\n");
+    }
+  }
+  return 0;
+}
+
 int main(int argc, char** argv) {
+  // Unbuffered so a fault mid-probe still shows how far the run got.
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
+  if (argc >= 2 && std::strcmp(argv[1], "--decoder-path-one") == 0) {
+    if (argc < 3) { std::cerr << "usage: msf_dataset_baseline --decoder-path-one <file>\n"; return 2; }
+    const std::string f = argv[2];
+    std::printf("probing %s\n", f.c_str());
+    msf::DecoderPathProbe p;
+    msf::ImageDecoder::probeDecoderPaths(f, p);
+    std::printf("  available=%d\n", (int)p.available);
+    const struct { const char* n; const msf::DecoderPathTiming* t; } ps[3] = {
+        {"A filename", &p.filename}, {"B fileHandle", &p.fileHandle}, {"C stream", &p.stream}};
+    for (const auto& e : ps) {
+      std::printf("  %-12s attempted=%d ok=%d %dx%d hr=0x%08lX fileOpen=%.4f streamInit=%.4f decoderMs=%.4f\n",
+                  e.n, (int)e.t->attempted, (int)e.t->ok, e.t->width, e.t->height,
+                  (unsigned long)e.t->hr, e.t->fileOpenMs, e.t->streamInitMs, e.t->decoderMs);
+    }
+    return 0;
+  }
+  if (argc >= 2 && std::strcmp(argv[1], "--decoder-paths") == 0) {
+    if (argc < 3) { std::cerr << "usage: msf_dataset_baseline --decoder-paths <root>\n"; return 2; }
+    return runDecoderPathProbe(argv[2]);
+  }
   if (argc < 3) {
     std::cerr << "usage: msf_dataset_baseline <root> <app-dir> [runs]\n";
     return 2;
