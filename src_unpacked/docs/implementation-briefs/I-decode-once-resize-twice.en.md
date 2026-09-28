@@ -11,6 +11,19 @@ Version change         NO (only at the v0.9.4.31 recording step, after results)
 
 This document is the measurement implementation contract. It is not a product decode-path change.
 
+```text
+Final status   MEASURED -> CANDIDATE DEFERRED (production adoption NO)
+Evidence       docs/build-history/0.9.4.31.en.md   (measurement)
+               docs/build-history/0.9.4.32.en.md   (stability investigation + flip artifact correction)
+Follow-up      the "shared WIC source + two independent scalers" structure, which
+               creates no intermediate GrayImage, is tracked as a SEPARATE
+               candidate. It is a successor, not a replacement, for I-1.
+               Pre-register: docs/implementation-briefs/I-shared-wic-source.en.md
+```
+
+The text below is the original pre-register contract and is not retroactively
+changed.
+
 ---
 
 ## 1. Purpose

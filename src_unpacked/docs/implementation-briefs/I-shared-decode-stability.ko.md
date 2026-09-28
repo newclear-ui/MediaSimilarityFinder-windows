@@ -11,6 +11,18 @@ Version change         NO (조사 결과가 나온 뒤 v0.9.4.32 기록 단계�
 
 이 문서는 원인 규명 계약이다. 제품 decode 경로 교체도, 후보 채택도 아니다.
 
+```text
+Final status   INVESTIGATION PASS (원인 규명) → CANDIDATE DEFERRED 유지
+Evidence       docs/build-history/0.9.4.32.ko.md
+핵심 정정      v0.9.4.31 의 verdict flip 2건은 probe 의 baseline/candidate 버퍼
+               혼용에 의한 measurement artifact. pure pair 재측정 결과 조사한
+               8개 R 전부 flip 0.
+후속 후보      중간 GrayImage 를 만들지 않는 "공유 WIC source + 독립 2개 scaler"
+               pre-register: docs/implementation-briefs/I-shared-wic-source.ko.md
+```
+
+아래 내용은 조사 당시의 pre-register 원문이며 소급 변경하지 않는다.
+
 ---
 
 ## 1. 목적

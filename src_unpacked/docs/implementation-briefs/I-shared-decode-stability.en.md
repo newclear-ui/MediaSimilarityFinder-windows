@@ -12,6 +12,20 @@ Version change         NO (only at the v0.9.4.32 recording step, after results)
 This document is a cause-investigation contract. It is neither a product
 decode-path change nor a candidate adoption.
 
+```text
+Final status   INVESTIGATION PASS (cause found) -> CANDIDATE stays DEFERRED
+Evidence       docs/build-history/0.9.4.32.en.md
+Key correction the v0.9.4.31 verdict flips (2) were a measurement artifact of the
+               probe mixing baseline/candidate buffers. Pure-pair re-measurement
+               gives 0 flips at all 8 investigated R.
+Follow-up      "shared WIC source + two independent scalers", no intermediate
+               GrayImage. Pre-register:
+               docs/implementation-briefs/I-shared-wic-source.en.md
+```
+
+The text below is the original pre-register contract and is not retroactively
+changed.
+
 ---
 
 ## 1. Purpose

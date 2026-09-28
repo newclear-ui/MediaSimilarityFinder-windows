@@ -10,15 +10,18 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.24 |
+| Reference code | 0.9.4.32 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | I — Analyze / Matching Performance (D9a PASS) |
-| Current phase | Node I in progress → `verify` is **99.67 %** of analyze and the "cache capacity 32" hypothesis is **refuted** (hit rate 0.53). D9b prioritizes **B (reduce expensive-verify cost)**; A (reduce candidate-pair arrival) remains deferred because it can touch verdict semantics. Pre-register is mandatory before D9b implementation |
-| Current version | 0.9.4.24 |
+| Current node | I — Analyze / Matching Performance (D9a through the D3 follow-up candidate complete; next candidate under investigation) |
+| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d cost decomposition → D1 open/factory cause → D2 WIC entry-path comparison (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (the second decode is 49.60 % of `verifyDecodeMs`, **PASS**). The D3 follow-up "shared GrayImage + resize twice" candidate was measured in 0.9.4.31 (candidate `DEFERRED`) and its stability investigation completed in 0.9.4.32 (the 2 verdict flips are corrected as a probe pairing artifact; **pure-pair re-measurement gives 0 flips**). The pixel/geometry divergence cause is identified as the two-step Fant chain + intermediate 8-bit quantization + differing resampling chains. **Next candidate: one shared WIC source/frame feeding two independent scalers that produce f/a directly** — exact output parity is priority 1 |
+| Current version | 0.9.4.32 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
+
+(The table above carried a stale 0.9.4.24 state and is corrected to the actual
+0.9.4.32 repository state. Historical body records below are not deleted.)
 
 ## Development flow status
 
@@ -94,7 +97,7 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
   working normally in a real Windows session. Automation non-validation
   and user-direct confirmation are recorded separately.
 
-### C — Calibration / INI Performance Profile (C1 done, C2 pending)
+### C — Calibration / INI Performance Profile (C1–C4 all complete)
 
 - The C brief is now concretized into C1–C4 stages.
 - C1 covers Profile Foundation only; actual calibration execution is excluded.
@@ -105,6 +108,10 @@ These are documentation-structure changes; the 0.9.3.19 scheduler/backend source
 - Profile is an initial estimate; live runtime state always has precedence.
 - D queue/worker topology and F hardware decode are not pulled into C.
 - Metrics not yet measurable are recorded with explicit measurement states.
+- **Actual state: C1 (0.9.4.9) → C2 (0.9.4.10) → C3 (0.9.4.11) → C4 (0.9.4.13)
+  are all complete and passed.** The bullets above are the original stage
+  definitions; the per-stage results are in the C4/C3/C2/C1 subsections below.
+  The C4 gate records "Node C complete, next gate D".
 
 ### C4 — Calibration Gate (→ 0.9.4.13, PASS)
 

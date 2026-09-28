@@ -10,15 +10,18 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.24 |
+| 기준 코드 | 0.9.4.32 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | I — Analyze / Matching Performance (D9a 통과) |
-| 현재 단계 | Node I 진행 중 → `verify` 가 analyze 의 **99.67 %** 이며 "캐시 용량 32" 가설은 **기각**(적중률 0.53). D9b는 **B(expensive verify 1건 비용 감소)를 우선**하며, A(candidate pair 도착률 감소)는 verdict semantics 위험 때문에 deferred. D9b 구현 전 pre-register 필수 |
-| 현재 버전 | 0.9.4.24 |
+| 현재 노드 | I — Analyze / Matching Performance (D9a → D3 후속 후보까지 완료, 다음 후보 조사 중) |
+| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d 비용 분해 → D1 open/factory 원인 → D2 WIC 진입 경로 비교(**Path C `DEFERRED`**) → D3 중복 decode 계측(두 번째 decode 가 verifyDecodeMs 의 49.60 %, **PASS**). D3 후속 "공유 GrayImage + resize 2회" 후보는 0.9.4.31 에서 측정(전적 `DEFERRED`) → 0.9.4.32 에서 안정성 조사 완료(verdict flip 2건은 probe pairing artifact 로 정정, **순수 쌍 재측정 flip 0**). pixel/geometry divergence 원인은 2단계 Fant 체인 + 중간 8-bit 양자화 + 서로 다른 resampling chain 으로 규명. **다음 후보: 공유 WIC source/frame + 독립 2개 scaler 로 f/a 를 직접 생성** — exact output parity 가 1순위 |
+| 현재 버전 | 0.9.4.32 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
+
+(위 표는 0.9.4.24 시점의 오래된 상태였으며, 0.9.4.32 실제 저장소 상태로
+정정했다. 아래 본문의 과거 기록은 삭제하지 않는다.)
 
 ## 개발 순서 상태
 
@@ -91,7 +94,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
    실행→검색→리포트 표시가 정상 동작함을 확인했다고 보고함. 자동화
    미검증과 사용자 직접 확인은 구분해서 기록한다.
 
-### C — Calibration / INI Performance Profile (C1 완료, C2 대기)
+### C — Calibration / INI Performance Profile (C1~C4 모두 완료)
 
 - C brief를 C1~C4 단계로 구체화했다.
 - C1은 Profile Foundation만 다루며 실제 calibration 실행은 넣지 않는다.
@@ -102,6 +105,10 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 - Profile은 initial estimate이며 live runtime state가 항상 우선한다.
 - D queue/worker topology와 F hardware decode는 C에서 선행하지 않는다.
 - queue latency와 hardware decode가 아직 측정 불가능한 경우 explicit measurement state로 기록한다.
+- **현 상태: C1(0.9.4.9) → C2(0.9.4.10) → C3(0.9.4.11) → C4(0.9.4.13) 모두
+  완료·통과.** 위 항목들은 C 를 처음 설계할 때의 단계 정의이며, 각 단계의
+  실제 결과는 아래 C4/C3/C2/C1 소제목을 따른다. C4 통과 시점에
+  "Node C 완료, 다음 게이트 D" 로 기록되어 있다.
 
 ### C4 — Calibration Gate (→ 0.9.4.13, 통과)
 

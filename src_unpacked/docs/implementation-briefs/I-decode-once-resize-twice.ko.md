@@ -11,6 +11,17 @@ Version change         NO (측정 결과가 나온 뒤 v0.9.4.31 기록 단계�
 
 이 문서는 측정 구현 계약이다. 제품 decode 경로 교체가 아니다.
 
+```text
+Final status   MEASURED → CANDIDATE DEFERRED (production adoption NO)
+Evidence       docs/build-history/0.9.4.31.ko.md   (측정)
+               docs/build-history/0.9.4.32.ko.md   (안정성 조사 + flip artifact 정정)
+후속 후보      중간 GrayImage 를 만들지 않는 "공유 WIC source + 독립 2개 scaler"
+               구조는 별개 후보로 분리했다. I-1 의 대체가 아니라 후속이며,
+               pre-register: docs/implementation-briefs/I-shared-wic-source.ko.md
+```
+
+아래 내용은 측정 당시의 pre-register 원문이며 소급 변경하지 않는다.
+
 ---
 
 ## 1. 목적
