@@ -1075,7 +1075,8 @@ a follow-up optimization pre-register (written, before measurement)
 - Two defects recorded permanently: the pre-register §5.1 counter error, and a
   missing member-by-member telemetry transfer in `ScanPipeline::analyze` that made
   the first run read a silent 0.
-- **Next**: a follow-up optimization pre-register (not written yet).
+- **Next**: a follow-up optimization pre-register (written,
+  `docs/implementation-briefs/I-decode-once-resize-twice.en.md`).
 
 The recording obligation and the required field list are defined in
 `AGENTS.md` item 9 and `docs/document-naming.*.md` section 2-1.
@@ -1089,3 +1090,17 @@ The recording obligation and the required field list are defined in
 - Verification: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.30.
 - This is unrelated to the D3 follow-up optimization and claims no performance
   improvement.
+
+## 0.9.4.31 — D3 Follow-up Shared-Decode Candidate Measurement
+
+- Committed the pre-register
+  `docs/implementation-briefs/I-decode-once-resize-twice.en.md` before any
+  measurement code.
+- Measured baseline 2-decodes vs candidate (one shared decode + two in-memory
+  Fant derivations) with `tests/shared_decode_probe.cpp` (measurement-only, no
+  production changes) across 849 files × 5 resolutions × 5 runs.
+- The candidate costs 24–46 % less than baseline but byte reproduction fails
+  and 2 verdict flips occur at R≥384 (same TIFF near-duplicate pairs,
+  reproduced 5×) — candidate DEFERRED, not adopted.
+- Verification: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.31,
+  probe `--selfcheck` 14 checks.

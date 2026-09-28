@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.30 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.31 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -169,6 +169,13 @@ if(MSF_BUILD_TESTS)
     # measured, so a decision can never rest on a missing input.
     add_executable(msf_dataset_baseline tests/dataset_baseline.cpp)
     target_link_libraries(msf_dataset_baseline PRIVATE msf_core)
+    # D3-follow-up candidate probe: shared-decode-once plus dual in-memory
+    # resize, measured per file per resolution with parity and score comparison.
+    # Not a CTest case -- like msf_dataset_baseline it is decision input: it
+    # needs a measured dataset root argument and takes minutes, and its
+    # --selfcheck mode covers the helper unit checks without a dataset.
+    add_executable(msf_shared_decode_probe tests/shared_decode_probe.cpp)
+    target_link_libraries(msf_shared_decode_probe PRIVATE msf_core)
     # D4a: backend-internal timing contract. Registered in both trees on
     # purpose — the recorder half must be proven where CUDA does not exist.
     add_executable(msf_gpu_timing_test tests/gpu_timing_test.cpp)

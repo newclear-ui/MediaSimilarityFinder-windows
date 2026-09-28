@@ -1045,7 +1045,8 @@ Current active investigation:
 - 구현 중 발견한 결함 2건을 영구 기록: pre-register §5.1 의 카운터 오류,
   그리고 `ScanPipeline::analyze` 의 멤버 단위 전사 누락으로 첫 실행이 조용한
   0 을 낸 문제.
-- **다음**: 후속 optimization pre-register (아직 작성하지 않음).
+- **다음**: 후속 optimization pre-register (작성됨,
+  `docs/implementation-briefs/I-decode-once-resize-twice.ko.md`).
 
 기록 의무와 필수 항목은 `AGENTS.md` 9번 항목과
 `docs/document-naming.*.md` 2-1절에 정의한다.
@@ -1058,3 +1059,15 @@ Current active investigation:
 - CPU 정책은 `QSettings`에 저장되지 않으므로 마이그레이션이 필요 없다.
 - 검증: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.30.
 - D3 후속 최적화 후보와 무관하며 성능 향상을 주장하지 않는다.
+
+## 0.9.4.31 — D3 후속 공유 decode 후보 측정
+
+- pre-register `docs/implementation-briefs/I-decode-once-resize-twice.ko.md`를
+  측정 코드보다 먼저 커밋했다.
+- `tests/shared_decode_probe.cpp` (측정 전용, 생산 코드 변경 없음)로 기준선
+  2회 decode와 후보(공유 decode 1회 + 메모리 Fant 파생 2회)를 849 파일 ×
+  5 해상도 × 5회 측정했다.
+- 후보는 기준선 대비 24~46 % 저렴하나 바이트 재현이 안 되고 R≥384에서 verdict
+  flip 2건(TIFF 근사중복 쌍, 5회 재현) — 후보 DEFERRED, 생산 미채택.
+- 검증: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.31,
+  probe `--selfcheck` 14 checks.
