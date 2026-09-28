@@ -1077,3 +1077,13 @@ a follow-up optimization pre-register (not written yet)
 
 The recording obligation and the required field list are defined in
 `AGENTS.md` item 9 and `docs/document-naming.*.md` section 2-1.
+
+## 0.9.4.30 — Automatic CPU-usage 10–90% normalization
+
+- The user CPU spin box, stored `ResourcePolicy.cpuPercent`, and engine input
+  always use the same `10–90` value.
+- Preset values, GPU policy, scheduler, worker, and batch formulas are unchanged.
+- There is no CPU-policy QSettings persistence path, so no migration was needed.
+- Verification: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.30.
+- This is unrelated to the D3 follow-up optimization and claims no performance
+  improvement.

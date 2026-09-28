@@ -1048,3 +1048,12 @@ Current active investigation:
 
 기록 의무와 필수 항목은 `AGENTS.md` 9번 항목과
 `docs/document-naming.*.md` 2-1절에 정의한다.
+
+## 0.9.4.30 — CPU 사용량 10~90 자동 정규화
+
+- 사용자 CPU 스핀박스, 저장된 `ResourcePolicy.cpuPercent`, 엔진 입력이 항상
+  같은 `10~90` 값을 사용한다.
+- 프리셋 값, GPU 정책, 스케줄러, 워커 배치 계산식은 변경하지 않았다.
+- CPU 정책은 `QSettings`에 저장되지 않으므로 마이그레이션이 필요 없다.
+- 검증: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.30.
+- D3 후속 최적화 후보와 무관하며 성능 향상을 주장하지 않는다.

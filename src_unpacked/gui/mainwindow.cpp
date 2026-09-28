@@ -293,7 +293,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
   if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.29\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.29\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.30\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.30\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -741,7 +741,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-    setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.29"));
+    setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.30"));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -798,7 +798,10 @@ void MainWindow::buildToolbar() {
   preset_->setCurrentIndex(2);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
   cpu_ = new QSpinBox(toolBar_);
-  cpu_->setRange(1, 100);
+  // The widget, stored policy, and engine input all use the same 10-90 user
+  // CPU range. QSpinBox enforces the range, while the policy helper below also
+  // normalizes values arriving through make_policy.
+  cpu_->setRange(msf::kUserCpuPercentMin, msf::kUserCpuPercentMax);
   cpu_->setPrefix(QStringLiteral("CPU "));
   cpu_->setSuffix(QStringLiteral("%"));
   // Node A: no manual GPU utilization control. GPU is ON/OFF only
@@ -1124,7 +1127,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.29"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.30"));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
@@ -1546,6 +1549,15 @@ void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
 }
 void MainWindow::resourceChanged(int i) {
   auto m = static_cast<msf::ResourceMode>(i + 1);
+  // Keep an out-of-range display value from reaching the policy layer. The
+  // existing blockSignals pattern prevents this corrective write from
+  // re-entering the slot.
+  const int cpu = msf::normalize_user_cpu_percent(cpu_->value());
+  if (cpu != cpu_->value()) {
+    cpu_->blockSignals(true);
+    cpu_->setValue(cpu);
+    cpu_->blockSignals(false);
+  }
   policy_ = msf::make_policy(m, cpu_->value(), policy_.gpuPercent);
   if (monitor_) monitor_->setPolicy(policy_);
   cpu_->blockSignals(true);
@@ -1553,6 +1565,15 @@ void MainWindow::resourceChanged(int i) {
   cpu_->blockSignals(false);
 }
 void MainWindow::customResourceChanged() {
+  // Show the same normalized value that make_policy will store. Updating the
+  // widget before switching to Custom keeps the preset change and the later
+  // policy assignment idempotent.
+  const int cpu = msf::normalize_user_cpu_percent(cpu_->value());
+  if (cpu != cpu_->value()) {
+    cpu_->blockSignals(true);
+    cpu_->setValue(cpu);
+    cpu_->blockSignals(false);
+  }
   if (preset_->currentIndex() != 4) preset_->setCurrentIndex(4);
   policy_ = msf::make_policy(msf::ResourceMode::Custom, cpu_->value(), policy_.gpuPercent);
   if (monitor_) monitor_->setPolicy(policy_);

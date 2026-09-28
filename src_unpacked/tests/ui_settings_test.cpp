@@ -12,6 +12,7 @@
 // persists, which is exactly the bug this guards against).
 #include "mainwindow.h"
 #include <QApplication>
+#include <QSpinBox>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -74,6 +75,54 @@ bool plantIni(const QString& path, const QMap<QString, QString>& values) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // User-visible CPU policy probe. The same 10-90 bounds must appear in the
+  // widget and in the value handed to make_policy. QSpinBox enforces the range
+  // for displayed values; the assertions below exercise the real slot path.
+  if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--cpu-policy") {
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication app(argc, argv);
+    MainWindow w;
+    w.show();
+    QApplication::processEvents();
+    QSpinBox* cpu = nullptr;
+    const QList<QSpinBox*> spins = w.findChildren<QSpinBox*>();
+    for (QSpinBox* spin : spins) {
+      if (spin && spin->prefix() == QStringLiteral("CPU ")) {
+        cpu = spin;
+        break;
+      }
+    }
+    if (!cpu) { std::cerr << "CPU spin box not found\n"; return 1; }
+    if (cpu->minimum() != msf::kUserCpuPercentMin || cpu->maximum() != msf::kUserCpuPercentMax) {
+      std::cerr << "CPU range is not 10-90\n";
+      return 1;
+    }
+    struct CpuCase { int input; int expected; };
+    const CpuCase cases[] = {
+      {120, 90}, {100, 90}, {91, 90}, {90, 90}, {50, 50},
+      {10, 10}, {9, 10}, {0, 10}, {-1, 10}, {-100, 10}
+    };
+    for (const CpuCase& c : cases) {
+      cpu->setValue(c.input);
+      QApplication::processEvents();
+      if (cpu->value() != c.expected) {
+        std::cerr << "CPU display mismatch for input " << c.input
+                  << ": got " << cpu->value() << ", want " << c.expected << "\n";
+        return 1;
+      }
+      // The corrective widget write must not leave the slot in a state that
+      // refires on the next user input. Setting the already-normalized value
+      // back must be a no-op for the displayed value.
+      cpu->setValue(c.expected);
+      QApplication::processEvents();
+      if (cpu->value() != c.expected) {
+        std::cerr << "CPU display changed after idempotent write\n";
+        return 1;
+      }
+    }
+    std::cout << "cpu_policy=ok checked=" << (int)(sizeof(cases) / sizeof(cases[0])) << "\n";
+    return 0;
+  }
   // Translation-table regression gate.
   //
   // trStr() ends with `return QString::fromUtf8(key)`, so any key used in the UI

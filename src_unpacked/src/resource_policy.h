@@ -7,6 +7,12 @@ enum class ResourceMode { Maximum=1, High=2, Balanced=3, Gaming=4, Light=4, Cust
 // cap kept for compatibility — the UI no longer exposes it and Node B
 // replaces it with the Adaptive Scheduler (GPU ON = AUTO). CPU fallback and
 // preset CPU values are unchanged.
+// The user-visible CPU control and the stored policy use the same 10-90 range.
+constexpr int kUserCpuPercentMin = 10;
+constexpr int kUserCpuPercentMax = 90;
+inline int normalize_user_cpu_percent(int value) {
+    return std::clamp(value, kUserCpuPercentMin, kUserCpuPercentMax);
+}
 struct ResourcePolicy { ResourceMode mode=ResourceMode::Balanced; int cpuPercent=55; int gpuPercent=60; bool gpuEnabled=true; };
 ResourcePolicy make_policy(ResourceMode mode,int customCpu=55,int customGpu=60);
 int recommended_worker_count(const ResourcePolicy&, int hardwareThreads);

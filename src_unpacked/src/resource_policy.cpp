@@ -7,7 +7,7 @@ ResourcePolicy make_policy(ResourceMode m,int c,int g){
     else if(m==ResourceMode::High){p.cpuPercent=75;p.gpuPercent=75;}
     else if(m==ResourceMode::Balanced){p.cpuPercent=55;p.gpuPercent=60;}
     else if(m==ResourceMode::Gaming){p.cpuPercent=25;p.gpuPercent=25;}
-    else {p.cpuPercent=std::clamp(c,5,100);p.gpuPercent=std::clamp(g,5,100);}
+    else {p.cpuPercent=normalize_user_cpu_percent(c);p.gpuPercent=std::clamp(g,5,100);}
     return p;
 }
 int recommended_worker_count(const ResourcePolicy& p,int hardwareThreads){
