@@ -1071,22 +1071,31 @@ Current active investigation:
   flip 2건(TIFF 근사중복 쌍, 5회 재현) — 후보 DEFERRED, 생산 미채택.
 - 검증: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.31,
   probe `--selfcheck` 14 checks.
-- **0.9.4.32에서 일부 정정됨**: 위 "verdict flip 2건"은 probe artifact다
-  (기준선 버퍼에 후보 버퍼가 섞임). 성능 수치는 그대로 유효.
+- **0.9.4.32에서 일부 정정됨**: 위 "verdict flip 2건"과 "R 증가 → delta 증가
+  (2.63→9.19)"는 probe artifact다 (기준선 버퍼에 후보 버퍼가 섞임). 성능 수치는
+  그대로 유효하다(측정 전용 probe 값이며 제품 성능 아님).
 
 ## 0.9.4.32 — D3 후속 후보 안정성 · 리샘플 차이 원인
 
 - pre-register `docs/implementation-briefs/I-shared-decode-stability.ko.md`를
   조사 코드보다 먼저 커밋했다.
-- 측정 결함 발견: 전체 측정의 기준선 점수에 이전 파일의 후보 버퍼가 섞여,
-  "기준선"이 어느 쪽 세계도 아니었다.
-- 순수 쌍(양쪽 기준선 vs 양쪽 후보)으로 재측정 — **전 해상도 verdict flip 0건**
-  (max abs delta 1.97~2.56, R에 대해 단조 증가 아님).
-- 원인 규명: 2단계 Fant 체인 + 중간 8-bit 양자화 + nearest-neighbor crop.
-  geometry가 같아도 hpredict 계열 52~62 %, 1-bit bilevel 93~98 % 픽셀이
-  달라진다. 중간 해상도를 바꿔도 바이트 동등은 복원되지 않는다.
-- 후보 `DEFERRED` 유지. verdict-band 정책 정의 또는 EXIF/PGM/캐시 분할
-  픽스처 확보 시에만 재검토. 정정 기록은
+- 측정 결함 발견: 전체 측정의 기준선 점수에 현재 파일의 기준선 버퍼와 이전
+  파일의 **후보** 버퍼가 함께 들어갔다. "기준선"이 어느 쪽 세계도 아니었다.
+- pure pairing(양쪽 기준선 vs 양쪽 후보)으로 재측정 — 조사한 8개 R
+  (128·192·256·288·320·352·384·512) 전부 verdict flip **0건**, max abs delta
+  **1.972205~2.557407**(R 에 대해 단조 증가 아님).
+- 원인 규명: 2단계 Fant 체인 + 중간 8-bit GrayImage 양자화 + 서로 다른
+  resampling chain. scoring 단계의 `centerCropResize`(정수 nearest-neighbor)는
+  그 차이를 crop 으로 전달할 뿐 최초 원인이 아니다.
+- 조사한 R 범위(R128~512)에서는 byte parity 가 복원되지 않았다. 이 범위를
+  넘어선 불가능성은 증명되지 않았다.
+- verdict 비교는 해상도당 **1691 sampled pairs** 에서 수행했고 **전스캔 groups
+  비교는 수행하지 않았다.** EXIF 방향·PGM fallback fixture 가 없어 해당 경로는
+  미검증이다.
+- 후보 `DEFERRED` 유지, production adoption NO. revisit 우선순위는 ① full-scan
+  groups 비교 ② near-threshold fixture ③ EXIF fixture ④ PGM fixture
+  ⑤ 비변경 정확성 검증 구조. 정정 기록은
   `docs/build-history/0.9.4.32.ko.md` §2.
 - 검증: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.32,
   probe `--selfcheck` 14 checks, `decomp_mismatch=0`.
+- 버전 문자열 갱신만으로 커밋 16e1240, 태그 v0.9.4.32. 생산 알고리즘 변경 없음.

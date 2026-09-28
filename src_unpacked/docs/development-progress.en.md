@@ -1104,24 +1104,35 @@ The recording obligation and the required field list are defined in
   reproduced 5×) — candidate DEFERRED, not adopted.
 - Verification: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.31,
   probe `--selfcheck` 14 checks.
-- **Superseded in part by 0.9.4.32**: the "2 verdict flips" above were probe
-  artifacts (mixed baseline/candidate buffers), not candidate behaviour. The
-  performance figures stand.
+- **Superseded in part by 0.9.4.32**: the "2 verdict flips" and the "delta grows
+  with R (2.63→9.19)" trend above were probe artifacts (mixed baseline/candidate
+  buffers), not candidate behaviour. The performance figures stand, and are
+  measurement-only probe values, not product performance.
 
 ## 0.9.4.32 — D3 Follow-up Candidate Stability / Resampling Cause
 
 - Committed the pre-register
   `docs/implementation-briefs/I-shared-decode-stability.en.md` first.
-- Found the measurement defect: the full-run baseline score mixed in the
-  previous file's candidate buffers, so its "baseline" was neither world.
-- Re-measured with pure pairs (both sides baseline vs both sides candidate):
-  **0 verdict flips at every resolution** (max abs delta 1.97–2.56, non-monotonic).
-- Cause identified: two-step Fant chain + intermediate 8-bit quantization +
-  nearest-neighbor crops; 52–62 % (hpredict family) and 93–98 % (1-bit bilevel)
-  of pixels differ even when geometry matches. Byte equality is not recoverable
-  by choosing a better intermediate resolution.
-- Candidate stays **DEFERRED**; revisit only on verdict-band policy or added
-  EXIF/PGM/cache-split fixtures. Correction record in
-  `docs/build-history/0.9.4.32.en.md` §2.
+- Found the measurement defect: the full-run baseline score received the
+  current file's baseline buffers together with the previous file's
+  **candidate** buffers, so its "baseline" was neither world.
+- Re-measured with pure pairing (both sides baseline vs both sides candidate):
+  **0 verdict flips at all 8 investigated R** (128·192·256·288·320·352·384·512),
+  max abs delta **1.972205–2.557407** (not monotonic in R).
+- Cause identified: two-step Fant chain + intermediate 8-bit GrayImage
+  quantization + differing resampling chains. The scoring-stage
+  `centerCropResize` (integer nearest-neighbor) only carries that difference
+  into the crops; it is not the origin.
+- Within the investigated R range (R128–512) byte parity was not restored.
+  Impossibility beyond that range is not proven and is not claimed.
+- Verdict comparison was performed on **1691 sampled pairs** per resolution; a
+  **full-scan groups comparison was not performed.** No EXIF-orientation or PGM
+  fallback fixture exists, so those paths are unverified.
+- Candidate stays **DEFERRED**, production adoption NO. Revisit priority:
+  ① full-scan groups comparison ② near-threshold fixtures ③ EXIF fixtures
+  ④ PGM fixtures ⑤ accuracy verification without changing the production path.
+  Correction record in `docs/build-history/0.9.4.32.en.md` §2.
 - Verification: CPU 80/80 PASS, GPU 81/81 PASS, `--version` 0.9.4.32,
   probe `--selfcheck` 14 checks, `decomp_mismatch=0`.
+- Commit 16e1240 and tag v0.9.4.32 contain version-string updates only; no
+  production algorithm change.
