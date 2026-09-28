@@ -62,6 +62,16 @@ double meanOf(std::vector<double> v) {
 double maxOf(const std::vector<double>& v) {
   double m = 0.0; for (double x : v) m = x > m ? x : m; return m;
 }
+double minOf(const std::vector<double>& v) {
+  if (v.empty()) return 0.0;
+  double m = v[0]; for (double x : v) m = x < m ? x : m; return m;
+}
+double medianOf(std::vector<double> v) {
+  if (v.empty()) return 0.0;
+  std::sort(v.begin(), v.end());
+  const std::size_t n = v.size();
+  return (n % 2) ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2.0;
+}
 }  // namespace
 
 // D2 measurement driver. Deliberately a separate mode: the scan benchmark above
@@ -223,6 +233,11 @@ int main(int argc, char** argv) {
 
   std::vector<double> wall, h2d, kernel, d2h, syncHost, hostTotal, batches;
   std::vector<double> walkQueued, walkDequeued, walkMaxDepth, blocked, starved, imgStage, gpuBatchMs;
+  // D3: the verify-miss path decodes the same file twice. These hold one
+  // measured run each, so the run-to-run spread stays visible instead of being
+  // collapsed into a single averaged ratio.
+  std::vector<double> d3FullMs, d3AspectMs, d3FullCalls, d3AspectCalls, d3FullOpen, d3AspectOpen,
+      d3VerifyMs, d3VerifyDecodeMs, d3AnalyzeMs, d3SplitOver;
   std::string lastJson;
   for (int r = 0; r < runs; ++r) {
     // A distinct app dir per run keeps every index cold. Reusing one would
@@ -259,6 +274,17 @@ int main(int argc, char** argv) {
     walkMaxDepth.push_back(numIn(js, "walker", "maxDepth"));
     blocked.push_back(numIn(js, "walker", "blockedTicks"));
     starved.push_back(numIn(js, "walker", "starvedTicks"));
+    // D3 per-run capture.
+    d3FullMs.push_back(numIn(js, "analyze", "decodeFullTotalMs"));
+    d3AspectMs.push_back(numIn(js, "analyze", "decodeAspectOnlyTotalMs"));
+    d3FullCalls.push_back(numIn(js, "analyze", "decodeFullCalls"));
+    d3AspectCalls.push_back(numIn(js, "analyze", "decodeAspectOnlyCalls"));
+    d3FullOpen.push_back(numIn(js, "analyze", "decodeFullOpenMs"));
+    d3AspectOpen.push_back(numIn(js, "analyze", "decodeAspectOpenMs"));
+    d3VerifyMs.push_back(numIn(js, "analyze", "verifyMs"));
+    d3VerifyDecodeMs.push_back(numIn(js, "analyze", "verifyDecodeMs"));
+    d3AnalyzeMs.push_back(numAfter(js, "analyzeMs", ok));
+    d3SplitOver.push_back(numIn(js, "analyze", "decodeSplitOverMs"));
     imgStage.push_back(numAfter(js, "imageStageMs", ok));
     gpuBatchMs.push_back(numAfter(js, "gpuBatchMs", ok));
     std::printf("run=%d wall_ms=%.1f scanned=%zu analyzed=%zu groups=%zu gpu_images=%llu\n", r,
@@ -294,6 +320,69 @@ int main(int argc, char** argv) {
               meanOf(walkMaxDepth) / 4096.0 * 100.0);
   std::printf("gpu_batch_share_of_wall   mean=%.4f%%  (ceiling for any D4b gain)\n",
               meanWall > 0 ? meanOf(gpuBatchMs) / meanWall * 100.0 : 0.0);
+
+  std::printf("\n--- D3: duplicate decode / decodePreserveAspect (verify miss path) ---\n");
+  if (const char* dump = std::getenv("MSF_DUMP_JSON")) {
+    std::FILE* fh = std::fopen(dump, "wb");
+    if (fh) { std::fwrite(lastJson.data(), 1, lastJson.size(), fh); std::fclose(fh); }
+    std::printf("  (raw benchmark JSON written to %s)\n", dump);
+  }
+  // warm-up 1회 제외, remaining runs 가 measured run
+  {
+    std::vector<double> mf, ma, mfc, mac, mfo, mao, mv, mvd, man, mso;
+    for (std::size_t i = 1; i < d3FullMs.size(); ++i) {   // run 0 is the excluded warm-up
+      mf.push_back(d3FullMs[i]);   ma.push_back(d3AspectMs[i]);
+      mfc.push_back(d3FullCalls[i]); mac.push_back(d3AspectCalls[i]);
+      mfo.push_back(d3FullOpen[i]);  mao.push_back(d3AspectOpen[i]);
+      mv.push_back(d3VerifyMs[i]);   mvd.push_back(d3VerifyDecodeMs[i]);
+      man.push_back(d3AnalyzeMs[i]); mso.push_back(d3SplitOver[i]);
+    }
+    const std::size_t nMeasured = mf.size();
+    std::printf("measured_runs=%d  (run 0 excluded as warm-up)\n", (int)nMeasured);
+    if (!nMeasured) {
+      std::printf("  not_measured: fewer than 2 runs\n");
+    } else {
+      const double sumF = meanOf(mf), sumA = meanOf(ma);
+      const double totF = sumF + sumA;
+      const double meanV = meanOf(mv), meanVD = meanOf(mvd), meanAn = meanOf(man);
+      const double meanFC = meanOf(mfc), meanAC = meanOf(mac);
+      std::printf("\n  [counts]  (A. §9 predicted decodeCount == decodePreserveAspectCount == verifyDecodeMisses)\n");
+      std::printf("    decode() calls                 mean=%.1f  min=%.1f  max=%.1f\n", meanFC, minOf(mfc), maxOf(mfc));
+      std::printf("    decodePreserveAspect() calls   mean=%.1f  min=%.1f  max=%.1f\n", meanAC, minOf(mac), maxOf(mac));
+      std::printf("    calls equal                    %s\n", (std::fabs(meanFC - meanAC) < 0.5) ? "yes" : "NO (record the reason)");
+
+      std::printf("\n  [cost]  A. two decode calls, wall-clock total per measured run\n");
+      std::printf("    decode() total_ms              mean=%.1f  median=%.1f  min=%.1f  max=%.1f  range=%.1f\n",
+                  sumF, medianOf(mf), minOf(mf), maxOf(mf), maxOf(mf) - minOf(mf));
+      std::printf("    decodePreserveAspect total_ms  mean=%.1f  median=%.1f  min=%.1f  max=%.1f  range=%.1f\n",
+                  sumA, medianOf(ma), minOf(ma), maxOf(ma), maxOf(ma) - minOf(ma));
+      std::printf("    combined total_ms              mean=%.1f\n", totF);
+
+      std::printf("\n  [per call]  ms/call\n");
+      std::printf("    decode() per call              mean=%.4f ms\n", meanFC > 0 ? sumF / meanFC : 0.0);
+      std::printf("    decodePreserveAspect per call  mean=%.4f ms\n", meanAC > 0 ? sumA / meanAC : 0.0);
+
+      std::printf("\n  [B. second decode vs first]\n");
+      std::printf("    aspect / full                  mean=%.2f %%\n", sumF > 0 ? sumA / sumF * 100.0 : 0.0);
+
+      std::printf("\n  [C~E. second decode share of the denominators]\n");
+      std::printf("    aspect / verifyDecodeMs        mean=%.2f %%\n", meanVD > 0 ? sumA / meanVD * 100.0 : 0.0);
+      std::printf("    aspect / verifyMs              mean=%.2f %%\n", meanV > 0 ? sumA / meanV * 100.0 : 0.0);
+      std::printf("    aspect / analyzeMs             mean=%.4f %%\n", meanAn > 0 ? sumA / meanAn * 100.0 : 0.0);
+
+      std::printf("\n  [F. both decodes combined]\n");
+      std::printf("    (full+aspect) / verifyDecodeMs mean=%.2f %%\n", meanVD > 0 ? totF / meanVD * 100.0 : 0.0);
+      std::printf("    (full+aspect) / verifyMs       mean=%.2f %%\n", meanV > 0 ? totF / meanV * 100.0 : 0.0);
+
+      std::printf("\n  [open stage per call]  (WIC decoder creation, D2's subject)\n");
+      std::printf("    decode() openMs                mean=%.1f\n", meanOf(mfo));
+      std::printf("    decodePreserveAspect openMs    mean=%.1f\n", meanOf(mao));
+
+      std::printf("\n  [§12.2 identity]  full + aspect - combined D9d totalMs; must be ~0\n");
+      std::printf("    decodeSplitOverMs              mean=%.6f  max|%.6f|\n",
+                  meanOf(mso), std::fabs(maxOf(mso)) > std::fabs(minOf(mso)) ? std::fabs(maxOf(mso)) : std::fabs(minOf(mso)));
+    }
+  }
 
   std::printf("\n--- context ---\n");
   std::printf("wall_ms                 mean=%.1f max=%.1f\n", meanOf(wall), maxOf(wall));

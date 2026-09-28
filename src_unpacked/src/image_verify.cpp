@@ -75,7 +75,17 @@ bool verifyBuffersFor(const std::string& path, GrayImage& full, GrayImage& asp,
   // writes its own sub-stage breakdown into tel->decode.
   const auto tDec0 = std::chrono::steady_clock::now();
   ImageDecoder dec; GrayImage f, a;
-  if(!dec.decode(path, kDim, kDim, f, tel? &tel->decode : nullptr) || !dec.decodePreserveAspect(path, kDim, a, tel? &tel->decode : nullptr)) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }
+  // D3: the two calls used to share one &tel->decode, which made every D9d
+  // number a sum of both and hid the cost of the second one. They get one
+  // accumulator each; `decode` is then the merge, so the D9d report keys keep
+  // the meaning they had.
+  const bool d1 = dec.decode(path, kDim, kDim, f, tel? &tel->decodeFull : nullptr);
+  const bool d2 = d1 && dec.decodePreserveAspect(path, kDim, a, tel? &tel->decodeAspect : nullptr);
+  // The merge assigns from the running totals rather than adding a delta, so
+  // recomputing it after every miss keeps `decode` consistent even when the
+  // short-circuit above skipped the second call.
+  if(tel) mergeDecodeTelemetry(tel->decode, tel->decodeFull, tel->decodeAspect);
+  if(!d2) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }
   if(tel){ tel->verifyDecodes += 2; }
   if(f.width != kDim || f.height != kDim || f.pixels.size() != (std::size_t)kDim * kDim) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }
   if(a.width <= 0 || a.height <= 0 || a.pixels.size() != (std::size_t)a.width * a.height) { if(tel) tel->verifyDecodeMs += msSince(tDec0); return false; }

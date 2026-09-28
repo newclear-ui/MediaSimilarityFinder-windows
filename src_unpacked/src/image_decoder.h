@@ -49,12 +49,56 @@ struct DecodeTelemetry {
   // CreateFileW + CloseHandle on the same path is timed as a reference. It is
   // NOT part of the decode path and is NOT included in openMs; the difference
   // between the two is the WIC-specific part of open.
-  double osFileOpenProbeMs = 0;
-  std::uint64_t osFileOpenProbeCount = 0;
-  std::uint64_t osFileOpenProbeFails = 0;
-  std::uint64_t openHrFailCount = 0;
-  std::uint32_t openHrFirstFailCode = 0;
+   double osFileOpenProbeMs = 0;
+   std::uint64_t osFileOpenProbeCount = 0;
+   std::uint64_t osFileOpenProbeFails = 0;
+   std::uint64_t openHrFailCount = 0;
+   std::uint32_t openHrFirstFailCode = 0;
 };
+
+// D3: folds the two per-call accumulators back into the single combined
+// DecodeTelemetry the D9d report reads.
+//
+// This exists so that the D9d keys (decodeTotalMs, decodeOpenMs, decodeCalls,
+// the D1 factory2 split, ...) keep exactly the meaning they had when both
+// calls accumulated into one struct. Without this, splitting the accumulator
+// would silently turn every D9d number into a first-call-only number and the
+// D9d/D1 baselines would stop being comparable. Timers and counters add; the
+// two "first failure" HRESULTs take the first non-zero, since two codes cannot
+// be summed.
+inline void mergeDecodeTelemetry(DecodeTelemetry& dst, const DecodeTelemetry& a, const DecodeTelemetry& b) {
+  dst.totalMs = a.totalMs + b.totalMs;
+  dst.comInitMs = a.comInitMs + b.comInitMs;
+  dst.factoryMs = a.factoryMs + b.factoryMs;
+  dst.openMs = a.openMs + b.openMs;
+  dst.metadataMs = a.metadataMs + b.metadataMs;
+  dst.orientMs = a.orientMs + b.orientMs;
+  dst.resizeMs = a.resizeMs + b.resizeMs;
+  dst.convertMs = a.convertMs + b.convertMs;
+  dst.copyMs = a.copyMs + b.copyMs;
+  dst.otherMs = a.otherMs + b.otherMs;
+  dst.pgmFallbackMs = a.pgmFallbackMs + b.pgmFallbackMs;
+
+  dst.calls = a.calls + b.calls;
+  dst.aspectCalls = a.aspectCalls + b.aspectCalls;
+  dst.wicSucceeded = a.wicSucceeded + b.wicSucceeded;
+  dst.pgmFallbacks = a.pgmFallbacks + b.pgmFallbacks;
+  dst.orientApplied = a.orientApplied + b.orientApplied;
+  dst.failures = a.failures + b.failures;
+
+  dst.factory2Attempts = a.factory2Attempts + b.factory2Attempts;
+  dst.factory2Successes = a.factory2Successes + b.factory2Successes;
+  dst.factory2Fallbacks = a.factory2Fallbacks + b.factory2Fallbacks;
+  dst.factory2FirstFailHr = a.factory2FirstFailHr ? a.factory2FirstFailHr : b.factory2FirstFailHr;
+  dst.factory2Ms = a.factory2Ms + b.factory2Ms;
+  dst.factoryFallbackMs = a.factoryFallbackMs + b.factoryFallbackMs;
+
+  dst.osFileOpenProbeMs = a.osFileOpenProbeMs + b.osFileOpenProbeMs;
+  dst.osFileOpenProbeCount = a.osFileOpenProbeCount + b.osFileOpenProbeCount;
+  dst.osFileOpenProbeFails = a.osFileOpenProbeFails + b.osFileOpenProbeFails;
+  dst.openHrFailCount = a.openHrFailCount + b.openHrFailCount;
+  dst.openHrFirstFailCode = a.openHrFirstFailCode ? a.openHrFirstFailCode : b.openHrFirstFailCode;
+}
 
 // ---------------------------------------------------------------- D2
 // Measurement-only probe. It is a separate entry point on purpose: it is never

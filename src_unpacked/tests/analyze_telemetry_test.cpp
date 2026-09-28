@@ -1,5 +1,6 @@
 #include "analyze_telemetry.h"
 #include "benchmark.h"
+#include "image_decoder.h"
 #include "image_verify.h"
 #include "path_utils.h"
 #include "scan_pipeline.h"
@@ -182,6 +183,29 @@ int main() {
     expect(tel.ssimEvals >= 1, "G: at least one SSIM evaluation on the grey-zone path");
     expect(tel.frameSsimEvals == tel.ssimEvals * 2, "G: frameSsimEvals is 2x ssimEvals when no guard rejects");
 
+    // --- D3: the two decodes a miss performs must be separable, and the split
+    // must still reconstruct what D9d reported as one combined number.
+    expect(tel.decodeFull.calls == tel.verifyDecodeMisses,
+           "D3: one decode() per verify decode miss");
+    // decodePreserveAspect() increments aspectCalls, not calls, so the second
+    // accumulator is counted through that field.
+    expect(tel.decodeAspect.aspectCalls == tel.verifyDecodeMisses,
+           "D3: one decodePreserveAspect() per verify decode miss");
+    expect(tel.verifyDecodes == tel.verifyDecodeMisses * 2,
+           "D3: verifyDecodes stays 2x verifyDecodeMisses");
+    expect(tel.decode.calls == tel.decodeFull.calls + tel.decodeAspect.calls,
+           "D3: combined decode.calls is the sum of the two per-call counters");
+    expect(tel.decode.aspectCalls == tel.decodeAspect.aspectCalls,
+           "D3: combined decodeAspectCalls is the aspect side only");
+    // The D9d keys must keep their old meaning, so the merged view has to
+    // reproduce exactly what the two calls measured.
+    expect(tel.decode.totalMs == tel.decodeFull.totalMs + tel.decodeAspect.totalMs,
+           "D3: combined decodeTotalMs is the sum of the two per-call totals");
+    expect(tel.decode.openMs == tel.decodeFull.openMs + tel.decodeAspect.openMs,
+           "D3: combined decodeOpenMs is the sum of the two per-call opens");
+    expect(tel.decode.copyMs == tel.decodeFull.copyMs + tel.decodeAspect.copyMs,
+           "D3: combined decodeCopyMs is the sum of the two per-call copies");
+
     // The kFast short-circuit must count the call but do no buffer work.
     msf::AnalyzeTelemetry fast;
     (void)msf::verifyImagePair(pa, pb, true, 99.0, 87.5, &fast);
@@ -196,9 +220,72 @@ int main() {
     expect(vid.verifyCalls == 0, "F: isImage=false never counts as an image verify call");
     expect(vid.verifyDecodeMisses == 0 && vid.ssimEvals == 0, "F: video pair does no image work");
 
+    // --- D3 on a cold cache. The pair above is already in the process-wide
+    // verify cache by now, so its second lookup would be a hit and both decode
+    // accumulators would legitimately stay at zero. A pair that has never been
+    // verified is what actually exercises both calls.
+    writeBmp(dir / "c.bmp", 21);
+    writeBmp(dir / "d.bmp", 23);
+    msf::AnalyzeTelemetry cold;
+    (void)msf::verifyImagePair(msf::path_to_utf8(dir / "c.bmp"),
+                               msf::path_to_utf8(dir / "d.bmp"), true, 90.0, 87.5, &cold);
+    expect(cold.verifyDecodeMisses == 2, "D3: both lookups on a cold pair miss the cache");
+    expect(cold.decodeFull.calls == 2, "D3: two decode() calls on a cold pair");
+    expect(cold.decodeAspect.aspectCalls == 2, "D3: two decodePreserveAspect() calls on a cold pair");
+    expect(cold.decode.totalMs == cold.decodeFull.totalMs + cold.decodeAspect.totalMs,
+           "D3: the combined total is exactly the two per-call totals");
+    expect(cold.decodeFull.totalMs > 0.0 && cold.decodeAspect.totalMs > 0.0,
+           "D3: both decode calls recorded a positive wall-clock time");
+    // Both calls read the same file, so their combined cost must still fit
+    // inside the verifyDecodeMs bucket the D9c identity accounts for.
+    expect(cold.decode.totalMs <= cold.verifyDecodeMs + 1e-6,
+           "D3: combined decode cost does not exceed the verifyDecodeMs bucket");
+
     fs::remove_all(dir, ec);
   }
   if (!firstFailure.empty()) { std::cout << "verify section: " << firstFailure << "\n"; return 3; }
+
+  // --- D3: the merge that keeps the D9d keys meaning the same thing. ---
+  // Checked field by field so a new DecodeTelemetry field that someone forgets
+  // to fold in fails here instead of silently reading as zero in a benchmark.
+  {
+    msf::DecodeTelemetry a, b;
+    a.totalMs = 1.5; a.openMs = 0.5; a.copyMs = 0.25; a.calls = 3; a.aspectCalls = 1;
+    a.wicSucceeded = 3; a.failures = 1; a.factory2Attempts = 2; a.factory2Successes = 2;
+    a.factory2Ms = 7; a.factoryFallbackMs = 0.5; a.openHrFailCount = 1;
+    b.totalMs = 2.5; b.openMs = 0.75; b.copyMs = 0.5; b.calls = 4; b.aspectCalls = 2;
+    b.wicSucceeded = 4; b.failures = 0; b.factory2Attempts = 1; b.factory2Successes = 0;
+    b.factory2Fallbacks = 1; b.factory2FirstFailHr = 0x80070057u; b.factory2Ms = 3;
+    b.factoryFallbackMs = 0.25; b.openHrFailCount = 2; b.openHrFirstFailCode = 0x80070005u;
+    b.osFileOpenProbeMs = 0.1; b.osFileOpenProbeCount = 4; b.osFileOpenProbeFails = 1;
+
+    msf::DecodeTelemetry m;
+    msf::mergeDecodeTelemetry(m, a, b);
+    expect(m.totalMs == 4.0, "D3 merge: totalMs adds");
+    expect(m.openMs == 1.25, "D3 merge: openMs adds");
+    expect(m.copyMs == 0.75, "D3 merge: copyMs adds");
+    expect(m.calls == 7, "D3 merge: calls add");
+    expect(m.aspectCalls == 3, "D3 merge: aspectCalls add");
+    expect(m.wicSucceeded == 7, "D3 merge: wicSucceeded adds");
+    expect(m.failures == 1, "D3 merge: failures add");
+    expect(m.factory2Attempts == 3, "D3 merge: factory2Attempts add");
+    expect(m.factory2Fallbacks == 1, "D3 merge: factory2Fallbacks add");
+    expect(m.factory2Ms == 10, "D3 merge: factory2Ms adds");
+    expect(m.factoryFallbackMs == 0.75, "D3 merge: factoryFallbackMs adds");
+    expect(m.openHrFailCount == 3, "D3 merge: openHrFailCount adds");
+    // The two failure codes cannot be summed, so the first non-zero wins.
+    expect(m.factory2FirstFailHr == 0x80070057u, "D3 merge: factory2FirstFailHr takes the first non-zero");
+    expect(m.openHrFirstFailCode == 0x80070005u, "D3 merge: openHrFirstFailCode takes the first non-zero");
+    expect(m.osFileOpenProbeCount == 4 && m.osFileOpenProbeFails == 1,
+           "D3 merge: the D1 OS-open reference counters add");
+
+    // Merging an untouched accumulator must be a no-op, which is what makes the
+    // short-circuit case (second call never ran) report honestly.
+    msf::DecodeTelemetry onlyA;
+    msf::mergeDecodeTelemetry(onlyA, a, msf::DecodeTelemetry{});
+    expect(onlyA.totalMs == a.totalMs && onlyA.calls == a.calls,
+           "D3 merge: folding in an empty accumulator changes nothing");
+  }
 
   // --- D against the recorder: substage sum <= analyzeMs ---
   {

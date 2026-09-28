@@ -763,6 +763,41 @@ std::string BenchmarkRecorder::toJson() const {
       << ",\"osFileOpenProbeFails\":" << d.osFileOpenProbeFails
       << ",\"openHrFailCount\":" << d.openHrFailCount
       << ",\"openHrFirstFailCode\":" << d.openHrFirstFailCode;
+    // D3: the verify-miss path decodes the same file twice, and until now both
+    // calls landed in the single DecodeTelemetry reported above, so the second
+    // one's cost was invisible. These are the same stages split per call.
+    // decodeSplitState is measured only when at least one of the two actually
+    // ran; a run that never reached the decode path reports not_measured rather
+    // than a zero that would read as "the second decode was free".
+    {
+      const auto& fu = v.decodeFull;
+      const auto& as = v.decodeAspect;
+      const bool split = (fu.calls + as.aspectCalls) > 0;
+      const MeasureState st = split ? MeasureState::Measured : MeasureState::NotMeasured;
+      a << ",\"decodeFullCalls\":" << fu.calls
+        << ",\"decodeFullTotalMs\":" << fu.totalMs
+        << ",\"decodeFullState\":\"" << measureStateName(st) << "\""
+        // decodePreserveAspect() increments aspectCalls, never calls, so the
+        // second accumulator's call count lives in aspectCalls. Using .calls
+        // here would report a permanent zero.
+        << ",\"decodeAspectOnlyCalls\":" << as.aspectCalls
+        << ",\"decodeAspectOnlyTotalMs\":" << as.totalMs
+        << ",\"decodeAspectOnlyState\":\"" << measureStateName(st) << "\"";
+      auto d3Stage = [&](const char* n, double a1, double b1) {
+        a << ",\"" << n << "\":" << (a1 + b1) << ",\"" << n << "State\":\""
+          << measureStateName(split ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+      };
+      d3Stage("decodeFullOpenMs", fu.openMs, 0.0);
+      d3Stage("decodeAspectOpenMs", as.openMs, 0.0);
+      d3Stage("decodeFullCopyMs", fu.copyMs, 0.0);
+      d3Stage("decodeAspectCopyMs", as.copyMs, 0.0);
+      d3Stage("decodeFullFactoryMs", fu.factoryMs, 0.0);
+      d3Stage("decodeAspectFactoryMs", as.factoryMs, 0.0);
+      // D3 identity: the two calls must reconstruct the combined D9d total.
+      // A non-zero gap means a stage stopped being exclusive.
+      a << ",\"decodeSplitOverMs\":" << (fu.totalMs + as.totalMs - d.totalMs)
+        << ",\"decodeSplitState\":\"" << measureStateName(st) << "\"";
+    }
     a << "},";
     o << a.str();
   }

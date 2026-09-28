@@ -93,6 +93,20 @@ struct AnalyzeTelemetry {
     // the lock is held across a map lookup, not across decoding.
     DecodeTelemetry decode;                 // decode sub-stage timings/counters
 
+    // ------------------------------------------------------------ D3
+    // verifyBuffersFor decodes the same file twice per cache miss, and until
+    // now both calls accumulated into `decode` above, so every D9d number was
+    // the SUM of the two and neither could be seen. These two hold one call
+    // each, and `decode` is then the merge of them, so the D9d keys keep their
+    // existing meaning while the split becomes measurable.
+    //
+    // They cover the verify-miss path only. media_pipeline.cpp also calls
+    // decode()/decodePreserveAspect() for fingerprints and crop fingerprints,
+    // but passes no telemetry, so those calls are deliberately not counted here
+    // rather than being folded in unmeasured.
+    DecodeTelemetry decodeFull;    // decode() at fixed kDim x kDim
+    DecodeTelemetry decodeAspect;  // decodePreserveAspect() at fixed kDim x kDim
+
     // Mutex accounting, exclusive of each other: wait is time blocked before the
     // lock is held, hold is time the lock is held. The verdict depends on their
     // ratio, so they are never summed into one number.

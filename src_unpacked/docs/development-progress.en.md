@@ -998,16 +998,20 @@ D9b = NOT ACCEPTED   (correctness preserved, performance objective not met)
 D9c = PASS           (decode 94.90 %)
 D9d = PASS           (open 62.15 % + factory 27.39 %)
 D1  = PASS           (Factory2 100 % success / 0 fallbacks, 97.8 % of open is WIC-internal)
-D2  = PASS           (Stream path shortest for all 7 formats, 16-30 % below A)
-                       but the absolute gain is small and HandleStream adds
-                       maintenance cost, so it is not adopted
-                       -> Path C = DEFERRED
+D2  = PASS           (Stream path shortest for all 7 formats, but the absolute gain
+                       is small and HandleStream adds maintenance cost
+                       -> Path C = DEFERRED, not adopted)
+D3  = PASS           (second decode = 49.60 % of verifyDecodeMs, 39.19 % of verifyMs,
+                       but f and a are different geometries so "removal" would be an
+                       accuracy regression)
 
 Current active investigation:
-D3 = duplicate decode / decodePreserveAspect cost measurement
-     (the real wall-clock cost of decoding the same file twice per miss)
-     de-duplication is judged only after D3 numbers exist, in a separate
-     optimization pre-register.
+a follow-up optimization pre-register (not written yet)
+  candidate: produce both f (fixed 32x32) and a (aspect) from one high-resolution
+             decode plus two resizes
+  D3 only measured. No de-duplication, no cache, no call merging, no HandleStream
+  adoption. This candidate carries a high accuracy risk (unchanged groups is the
+  acceptance condition), so it needs its own pre-register first.
 ```
 
 ## D2 — WIC Decoder Entry-Path Comparison (0.9.4.28, **PASS**)
@@ -1034,6 +1038,42 @@ D3 = duplicate decode / decodePreserveAspect cost measurement
   totals are not directly comparable to D1.
 - Verification: CPU 79/79 PASS, GPU 80/80 PASS, `--version` 0.9.4.28.
 - **Next**: a separate D3 pre-register in `docs/build-history/0.9.4.29.*.md`.
+
+## D3 — Duplicate decode / decodePreserveAspect Cost (0.9.4.29, **PASS**)
+
+- Goal: measure the real wall-clock cost of the verify-miss path decoding the
+  same file twice. **Measurement-only.**
+- Dataset: the D2 final dataset, fixed (3,347 files, `e8f8fa6a…e2640a`),
+  1 warm-up excluded plus 5 measured runs.
+- The pre-implementation code check found that both calls receive the **same
+  `&tel->decode`** at `image_verify.cpp:78`, so D9c/D9d's "decode 94.90 %" was
+  the sum of two calls. D3 split that accumulator per call and folds it back
+  with `mergeDecodeTelemetry`, preserving the D9d key meanings exactly.
+
+| metric | value |
+|---|---:|
+| `decode()` / `decodePreserveAspect()` calls | 12,962 / 12,962 (identical across 5 runs) |
+| `decode()` per call | 0.8700 ms |
+| `decodePreserveAspect()` per call | 0.8568 ms |
+| second / first | 98.49 % |
+| second / `verifyDecodeMs` | **49.60 %** |
+| second / `verifyMs` | 39.19 % |
+| second / `analyzeMs` | 38.47 % |
+| (both calls) / `verifyDecodeMs` | 99.96 % |
+| split identity `decodeSplitOverMs` | 0.000000 |
+
+- **The word "duplicate" is inaccurate.** `f` is fixed 32x32 and `a` is an
+  aspect-preserving downscale, and `verifyScorePlan` consumes both. Removing the
+  second decode would delete `a` and change similarity/verdict.
+- The follow-up candidate is therefore **not** removal but **producing both from
+  one high-resolution decode**, and it is **not implemented in D3** (pre-register
+  §11).
+- groups 156,211 across all 5 runs (the D9a 156,152 differs only because of the
+  D2 dataset addition).
+- Two defects recorded permanently: the pre-register §5.1 counter error, and a
+  missing member-by-member telemetry transfer in `ScanPipeline::analyze` that made
+  the first run read a silent 0.
+- **Next**: a follow-up optimization pre-register (not written yet).
 
 The recording obligation and the required field list are defined in
 `AGENTS.md` item 9 and `docs/document-naming.*.md` section 2-1.

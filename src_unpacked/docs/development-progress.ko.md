@@ -978,14 +978,17 @@ D9b = NOT ACCEPTED   (정확성 보존, 성능 목표 미달)
 D9c = PASS           (decode 94.90 %)
 D9d = PASS           (open 62.15 % + factory 27.39 %)
 D1  = PASS           (Factory2 100 % 성공 / fallback 0 회, open 의 97.8 % WIC 고유)
-D2  = PASS           (7개 형식 전부 Stream 경로 최단, A 대비 16~30 % ↓)
-                       단, 절대 이득이 작고 HandleStream 유지보수 비용이 있어
-                       제품 채택하지 않음 → Path C = DEFERRED
+D2  = PASS           (7개 형식 전부 Stream 경로 최단 → 단, 절대 이득 소액 + 유지보수
+                       비용 → Path C = DEFERRED, 제품 채택 없음)
+D3  = PASS           (두 번째 decode = verifyDecodeMs 49.60 % / verifyMs 39.19 %,
+                       단 f/a 가 다른 지오메트리라 "제거" 는 정확성 회귀)
 
 Current active investigation:
-D3 = decode / decodePreserveAspect 중복 비용 계측
-     (miss 1건당 2회 decode 되는 구조의 실제 wall-clock 비용)
-     중복 제거는 D3 수치를 얻은 뒤 별도 optimization pre-register 로 판단.
+후속 optimization pre-register (아직 없음)
+  후보: 고해상도 decode 1회 + resize 2회로 f(고정 32×32)와 a(aspect)를 모두 생성
+  D3 은 계측만 했다. 중복 제거·캐시·호출 병합·HandleStream 채택은 하지 않았다.
+  이 후보는 accuracy risk 가 높으므로(groups 불변 확인이 수용 조건) 별도
+  pre-register 를 먼저 작성해야 한다.
 ```
 
 ## D2 — WIC decoder 진입 경로 비교 (0.9.4.28, **PASS**)
@@ -1006,8 +1009,42 @@ D3 = decode / decodePreserveAspect 중복 비용 계측
 - dataset 에 TIFF 14 + ICO 12 추가 → 3,347 files / 102,475,315 bytes,
   fingerprint `e8f8fa6a…e2640a`. dataset 이 바뀌었으므로 D2 절대 합계는
   D1 과 직접 비교하지 않는다.
-- 검증: CPU 79/79 PASS, GPU 80/80 PASS, `--version` 0.9.4.28.
+- 검증: CPU 79/79 PASS, GPU 80/80 PASS, `--version` 0.9.4.29.
 - **다음**: D3 pre-register (`docs/build-history/0.9.4.29.*.md`) 를 별도로 작성.
+
+## D3 — decode / decodePreserveAspect 중복 비용 계측 (0.9.4.29, **PASS**)
+
+- 목표: verify miss 경로가 같은 파일을 두 번 decode 하면서 발생하는 실제
+  wall-clock 비용 계측. **measurement-only.**
+- dataset: D2 최종 dataset 고정 (3,347 files, `e8f8fa6a…e2640a`),
+  warm-up 1회 제외 + measured 5회.
+- 계측 전 코드 확인 결과, 두 호출이 `image_verify.cpp:78` 에서 **같은
+  `&tel->decode`** 를 받아 D9c/D9d 의 "decode 94.90 %" 가 두 호출의 합이었다.
+  D3 는 이 누산기를 호출별로 분리하고 `mergeDecodeTelemetry` 로 합쳐 D9d 키
+  의미를 그대로 보존했다.
+
+| metric | 값 |
+|---|---:|
+| `decode()` / `decodePreserveAspect()` 호출 | 12,962 / 12,962 (5회 전부 동일) |
+| `decode()` per call | 0.8700 ms |
+| `decodePreserveAspect()` per call | 0.8568 ms |
+| 두 번째 / 첫 번째 | 98.49 % |
+| 두 번째 / `verifyDecodeMs` | **49.60 %** |
+| 두 번째 / `verifyMs` | 39.19 % |
+| 두 번째 / `analyzeMs` | 38.47 % |
+| (두 호출 합) / `verifyDecodeMs` | 99.96 % |
+| split identity `decodeSplitOverMs` | 0.000000 |
+
+- **"중복" 이라는 표현은 부정확하다.** `f` 는 고정 32×32, `a` 는 aspect 보존
+  축소이며 둘 다 `verifyScorePlan` 이 소비한다. 두 번째 decode 를 제거하면
+  `a` 가 사라져 similarity/verdict 가 바뀐다.
+- 따라서 후속 후보는 "제거" 가 아니라 **"한 번의 고해상도 decode 로 두 벌
+  생성"** 이며, **D3 에서 구현하지 않았다**(pre-register §11).
+- groups 5회 모두 156,211 (D9a 156,152 와의 차이는 D2 의 dataset 추가분).
+- 구현 중 발견한 결함 2건을 영구 기록: pre-register §5.1 의 카운터 오류,
+  그리고 `ScanPipeline::analyze` 의 멤버 단위 전사 누락으로 첫 실행이 조용한
+  0 을 낸 문제.
+- **다음**: 후속 optimization pre-register (아직 작성하지 않음).
 
 기록 의무와 필수 항목은 `AGENTS.md` 9번 항목과
 `docs/document-naming.*.md` 2-1절에 정의한다.

@@ -339,8 +339,13 @@ if(isVideo){
   // D9d: decode sub-stage breakdown and cache-mutex accounting. The mutex wait
   // and hold are reported side by side rather than summed, because the verdict
   // depends on their ratio.
-  s.analyze.decode=tel.decode;
-  s.analyze.cacheMutexWaitMs=tel.cacheMutexWaitMs;
+   s.analyze.decode=tel.decode;
+   // D3: the same per-call split. Without these two copies the fields above
+   // stay zero in the report even though the verify path filled them, because
+   // this function transfers the telemetry member by member.
+   s.analyze.decodeFull=tel.decodeFull;
+   s.analyze.decodeAspect=tel.decodeAspect;
+   s.analyze.cacheMutexWaitMs=tel.cacheMutexWaitMs;
   s.analyze.cacheMutexHoldMs=tel.cacheMutexHoldMs;
   s.analyze.cacheMutexAcquires=tel.cacheMutexAcquires;
   return s;
