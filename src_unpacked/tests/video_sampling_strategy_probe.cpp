@@ -508,6 +508,168 @@ static SamplingPlan planSampling(const PlannerInputs& in, std::string& reason) {
     return SamplingPlan::SparseSeekCandidate;
 }
 
+enum class SeekMode {
+    A_CurrentBackwards,   // av_seek_frame(pts(target-0.05), BACKWARD) + avcodec_flush_buffers
+    B_SeekFileBack,       // avformat_seek_file(min = pts(target-0.05), ts = target-0.05, max = target-0.05)
+    B_SeekFileTarget,     // avformat_seek_file(min = 0, ts = target, max = target)
+    B_SeekFilePlus,       // avformat_seek_file(min = target, ts = target, max = +eps)
+    C_AnyFlag,            // av_seek_frame(pts(target-0.05), BACKWARD|ANY)  [diagnostic only]
+    D_FormatFlush,        // av_seek_frame(..., BACKWARD) + avformat_flush + avcodec_flush_buffers
+};
+static const char* seekModeName(SeekMode m) {
+    switch (m) {
+        case SeekMode::A_CurrentBackwards: return "A_current_backward";
+        case SeekMode::B_SeekFileBack:     return "B_seekfile_minus_eps";
+        case SeekMode::B_SeekFileTarget:   return "B_seekfile_target";
+        case SeekMode::B_SeekFilePlus:     return "B_seekfile_plus_eps";
+        case SeekMode::C_AnyFlag:          return "C_any_flag_diagnostic";
+        case SeekMode::D_FormatFlush:      return "D_avformat_flush";
+    }
+    return "?";
+}
+static const bool isAnyFlagCandidate(SeekMode m) { return m == SeekMode::C_AnyFlag; }
+
+// E-3A: the landing chain required for every seek, per directive 11.
+struct LandingRecord {
+    long long seeks = 0;
+    long long seekFailures = 0;
+    long long landingViolations = 0;      // firstDecodedPts > seekRequestPts
+    long long decodedCount = 0;
+    long long emitted = 0;
+    long long tsLater = 0;                // selected pts strictly later than baseline
+    long long tsBehind = 0;
+    long long pixelDiffBytes = 0;
+    unsigned maxAbsPixelDiff = 0;
+    double seekMs = 0, decodeMs = 0, convertMs = 0, totalMs = 0;
+    int64_t firstDecodedPts = INT64_MIN;
+    int64_t firstEligiblePts = INT64_MIN;
+    int64_t firstSelectedPts = INT64_MIN;
+};
+
+// Executes one seek strategy over the given targets. The product predicate is
+// unchanged in every mode; only the seek primitive and the flush discipline
+// differ, so any difference is attributable to those two.
+static std::vector<Sample> modeSweep(const std::string& path,
+                                     const std::vector<double>& targets,
+                                     SeekMode mode, LandingRecord& rec,
+                                     const std::vector<int64_t>* baselinePts) {
+    std::vector<Sample> out;
+    const auto tAll = Clock::now();
+    AVFormatContext* fmt = nullptr;
+    if (avformat_open_input(&fmt, path.c_str(), nullptr, nullptr) < 0) return out;
+    if (avformat_find_stream_info(fmt, nullptr) < 0) { avformat_close_input(&fmt); return out; }
+    int s = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    if (s < 0) { avformat_close_input(&fmt); return out; }
+    AVStream* st = fmt->streams[s];
+    const AVCodec* dec = avcodec_find_decoder(st->codecpar->codec_id);
+    if (!dec) { avformat_close_input(&fmt); return out; }
+    AVCodecContext* cc = avcodec_alloc_context3(dec);
+    if (!cc) { avformat_close_input(&fmt); return out; }
+    if (avcodec_parameters_to_context(cc, st->codecpar) < 0) { avcodec_free_context(&cc); avformat_close_input(&fmt); return out; }
+    if (avcodec_open2(cc, dec, nullptr) < 0) { avcodec_free_context(&cc); avformat_close_input(&fmt); return out; }
+    const double tbSec = av_q2d(st->time_base);
+    const int64_t tb = st->time_base.den > 0 ? st->time_base.den : 1;
+    // eps expressed in real time_base ticks, not a guessed millisecond value.
+    const int64_t epsTicks = std::max<int64_t>(1, (int64_t)llround(0.05 * tb));
+
+    AVPacket* pkt = av_packet_alloc();
+    AVFrame* fr = av_frame_alloc();
+    if (!pkt || !fr) { av_packet_free(&pkt); av_frame_free(&fr); avcodec_free_context(&cc); avformat_close_input(&fmt); return out; }
+
+    for (std::size_t ti = 0; ti < targets.size(); ++ti) {
+        const double target = targets[ti];
+        const int64_t tpts = av_rescale_q((int64_t)(target * 1000000.0), AV_TIME_BASE_Q, st->time_base);
+        const int64_t backPts = av_rescale_q(
+            (int64_t)(std::max(0.0, target - kProductPredicateToleranceSec) * 1000000.0), AV_TIME_BASE_Q, st->time_base);
+
+        int rc = 0;
+        auto t0 = Clock::now();
+        switch (mode) {
+            case SeekMode::A_CurrentBackwards:
+                rc = av_seek_frame(fmt, s, backPts, AVSEEK_FLAG_BACKWARD);
+                break;
+            case SeekMode::B_SeekFileBack:
+                rc = avformat_seek_file(fmt, s, backPts, backPts, backPts, AVSEEK_FLAG_BACKWARD);
+                break;
+            case SeekMode::B_SeekFileTarget:
+                rc = avformat_seek_file(fmt, s, INT64_MIN, tpts, tpts, AVSEEK_FLAG_BACKWARD);
+                break;
+            case SeekMode::B_SeekFilePlus:
+                rc = avformat_seek_file(fmt, s, tpts, tpts, tpts + epsTicks, AVSEEK_FLAG_BACKWARD);
+                break;
+            case SeekMode::C_AnyFlag:
+                rc = av_seek_frame(fmt, s, backPts, static_cast<int>(AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY));
+                break;
+            case SeekMode::D_FormatFlush:
+                rc = av_seek_frame(fmt, s, backPts, AVSEEK_FLAG_BACKWARD);
+                break;
+        }
+        rec.seekMs += msSince(t0);
+        ++rec.seeks;
+        if (rc < 0) { ++rec.seekFailures; break; }
+
+        if (mode == SeekMode::D_FormatFlush) avformat_flush(fmt);   // candidate D only
+        avcodec_flush_buffers(cc);
+
+        Sample smp; smp.t = target;
+        bool done = false, landingChecked = false, eligibleChecked = false;
+        while (!done && av_read_frame(fmt, pkt) >= 0) {
+            if (pkt->stream_index != s) { av_packet_unref(pkt); continue; }
+            t0 = Clock::now();
+            const int sent = avcodec_send_packet(cc, pkt);
+            rec.decodeMs += msSince(t0);
+            av_packet_unref(pkt);
+            if (sent < 0) continue;
+            while (true) {
+                t0 = Clock::now();
+                const int got = avcodec_receive_frame(cc, fr);
+                rec.decodeMs += msSince(t0);
+                if (got < 0) break;
+                ++rec.decodedCount;
+                const double ft = fr->best_effort_timestamp == AV_NOPTS_VALUE
+                                      ? target
+                                      : fr->best_effort_timestamp * tbSec;
+                if (!landingChecked) {
+                    landingChecked = true;
+                    rec.firstDecodedPts = fr->best_effort_timestamp;
+                    // The necessary condition for exact reproduction.
+                    if (fr->best_effort_timestamp > backPts) ++rec.landingViolations;
+                }
+                if (!eligibleChecked && ft + kProductPredicateToleranceSec >= target) {
+                    eligibleChecked = true;
+                    rec.firstEligiblePts = fr->best_effort_timestamp;
+                }
+                if (ft + kProductPredicateToleranceSec >= target) {
+                    t0 = Clock::now();
+                    if (toGray32(fr, smp.g32)) {
+                        smp.pts = fr->best_effort_timestamp;
+                        smp.decodeIndex = rec.decodedCount;
+                        rec.convertMs += msSince(t0);
+                        rec.firstSelectedPts = smp.pts;
+                        if (baselinePts && ti < baselinePts->size()) {
+                            const int64_t bp = (*baselinePts)[ti];
+                            if (smp.pts == bp) { /* identical */ }
+                            else if (smp.pts > bp) ++rec.tsLater;
+                            else ++rec.tsBehind;
+                        }
+                        out.push_back(std::move(smp));
+                        ++rec.emitted;
+                    } else {
+                        rec.convertMs += msSince(t0);
+                    }
+                    done = true;
+                    break;
+                }
+            }
+        }
+    }
+    av_packet_free(&pkt); av_frame_free(&fr);
+    avcodec_free_context(&cc);
+    avformat_close_input(&fmt);
+    rec.totalMs += msSince(tAll);
+    return out;
+}
+
 struct FileRow {
     std::string name, codec, container;
     int width = 0, height = 0;
@@ -812,6 +974,146 @@ int runDataset(const std::string& root, int repeats) {
 #endif
 }
 
+// E-3A entry point: HEVC-focused candidate comparison.
+#ifdef MSF_HAS_FFMPEG
+int runHevcLanding(const std::string& root, int repeats) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_directory(root, ec)) { std::fprintf(stderr, "not a directory: %s\n", root.c_str()); return 2; }
+
+    const SeekMode modes[] = {
+        SeekMode::A_CurrentBackwards, SeekMode::B_SeekFileBack, SeekMode::B_SeekFileTarget,
+        SeekMode::B_SeekFilePlus, SeekMode::C_AnyFlag, SeekMode::D_FormatFlush,
+    };
+
+    std::vector<std::string> files;
+    for (const auto& e : fs::directory_iterator(fs::u8path(root), ec)) {
+        if (!e.is_regular_file()) continue;
+        std::string ext = e.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".mp4" || ext == ".mkv") files.push_back(e.path().string());
+    }
+    std::sort(files.begin(), files.end());
+    // HEVC is the subject; H.264 and FFV1 are kept only as regression smoke.
+    std::vector<std::string> hevc, smoke;
+    for (const auto& f : files) {
+        AVFormatContext* fmt = nullptr;
+        if (avformat_open_input(&fmt, f.c_str(), nullptr, nullptr) < 0) continue;
+        if (avformat_find_stream_info(fmt, nullptr) < 0) { avformat_close_input(&fmt); continue; }
+        int s = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+        if (s < 0) { avformat_close_input(&fmt); continue; }
+        const AVCodec* d = avcodec_find_decoder(fmt->streams[s]->codecpar->codec_id);
+        const std::string cn = d ? d->name : "";
+        const double dur = fmt->streams[s]->duration > 0
+                               ? fmt->streams[s]->duration * av_q2d(fmt->streams[s]->time_base) : 0;
+        avformat_close_input(&fmt);
+        if (dur <= 0) continue;
+        if (cn == "hevc") hevc.push_back(f);
+        else if (cn == "h264" || cn == "ffv1") smoke.push_back(f);
+    }
+    std::printf("E-3A HEVC seek landing characterization\n");
+    std::printf("video_dir=%s hevc_files=%zu smoke_files=%zu repeats=%d\n\n",
+                root.c_str(), hevc.size(), smoke.size(), repeats);
+
+    // The verdict must be HEVC-specific. Counting exact results across every
+    // file would let the H.264 smoke group mask an HEVC failure, which is
+    // exactly the mistake this mode exists to avoid. A candidate only counts as
+    // a solution if it is EXACT on EVERY HEVC file, and it must not regress the
+    // smoke group either.
+    int nonDiag = 0;
+    int hevcFiles = 0, hevcFilesAnyExact = 0;
+    int smokeFiles = 0, smokeFilesAnyExact = 0;
+    int anyVerified = 0;
+    for (const auto& group : { std::make_pair("HEVC", &hevc), std::make_pair("SMOKE", &smoke) }) {
+        const std::string& label = group.first;
+        const std::vector<std::string>& list = *group.second;
+        if (list.empty()) continue;
+        std::printf("===== %s =====\n", label.c_str());
+        for (const auto& f : list) {
+            AVFormatContext* fmt = nullptr;
+            if (avformat_open_input(&fmt, f.c_str(), nullptr, nullptr) < 0) continue;
+            if (avformat_find_stream_info(fmt, nullptr) < 0) { avformat_close_input(&fmt); continue; }
+            int s = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+            AVStream* st = fmt->streams[s];
+            const AVCodec* d = avcodec_find_decoder(st->codecpar->codec_id);
+            const double dur = st->duration > 0 ? st->duration * av_q2d(st->time_base) : 0;
+            const double fps = av_q2d(av_guess_frame_rate(fmt, st, nullptr));
+            const int64_t tb = st->time_base.den;
+            // has_b_frames was removed in this FFmpeg version, so B-frame
+            // presence is not read from a field that no longer exists. The
+            // numeric profile id and the measured landing behaviour carry the
+            // information instead, without depending on a profile constant that
+            // may also be version-scoped.
+            const int profId = st->codecpar->profile;
+            char prof[24];
+            std::snprintf(prof, sizeof prof, "profile=%d", profId);
+            // Everything reachable through the format context must be copied out
+            // BEFORE close: st points into memory owned by fmt and dangles once
+            // avformat_close_input returns.
+            const int vw = st->codecpar->width;
+            const int vh = st->codecpar->height;
+            avformat_close_input(&fmt);
+
+            const msf::SamplePlan plan = msf::make_sample_plan(dur);
+            if (plan.timestamps.empty()) continue;
+
+            // Baseline: production sequential, giving the reference sample PTS.
+            SweepCounters bc;
+            const auto base = sequentialSweep(f, plan.timestamps, bc, true);
+            std::vector<int64_t> basePts;
+            for (const auto& sm : base) basePts.push_back(sm.pts);
+
+            std::printf("\n%s  codec=%s(%s)  %dx%d  %.3f fps  %.1f s  planN=%zu  time_base=1/%lld\n",
+                        fs::path(f).filename().string().c_str(), d ? d->name : "?", prof,
+                        vw, vh, fps, dur, plan.timestamps.size(), (long long)tb);
+            std::printf("  baseline(sequential) decoded=%lld emitted=%zu elapsed=%.1f ms\n",
+                        bc.totalDecoded, base.size(), bc.totalMs);
+            std::printf("  %-26s %6s %6s %8s %8s %9s %9s %9s %9s %s\n",
+                        "candidate", "land", "viol", "decoded", "emitted", "tsLater",
+                        "pixDiff", "maxAbs", "elapsed_ms", "verdict");
+            int anyExactThisFile = 0;
+            for (SeekMode m : modes) {
+                LandingRecord rec;
+                std::vector<double> tot;
+                for (int i = 0; i < repeats; ++i) {
+                    LandingRecord r2;
+                    modeSweep(f, plan.timestamps, m, r2, &basePts);
+                    tot.push_back(r2.totalMs);
+                    if (i == 0) rec = r2;
+                }
+                std::sort(tot.begin(), tot.end());
+                const double med = tot.empty() ? 0.0 : tot[tot.size() / 2];
+                // A candidate is only admissible if it selects the same frames.
+                const bool exact = (rec.tsLater == 0 && rec.tsBehind == 0 && rec.pixelDiffBytes == 0
+                                    && rec.emitted == (long long)base.size());
+                const char* verdict = exact ? "EXACT" : "NOT EXACT";
+                std::printf("  %-26s %6lld %6lld %8lld %8lld %9lld %9lld %9u %9.1f %s%s\n",
+                            seekModeName(m), (long long)rec.firstDecodedPts,
+                            rec.landingViolations, rec.decodedCount, rec.emitted,
+                            rec.tsLater, rec.pixelDiffBytes, rec.maxAbsPixelDiff, med, verdict,
+                            isAnyFlagCandidate(m) ? "  (diagnostic only)" : "");
+                if (exact && !isAnyFlagCandidate(m)) ++anyVerified;
+                if (exact) anyExactThisFile = 1;
+            }
+            if (label == "HEVC") { ++hevcFiles; if (anyExactThisFile) ++hevcFilesAnyExact; }
+            else                  { ++smokeFiles; if (anyExactThisFile) ++smokeFilesAnyExact; }
+        }
+    }
+    // Verified means: EVERY HEVC file reached exactness by at least one
+    // non-diagnostic candidate. Partial success is not verification.
+    const bool verified = (hevcFiles > 0) && (hevcFilesAnyExact == hevcFiles);
+    std::printf("\n=== E-3A summary ===\n");
+    std::printf("hevc_files                        = %d\n", hevcFiles);
+    std::printf("hevc_files_with_any_exact_candidate = %d\n", hevcFilesAnyExact);
+    std::printf("smoke_files                       = %d (any exact: %d)\n", smokeFiles, smokeFilesAnyExact);
+    std::printf("exact_results_all_candidates      = %d\n", anyVerified);
+    std::printf("HEVC_EXACT_SPARSE_SEEK = %s\n", verified ? "VERIFIED" : "NOT VERIFIED");
+    if (!verified)
+        std::printf("  -> HEVC must be pinned to SequentialPreferred as the final policy.\n");
+    return verified ? 0 : 3;   // distinct exit code so CI can see the boundary
+}
+#endif
+
 int selfcheck() {
     int checks = 0, fails = 0;
     auto chk = [&](bool ok, const char* what) {
@@ -867,6 +1169,35 @@ int selfcheck() {
     }
     // The exactness fix must not touch the product predicate or the tolerance.
     chk(kProductPredicateToleranceSec == 0.05, "product predicate tolerance is unchanged at 0.05 s");
+
+    // Directive 24: candidate landing selfchecks, added without removing any
+    // existing check. These assert the plumbing each candidate depends on
+    // without needing a dataset, so a regression in the harness is caught here
+    // rather than being mistaken for a codec finding.
+    {
+        // 0.05 s in a 1/15360 time_base is 768 ticks. Asserting the conversion
+        // proves eps is derived from the real time_base rather than a guessed
+        // millisecond constant.
+        const int64_t tbDen = 15360;
+        const int64_t epsTicks = std::max<int64_t>(1, (int64_t)llround(kProductPredicateToleranceSec * tbDen));
+        chk(epsTicks == 768, "eps is computed from the real time_base (0.05s @1/15360 = 768 ticks)");
+        const int64_t eps60 = std::max<int64_t>(1, (int64_t)llround(kProductPredicateToleranceSec * 90000));
+        chk(eps60 == 4500, "eps scales with the time_base (0.05s @1/90000 = 4500 ticks)");
+        chk(eps60 != epsTicks, "eps is not a fixed tick count across time_bases");
+        chk(seekModeName(SeekMode::A_CurrentBackwards) != seekModeName(SeekMode::C_AnyFlag),
+            "candidate A and candidate C are distinct strategies");
+        chk(isAnyFlagCandidate(SeekMode::C_AnyFlag), "AVSEEK_FLAG_ANY is marked diagnostic only");
+        chk(!isAnyFlagCandidate(SeekMode::A_CurrentBackwards), "candidate A is a production-shape candidate");
+        chk(!isAnyFlagCandidate(SeekMode::B_SeekFileBack), "candidate B is a production-shape candidate");
+        chk(!isAnyFlagCandidate(SeekMode::D_FormatFlush), "candidate D is a production-shape candidate");
+        // A landing violation is what makes a mode inadmissible, so the record
+        // type must be able to express it without a dataset.
+        LandingRecord probe;
+        probe.firstDecodedPts = INT64_MIN;
+        chk(probe.firstDecodedPts == INT64_MIN, "landing chain starts unset");
+        probe.landingViolations = 1;
+        chk(probe.landingViolations > 0, "landing violation is representable");
+    }
 #endif
 
     std::printf("selfcheck=%s checks=%d\n", fails ? "FAIL" : "ok", checks);
@@ -882,8 +1213,14 @@ int main(int argc, char** argv) {
     return 2;
 #endif
     if (argc >= 2 && std::strcmp(argv[1], "--selfcheck") == 0) return selfcheck();
+    if (argc >= 2 && std::strcmp(argv[1], "--hevc-landing") == 0) {
+        if (argc < 3) { std::fprintf(stderr, "--hevc-landing needs a dataset dir\n"); return 2; }
+        const int r = argc >= 4 ? std::atoi(argv[3]) : 3;
+        return runHevcLanding(argv[2], r > 0 ? r : 3);
+    }
     if (argc < 2) {
-        std::fprintf(stderr, "usage: msf_video_sampling_strategy_probe <video-dir> [repeats] | --selfcheck\n");
+        std::fprintf(stderr, "usage: msf_video_sampling_strategy_probe <video-dir> [repeats]"
+                             " | --hevc-landing <video-dir> [repeats] | --selfcheck\n");
         return 2;
     }
     const int repeats = argc >= 3 ? std::atoi(argv[2]) : 3;

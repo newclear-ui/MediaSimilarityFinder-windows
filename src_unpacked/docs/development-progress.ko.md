@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.40 |
+| 기준 코드 | 0.9.4.41 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **E — Adaptive Video Decode Planner (E-2B 완료/CONDITIONAL, E-3 다음)** |
-| 현재 단계 | Node E **진행 중**. E-2B(0.9.4.40) 는 exactness 해결에 집중했고 production 코드를 한 줄도 바꾸지 않았다. **핵심 해결: seek 목표를 `target` → `target - 0.05` 로 바꿔 pixel parity 4/14 → 13/14, tsLater 발생 파일 10 → 1.** 착지 keyframe 이 `K' <= target-0.05` 를 만족하므로 제품이 고르는 프레임(`pts >= target-0.05`)이 항상 착지점 이후에 존재해 동일 predicate 가 동일 프레임을 고른다. **production predicate·tolerance·target 은 불변**(selfcheck 가 0.05 검증). **정확성의 대가는 실측했다**: sparse decoded 6,203→8,612(+38.8 %), 감소율 41.7 %→37.0 %. **잔여 실패 1건(HEVC 1080p, tsLater 2)** 은 지시 §8 의 seek 후 decoder state 검증이 필요조건(`firstDecodedPts <= seekRequestPts`)을 규명했고, **pixel parity 실패 파일과 동일한 파일**에서 위반이 검출된다 — 원인은 규명했으나 **해결하지 않았다**. **Adaptive Sampling Planner 구현**(분류만/실행만 분리, hard fallback 을 비용 비교보다 먼저 평가): SequentialPreferred 8 / SparseSeekCandidate 5 / SparseSeekUnavailable 1. **sparse 가 불리하거나 exactness 가 깨지는 7건을 7건 모두 회피**, 이득 있는 8건 중 5건 포착·3건 보수적으로 놓침. 4K GOP 불일치(mismatch 11)은 VFR+edit list 정황이 있으나 미확정이라 새 parser 를 만들지 않고 `GopEstimated` 로 보수 처리. **판정 CONDITIONAL / PRODUCTION ADOPTION = NO / production default 는 Sequential 유지.** **다음: E-3 — HEVC seek landing 특성 조사 또는 보수 처리 확정, planner calibration, end-to-end validation** |
-| 현재 버전 | 0.9.4.40 |
+| 현재 노드 | **E — Adaptive Video Decode Planner (E-3A 완료/PASS, E-3B 다음)** |
+| 현재 단계 | Node E **진행 중**. E-3A(0.9.4.41) 는 HEVC seek landing 의 해결 가능성을 **한정된 범위에서** 조사했고 production 코드를 한 줄도 바꾸지 않았다. **판정 `HEVC_EXACT_SPARSE_SEEK = NOT VERIFIED` (exit 3) → `HEVC = SequentialPreferred` 최종 확정.** 여섯 개 전략(A `av_seek_frame` BACKWARD / B `avformat_seek_file` 3 window / C `AVSEEK_FLAG_ANY` / D `avformat_flush`)이 **전부 HEVC 1080p 에서 NOT EXACT** 이었고, 진짜 keyframe seek 인 A·D 는 E-2B 와 동일한 viol=2 를 보였다. **C(AVSEEK_FLAG_ANY)는 문제를 해결하지 못하고 악화시켰다**(HEVC 2→14, H.264 270s 0→33) — 지시 §7 의 "진단 전용" 예선이 정당. **D(avformat_flush)는 8개 파일 전부에서 A 와 동일** — 원인이 아님. 유일하게 안전한 primitive 는 `av_seek_frame(..., BACKWARD)` 뿐이며 **사용 가능한 API 안에서 위반을 없앨 방법이 없다**. HEVC 1360x808 은 EXACT 라 "HEVC 는 항상 불가"도 "항상 가능"도 아니다. B 의 좁은 window 와 C 는 **H.264 exactness 도 깨뜨려**(지시 §12) 거부. **이것은 E 실패가 아니라 정확성과 성능을 함께 고려한 안전한 fallback 선택이다.** 이번 작업에서 고친 실제 결함 2건: ① verdict 로직 버그(전 파일 합산으로 `VERIFIED` 잘못 보고 → HEVC 한정으로 수정), ② use-after-free 크래시. planner 코드는 변경하지 않았다. **다음: E-3B — planner calibration, HEVC 확정 정책 반영, end-to-end validation** |
+| 현재 버전 | 0.9.4.41 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
