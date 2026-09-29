@@ -13,13 +13,38 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 기준 코드 | 0.9.4.42 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **E — Adaptive Video Decode Planner (E-3B 완료/NOT ACCEPTED, sparse 채택 없음)** |
-| 현재 단계 | Node E **진행 중, E-3B 에서 sparse 후보는 기각됨**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
-| 현재 버전 | 0.9.4.42 |
+| 현재 노드 | **E — Adaptive Video Decode Planner (종결)** → 다음 노드 F (pre-register brief 작성됨) |
+| 현재 단계 | Node E **종결**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
 | 현재 버전 | 0.9.4.42 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
+
+### Node E 종결 기록 (0.9.4.42 기준)
+
+사용자 결정으로 Node E 를 종결한다.
+
+- **E-3C**: 별도 roadmap Stage 로 승격하지 않는다. F 로 이관하지 않는다.
+  `RefuseAll` 로 sparse production path 가 도달 불가능한 현재 구조를 기준으로
+  Node E 종결 범위에서 정리한다. 향후 F architecture 에 참고가 될 수 있다는 사실만
+  참고사항으로 기록하며, **작업 항목으로는 이관하지 않는다.**
+- **E-4**: production integration + end-to-end validation 역시 Node E 종결 범위에서
+  정리한다. `RefuseAll` 하에서는 통합할 "성격의" 경로가 남아 있지 않으므로,
+  E-4 를 sparse 재도입 근거로 읽어서는 안 된다.
+- `ExactnessPolicy::RefuseAll` 기본값과 production 순차 디코딩 경로는 **유지**한다.
+- 결론의 근거와 재검토 조건은 `docs/build-history/0.9.4.42.*`.
+
+**`src/video_sampling_planner.h` 의 E-3C 관련 코드 상태 변경은 이 문서 정리 단계에서
+시행하지 않았다.** 필요 여부는 별도로 판단·보고한다.
+
+### Node F 진입 상태
+
+- pre-register brief: `docs/implementation-briefs/F-hardware-video-decode-backend.*`
+- 이번 F 의 실제 조사·실험·구현 범위: **NVIDIA NVDEC 단일**
+- 다른 hardware decode backend 의 실제 구현·검증은 이번 F 범위 밖
+- architecture 는 NVIDIA 전용으로 고정하지 않는다 (추가 backend 배려 방향)
+- `tools/` (untracked, 미문서화) 는 **보류**. 삭제·추가·commit·.gitignore 등록 모두 하지 않고
+  현 상태를 유지한다. 정식 편입 여부는 별도 작업으로 판단한다.
 
 ### I-3 결과 요약 (v0.9.4.37)
 

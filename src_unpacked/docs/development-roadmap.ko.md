@@ -59,12 +59,12 @@ START
 [I] Analyze / Matching Performance        <-- D8b 근거 이후 삽입 (Node I 참조)
   |
   v
-[E] Adaptive Video Decode Planner
+[E] Adaptive Video Decode Planner          <-- 종결 (E-1/E-2/E-3 완료, E-3C/E-4 정리)
   |
   v
 [F] Hardware Video Decode Backend
   |
-  +--> NVIDIA NVDEC
+  +--> NVIDIA NVDEC (이번 F의 유일한 조사·실험·구현 범위)
   |
   v
 [G] Additional GPU Backends
@@ -232,7 +232,7 @@ D 는 구조를 만들었고, 남은 비용은 그 범위 밖에 있다.
 세부 구현:
 - `docs/build-history/0.9.4.23.ko.md` / `.en.md` (D9a pre-register)
 
-## Node E — Adaptive Video Decode Planner
+## Node E — Adaptive Video Decode Planner — **종결**
 
 필요 이상으로 decode하는 비용을 줄입니다.
 
@@ -245,11 +245,51 @@ D 는 구조를 만들었고, 남은 비용은 그 범위 밖에 있다.
 - conversion / resize
 - fallback
 
+### 종결 상태 (0.9.4.42 기록 기준)
+
+sparse seek는 **production 채택이 거부**되었고, 그 결과로 실제 효율화 성취는 없습니다.
+결과는 "sequential 을 확정했다"입니다. 다만 이 노드에서 얻은 정확한 판정 기준과
+검증 구조는 그대로 남습니다.
+
+- E-1 / E-2 / E-3 완료
+- **E-3C: 별도 roadmap Stage로 승격하지 않으며, F로 이관하지 않고 Node E 종결 범위에서 정리합니다.**
+- **E-4: production integration + end-to-end validation 역시 Node E 종결 범위에서 정리합니다.**
+  `ExactnessPolicy::RefuseAll` 로 sparse production path가 도달 불가능하므로,
+  통합할 "성격의" 경로가 남아 있지 않습니다. E-4 를 sparse 재도입으로 읽어서는 안 됩니다.
+
+### Node E 완료/종결 조건 (0.9.4.42 기준 충족)
+
+1. production sequential decode 를 기준선으로 확정
+2. sparse sampling 의 production exactness 확보 여부 검증
+3. production baseline 과 실제 결과가 달라질 수 있음을 확인
+4. sparse production adoption 거부
+5. `ExactnessPolicy::RefuseAll` 유지
+6. 관련 correctness 문제 수정 및 regression 검증 완료
+7. 추가 sparse adoption 을 위한 증거가 없는 상태에서는 재도입하지 않음
+8. 향후 재검토는 새로운 production-parity 증거가 확보된 경우에만 허용
+
+**E-4**: sparse production path 가 존재하지 않으므로 **별도의 sparse integration 단계로
+수행하지 않고 Node E 종결에 흡수한다.**
+
+**참고 사항**: E-3C 는 향후 F 의 architecture 설계에 참고가 될 수 있으나(참고만),
+F 의 작업 항목으로는 이관하지 않습니다.
+
+종결 판단의 근거와 재검토 조건은 `docs/build-history/0.9.4.42.*` 에 있습니다.
+기존 E-2A/E-2B 의 exactness 수치는 **자기참조**였으므로 production exactness 근거로
+재사용하지 않습니다.
+
 ## Node F — Hardware Video Decode Backend
 
 우선 NVIDIA NVDEC을 실제 backend 후보로 연결합니다.
 
 Software FFmpeg은 기준/폴백 경로로 유지하며 codec/profile/pixel-format/bit-depth/capability를 확인합니다. 초기화·seek·frame mapping·decode 실패는 파일 단위 fallback으로 처리합니다.
+
+**이번 F 의 실제 조사·실험·구현 범위는 NVDEC 단일입니다.** 다른 hardware decode
+backend 의 실제 조사와 검증은 이번 F 범위에 포함하지 않습니다.
+
+다만 **architecture 는 NVIDIA 전용으로 고정하지 않습니다.** backend abstraction 은
+향후 Intel/AMD 등 hardware decode backend 를 추가할 수 있는 방향을 고려합니다.
+그 구현·검증은 **이번 F 의 범위가 아닙니다.**
 
 ## Node G — Additional GPU Backends
 
@@ -271,7 +311,7 @@ CPU-only, GPU OFF, GPU ON/AUTO, low-end simulation, acceleration-not-beneficial,
 
 Roadmap Node와 버전 번호는 같은 개념이 아닙니다.
 
-Roadmap: A → B → C → D → E → F → G → H
+Roadmap: A → B → C → D → I → E → F → G → H
 Version: 0.9.4.0 → 0.9.4.1 → 0.9.4.2 → 0.9.4.3 → ...
 
 예를 들어 B 내부에서 B1/B2/B3 문제 해결을 거쳐 하나의 검증 상태가 만들어질 때 다음 버전으로 증가할 수 있습니다.

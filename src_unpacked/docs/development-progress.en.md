@@ -13,13 +13,44 @@ The Roadmap is the structural direction. Progress records the actual position, p
 | Reference code | 0.9.4.42 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **E — Adaptive Video Decode Planner (E-3B complete / NOT ACCEPTED, sparse not adopted)** |
-| Current phase | Node E **in progress; the sparse candidate was rejected at E-3B**. E-3B (0.9.4.42) drove A/B/C through the real `MediaSearchEngine::scan()` production path to judge end-to-end exactness, and returned **`NOT ACCEPTED`**. **Central finding: the E-2A/E-2B "exact" figures were self-referential** — both experiments compared one seek-based implementation with another, and both call `av_seek_frame` + `avcodec_flush_buffers`, so they **shared the same decoder reference-state loss** and agreed for the wrong reason. The **first** measurement to include the production from-zero sweep found **one genuine divergence** on a 4K H.264 file (`reference count overflow` / `no frame!` / `concealing`). In the same runs sparse was **17.38 % slower end to end** (4K decode dominates), so **the performance argument is gone too**. Three corrections: ① the executor returned a truncated result as success → sample-count contract added ② container-index GOP reported as `Known` → downgraded to `Estimated` ③ a `0.5 × framesPerSample` threshold was removed (it contradicted measurement). **Outcome: `ExactnessPolicy::RefuseAll` as the default** — with no codec holding a production-parity proof, sparse is unreachable in production and every file is Sequential. **Production behaviour is identical to 0.9.4.41 (13/13 bit-identical, adaptive -0.02 %, neutral).** **Methodology lesson: an exactness baseline must be the production path.** Two reimplementations of the same family cannot validate each other, because a shared defect passes. **Next: sparse is not to be reopened without evidence. Revisit conditions are stated in the build history** |
-| Current version | 0.9.4.42 |
+| Current node | **E — Adaptive Video Decode Planner (closed)** → next node F (pre-register brief written) |
+| Current phase | Node E **closed**. E-3B (0.9.4.42) drove A/B/C through the real `MediaSearchEngine::scan()` production path to judge end-to-end exactness, and returned **`NOT ACCEPTED`**. **Central finding: the E-2A/E-2B "exact" figures were self-referential** — both experiments compared one seek-based implementation with another, and both call `av_seek_frame` + `avcodec_flush_buffers`, so they **shared the same decoder reference-state loss** and agreed for the wrong reason. The **first** measurement to include the production from-zero sweep found **one genuine divergence** on a 4K H.264 file (`reference count overflow` / `no frame!` / `concealing`). In the same runs sparse was **17.38 % slower end to end** (4K decode dominates), so **the performance argument is gone too**. Three corrections: ① the executor returned a truncated result as success → sample-count contract added ② container-index GOP reported as `Known` → downgraded to `Estimated` ③ a `0.5 × framesPerSample` threshold was removed (it contradicted measurement). **Outcome: `ExactnessPolicy::RefuseAll` as the default** — with no codec holding a production-parity proof, sparse is unreachable in production and every file is Sequential. **Production behaviour is identical to 0.9.4.41 (13/13 bit-identical, adaptive -0.02 %, neutral).** **Methodology lesson: an exactness baseline must be the production path.** Two reimplementations of the same family cannot validate each other, because a shared defect passes. **Next: sparse is not to be reopened without evidence. Revisit conditions are stated in the build history** |
 | Current version | 0.9.4.42 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
+
+### Node E closure record (per 0.9.4.42)
+
+Node E is closed by user decision.
+
+- **E-3C**: not promoted to a separate roadmap Stage, and not migrated to F. It is
+  closed within Node E's scope, based on the current structure where `RefuseAll` makes
+  the sparse production path unreachable. Only the fact that it may inform F's
+  architecture in future is recorded as a note; **it is not migrated as a work item.**
+- **E-4**: production integration + end-to-end validation is likewise closed within
+  Node E's scope. Under `RefuseAll` no "qualitative" path is left to integrate, so E-4
+  must not be read as grounds for reintroducing sparse.
+- The `ExactnessPolicy::RefuseAll` default and the production sequential decode path are
+  **retained**.
+- The basis for the conclusion and the revisit conditions are in
+  `docs/build-history/0.9.4.42.*`.
+
+**No change was made to the E-3C-related code state in `src/video_sampling_planner.h`
+during this documentation pass.** Whether one is needed is to be judged and reported
+separately.
+
+### Node F entry state
+
+- Pre-register brief: `docs/implementation-briefs/F-hardware-video-decode-backend.*`
+- Actual investigation, experiment and implementation scope of this F: **NVIDIA NVDEC
+  alone**
+- Actual implementation/verification of other hardware decode backends is out of scope
+  for this F
+- The architecture is not fixed to NVIDIA (direction accommodates additional backends)
+- `tools/` (untracked, undocumented) is **on hold**: not deleted, not added, not
+  committed, not registered in `.gitignore`. Its status is left as is, and whether it
+  should be formally included is a separate decision.
 
 ### I-3 result summary (v0.9.4.37)
 

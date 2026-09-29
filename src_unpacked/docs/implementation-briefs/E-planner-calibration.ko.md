@@ -278,19 +278,38 @@ fallback → Sequential
 
 기존 E-2B/E-3A test 는 모두 유지한다.
 
-## 23. E COMPLETE 조건 (§45)
+## 23. E COMPLETE 조건 (§45) — **종결 처리됨 (0.9.4.42 이후 사용자 결정)**
 
 ```text
 E-1 pipeline 이해 + baseline
 E-2 adaptive sampling candidate 구현/검증
-E-3 planner calibration
+E-3 planner calibration          E-3B 완료 / NOT ACCEPTED
+E-3C                             Node E 종결 범위에서 정리 (별도 Stage 승격 없음, F 이관 없음)
 E-4 성격의 production integration + end-to-end validation
+                                  Node E 종결 범위에서 정리
 ```
 
 그리고 CPU path PASS / GPU build PASS / video exactness PASS / fallback PASS /
 no unexplained mismatch.
 
-**F 는 E 가 완전히 끝나기 전에는 시작하지 않는다.**
+### 23-1. 종결 사유
+
+E-3B 결과 sparse seek 는 **production 채택이 거부**되었다
+(`EXACTNESS = DISPROVEN`, `docs/build-history/0.9.4.42.*`).
+`ExactnessPolicy::RefuseAll` 로 sparse production path 가 도달 불가능하므로
+E-4 가 통합할 "성격의" 경로가 남아 있지 않다.
+
+따라서 **E-4 를 sparse 재도입의 근거로 읽어서는 안 된다.**
+
+- **E-3C**: 별도 roadmap Stage 로 승격하지 않고, F 로 이관하지 않고, Node E 종결
+  범위에서 정리한다. 향후 F architecture 에 참고가 될 수 있다는 사실만 참고사항으로
+  기록한다. **작업 항목으로는 이관하지 않는다.**
+- **E-4**: Node E 종결 범위에서 정리한다.
+
+`ExactnessPolicy::RefuseAll` 기본값과 production 순차 디코딩 경로는 유지한다.
+
+**F 는 Node E 종결 확인 이후 착수한다.** (원 문장: "F 는 E 가 완전히 끝나기 전에는
+시작하지 않는다." — E 종결이 확정되었으므로 조건은 충족됨)
 
 ## 24. 산출물
 

@@ -277,19 +277,40 @@ fallback → Sequential
 
 All existing E-2B/E-3A tests are preserved.
 
-## 23. E COMPLETE Conditions (§45)
+## 23. E COMPLETE Conditions (§45) — **CLOSED (user decision after 0.9.4.42)**
 
 ```text
 E-1 pipeline understanding + baseline
 E-2 adaptive sampling candidate implemented and verified
-E-3 planner calibration
+E-3 planner calibration              E-3B complete / NOT ACCEPTED
+E-3C                                closed within Node E's scope (no separate Stage
+                                    promotion, no migration to F)
 E-4-equivalent production integration + end-to-end validation
+                                    closed within Node E's scope
 ```
 
 Plus CPU path PASS, GPU build PASS, video exactness PASS, fallback PASS, and no
 unexplained mismatch.
 
-**F does not start before E is fully finished.**
+### 23-1. Reason for closure
+
+E-3B resulted in sparse seek being **refused for production adoption**
+(`EXACTNESS = DISPROVEN`, see `docs/build-history/0.9.4.42.*`). Because
+`ExactnessPolicy::RefuseAll` makes the sparse production path unreachable, no
+"qualitative" path is left for E-4 to integrate.
+
+Therefore **E-4 must not be read as grounds for reintroducing sparse.**
+
+- **E-3C** is closed within Node E's scope. It is not promoted to a separate roadmap
+  Stage and not migrated to F. Only the fact that it may inform F's architecture in
+  future is recorded as a note; **it is not migrated as a work item.**
+- **E-4** is closed within Node E's scope.
+
+The `ExactnessPolicy::RefuseAll` default and the production sequential decode path are
+retained.
+
+**F starts once Node E closure is confirmed.** (Original wording: "F does not start
+before E is fully finished." — E closure is now confirmed, so the condition is met.)
 
 ## 24. Artefacts
 

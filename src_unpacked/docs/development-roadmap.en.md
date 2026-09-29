@@ -66,12 +66,12 @@ START
 [I] Analyze / Matching Performance        <-- inserted after D8b evidence (see Node I)
   |
   v
-[E] Adaptive Video Decode Planner
+[E] Adaptive Video Decode Planner          <-- closed (E-1/E-2/E-3 done, E-3C/E-4 closed)
   |
   v
 [F] Hardware Video Decode Backend
   |
-  +--> NVIDIA NVDEC
+  +--> NVIDIA NVDEC (sole investigation/experiment/implementation scope of this F)
   |
   v
 [G] Additional GPU Backends
@@ -240,9 +240,52 @@ Required telemetry:
 Exit criteria:
 The benchmark clearly exposes the sampled-vs-decoded gap and planner choices can be validated against real throughput.
 
+### Closure status (per the 0.9.4.42 record)
+
+Sparse seek was **refused for production adoption**, so no real efficiency gain was
+achieved. The result is "sequential is confirmed". What the node does leave behind
+is the correct decision criteria and the validation structure, both of which stand.
+
+- E-1 / E-2 / E-3 complete
+- **E-3C is not promoted to a separate roadmap Stage, is not migrated to F, and is
+  closed within Node E's scope.**
+- **E-4 (production integration + end-to-end validation) is likewise closed within
+  Node E's scope.** Because `ExactnessPolicy::RefuseAll` makes the sparse production
+  path unreachable, no "qualitative" path is left to integrate. E-4 must not be read
+  as a reason to reintroduce sparse.
+
+### Node E completion / closure conditions (met per 0.9.4.42)
+
+1. Confirm production sequential decode as the baseline
+2. Verify whether production exactness for sparse sampling can be established
+3. Confirm that actual results can differ from the production baseline
+4. Refuse sparse production adoption
+5. Retain `ExactnessPolicy::RefuseAll`
+6. Complete the related correctness fixes and regression verification
+7. Do not reintroduce sparse while there is no evidence for further sparse adoption
+8. Allow future revisiting only once new production-parity evidence is obtained
+
+**E-4**: because the sparse production path does not exist, it is **not carried out as a
+separate sparse integration stage and is absorbed into Node E closure.**
+
+**Note**: E-3C may inform F's architecture design in future (as a reference only). It
+is not migrated as an F work item.
+
+The basis for closure and the revisit conditions are in
+`docs/build-history/0.9.4.42.*`. The earlier E-2A/E-2B exactness figures were
+**self-referential** and must not be reused as production exactness evidence.
+
 ## Node F — Hardware Video Decode Backend
 
 Connect NVIDIA NVDEC as the first real hardware-decoder backend candidate.
+
+**The actual investigation, experiment and implementation scope of this F is NVDEC
+alone.** Investigation and verification of other hardware decode backends are not
+included in this F.
+
+The **architecture is not fixed to NVIDIA**, however. The backend abstraction is
+expected to accommodate additional hardware decode backends such as Intel/AMD in
+future. Their implementation and verification are **out of scope for this F**.
 
 Rules:
 - Software FFmpeg is the reference/fallback.
@@ -288,7 +331,7 @@ Acceptance is based on correctness + end-to-end throughput + fallback correctnes
 
 Version numbers are not roadmap node numbers.
 
-Roadmap: A -> B -> C -> D -> E -> F -> G -> H
+Roadmap: A -> B -> C -> D -> I -> E -> F -> G -> H
 Version: 0.9.4.0 -> 0.9.4.1 -> 0.9.4.2 -> 0.9.4.3 -> ...
 
 Example:
