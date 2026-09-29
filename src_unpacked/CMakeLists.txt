@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.38 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.39 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -208,6 +208,16 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_decode_planner_probe tests/video_decode_planner_probe.cpp)
     target_link_libraries(msf_video_decode_planner_probe PRIVATE msf_core)
     add_test(NAME video_decode_planner_probe COMMAND msf_video_decode_planner_probe --selfcheck)
+    # E-2A measurement-only probe: compares the production sequential sweep
+    # against a sparse-seek-per-target candidate on the same sample plan, and
+    # measures GOP twice independently (AV_PKT_FLAG_KEY packets AND decoded
+    # AV_PICTURE_TYPE_I frames) because E-1 showed the packet flag alone is
+    # unreliable. No production code changes, no hardware decode path. Only
+    # --selfcheck is registered; the dataset mode needs a real video dataset
+    # root, which is not part of the standard image dataset.
+    add_executable(msf_video_sampling_strategy_probe tests/video_sampling_strategy_probe.cpp)
+    target_link_libraries(msf_video_sampling_strategy_probe PRIVATE msf_core)
+    add_test(NAME video_sampling_strategy_probe COMMAND msf_video_sampling_strategy_probe --selfcheck)
     add_executable(msf_image_test tests/image_pipeline_test.cpp)
     target_link_libraries(msf_image_test PRIVATE msf_core)
     add_test(NAME image_pipeline_test COMMAND msf_image_test)

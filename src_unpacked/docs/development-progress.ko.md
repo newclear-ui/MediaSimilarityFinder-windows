@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.38 |
+| 기준 코드 | 0.9.4.39 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **E — Adaptive Video Decode Planner (E-1 완료, E-2 다음)** |
-| 현재 단계 | Node E **진행 중**. E-1(0.9.4.38) 은 사전 조사·측정·설계이며 production 코드를 한 줄도 바꾸지 않았다. **핵심 측정: 샘플 140개에 12,573프레임을 디코드 — 89.81배 낭비**(300s 25fps 1건은 192.3배). decode 가 sweep 의 **97.57 %** 이고 seek 은 0.003 %. **planner input 은 후보 18개에서 5개로 축소**(duration·fps·resolution·codec·GOP). `decoded/emitted` 비율은 독립 변수가 아니라 `fps × interval(duration)` 의 함수(평균 절대오차 6.48 %). 프레임당 비용은 **codec × resolution** 으로 결정(동일 조합에서 fps 5배·duration 60배 차이에도 19.2 % 편차). **가장 중요한 재구성: 이 낭비는 sampling 전략 문제이지 hardware decode 문제가 아니며, E-2 는 hardware 없이도 가치가 있다.** 미해명: GOP 측정 원본(ffv1 에서 `AV_PKT_FLAG_KEY` 부정확), HEVC/AV1/VP9 는 번들 FFmpeg 인코더 부재로 불가, sparse-seek 절감률은 산술일 뿐 실측 아님. **다음: E-2 — (1) sampling mode(Sequential vs SparseSeek) 구현·실측 후 (2) backend 결정 구조 추가(software 만)** |
-| 현재 버전 | 0.9.4.38 |
+| 현재 노드 | **E — Adaptive Video Decode Planner (E-2A 완료/CONDITIONAL, E-2B 다음)** |
+| 현재 단계 | Node E **진행 중**. E-2A(0.9.4.39) 는 실측이며 production 코드를 한 줄도 바꾸지 않았다. **핵심: sparse seek 는 대체로 훨씬 빠르지만(10/13, 최선 270.5초 실제 h264 30.1s→0.31s = 99.0 %) 정확하지 않다.** decoded 17,164→6,203(2.77x), elapsed -41.7 %, 단 **pixel parity 4/14 FAIL**(maxAbs 31~188/255 = 다른 프레임). 원인 규명: 제품 predicate `ft+0.05>=target` 가 target **이전** 프레임을 허용하므로(30fps 에서 0.05s = 1.5 프레임) 순차 스윕은 한 프레임 앞선을 고르지만 sparse seek 는 seek 착지점 이전에 도달할 수 없다. **전략의 구조적 차이지 decoder 결함이 아니다.** 또한 **역조건도 찾았다**: GOP250 -136.8 %, 실제 GOP225 -132.2 % 로 sparse 가 baseline 보다 느리며 낭비율도 악화된다. E-1 산술 모델 `GOP/2 < wasteRatio` 가 13건 중 11건 일치. **GOP 는 이중 측정**(packet key flag + decoded I-picture) 결과 Known 12 / Estimated 2 / Unavailable 0. E-1 의 ffv1 63/750 은 `-g 1` 명시 생성 시 재현되지 않았으나 4K 에서 실제 불일치 11건이 관측되어 단독 신뢰성은 보장되지 않는다. **AV1 은 이 빌드에서 디코드 불가**(`Function not implemented`) — E-1 의 "생성 불가" 기록을 정정. **판정 CONDITIONAL: exactness 실패로 production 통합하지 않는다.** **다음: E-2B — (1) pixel parity 해결 (2) 4K GOP 불일치 조사 (3) GOP 경계 calibration** |
+| 현재 버전 | 0.9.4.39 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
