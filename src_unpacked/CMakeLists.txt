@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.42 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.43 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -229,6 +229,12 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_sampling_planner_test tests/video_sampling_planner_test.cpp)
     target_link_libraries(msf_video_sampling_planner_test PRIVATE msf_core)
     add_test(NAME video_sampling_planner_test COMMAND msf_video_sampling_planner_test)
+    # F-1 random-access safety contract selfcheck. Deliberately probe-only: nothing
+    # in msf_core includes it and no production decode decision reads it, because
+    # NVDEC production adoption is NOT approved. The contract is made executable and
+    # tested before any hardware path exists to gate.
+    add_executable(msf_f_random_access_safety_test tests/f_random_access_safety_test.cpp)
+    add_test(NAME f_random_access_safety_test COMMAND msf_f_random_access_safety_test)
     # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
     # and a scratch app dir, and it measures wall clock, so it is run manually
     # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in
