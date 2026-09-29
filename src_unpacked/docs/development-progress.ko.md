@@ -10,15 +10,44 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.35 |
+| 기준 코드 | 0.9.4.37 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | I — Analyze / Matching Performance (D9a → I-2 모든 gate 통과) |
-| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC 진입 경로(**Path C `DEFERRED`**) → D3 중복 decode 계측(**PASS**). D3 후속 후보는 두 개. **I-1**(공유 GrayImage + resize 2회)은 `DEFERRED`. **I-2**(공유 WIC source + 독립 2개 scaler)는 0.9.4.33~0.9.4.34 에서 측정·검증되고, 0.9.4.35 에서 **제품 EXIF 결함을 먼저 고친 뒤** 모든 gate 를 통과했다 — Gate A(fixture 1~8 EXIF 정상) / Gate B(I-2 EXIF parity 8/8) / Gate C(scan 전수 5,579,470쌍 무변화) / Gate D. 판정은 **`READY FOR PRODUCTION IMPLEMENTATION`**, 단 **production 통합은 아직 수행하지 않았다**(`NOT PERFORMED`). dataset 의 EXIF 8건은 모두 orientation 1 이라 회전 이미지가 없다는 점도 확인했다. **다음: I-2 production implementation brief 작성과 실제 통합** |
-| 현재 버전 | 0.9.4.35 |
+| 현재 노드 | **I — COMPLETE** → **E** 로 진행 |
+| 현재 단계 | Node I **종료**. D9a → D9b(NOT ACCEPTED) → D9c/D9d → D1 → D2(Path C `DEFERRED`) → D3 → I-2(v0.9.4.33~0.9.4.34 계측·검증) → EXIF 결함 수정(v0.9.4.35) → **I-2 production 통합(v0.9.4.36, `PRODUCTION ADOPTION = YES`)** → **I-3 production full-scan end-to-end 검증(v0.9.4.37, `PASS`)**. I-1 은 `DEFERRED` 유지. **다음 노드: E — Adaptive Video Decode Planner** |
+| 현재 버전 | 0.9.4.37 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
+
+### I-3 결과 요약 (v0.9.4.37)
+
+```text
+BASELINE   v0.9.4.35 / 6c981f7
+CANDIDATE  v0.9.4.36 / 4ba2a35
+드라이버   msf_dataset_baseline → MediaSearchEngine::scan() (GUI 와 동일 경로)
+조건 A (cold process, decode-active, BCBCBCBCBC 교차)
+  CPU  10 paired  full scan -10.17 % (9/10)   decode stage -22.42 %
+  GPU   5 paired  full scan -11.13 % (5/5, 비겹침)  decode stage -22.29 %
+조건 B (warm / repeat scan)  GPU 12행  full scan -26.73 % (24/24 더 빠름)
+                           단 process-level slowdown 미해명 → headline 근거로 미사용
+정합성    decode share 50.7 % × decode 절감 22.3 % = 11.3 % ≈ 관측 11.13 %
+해체      절감의 28~30 %는 계측 전용 D1 reference probe 중복 제거 (product 아님)
+          진짜 product 이득은 WIC decoder 생성(open) 25,924 → 12,962회
+correctness 39회 실행 전부 groups=156211 / misses=12962 / hits=14524 동일
+           exactness 3341/3341 diff_px=0, EXIF 8/8, 전수 5,579,470쌍 무변화
+           CPU CTest 81/81, GPU CTest 82/82
+
+판정      I-3 END-TO-END VALIDATION = PASS
+          I NODE = COMPLETE, I-1 = DEFERRED, I-2 = PRODUCTION, NEXT = E
+```
+
+미해명 항목(I 노드를 막지 않음): 조건 B 의 동일 프로세스 2회째 스캔부터 양 버전
+모두 30~60 % 느려지는 현상. v36 은 그 조건에서도 24/24회 더 빠르므로 I-2 가 만든
+회귀가 아니다. 원인은 decode `copyMs` 쪽이며 WIC instance 구조 의존성이 **가설
+단계다.** `vcpkg.json` 의 `version-string` 은 여전히 `0.9.4.35` 인데, 이를 바꾸면
+manifest 해시가 바뀌어 2.2 GB vcpkg 재빌드가 발생하므로 measurement-only 버전에서
+의도적으로 건드리지 않았다.
 
 (위 표는 0.9.4.24 시점의 오래된 상태였으며, 0.9.4.32 실제 저장소 상태로
 정정했다. 아래 본문의 과거 기록은 삭제하지 않는다.)

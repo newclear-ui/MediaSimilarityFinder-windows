@@ -10,15 +10,47 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.35 |
+| Reference code | 0.9.4.37 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | I — Analyze / Matching Performance (D9a through all I-2 gates) |
-| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC entry path (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (**PASS**). Two D3 follow-up candidates. **I-1** (shared GrayImage + resize twice) is `DEFERRED`. **I-2** (shared WIC source + two independent scalers) was measured in 0.9.4.33, verified in 0.9.4.34, and after the product EXIF defect was corrected in 0.9.4.35 passed **every gate** — Gate A (EXIF fixtures 1–8 correct) / Gate B (I-2 EXIF parity 8/8) / Gate C (exhaustive scan unchanged at 5,579,470 pairs) / Gate D. Status is **`READY FOR PRODUCTION IMPLEMENTATION`**, though **production integration is still NOT performed**. It is also established that the dataset's 8 EXIF files are all orientation 1, so it contains no rotated image. **Next: write the I-2 production implementation brief and perform the integration** |
-| Current version | 0.9.4.35 |
+| Current node | **I — COMPLETE** → proceeding to **E** |
+| Current phase | Node I **closed**. D9a → D9b (NOT ACCEPTED) → D9c/D9d → D1 → D2 (Path C `DEFERRED`) → D3 → I-2 (measured 0.9.4.33, verified 0.9.4.34) → EXIF defect correction (0.9.4.35) → **I-2 production integration (0.9.4.36, `PRODUCTION ADOPTION = YES`)** → **I-3 production full-scan end-to-end validation (0.9.4.37, `PASS`)**. I-1 remains `DEFERRED`. **Next node: E — Adaptive Video Decode Planner** |
+| Current version | 0.9.4.37 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
+
+### I-3 result summary (v0.9.4.37)
+
+```text
+BASELINE   v0.9.4.35 / 6c981f7
+CANDIDATE  v0.9.4.36 / 4ba2a35
+Driver     msf_dataset_baseline -> MediaSearchEngine::scan() (same path as the GUI)
+Condition A (cold process, decode-active, BCBCBCBCBC interleaved)
+  CPU  10 paired  full scan -10.17 % (9/10)   decode stage -22.42 %
+  GPU   5 paired  full scan -11.13 % (5/5, non-overlapping)  decode stage -22.29 %
+Condition B (warm / repeat scan)  GPU 12 rows  full scan -26.73 % (faster in 24/24)
+                          but a process-level slowdown is unexplained, so it is not
+                          used as the headline
+Consistency  decode share 50.7 % x 22.3 % decode saving = 11.3 % ~= observed 11.13 %
+Decomposition 28-30 % of the saving is removal of the duplicated, measurement-only
+              D1 reference probe (not product work). The genuine product gain is
+              WIC decoder creation (open): 25,924 -> 12,962 calls
+Correctness   all 39 executions identical: groups=156211 / misses=12962 / hits=14524
+              exactness 3341/3341 diff_px=0, EXIF 8/8, exhaustive 5,579,470 unchanged
+              CPU CTest 81/81, GPU CTest 82/82
+
+Verdict      I-3 END-TO-END VALIDATION = PASS
+             I NODE = COMPLETE, I-1 = DEFERRED, I-2 = PRODUCTION, NEXT = E
+```
+
+Open items (do not block the I node): in condition B, both versions become 30-60 %
+slower from the second scan in the same process onward. v0.9.4.36 is still faster in
+24/24 runs there, so it is **not a regression introduced by I-2.** The cause sits in
+the decode `copyMs`, and WIC instance-structure dependence is at the **hypothesis
+stage.** `vcpkg.json` `version-string` is still `0.9.4.35`; changing it would alter
+the manifest hash and trigger a full 2.2 GB vcpkg rebuild, so it was deliberately
+left alone in this measurement-only version.
 
 (The table above carried a stale 0.9.4.24 state and is corrected to the actual
 0.9.4.32 repository state. Historical body records below are not deleted.)

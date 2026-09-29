@@ -48,3 +48,8 @@ MediaSimilarityFinder-v*-Portable-*.zip
 
 # Per-scan scratch index dirs created by the D8 review probe
 /test_sample_img_vid_appdir*/
+
+# I-3 (v0.9.4.37) full-scan validation workspace. Holds a detached git worktree
+# for the v0.9.4.35 baseline, per-run scratch index dirs and raw benchmark JSON.
+# Reproducible from src_unpacked/scripts/validation/, so it is never committed.
+/validation/
