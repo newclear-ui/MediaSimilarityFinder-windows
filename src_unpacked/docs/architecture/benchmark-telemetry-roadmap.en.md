@@ -368,3 +368,211 @@ Benchmarking is not decoration.
 - Enabling instrumentation must not change search semantics.
 - Instrumentation must not change search accuracy.
 - Increment schemaVersion when the JSON schema changes.
+
+
+## 20. Benchmark Execution Model — Run / Suite / Media Scope
+
+Benchmark execution is separated into Run and Suite.
+
+- Run: one measurement under one benchmark mode.
+- Suite: a logical group of AUTO / CPU-only / GPU-max Runs using the same source dataset, media scope, and execution conditions.
+- GUI can store the same suiteId in each retained JSON without requiring a separate suite.json.
+- Console may store suite.json plus individual Run JSON files for long-term analysis.
+
+### Benchmark modes
+
+- AUTO: use the current Adaptive Scheduler.
+- CPU-only: disable the GPU backend and measure the CPU baseline.
+- GPU-max: send capable work to the GPU while retaining mandatory CPU work and CPU fallback.
+
+GPU-max does not mean GPU-only or CPU 0%.
+
+### Media scope
+
+Console exposes the same image/video selection scope as the GUI.
+
+~~~text
+--media images
+--media videos
+--media all
+~~~
+
+- images: image only
+- videos: video only
+- all: image + video
+- default: all
+- normal scan and benchmark use the same semantics.
+
+Mode and media scope are orthogonal. A Suite can therefore contain AUTO+images, CPU+images, and GPU-max+images, while another Suite can measure videos only.
+
+Each Run JSON stores at minimum:
+
+~~~text
+suiteId
+runId
+mode
+mediaScope
+scanImages
+scanVideos
+sourceRoot
+sourceRootLabel
+sourceRootId
+datasetFingerprint
+~~~
+
+## 21. GUI Benchmark Retention
+
+GUI retains only the latest result for each source + benchmark mode.
+
+~~~text
+Benchmark/GUI/<source-label>_<root-id-short>/
+    auto.json
+    cpu.json
+    gpu-max.json
+~~~
+
+- AUTO / CPU-only / GPU-max are selected by default.
+- Existing GUI image/video selection applies to every selected benchmark mode.
+- A new result for the same source + mode replaces the previous result.
+- If media scope changes, the same mode file is replaced and mediaScope identifies the latest measured scope.
+- Historical image-only and video-only comparisons should use Console benchmark storage.
+- Existing manual Save JSON can remain as an export function.
+- GUI never automatically loads Console benchmark logs.
+
+## 22. Console Benchmark Retention
+
+Console is the long-term comparison and data-mining path. Results are not automatically deleted.
+
+~~~text
+Benchmark/Console/suite-<suite-id>/
+    suite.json
+    auto.json
+    cpu.json
+    gpu-max.json
+~~~
+
+- Retention is cumulative by default.
+- --log-dir overrides the output root.
+- --log specifies an individual JSON path.
+- GUI and Console storage and loading paths remain separate.
+- Long-term image/video/all comparisons should use separate Suites.
+
+## 23. Console CLI Design
+
+Normal scan and benchmark use the same media scope.
+
+~~~text
+MediaSimilarityFinder.exe --scan <folder> --media all
+
+MediaSimilarityFinder.exe --benchmark <folder> --mode auto --media all
+MediaSimilarityFinder.exe --benchmark <folder> --mode cpu --media images
+MediaSimilarityFinder.exe --benchmark <folder> --mode gpu-max --media videos
+MediaSimilarityFinder.exe --benchmark <folder> --suite auto,cpu,gpu-max --media all
+~~~
+
+Benchmark storage options:
+
+~~~text
+--log-dir <dir>
+--log <file>
+~~~
+
+JSON is the canonical machine-readable result. Standard output stays focused on progress and the final summary.
+
+## 24. Benchmark Isolation and Fairness
+
+Reusing the normal Search Index / Video Cache would bias CPU / AUTO / GPU-max comparisons.
+
+Benchmark Runs therefore use dedicated index/cache state.
+
+~~~text
+normal search
+    └─ Index/<root-id>/...
+
+benchmark
+    └─ Benchmark/<GUI|Console>/...
+        └─ isolated index/cache state
+~~~
+
+- A benchmark must not modify the normal GUI search database.
+- Index/cache state must not leak between benchmark Runs.
+- Prefer one independent process per Run over CPU → GPU → AUTO in one process.
+- OS filesystem cache is not fully controllable and should be recorded as uncontrolled.
+- Fresh benchmark index/cache is not the same as a cold OS filesystem cache.
+- Runs in one Suite must align on dataset fingerprint, sourceRoot, mediaScope, and relevant execution conditions.
+
+## 25. Benchmark Environment / Schedule Capture
+
+Each Run stores enough execution context to reconstruct how it was produced.
+
+### Environment
+- Windows/OS build
+- appVersion / build configuration / gitCommit
+- CPU model / logical threads / RAM
+- GPU model / VRAM / driver
+- CUDA/runtime and FFmpeg information
+- selected/available backend
+
+### Execution configuration
+- benchmark mode
+- mediaScope
+- distance
+- image/video enable state
+- CPU Resource Mode
+- normalized CPU percentage 10–90
+- worker count
+- GPU ON/OFF policy
+- GPU batch
+- scheduler initial estimate / live adjustments
+- decoder policy
+- benchmark index/cache state
+- process isolation state
+
+### Result identity
+- suiteId / runId / runIndex
+- sourceRoot / sourceRootLabel / rootIdShort
+- datasetFingerprint / fileCount / byteCount
+- startedAt / completedAt
+- completion status
+
+The development **build schedule** is also stored in the documents, but version numbers are not pre-assigned. A new 0.9.4.x version is assigned only when a validated code state exists.
+
+## 26. GUI / Console Capability Mapping
+
+| item | GUI | Console |
+| --- | --- | --- |
+| normal scan | supported | supported |
+| image only | existing selection | --media images |
+| video only | existing selection | --media videos |
+| all | existing selection | --media all |
+| AUTO | supported | supported |
+| CPU-only | supported | supported |
+| GPU-max | supported | supported |
+| latest three only | yes | no automatic pruning |
+| long-term accumulation | not default | default |
+| custom log dir | export-oriented | supported |
+
+## 27. QuickLook Help
+
+--help should mention Windows Store QuickLook as an optional convenience tool.
+
+Verified Microsoft Store address:
+https://www.microsoft.com/store/apps/9nv4bs3l1h4s
+
+QuickLook is not a required MediaSimilarityFinder dependency.
+
+## 28. Benchmark Implementation / Build Schedule
+
+Do not pre-assign version numbers.
+
+- S0 Design/pre-register: finalize Run/Suite, mode, media scope, storage/isolation/JSON/CLI contracts
+- S1 Console entry foundation: --help, --version, headless scan, --media integration
+- S2 Run/Suite benchmark core: connect BenchmarkConfig/Recorder/JSON/environment
+- S3 Storage isolation: GUI/Console roots, dedicated benchmark index/cache, atomic/crash-safe persistence
+- S4 GUI integration: three mode checkboxes, all selected by default, existing media selection combined, latest-three retention
+- S5 Console benchmark execution: --benchmark / --mode / --suite / --media / --log-dir / --log
+- S6 Data-mining automation: automated Suites, dataset fingerprint checks, comparison summary
+- S7 Help/usability: command examples, media-scope examples, QuickLook guidance, exit codes
+- S8 Full verification: CPU build → GPU build → CTest → CLI execution → GUI verification → JSON inspection → documentation → Build History when applicable → commit
+
+Once actual benchmark performance experiments begin, apply the existing pre-register-first rule and record successful, failed, and rejected outcomes in Build History and the Performance / Tuning Experiment Index.
