@@ -1273,3 +1273,55 @@ Current active investigation:
 - dataset 규칙 준수: fingerprint `e8f8fa6a..e2640a` 유지, `SOURCES.md` 유지,
   `both_fail` 6건 유지.
 - 상세: `docs/build-history/0.9.4.35.ko.md`
+
+
+## 2026-09-30 — Benchmark / Console CLI 추가 설계 결정
+
+현재 F-1은 NVDEC production adoption이 허용되지 않는 상태이므로 Benchmark / Console CLI 인프라는 독립적인 cross-cutting track으로 정리할 수 있다. 이 작업은 F-2 NVDEC production integration 허용을 의미하지 않는다.
+
+### 확정 사항
+
+1. Benchmark mode는 AUTO / CPU 단독 / GPU 최대화의 세 가지로 고정한다.
+2. 기존 GUI의 이미지/동영상 선택은 mode와 별도의 축으로 유지한다.
+3. Console은 동일한 media scope를 제공한다.
+   - --media images
+   - --media videos
+   - --media all
+   - 기본값 all
+4. GUI는 source folder마다 AUTO / CPU / GPU-max 최신 결과 최대 3개만 자동 유지한다.
+5. Console은 장기 데이터 마이닝 저장소이며 자동 삭제하지 않는다.
+6. Normal Search Index와 Benchmark index/cache는 분리한다.
+7. Run = 한 mode의 한 측정, Suite = 같은 dataset/media scope의 mode 묶음으로 정의한다.
+8. 각 Run은 sourceRoot, dataset fingerprint, mode, mediaScope, CPU/GPU/scheduler 설정, 환경 정보, 완료/실패/fallback 상태를 저장한다.
+9. GPU 최대화는 GPU-only가 아니며 필수 CPU 작업과 CPU fallback을 유지한다.
+10. Benchmark Run은 독립 프로세스를 우선 검토하고, OS filesystem cache는 uncontrolled 상태로 기록한다.
+
+### 빌드 / 구현 스케줄
+
+버전 번호는 미리 배정하지 않는다.
+
+~~~text
+S0  설계 / pre-register
+ ↓
+S1  Console entry foundation
+ ↓
+S2  Run / Suite benchmark core
+ ↓
+S3  Benchmark storage isolation
+ ↓
+S4  GUI benchmark integration
+ ↓
+S5  Console benchmark execution
+ ↓
+S6  Data-mining automation
+ ↓
+S7  Help / usability
+ ↓
+S8  Full verification / release gate
+~~~
+
+각 단계는 기존 운영 규칙에 따라 다음 순서로 닫은 뒤 다음 단계로 이동한다.
+
+소스 변경 → CPU/GPU 빌드 → CTest → 실행 검증 → 문서 갱신 → 필요 시 Build History → commit
+
+이 기록은 구현 완료나 성능 측정 결과가 아니라 **설계 확정과 구현 순서 등록**이다. 상세 계약은 docs/architecture/benchmark-telemetry-roadmap.*에 기록한다.
