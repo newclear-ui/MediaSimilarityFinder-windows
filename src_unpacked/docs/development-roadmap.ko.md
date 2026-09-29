@@ -348,3 +348,39 @@ OpenCode는 Roadmap과 Progress를 먼저 확인한 후 현재 단계의 상세 
 ## 변경 관리
 
 방향을 바꾸어야 할 정도의 문제가 생기면 Progress에 원인을 기록하고 Roadmap과 KO/EN 문서를 함께 수정합니다.
+
+
+## Benchmark / Console CLI 교차 인프라 트랙
+
+Benchmark/Telemetry는 새로운 Roadmap Node를 추가하지 않고 공통 인프라 트랙으로 관리한다. 특히 현재 F-1에서 NVDEC production adoption이 금지된 상태이므로, Benchmark/Console CLI의 정리는 F-2 통합을 의미하지 않는다.
+
+확정 계약:
+
+- benchmark mode: AUTO / CPU 단독 / GPU 최대화
+- media scope: images / videos / all
+- Console canonical selector: --media images|videos|all
+- Run / Suite 분리
+- GUI는 source folder당 최신 mode 3개만 보존
+- Console은 장기 누적 보존
+- normal Search Index와 benchmark index/cache 분리
+- source folder는 human-readable label + short stable id로 저장
+- Run은 source identity, dataset fingerprint, media scope, scheduler 설정, 환경, 실패/fallback 상태를 저장
+- GPU 최대화는 GPU-only가 아니며 필수 CPU 작업과 fallback을 유지
+
+### 빌드 / 구현 스케줄 정책
+
+버전 번호는 미리 배정하지 않는다.
+
+S0 설계/pre-register
+→ S1 Console entry foundation
+→ S2 Run/Suite benchmark core
+→ S3 Benchmark storage isolation
+→ S4 GUI benchmark integration
+→ S5 Console benchmark execution
+→ S6 Data-mining automation
+→ S7 Help/usability
+→ S8 Full verification/release gate
+
+각 단계는 소스 변경 → CPU/GPU 빌드 → CTest → CLI/GUI 실행 검증 → 문서 갱신 → 필요 시 Build History → commit 순으로 닫는다.
+
+세부 계약과 저장 레이아웃은 docs/architecture/benchmark-telemetry-roadmap.*를 기준으로 한다.
