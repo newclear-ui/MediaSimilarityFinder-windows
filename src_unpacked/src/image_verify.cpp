@@ -79,8 +79,14 @@ bool verifyBuffersFor(const std::string& path, GrayImage& full, GrayImage& asp,
   // number a sum of both and hid the cost of the second one. They get one
   // accumulator each; `decode` is then the merge, so the D9d report keys keep
   // the meaning they had.
-  const bool d1 = dec.decode(path, kDim, kDim, f, tel? &tel->decodeFull : nullptr);
-  const bool d2 = d1 && dec.decodePreserveAspect(path, kDim, a, tel? &tel->decodeAspect : nullptr);
+  // I-2: this is the only production path that needs both results, so it is the
+  // one that pays for building the factory, decoder, frame and EXIF orientation
+  // source twice. decodeBoth() builds them once and runs two independent output
+  // chains from the shared source. The two accumulators stay separate and keep
+  // their meaning: one call and one aspectCall per file, and their totalMs sum
+  // still equals this whole call. verifyDecodes still counts 2, because two
+  // outputs are still produced.
+  const bool d2 = dec.decodeBoth(path, kDim, kDim, kDim, f, a, tel? &tel->decodeFull : nullptr, tel? &tel->decodeAspect : nullptr);
   // The merge assigns from the running totals rather than adding a delta, so
   // recomputing it after every miss keeps `decode` consistent even when the
   // short-circuit above skipped the second call.

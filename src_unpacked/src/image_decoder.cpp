@@ -198,7 +198,34 @@ namespace {
 // before the caller runs CoUninitialize. Releasing WIC objects after
 // CoUninitialize faults on Windows (observed access violation during
 // scope exit), so the helpers must never touch COM lifetime themselves.
-bool decodeWicFile(const wchar_t* wpath,int w,int h,GrayImage& out,DecodeTelemetry* tel){
+// I-2 production integration: one factory, one decoder, one frame and one
+// EXIF-orientation source, feeding up to two INDEPENDENT scaler/converter/
+// CopyPixels chains. There is no intermediate GrayImage, so each output keeps
+// exactly the one-step Fant chain the product always used, and the bytes are
+// unchanged (verified over the whole standard dataset).
+//
+// Replaces the two near-identical bodies that built all of that twice per file.
+//
+// Telemetry allocation keeps the D3 invariants:
+//   * shared cost (COM, factory, open, metadata, orientation) -> telShared
+//   * fixed branch  (scaler, convert, copy)                  -> telFixed
+//   * aspect branch (scaler, convert, copy)                  -> telAspect
+// Every bucket lands in exactly one accumulator, so the two totalMs values
+// still sum to the whole call and mergeDecodeTelemetry keeps reconstructing the
+// same totals. aspectBranchMs reports the aspect branch's own elapsed time so
+// the caller can split the single wall-clock total without double counting it.
+// With a single output the one non-null pointer receives everything, as before.
+//
+// The OS file-open reference probe (D1) now runs once per call rather than once
+// per WIC pipeline. That is the honest consequence of doing the work once;
+// osFileOpenProbeCount therefore drops on the paired path while keeping its
+// meaning ("how many reference probes were run").
+bool decodeWicBranches(const wchar_t* wpath,int fw,int fh,int maxDimension,
+                       bool wantFixed,bool wantAspect,
+                       GrayImage& fixed,GrayImage& aspect,
+                       DecodeTelemetry* telFixed,DecodeTelemetry* telAspect,
+                       double* aspectBranchMs=nullptr){
+    DecodeTelemetry* telShared = telFixed ? telFixed : telAspect;
     // D9d: each timer wraps one WIC step and nothing else. The steps are
     // sequential and mutually exclusive, so the buckets reconstruct the WIC
     // function's time without double counting; "other" is the remainder.
@@ -209,18 +236,19 @@ bool decodeWicFile(const wchar_t* wpath,int w,int h,GrayImage& out,DecodeTelemet
     // implementation did and why factoryMs came out in the hundreds of
     // millions of ms.
     ComPtr<IWICImagingFactory> factory;
-    const double f2Before = tel ? tel->factory2Ms : 0.0;
-    const double fbBefore = tel ? tel->factoryFallbackMs : 0.0;
-    HRESULT hr=createWicFactory(&factory,tel);
-    if(tel) tel->factoryMs += (tel->factory2Ms - f2Before) + (tel->factoryFallbackMs - fbBefore);
+    const double f2Before = telShared ? telShared->factory2Ms : 0.0;
+    const double fbBefore = telShared ? telShared->factoryFallbackMs : 0.0;
+    HRESULT hr=createWicFactory(&factory,telShared);
+    if(telShared) telShared->factoryMs += (telShared->factory2Ms - f2Before) + (telShared->factoryFallbackMs - fbBefore);
     if(FAILED(hr))return false;
     // D1: reference probe first, so its cost never lands inside openMs.
-    probeOsFileOpen(wpath,tel);
+    probeOsFileOpen(wpath,telShared);
     const auto t1=std::chrono::steady_clock::now();
     ComPtr<IWICBitmapDecoder> dec;
     hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,
           WICDecodeMetadataCacheOnDemand,&dec);
-    const auto t2=std::chrono::steady_clock::now(); if(tel){ tel->openMs+=d9dMs(t1,t2); if(FAILED(hr)){ ++tel->openHrFailCount; if(tel->openHrFirstFailCode==0) tel->openHrFirstFailCode=(std::uint32_t)hr; } }
+    const auto t2=std::chrono::steady_clock::now();
+    if(telShared){ telShared->openMs+=d9dMs(t1,t2); if(FAILED(hr)){ ++telShared->openHrFailCount; if(telShared->openHrFirstFailCode==0) telShared->openHrFirstFailCode=(std::uint32_t)hr; } }
     if(FAILED(hr))return false;
     // EXIF orientation: the fingerprint must describe the image as displayed.
     // QImageReader::setAutoTransform(true) does this in the display lane, but
@@ -228,6 +256,7 @@ bool decodeWicFile(const wchar_t* wpath,int w,int h,GrayImage& out,DecodeTelemet
     // (orientations 2..8) so rotated phone photos match their displayed form.
     ComPtr<IWICBitmapFlipRotator> orient;
     ComPtr<IWICBitmapSource> src;
+    UINT sw=0,sh=0;
     const auto tMeta0=std::chrono::steady_clock::now();
     auto tOrient1=std::chrono::steady_clock::time_point{};
     {
@@ -238,90 +267,61 @@ bool decodeWicFile(const wchar_t* wpath,int w,int h,GrayImage& out,DecodeTelemet
       ComPtr<IWICMetadataQueryReader> meta;
       if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
         xform=exifOrientationToTransform(meta.Get());
-      const auto tMeta1=std::chrono::steady_clock::now(); if(tel) tel->metadataMs+=d9dMs(tMeta0,tMeta1);
+      const auto tMeta1=std::chrono::steady_clock::now(); if(telShared) telShared->metadataMs+=d9dMs(tMeta0,tMeta1);
       if(xform!=WICBitmapTransformRotate0){
         if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
         if(FAILED(orient->Initialize(frame.Get(),xform))) return false;
         src=orient;
-        if(tel) ++tel->orientApplied;
+        if(telShared) ++telShared->orientApplied;
       } else {
         src=frame;
       }
-      tOrient1=std::chrono::steady_clock::now(); if(tel) tel->orientMs+=d9dMs(tMeta1,tOrient1);
-    }
-    ComPtr<IWICBitmapScaler> scaler;
-    hr=factory->CreateBitmapScaler(&scaler);
-    if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant);
-    const auto tScale1=std::chrono::steady_clock::now(); if(tel) tel->resizeMs+=d9dMs(tOrient1,tScale1);
-    if(FAILED(hr))return false;
-    ComPtr<IWICFormatConverter> conv;
-    hr=factory->CreateFormatConverter(&conv);
-    if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat8bppGray,
-                                           WICBitmapDitherTypeNone,nullptr,0.0,
-                                           WICBitmapPaletteTypeCustom);
-    const auto tConv1=std::chrono::steady_clock::now(); if(tel) tel->convertMs+=d9dMs(tScale1,tConv1);
-    if(FAILED(hr))return false;
-    out.width=w; out.height=h; out.pixels.resize(size_t(w)*size_t(h));
-    // WIC decodes lazily, so the real image decompression happens inside
-    // CopyPixels. That is why this bucket is the actual decode cost, and why it
-    // cannot be split further without changing the code under measurement.
-    hr=conv->CopyPixels(nullptr,w,out.pixels.size(),out.pixels.data());
-    if(tel) tel->copyMs+=d9dMs(tConv1,std::chrono::steady_clock::now());
-    return SUCCEEDED(hr);
-}
-bool decodeWicFileAspect(const wchar_t* wpath,int maxDimension,GrayImage& out,DecodeTelemetry* tel){
-    // D9d: same six WIC steps as decodeWicFile, timed at the same boundaries.
-    // decode and decodePreserveAspect are reported separately even though the
-    // two bodies are near-identical, because the callers pay for both.
-    // D1: factory2 vs fallback split, and the OS open reference probe.
-    ComPtr<IWICImagingFactory> factory;
-    // Delta, not the running total -- see the note in decodeWicFile.
-    const double aF2Before = tel ? tel->factory2Ms : 0.0;
-    const double aFbBefore = tel ? tel->factoryFallbackMs : 0.0;
-    HRESULT hr=createWicFactory(&factory,tel);
-    if(tel) tel->factoryMs += (tel->factory2Ms - aF2Before) + (tel->factoryFallbackMs - aFbBefore);
-    if(FAILED(hr))return false;
-    probeOsFileOpen(wpath,tel);
-    const auto tA1=std::chrono::steady_clock::now();
-    ComPtr<IWICBitmapDecoder> dec; hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&dec);
-    const auto tA2=std::chrono::steady_clock::now();
-    if(tel){ tel->openMs+=d9dMs(tA1,tA2); if(FAILED(hr)){ ++tel->openHrFailCount; if(tel->openHrFirstFailCode==0) tel->openHrFirstFailCode=(std::uint32_t)hr; } }
-    if(FAILED(hr))return false;
-    ComPtr<IWICBitmapFlipRotator> orient;
-    ComPtr<IWICBitmapSource> src;
-    UINT sw=0,sh=0;
-    const auto tAM0=std::chrono::steady_clock::now();
-    auto tAO1=std::chrono::steady_clock::time_point{};
-    {
-      ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false;
-      WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
-      ComPtr<IWICMetadataQueryReader> meta;
-      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
-        xform=exifOrientationToTransform(meta.Get());
-      const auto tAM1=std::chrono::steady_clock::now(); if(tel) tel->metadataMs+=d9dMs(tAM0,tAM1);
-      if(xform!=WICBitmapTransformRotate0){
-        if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
-        if(FAILED(orient->Initialize(frame.Get(),xform))) return false;
-        src=orient;
-        if(tel) ++tel->orientApplied;
-      } else {
-        src=frame;
-      }
+      tOrient1=std::chrono::steady_clock::now(); if(telShared) telShared->orientMs+=d9dMs(tMeta1,tOrient1);
       // Oriented size drives the aspect math: 90/270-degree rotations swap w/h.
-      UINT fw=0,fh=0; if(FAILED(src->GetSize(&fw,&fh))||!fw||!fh)return false; sw=fw; sh=fh;
-      tAO1=std::chrono::steady_clock::now(); if(tel) tel->orientMs+=d9dMs(tAM1,tAO1);
+      if(FAILED(src->GetSize(&sw,&sh))||!sw||!sh)return false;
     }
-    UINT w=sw,h=sh; if(sw>sh){w=maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)sh*maxDimension/sw));} else {h=maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)sw*maxDimension/sh));}
-    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant);
-    const auto tAS1=std::chrono::steady_clock::now(); if(tel) tel->resizeMs+=d9dMs(tAO1,tAS1);
-    if(FAILED(hr))return false;
-    ComPtr<IWICFormatConverter> conv; hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat8bppGray,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom);
-    const auto tAC1=std::chrono::steady_clock::now(); if(tel) tel->convertMs+=d9dMs(tAS1,tAC1);
-    if(FAILED(hr))return false;
-    out.width=(int)w;out.height=(int)h;out.pixels.resize((size_t)w*h);
-    hr=conv->CopyPixels(nullptr,w,out.pixels.size(),out.pixels.data());
-    if(tel) tel->copyMs+=d9dMs(tAC1,std::chrono::steady_clock::now());
-    return SUCCEEDED(hr);
+    // ---- branch A: fixed size ----
+    if(wantFixed){
+      ComPtr<IWICBitmapScaler> scaler;
+      ComPtr<IWICFormatConverter> conv;
+      hr=factory->CreateBitmapScaler(&scaler);
+      if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),fw,fh,WICBitmapInterpolationModeFant);
+      const auto tScale1=std::chrono::steady_clock::now(); if(telFixed) telFixed->resizeMs+=d9dMs(tOrient1,tScale1);
+      if(FAILED(hr))return false;
+      hr=factory->CreateFormatConverter(&conv);
+      if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat8bppGray,
+                                             WICBitmapDitherTypeNone,nullptr,0.0,
+                                             WICBitmapPaletteTypeCustom);
+      const auto tConv1=std::chrono::steady_clock::now(); if(telFixed) telFixed->convertMs+=d9dMs(tScale1,tConv1);
+      if(FAILED(hr))return false;
+      fixed.width=fw; fixed.height=fh; fixed.pixels.resize(size_t(fw)*size_t(fh));
+      // WIC decodes lazily, so the real image decompression happens inside
+      // CopyPixels. That is why this bucket is the actual decode cost, and why it
+      // cannot be split further without changing the code under measurement.
+      hr=conv->CopyPixels(nullptr,fw,fixed.pixels.size(),fixed.pixels.data());
+      if(telFixed) telFixed->copyMs+=d9dMs(tConv1,std::chrono::steady_clock::now());
+      if(FAILED(hr))return false;
+    }
+    // ---- branch B: aspect, same shared source, independent scaler ----
+    if(wantAspect){
+      UINT w=sw,h=sh; if(sw>sh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)sh*maxDimension/sw));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)sw*maxDimension/sh));}
+      ComPtr<IWICBitmapScaler> scaler;
+      ComPtr<IWICFormatConverter> conv;
+      const auto tAS0=std::chrono::steady_clock::now();
+      hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant);
+      const auto tAS1=std::chrono::steady_clock::now(); if(telAspect) telAspect->resizeMs+=d9dMs(tAS0,tAS1);
+      if(FAILED(hr))return false;
+      hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat8bppGray,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom);
+      const auto tAC1=std::chrono::steady_clock::now(); if(telAspect) telAspect->convertMs+=d9dMs(tAS1,tAC1);
+      if(FAILED(hr))return false;
+      aspect.width=(int)w;aspect.height=(int)h;aspect.pixels.resize((size_t)w*h);
+      hr=conv->CopyPixels(nullptr,w,aspect.pixels.size(),aspect.pixels.data());
+      const auto tAEnd=std::chrono::steady_clock::now();
+      if(telAspect) telAspect->copyMs+=d9dMs(tAC1,tAEnd);
+      if(aspectBranchMs) *aspectBranchMs=d9dMs(tAS0,tAEnd);
+      if(FAILED(hr))return false;
+    }
+    return true;
 }
 bool decodeWicFileAspectColor(const wchar_t* wpath,int maxDimension,msf::ColorImage& out){
     ComPtr<IWICImagingFactory> factory;
@@ -369,7 +369,8 @@ bool ImageDecoder::decode(const std::string& path,int w,int h,GrayImage& out,Dec
     HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     bool uninit=SUCCEEDED(hr);
     if(tel) tel->comInitMs+=d9dMs(tCom0,std::chrono::steady_clock::now());
-    bool ok=decodeWicFile(wp.c_str(),w,h,out,tel);
+    GrayImage sDummy;
+    bool ok=decodeWicBranches(wp.c_str(),w,h,0,true,false,out,sDummy,nullptr,tel);
     if(!ok){ const auto tPgm0=std::chrono::steady_clock::now(); ok=decodePgm(path,w,h,out); if(tel){ tel->pgmFallbackMs+=d9dMs(tPgm0,std::chrono::steady_clock::now()); ++tel->pgmFallbacks; } }
     else if(tel) ++tel->wicSucceeded;
     if(uninit)CoUninitialize();
@@ -385,11 +386,60 @@ bool ImageDecoder::decodePreserveAspect(const std::string& path,int maxDimension
     const auto tCom0=std::chrono::steady_clock::now();
     HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED); bool uninit=SUCCEEDED(hr);
     if(tel) tel->comInitMs+=d9dMs(tCom0,std::chrono::steady_clock::now());
-    bool ok=decodeWicFileAspect(wp.c_str(),maxDimension,out,tel);
+    GrayImage sDummy;
+    bool ok=decodeWicBranches(wp.c_str(),0,0,maxDimension,false,true,sDummy,out,nullptr,tel);
     if(!ok){ const auto tPgm0=std::chrono::steady_clock::now(); ok=decodePgmAspect(path,maxDimension,out); if(tel){ tel->pgmFallbackMs+=d9dMs(tPgm0,std::chrono::steady_clock::now()); ++tel->pgmFallbacks; } }
     else if(tel) ++tel->wicSucceeded;
     if(uninit)CoUninitialize();
     if(tel){ if(!ok) ++tel->failures; tel->totalMs+=d9dMs(tAll0,std::chrono::steady_clock::now()); }
+    return ok;
+}
+bool ImageDecoder::decodeBoth(const std::string& path,int w,int h,int maxDimension,GrayImage& fixedOut,GrayImage& aspectOut,DecodeTelemetry* telFixed,DecodeTelemetry* telAspect) const {
+    // I-2: the only production path that needs both results. One COM/factory/
+    // decoder/frame/orientation source, two independent output chains.
+    if(w<=0||h<=0||maxDimension<=0) return false;
+    const auto tAll0=std::chrono::steady_clock::now();
+    if(telFixed) ++telFixed->calls;
+    if(telAspect) ++telAspect->aspectCalls;
+    int need=MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,nullptr,0);
+    if(!need){ if(telFixed){ ++telFixed->failures; telFixed->totalMs+=d9dMs(tAll0,std::chrono::steady_clock::now()); } if(telAspect){ ++telAspect->failures; telAspect->totalMs+=d9dMs(tAll0,std::chrono::steady_clock::now()); } return false; }
+    std::wstring wp(need,L'\0'); MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,wp.data(),need);
+    const auto tCom0=std::chrono::steady_clock::now();
+    HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED); bool uninit=SUCCEEDED(hr);
+    if(telFixed) telFixed->comInitMs+=d9dMs(tCom0,std::chrono::steady_clock::now());
+    double aspectBranchMs=0.0;
+    bool ok=decodeWicBranches(wp.c_str(),w,h,maxDimension,true,true,fixedOut,aspectOut,telFixed,telAspect,&aspectBranchMs);
+    // Failure path is byte-identical to the two separate calls: the existing
+    // PGM fallbacks run unchanged, so no new fallback semantics are introduced.
+    if(!ok){
+        const auto tPgm0=std::chrono::steady_clock::now();
+        bool okF=decodePgm(path,w,h,fixedOut);
+        bool okA=decodePgmAspect(path,maxDimension,aspectOut);
+        ok=okF&&okA;
+        const double pgmMs=d9dMs(tPgm0,std::chrono::steady_clock::now());
+        aspectBranchMs=pgmMs;
+        if(telFixed){ telFixed->pgmFallbackMs+=pgmMs; ++telFixed->pgmFallbacks; }
+        if(telAspect){ telAspect->pgmFallbackMs+=pgmMs; ++telAspect->pgmFallbacks; }
+    } else {
+        if(telFixed) ++telFixed->wicSucceeded;
+        if(telAspect) ++telAspect->wicSucceeded;
+    }
+    if(uninit)CoUninitialize();
+    const auto tEnd=std::chrono::steady_clock::now();
+    if(telFixed){ if(!ok) ++telFixed->failures; }
+    if(telAspect){ if(!ok) ++telAspect->failures; }
+    // Split identity: decodeFullTotalMs + decodeAspectOnlyTotalMs must still
+    // equal this one wall-clock total, and mergeDecodeTelemetry adds them. So
+    // the aspect branch is charged to the aspect accumulator and everything
+    // else (COM, factory, open, metadata, orientation, the fixed branch and the
+    // caller-side wrapper) to the fixed one. Charging the whole elapsed time to
+    // both would double count it and break decodeSplitOverMs.
+    double fixedShare=d9dMs(tAll0,tEnd)-aspectBranchMs;
+    // Clamp: a nested timer can never exceed the outer one, but a negative
+    // total would corrupt the merge, so guard rather than trust it.
+    if(fixedShare<0.0) fixedShare=0.0;
+    if(telFixed) telFixed->totalMs+=fixedShare;
+    if(telAspect) telAspect->totalMs+=aspectBranchMs;
     return ok;
 }
 bool ImageDecoder::decodeColorAspect(const std::string& path,int maxDimension,ColorImage& out) const {
@@ -407,6 +457,25 @@ bool ImageDecoder::decode(const std::string& path,int w,int h,GrayImage& out) co
 bool ImageDecoder::decodePreserveAspect(const std::string& path,int maxDimension,GrayImage& out) const {
   if(maxDimension<=0) return false;
   return decodePgmAspect(path,maxDimension,out);
+}
+bool ImageDecoder::decodeBoth(const std::string& path,int w,int h,int maxDimension,GrayImage& fixedOut,GrayImage& aspectOut,DecodeTelemetry* telFixed,DecodeTelemetry* telAspect) const {
+  if(w<=0||h<=0||maxDimension<=0) return false;
+  const auto tAll0=std::chrono::steady_clock::now();
+  if(telFixed) ++telFixed->calls;
+  if(telAspect) ++telAspect->aspectCalls;
+  // No WIC off Windows, so there is no shared source to build: run the two
+  // existing PGM paths. Behaviour stays identical to the two separate calls.
+  const auto tPgm0=std::chrono::steady_clock::now();
+  const bool ok=decodePgm(path,w,h,fixedOut)&&decodePgmAspect(path,maxDimension,aspectOut);
+  const double pgmMs=d9dMs(tPgm0,std::chrono::steady_clock::now());
+  // Same split identity as the Windows path: the aspect share goes to the aspect
+  // accumulator and the remainder to the fixed one, so the two totalMs values
+  // still sum to the whole call.
+  double fixedShare=d9dMs(tAll0,std::chrono::steady_clock::now())-pgmMs;
+  if(fixedShare<0.0) fixedShare=0.0;
+  if(telFixed){ telFixed->pgmFallbackMs+=pgmMs; ++telFixed->pgmFallbacks; if(!ok) ++telFixed->failures; telFixed->totalMs+=fixedShare; }
+  if(telAspect){ telAspect->pgmFallbackMs+=pgmMs; ++telAspect->pgmFallbacks; if(!ok) ++telAspect->failures; telAspect->totalMs+=pgmMs; }
+  return ok;
 }
 bool ImageDecoder::decodeColorAspect(const std::string&,int,ColorImage&) const {
   return false; // no color WIC outside Windows; callers fall back to file icons

@@ -135,6 +135,13 @@ public:
     // caller keeps compiling and keeps its current behaviour untouched.
     bool decode(const std::string& path,int width,int height,GrayImage& out, DecodeTelemetry* tel=nullptr) const;
     bool decodePreserveAspect(const std::string& path,int maxDimension,GrayImage& out, DecodeTelemetry* tel=nullptr) const;
+    // I-2: one shared WIC source (factory, decoder, frame, EXIF orientation)
+    // producing both the fixed-size and the aspect output, with two independent
+    // scaler/converter/CopyPixels chains and no intermediate GrayImage.
+    // Fails if either output would have failed, exactly like the two calls.
+    // Only the caller that needs both at once should use this; single-output
+    // callers keep using decode()/decodePreserveAspect().
+    bool decodeBoth(const std::string& path,int width,int height,int maxDimension,GrayImage& fixedOut, GrayImage& aspectOut, DecodeTelemetry* telFixed=nullptr, DecodeTelemetry* telAspect=nullptr) const;
     // Display path (previews): color via WIC BGRA. Fingerprint paths stay gray.
     bool decodeColorAspect(const std::string& path,int maxDimension,ColorImage& out) const;
     // Header-only dimensions: PNG IHDR + JPEG SOF parsed from the first bytes,

@@ -916,7 +916,7 @@ static bool independentPairXform(const std::wstring& wpath, int maxDim,
 // buffers differ only in which pipeline produced them. Pairs are enumerated
 // exhaustively over the files that decoded on both sides, so no prefilter and no
 // sampling decides which pairs are considered.
-int runGroups(const std::string& root, int stride) {
+int runGroups(const std::string& root, int stride, bool useProductionCandidate) {
   msf::DatasetFingerprint fp = msf::computeDatasetFingerprint(msf::path_to_utf8(root));
   if (fp.state != "measured") { std::cerr << "dataset fingerprint state=" << fp.state << "\n"; return 2; }
   std::printf("dataset_matches_standard=%s files=%llu bytes=%llu fingerprint=%s\n",
@@ -938,13 +938,23 @@ int runGroups(const std::string& root, int stride) {
       G g; g.rel = rel; g.abs = abs;
       const bool okBase = msf::ImageDecoder().decode(abs, 64, 64, g.f0, &telF) &&
                           msf::ImageDecoder().decodePreserveAspect(abs, 64, g.a0, &telA);
-      CandTelemetry ct;
-      const bool okCand = candidateSharedSource(toWide(abs), 64, g.f1, g.a1, ct);
+      // The candidate is the production entry point when asked for it, so the
+      // exhaustive sweep validates the code that actually ships rather than the
+      // probe's own re-implementation of the I-2 structure.
+      bool okCand = false;
+      if (useProductionCandidate) {
+        msf::DecodeTelemetry cF, cA;
+        okCand = msf::ImageDecoder().decodeBoth(abs, 64, 64, 64, g.f1, g.a1, &cF, &cA);
+      } else {
+        CandTelemetry ct;
+        okCand = candidateSharedSource(toWide(abs), 64, g.f1, g.a1, ct);
+      }
       if (okBase && okCand) items.push_back(std::move(g));
     }
   }
   std::sort(items.begin(), items.end(), [](const G& a, const G& b) { return a.rel < b.rel; });
-  std::printf("group_corpus_files=%d stride=%d (1 = exhaustive)\n", (int)items.size(), stride);
+  std::printf("group_corpus_files=%d stride=%d candidate=%s (1 = exhaustive)\n",
+              (int)items.size(), stride, useProductionCandidate ? "production-decodeBoth" : "probe-I-2");
   if (items.size() < 2) return 2;
 
   const double kThreshold = 87.5;  // scan maxDistance 8, thresholdFor()
@@ -1316,6 +1326,143 @@ int selfcheck() {
 #ifdef _WIN32
 struct File { std::string format, path, abs; };
 
+// ------------------------------------------------- production entry-point test
+//
+// The probe's own candidateSharedSource() re-implements I-2, so it proves the
+// STRUCTURE but not the code that actually ships. This mode compares the real
+// production entry point ImageDecoder::decodeBoth() against the real
+// pre-integration two-call baseline (decode + decodePreserveAspect) over every
+// file in the dataset:
+//
+//   baseline  : decode(abs,64,64)                -> f0   + decodePreserveAspect(abs,64) -> a0
+//   candidate : decodeBoth(abs,64,64,64)         -> f1, a1
+//
+// A candidate-side difference therefore means the integration changed bytes,
+// geometry or failure behaviour, which is the thing that must never happen.
+int runProduction(const std::string& root) {
+  msf::DatasetFingerprint fp = msf::computeDatasetFingerprint(msf::path_to_utf8(root));
+  if (fp.state != "measured") {
+    std::cerr << "dataset fingerprint state=" << fp.state << " (measurement stopped)\n";
+    return 2;
+  }
+  std::printf("dataset_files=%llu dataset_bytes=%llu fingerprint=%s version=%d\n",
+              (unsigned long long)fp.fileCount, (unsigned long long)fp.totalBytes,
+              fp.fingerprint.c_str(), (int)msf::kDatasetFingerprintVersion);
+
+  std::vector<File> files;
+  {
+    std::error_code ec;
+    std::set<std::string> seen;
+    int dupes = 0;
+    for (const auto& f : std::filesystem::recursive_directory_iterator(msf::path_from_utf8(root), ec)) {
+      if (!f.is_regular_file()) continue;
+      const std::string p = msf::canonicalRelativePath(msf::path_to_utf8(root), msf::path_to_utf8(f.path()));
+      if (!seen.insert(p).second) { ++dupes; continue; }
+      const std::string abs = msf::path_to_utf8(std::filesystem::path(root) / std::filesystem::path(p));
+      files.push_back({"all", p, abs});
+    }
+    std::sort(files.begin(), files.end(), [](const File& a, const File& b) { return a.path < b.path; });
+    std::printf("files_collected=%d unique_files=%d duplicate_paths=%d\n",
+                (int)files.size(), (int)seen.size(), dupes);
+  }
+
+  int bothOk = 0, bothFail = 0, baseOnlyFail = 0, candOnlyFail = 0;
+  int fGeomDiff = 0, fPixDiff = 0, aGeomDiff = 0, aPixDiff = 0;
+  long long fDiffPx = 0, aDiffPx = 0;
+  unsigned fMaxAbs = 0, aMaxAbs = 0;
+  std::vector<std::string> diffExamples;
+  // Telemetry invariants that the integration must not break.
+  int callsViolations = 0, aspectCallsViolations = 0, splitViolations = 0;
+  std::vector<double> baseTotalMs, candTotalMs, candAspectBranchMs;
+
+  for (const auto& f : files) {
+    msf::GrayImage f0, a0, f1, a1;
+    msf::DecodeTelemetry bF, bA;
+    const bool okBase = msf::ImageDecoder().decode(f.abs, 64, 64, f0, &bF) &&
+                        msf::ImageDecoder().decodePreserveAspect(f.abs, 64, a0, &bA);
+    msf::DecodeTelemetry cF, cA;
+    const bool okCand = msf::ImageDecoder().decodeBoth(f.abs, 64, 64, 64, f1, a1, &cF, &cA);
+
+    if (okBase && okCand) {
+      ++bothOk;
+      if (f0.width != f1.width || f0.height != f1.height) { ++fGeomDiff;
+        if (diffExamples.size() < 8) diffExamples.push_back(f.path + " fixed geometry"); }
+      if (a0.width != a1.width || a0.height != a1.height) { ++aGeomDiff;
+        if (diffExamples.size() < 8) diffExamples.push_back(f.path + " aspect geometry"); }
+      if (f0.width == f1.width && f0.height == f1.height && f0.pixels != f1.pixels) {
+        ++fPixDiff;
+        const std::size_t n = f0.pixels.size() < f1.pixels.size() ? f0.pixels.size() : f1.pixels.size();
+        for (std::size_t i = 0; i < n; ++i) {
+          const int d = std::abs((int)f0.pixels[i] - (int)f1.pixels[i]);
+          if (d) { ++fDiffPx; if ((unsigned)d > fMaxAbs) fMaxAbs = (unsigned)d; }
+        }
+        if (diffExamples.size() < 8) diffExamples.push_back(f.path + " fixed pixels");
+      }
+      if (a0.width == a1.width && a0.height == a1.height && a0.pixels != a1.pixels) {
+        ++aPixDiff;
+        const std::size_t n = a0.pixels.size() < a1.pixels.size() ? a0.pixels.size() : a1.pixels.size();
+        for (std::size_t i = 0; i < n; ++i) {
+          const int d = std::abs((int)a0.pixels[i] - (int)a1.pixels[i]);
+          if (d) { ++aDiffPx; if ((unsigned)d > aMaxAbs) aMaxAbs = (unsigned)d; }
+        }
+        if (diffExamples.size() < 8) diffExamples.push_back(f.path + " aspect pixels");
+      }
+    } else if (!okBase && !okCand) {
+      ++bothFail;
+    } else if (okBase) {
+      ++baseOnlyFail;
+      if (diffExamples.size() < 8) diffExamples.push_back(f.path + " BASELINE_OK_CANDIDATE_FAIL");
+    } else {
+      ++candOnlyFail;
+      if (diffExamples.size() < 8) diffExamples.push_back(f.path + " CANDIDATE_OK_BASELINE_FAIL");
+    }
+
+    // Per-file counters, not run totals: verifyBuffersFor uses one fresh
+    // ImageDecoder per file, so each accumulator must see exactly 1 call and
+    // 1 aspectCall, and the two totals must reconstruct the one call.
+    if (okCand) {
+      if (cF.calls != 1) ++callsViolations;
+      if (cA.aspectCalls != 1) ++aspectCallsViolations;
+      const double merged = cF.totalMs + cA.totalMs;
+      const double bucketSum = cF.comInitMs + cF.factoryMs + cF.openMs + cF.metadataMs + cF.orientMs
+                             + cF.resizeMs + cF.convertMs + cF.copyMs
+                             + cA.resizeMs + cA.convertMs + cA.copyMs;
+      // Buckets are measured spans inside the call, so they may not exceed it;
+      // a large excess would mean a bucket was double counted.
+      if (merged <= 0.0 || bucketSum > merged * 1.05) ++splitViolations;
+      baseTotalMs.push_back(bF.totalMs + bA.totalMs);
+      candTotalMs.push_back(merged);
+      candAspectBranchMs.push_back(cA.totalMs);
+    }
+  }
+
+  const int compared = bothOk;
+  std::printf("both_success=%d base_only_fail=%d cand_only_fail=%d both_fail=%d\n",
+              bothOk, baseOnlyFail, candOnlyFail, bothFail);
+  std::printf("fixed_geometry_mismatch=%d fixed_pixel_mismatch=%d fixed_diff_px=%lld fixed_max_abs=%u\n",
+              fGeomDiff, fPixDiff, fDiffPx, fMaxAbs);
+  std::printf("aspect_geometry_mismatch=%d aspect_pixel_mismatch=%d aspect_diff_px=%lld aspect_max_abs=%u\n",
+              aGeomDiff, aPixDiff, aDiffPx, aMaxAbs);
+  std::printf("telemetry_calls_violations=%d aspect_calls_violations=%d split_identity_violations=%d\n",
+              callsViolations, aspectCallsViolations, splitViolations);
+  for (const auto& e : diffExamples) std::printf("  diff: %s\n", e.c_str());
+
+  auto med = [](std::vector<double> v) {
+    if (v.empty()) return 0.0;
+    std::sort(v.begin(), v.end());
+    return v[v.size() / 2];
+  };
+  std::printf("baseline_two_call_total_median_ms=%.6f\n", med(baseTotalMs));
+  std::printf("production_decodeBoth_total_median_ms=%.6f\n", med(candTotalMs));
+  std::printf("production_aspect_branch_median_ms=%.6f\n", med(candAspectBranchMs));
+
+  const bool pass = (compared > 0) && candOnlyFail == 0 && baseOnlyFail == 0 &&
+                    fGeomDiff == 0 && fPixDiff == 0 && aGeomDiff == 0 && aPixDiff == 0 &&
+                    callsViolations == 0 && aspectCallsViolations == 0 && splitViolations == 0;
+  std::printf("production_exactness=%s\n", pass ? "PASS" : "FAIL");
+  return pass ? 0 : 1;
+}
+
 int runFull(const std::string& root) {
   msf::DatasetFingerprint fp = msf::computeDatasetFingerprint(msf::path_to_utf8(root));
   if (fp.state != "measured") {
@@ -1636,10 +1783,22 @@ int main(int argc, char** argv) {
   if (argc >= 2 && std::strcmp(argv[1], "--groups") == 0) {
     const std::string root = (argc >= 3) ? argv[2] : ".";
     const int stride = (argc >= 4) ? std::atoi(argv[3]) : 1;
-    return runGroups(root, stride > 0 ? stride : 1);
+    return runGroups(root, stride > 0 ? stride : 1, false);
+  }
+  // Exhaustive sweep with the PRODUCTION decodeBoth() as the candidate, so the
+  // scan-level parity statement covers the code that actually ships.
+  if (argc >= 2 && std::strcmp(argv[1], "--production-groups") == 0) {
+    const std::string root = (argc >= 3) ? argv[2] : ".";
+    const int stride = (argc >= 4) ? std::atoi(argv[3]) : 1;
+    return runGroups(root, stride > 0 ? stride : 1, true);
+  }
+  if (argc >= 3 && std::strcmp(argv[1], "--production") == 0) {
+    return runProduction(argv[2]);
   }
   if (argc < 2) {
-    std::cerr << "usage: msf_shared_wic_source_probe <dataset-root> | --selfcheck\n";
+    std::cerr << "usage: msf_shared_wic_source_probe <dataset-root> | --selfcheck"
+                 " | --production <dataset-root> | --groups <root> <stride>"
+                 " | --production-groups <root> <stride> | --exif <dir>\n";
     return 2;
   }
   return runFull(argv[1]);
