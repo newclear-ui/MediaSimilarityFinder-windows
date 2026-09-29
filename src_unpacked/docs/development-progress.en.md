@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.34 |
+| Reference code | 0.9.4.35 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | I — Analyze / Matching Performance (D9a through the I-2 verification complete) |
-| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC entry path (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (**PASS**). Two D3 follow-up candidates. **I-1** (shared GrayImage + resize twice) is `DEFERRED` across 0.9.4.31–0.9.4.32. **I-2** (shared WIC source + two independent scalers) was measured in 0.9.4.33 and verified in 0.9.4.34 — **3,341/3,341 byte identical** over the full standard dataset, `candidate_only_fail` 0, **0 verdict diffs across 5,579,470 exhaustive full-scan group pairs**, rotated shared source vs independent pipelines 7/7 identical, probe cost 47–49 % lower raw. Status is **READY FOR PRODUCTION IMPLEMENTATION REVIEW**; implementation is **NOT performed**. **Separate finding: the product EXIF query path `/app1/ifd/exif/{ushort=274}` is rejected by WIC with `BADPROPERTYKEY`** — a product defect unrelated to I-2, left unfixed and registered as its own task. **Next: decide the product EXIF path then verify end to end, verify scan-pipeline integration, write the production implementation brief** |
-| Current version | 0.9.4.34 |
+| Current node | I — Analyze / Matching Performance (D9a through all I-2 gates) |
+| Current phase | Node I in progress. `verify` dominates analyze (D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC entry path (**Path C `DEFERRED`**) → D3 duplicate-decode measurement (**PASS**). Two D3 follow-up candidates. **I-1** (shared GrayImage + resize twice) is `DEFERRED`. **I-2** (shared WIC source + two independent scalers) was measured in 0.9.4.33, verified in 0.9.4.34, and after the product EXIF defect was corrected in 0.9.4.35 passed **every gate** — Gate A (EXIF fixtures 1–8 correct) / Gate B (I-2 EXIF parity 8/8) / Gate C (exhaustive scan unchanged at 5,579,470 pairs) / Gate D. Status is **`READY FOR PRODUCTION IMPLEMENTATION`**, though **production integration is still NOT performed**. It is also established that the dataset's 8 EXIF files are all orientation 1, so it contains no rotated image. **Next: write the I-2 production implementation brief and perform the integration** |
+| Current version | 0.9.4.35 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -1203,8 +1203,10 @@ The recording obligation and the required field list are defined in
   `/app1/ifd/exif/{ushort=274}`, is rejected by WIC with
   `WINCODEC_ERR_BADPROPERTYKEY` (8/8). The working path is
   `/app1/ifd/{ushort=274}`. This is a **product EXIF defect unrelated to I-2**;
-  production code was not changed here, so it remains unfixed. v0.9.4.33's
-  "the product EXIF path does not work" was not an observation and had no basis.
+  production code was not changed here, so it remained unfixed at this point.
+  v0.9.4.33's "the product EXIF path does not work" was not an observation and
+  had no basis.
+  → **fixed in 0.9.4.35** (see the next section).
 - **The I-2 structure passes under rotation.** With the fixture's transform
   forced so rotation genuinely happens, the shared-source candidate and two
   fully independent pipelines are **7/7 byte identical** for f and a.
@@ -1223,3 +1225,50 @@ The recording obligation and the required field list are defined in
   both trees, new probe selfcheck 11, existing probe 14, telemetry 25/29/71,
   `git diff --check` clean. **No production code change.** Details:
   `docs/build-history/0.9.4.34.en.md`
+
+## 0.9.4.35 — EXIF Orientation Query Path Correction and Post-Fix Regression
+
+- Committed the pre-register
+  `docs/implementation-briefs/I-exif-orientation-path-fix.en.md` before the
+  production change.
+- **Survey result:** the bad literal was in exactly three places in
+  `src/image_decoder.cpp` (fixed fingerprint, aspect fingerprint, display
+  color), all copies of identical logic. Rather than three line edits it is
+  consolidated into **one shared helper**.
+- **Minimal correction:** try `/app1/ifd/{ushort=274}` (JPEG) then
+  `/ifd/{ushort=274}` (TIFF) and **return as soon as a value appears**. No
+  container branch, no XMP, no new framework. The display path is corrected too,
+  because a rotated photo shown differently from its fingerprint would make the
+  screen disagree with matching.
+- **Gate A PASS** — fixtures orientation 1–8: metadata 8/8, values 8/8
+  matching, baseline applied 7/7 (orientation 1 is the identity and is
+  correctly not counted), decode success, and the source really changes
+  209x248 → 248x209 on the 90/270 fixtures.
+- **Gate B PASS** — f/a byte parity 8/8. Production and candidate read the same
+  orientation and apply the same transform.
+- **Gate C PASS** — the exhaustive group result is **identical before and
+  after** the fix (5,579,470 pairs, 457,126 groups, 0 verdict diffs, max score
+  difference 0.000000000).
+  - Standard dataset EXIF re-measured: 8 files carry metadata, **all
+    orientation 1**, 0 applicable, 0 query failures. **The dataset contains no
+    rotated image**, which is why scan results do not change — and that is a
+    measured result, not an assumption.
+  - Those 7 TIFF files prove the `/ifd/` path genuinely works.
+- **Cost:** the fix's own cost is measured separately — one_path 0.01678 ms vs
+  two_paths 0.04547 ms, **0.02870 ms per file**. Because the helper returns on
+  the first value, a JPEG does not pay it. Corpus cost stays at the
+  v0.9.4.34 level: CPU raw 46.8–49.4 %, GPU raw 46.9–50.4 % lower.
+- **Regression test added:** an EXIF regression went into the dataset-free
+  `--selfcheck` and was **registered in CTest** — selfcheck 11 → 16 checks,
+  CPU 80/80 → **81/81**, GPU 81/81 → **82/82**. It asserts orientation 1 is
+  not applied, orientation 6 is, the rotation actually changes pixels, and
+  baseline/candidate parity on a rotated file. Without it the defect could
+  silently return.
+- **Gate D PASS — I-2 = `READY FOR PRODUCTION IMPLEMENTATION`.** However
+  **production I-2 integration was NOT performed** (adoption NO). That is the
+  next step.
+- **Left open:** no rotated image in the dataset (would change the
+  fingerprint), and no XMP fallback.
+- Dataset rules respected: fingerprint `e8f8fa6a..e2640a` kept,
+  `SOURCES.md` kept, `both_fail` 6 kept.
+- Details: `docs/build-history/0.9.4.35.en.md`

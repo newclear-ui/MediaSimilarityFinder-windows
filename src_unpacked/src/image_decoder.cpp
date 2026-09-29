@@ -77,6 +77,53 @@ inline void probeOsFileOpen(const wchar_t* wpath, DecodeTelemetry* tel) {
   ++tel->osFileOpenProbeCount;
   if (!ok) ++tel->osFileOpenProbeFails;
 }
+
+// EXIF Orientation, read once for all three decode paths.
+//
+// The previous code queried L"/app1/ifd/exif/{ushort=274}" at every call site.
+// WIC rejects that path with WINCODEC_ERR_BADPROPERTYKEY, so the lookup never
+// succeeded and orient_applied stayed 0 for the whole corpus: the product has
+// never applied a rotation, in the fingerprint lanes or the display lane.
+// Orientation lives in EXIF IFD0, which WIC exposes as /app1/ifd/ for JPEG and
+// /ifd/ for TIFF (the System.Photo.Orientation policy).
+//
+// Trying both known paths removes the need to know the container, so no
+// JPEG/TIFF branch is introduced. The first path that yields a value wins;
+// a file that has no Orientation tag yields WICBitmapTransformRotate0, which is
+// the identity and is also what orientation 1 means.
+//
+// Query cost is unchanged in shape: one failed lookup on files whose container
+// uses the second path. It is inside the metadataMs bucket that D9c/D9d
+// already account for.
+inline WICBitmapTransformOptions exifOrientationToTransform(IWICMetadataQueryReader* meta) {
+  static const wchar_t* const kPaths[] = {
+      L"/app1/ifd/{ushort=274}",  // JPEG
+      L"/ifd/{ushort=274}",       // TIFF
+  };
+  if (!meta) return WICBitmapTransformRotate0;
+  // Only VT_UI2 values are consumed, so the first path that yields one wins and
+  // the loop stops there. A JPEG resolves on the first query and never pays the
+  // second, which is the common case for a photo corpus.
+  for (const wchar_t* path : kPaths) {
+    PROPVARIANT v; PropVariantInit(&v);
+    const HRESULT hr = meta->GetMetadataByName(path, &v);
+    const bool found = SUCCEEDED(hr) && v.vt == VT_UI2;
+    if (!found) { PropVariantClear(&v); continue; }
+    const unsigned short o = v.uiVal;
+    PropVariantClear(&v);
+    switch (o) {
+      case 2: return WICBitmapTransformFlipHorizontal;
+      case 3: return WICBitmapTransformRotate180;
+      case 4: return WICBitmapTransformFlipVertical;
+      case 5: return (WICBitmapTransformOptions)(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal);
+      case 6: return WICBitmapTransformRotate90;
+      case 7: return (WICBitmapTransformOptions)(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal);
+      case 8: return WICBitmapTransformRotate270;
+      default: return WICBitmapTransformRotate0;  // 1, or a value we do not act on
+    }
+  }
+  return WICBitmapTransformRotate0;
+}
 #endif
 // Minimal P5 grayscale reader shared by all platforms. On Windows it is the
 // fallback for formats WIC cannot decode (e.g. PGM test fixtures); on other
@@ -189,21 +236,8 @@ bool decodeWicFile(const wchar_t* wpath,int w,int h,GrayImage& out,DecodeTelemet
       if(FAILED(hr))return false;
       WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
       ComPtr<IWICMetadataQueryReader> meta;
-      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta){
-        PROPVARIANT v; PropVariantInit(&v);
-        if(SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}",&v))&&v.vt==VT_UI2){
-          switch(v.uiVal){
-            case 2: xform=WICBitmapTransformFlipHorizontal; break;
-            case 3: xform=WICBitmapTransformRotate180; break;
-            case 4: xform=WICBitmapTransformFlipVertical; break;
-            case 5: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal); break;
-            case 6: xform=WICBitmapTransformRotate90; break;
-            case 7: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal); break;
-            case 8: xform=WICBitmapTransformRotate270; break;
-          }
-        }
-        PropVariantClear(&v);
-      }
+      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
+        xform=exifOrientationToTransform(meta.Get());
       const auto tMeta1=std::chrono::steady_clock::now(); if(tel) tel->metadataMs+=d9dMs(tMeta0,tMeta1);
       if(xform!=WICBitmapTransformRotate0){
         if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
@@ -262,21 +296,8 @@ bool decodeWicFileAspect(const wchar_t* wpath,int maxDimension,GrayImage& out,De
       ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false;
       WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
       ComPtr<IWICMetadataQueryReader> meta;
-      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta){
-        PROPVARIANT v; PropVariantInit(&v);
-        if(SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}",&v))&&v.vt==VT_UI2){
-          switch(v.uiVal){
-            case 2: xform=WICBitmapTransformFlipHorizontal; break;
-            case 3: xform=WICBitmapTransformRotate180; break;
-            case 4: xform=WICBitmapTransformFlipVertical; break;
-            case 5: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal); break;
-            case 6: xform=WICBitmapTransformRotate90; break;
-            case 7: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal); break;
-            case 8: xform=WICBitmapTransformRotate270; break;
-          }
-        }
-        PropVariantClear(&v);
-      }
+      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
+        xform=exifOrientationToTransform(meta.Get());
       const auto tAM1=std::chrono::steady_clock::now(); if(tel) tel->metadataMs+=d9dMs(tAM0,tAM1);
       if(xform!=WICBitmapTransformRotate0){
         if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
@@ -316,21 +337,8 @@ bool decodeWicFileAspectColor(const wchar_t* wpath,int maxDimension,msf::ColorIm
       ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false;
       WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
       ComPtr<IWICMetadataQueryReader> meta;
-      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta){
-        PROPVARIANT v; PropVariantInit(&v);
-        if(SUCCEEDED(meta->GetMetadataByName(L"/app1/ifd/exif/{ushort=274}",&v))&&v.vt==VT_UI2){
-          switch(v.uiVal){
-            case 2: xform=WICBitmapTransformFlipHorizontal; break;
-            case 3: xform=WICBitmapTransformRotate180; break;
-            case 4: xform=WICBitmapTransformFlipVertical; break;
-            case 5: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal); break;
-            case 6: xform=WICBitmapTransformRotate90; break;
-            case 7: xform=(WICBitmapTransformOptions)(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal); break;
-            case 8: xform=WICBitmapTransformRotate270; break;
-          }
-        }
-        PropVariantClear(&v);
-      }
+      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
+        xform=exifOrientationToTransform(meta.Get());
       if(xform!=WICBitmapTransformRotate0){
         if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
         if(FAILED(orient->Initialize(frame.Get(),xform))) return false;

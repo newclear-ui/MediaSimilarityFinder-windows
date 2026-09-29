@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.34 |
+| 기준 코드 | 0.9.4.35 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | I — Analyze / Matching Performance (D9a → I-2 검증 보완 완료) |
-| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC 진입 경로(**Path C `DEFERRED`**) → D3 중복 decode 계측(**PASS**). D3 후속 후보는 두 개. **I-1**(공유 GrayImage + resize 2회)은 0.9.4.31~0.9.4.32 에 걸쳐 `DEFERRED`. **I-2**(공유 WIC source + 독립 2개 scaler)는 0.9.4.33 에서 측정 후 0.9.4.34 에서 검증 보완 완료 — 표준 dataset **3,341/3,341 byte 동일**, `candidate_only_fail` 0, **full-scan groups 전수 5,579,470쌍 verdict diff 0**, 회전 공유 source vs 독립 pipeline 7/7 동일, probe 비용 raw 47~49 % 감소. 판정은 **READY FOR PRODUCTION IMPLEMENTATION REVIEW**, 반영은 **미수행**. **별건 발견: 제품 EXIF query path `/app1/ifd/exif/{ushort=274}` 가 WIC `BADPROPERTYKEY` 로 거부된다** — I-2 와 무관한 제품 결함이며 수정하지 않고 별도 과제로 등록. **다음: 제품 EXIF path 결정 후 종단간 검증, scan 파이프라인 통합 검증, production implementation brief** |
-| 현재 버전 | 0.9.4.34 |
+| 현재 노드 | I — Analyze / Matching Performance (D9a → I-2 모든 gate 통과) |
+| 현재 단계 | Node I 진행 중. `verify` 가 analyze 의 지배적 비용(D9a) → D9b **NOT ACCEPTED** → D9c/D9d → D1 → D2 WIC 진입 경로(**Path C `DEFERRED`**) → D3 중복 decode 계측(**PASS**). D3 후속 후보는 두 개. **I-1**(공유 GrayImage + resize 2회)은 `DEFERRED`. **I-2**(공유 WIC source + 독립 2개 scaler)는 0.9.4.33~0.9.4.34 에서 측정·검증되고, 0.9.4.35 에서 **제품 EXIF 결함을 먼저 고친 뒤** 모든 gate 를 통과했다 — Gate A(fixture 1~8 EXIF 정상) / Gate B(I-2 EXIF parity 8/8) / Gate C(scan 전수 5,579,470쌍 무변화) / Gate D. 판정은 **`READY FOR PRODUCTION IMPLEMENTATION`**, 단 **production 통합은 아직 수행하지 않았다**(`NOT PERFORMED`). dataset 의 EXIF 8건은 모두 orientation 1 이라 회전 이미지가 없다는 점도 확인했다. **다음: I-2 production implementation brief 작성과 실제 통합** |
+| 현재 버전 | 0.9.4.35 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -1158,8 +1158,9 @@ Current active investigation:
   `/app1/ifd/exif/{ushort=274}` 는 WIC 가 `WINCODEC_ERR_BADPROPERTYKEY` 로
   거부한다(8/8). 동작하는 경로는 `/app1/ifd/{ushort=274}` 다.
   I-2 와 무관한 **제품 EXIF 경로 결함**이며, 이번에 production 코드를
-  변경하지 않았으므로 수정되지 않았다. 0.9.4.33 의 "제품 EXIF 가 동작하지
+  변경하지 않았으므로 아직 수정되지 않았다. 0.9.4.33 의 "제품 EXIF 가 동작하지
   않는다" 는 관측이 아니었고 근거도 없었다.
+  → **0.9.4.35 에서 수정됨** (아래 절 참조).
 - **I-2 구조는 회전 하에서 통과.** fixture 가 선언한 변환을 강제 적용해
   rotation 을 실제로 수행한 뒤, 공유 source + 독립 scaler 2개와 완전 독립
   pipeline 2개를 f/a 모두 byte 비교 → **7/7 동일**.
@@ -1177,3 +1178,43 @@ Current active investigation:
   새 probe selfcheck 11, 기존 probe 14, telemetry 25/29/71,
   `git diff --check` 통과. **생산 코드 변경 없음.**
   상세: `docs/build-history/0.9.4.34.ko.md`
+
+## 0.9.4.35 — EXIF Orientation query path 결함 수정과 post-fix 회귀
+
+- pre-register `docs/implementation-briefs/I-exif-orientation-path-fix.ko.md`를
+  production 수정보다 먼저 커밋했다.
+- **조사 결과**: 잘못된 리터럴은 `src/image_decoder.cpp` 의 3곳(고정 지문,
+  aspect 지문, 표시 color)이고 모두 동일 로직 복제본이었다. 행 단위 수정 3번이
+  아니라 **공유 헬퍼 1개**로 통합했다.
+- **최소 수정**: `/app1/ifd/{ushort=274}`(JPEG) → `/ifd/{ushort=274}`(TIFF)
+  순서로 시도하고 **값이 나오면 즉시 반환**. 컨테이너 분기 없음, XMP 없음,
+  새 framework 없음. 표시 경로도 함께 수정(회전 사진이 지문과 다르게 보이면
+  화면과 매칭이 어긋난다).
+- **Gate A PASS** — fixture orientation 1~8: metadata 8/8, 값 8/8 일치,
+  baseline 적용 7/7(1은 항등이라 정상적으로 미적용), decode 성공, 90/270 에서
+  소스 209x248→248x209 로 실제 회전 확인.
+- **Gate B PASS** — f/a byte parity 8/8. production 과 candidate 가 같은
+  orientation 을 읽고 같은 변환을 수행.
+- **Gate C PASS** — groups 전수 5,579,470쌍 결과가 수정 전후 **동일**
+  (457,126 / verdict diff 0 / max score diff 0.000000000).
+  - 표준 dataset EXIF 재측정: metadata 보유 8건, **전부 orientation 1**,
+    적용 대상 0, query 실패 0. **dataset 에 회전 이미지가 없다**는 것이
+    scan 이 변하지 않는 이유이며, 이는 측정 결과다.
+  - 그 7개 TIFF 파일이 `/ifd/` 경로가 실제로 동작함을 증명한다.
+- **비용**: 수정 자체 비용을 분리 측정 — one_path 0.01678 ms vs two_paths
+  0.04547 ms, **파일당 0.02870 ms**. 값 나오면 즉시 반환하므로 JPEG 는 이
+  비용을 지불하지 않는다. corpus 비용은 CPU raw 46.8~49.4 %,
+  GPU raw 46.9~50.4 % 감소로 v0.9.4.34 수준 유지.
+- **회귀 테스트 추가**: selfcheck 에 EXIF 회귀를 넣고 **CTest 에 등록** —
+  selfcheck 11→16 checks, CPU 80/80→**81/81**, GPU 81/81→**82/82**.
+  orientation 1 미적용 / orientation 6 적용 / 회전이 픽셀을 실제로 바꾸는지 /
+  회전 파일 baseline-candidate parity 를 검증한다. 이 테스트가 없으면 결함이
+  조용히 돌아올 수 있었다.
+- **Gate D PASS — I-2 = `READY FOR PRODUCTION IMPLEMENTATION`.**
+  단 **production I-2 통합은 수행하지 않았다**(`NOT PERFORMED`,
+  adoption NO). 다음 단계다.
+- **남긴 과제**: dataset 에 회전 이미지 없음(fingerprint 변경 수반),
+  XMP fallback 미구현.
+- dataset 규칙 준수: fingerprint `e8f8fa6a..e2640a` 유지, `SOURCES.md` 유지,
+  `both_fail` 6건 유지.
+- 상세: `docs/build-history/0.9.4.35.ko.md`

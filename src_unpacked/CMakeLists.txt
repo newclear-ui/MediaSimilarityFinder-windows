@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.34 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.35 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -184,6 +184,12 @@ if(MSF_BUILD_TESTS)
     # argument and takes minutes); its --selfcheck mode needs no dataset.
     add_executable(msf_shared_wic_source_probe tests/shared_wic_source_probe.cpp)
     target_link_libraries(msf_shared_wic_source_probe PRIVATE msf_core)
+    # Only --selfcheck is registered: it is dataset-free and fast, and it carries
+    # the EXIF orientation regression that guards the v0.9.4.35 production fix
+    # (a WIC metadata path the product used to query incorrectly, so rotation was
+    # silently never applied). The corpus/group modes stay unregistered because
+    # they need a measured dataset root and take minutes.
+    add_test(NAME shared_wic_source_probe COMMAND msf_shared_wic_source_probe --selfcheck)
     # D4a: backend-internal timing contract. Registered in both trees on
     # purpose — the recorder half must be proven where CUDA does not exist.
     add_executable(msf_gpu_timing_test tests/gpu_timing_test.cpp)

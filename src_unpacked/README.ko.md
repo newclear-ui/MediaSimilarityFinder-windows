@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## 현재 개발 버전: 0.9.4.34 (엔진 1.5.0, DB 1.0.3, 공식 기준선 0.9.2.32, 개발선 0.9.4 I-2 검증 보완 완료 — 후보 `READY FOR PRODUCTION IMPLEMENTATION REVIEW`, 반영 미수행)
+## 현재 개발 버전: 0.9.4.35 (엔진 1.5.0, DB 1.0.3, 공식 기준선 0.9.2.32, 개발선 0.9.4 EXIF Orientation query path 결함 수정 — I-2 모든 gate 통과, production 통합은 다음 단계)
 
 Windows 11 x64 미디어 중복/유사 검색 엔진. CPU/CUDA 병행 개발 중.
 
