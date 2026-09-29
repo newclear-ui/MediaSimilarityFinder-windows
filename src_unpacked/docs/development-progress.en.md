@@ -1336,3 +1336,55 @@ The recording obligation and the required field list are defined in
 - Dataset rules respected: fingerprint `e8f8fa6a..e2640a` kept,
   `SOURCES.md` kept, `both_fail` 6 kept.
 - Details: `docs/build-history/0.9.4.35.en.md`
+
+
+## 2026-09-30 — Benchmark / Console CLI Design Decision
+
+F-1 currently forbids production NVDEC adoption, so Benchmark / Console CLI infrastructure is recorded as an independent cross-cutting track. This does not authorize F-2 NVDEC production integration.
+
+### Fixed decisions
+
+1. Benchmark mode is limited to AUTO / CPU-only / GPU-max.
+2. Existing GUI image/video selection remains a separate axis.
+3. Console exposes the same media scope:
+   - --media images
+   - --media videos
+   - --media all
+   - default: all
+4. GUI retains at most the latest three mode results per source folder.
+5. Console is the cumulative long-term data-mining store and is not automatically pruned.
+6. Normal Search Index and benchmark index/cache state are isolated.
+7. Run = one mode measurement; Suite = a group of mode measurements under the same dataset/media scope.
+8. Each Run stores sourceRoot, dataset fingerprint, mode, mediaScope, CPU/GPU/scheduler settings, environment, and completion/failure/fallback state.
+9. GPU-max is not GPU-only; mandatory CPU work and CPU fallback remain.
+10. Benchmark Runs should prefer independent processes, while OS filesystem cache is recorded as uncontrolled.
+
+### Build / implementation schedule
+
+Version numbers are not pre-assigned.
+
+~~~text
+S0  design / pre-register
+ ↓
+S1  Console entry foundation
+ ↓
+S2  Run / Suite benchmark core
+ ↓
+S3  Benchmark storage isolation
+ ↓
+S4  GUI benchmark integration
+ ↓
+S5  Console benchmark execution
+ ↓
+S6  Data-mining automation
+ ↓
+S7  Help / usability
+ ↓
+S8  Full verification / release gate
+~~~
+
+Each stage closes before the next stage starts:
+
+source change → CPU/GPU build → CTest → execution verification → documentation → Build History when applicable → commit
+
+This entry records the approved design and implementation order, not an implementation result or benchmark measurement. The detailed contract is maintained in docs/architecture/benchmark-telemetry-roadmap.*.
