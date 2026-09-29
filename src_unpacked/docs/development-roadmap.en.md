@@ -394,3 +394,39 @@ When that happens:
 5. Continue along the new path.
 
 This document is not a complete implementation prompt; it is the anchor that prevents loss of development direction.
+
+
+## Benchmark / Console CLI Cross-Cutting Track
+
+Benchmark/Telemetry remains a cross-cutting infrastructure track rather than a new roadmap node. Because F-1 currently forbids NVDEC production adoption, organizing Benchmark/Console CLI does not authorize F-2 integration.
+
+Fixed contract:
+
+- benchmark mode: AUTO / CPU-only / GPU-max
+- media scope: images / videos / all
+- Console canonical selector: --media images|videos|all
+- Run / Suite separation
+- GUI keeps only the latest three mode results per source folder
+- Console keeps cumulative long-term results
+- normal Search Index and benchmark index/cache isolation
+- human-readable source-folder label + short stable id
+- Run stores source identity, dataset fingerprint, media scope, scheduler configuration, environment, and failure/fallback state
+- GPU-max is not GPU-only; mandatory CPU work and fallback remain enabled
+
+### Build / implementation schedule policy
+
+Version numbers are not pre-assigned.
+
+S0 design/pre-register
+→ S1 Console entry foundation
+→ S2 Run/Suite benchmark core
+→ S3 Benchmark storage isolation
+→ S4 GUI benchmark integration
+→ S5 Console benchmark execution
+→ S6 Data-mining automation
+→ S7 Help/usability
+→ S8 Full verification/release gate
+
+Every stage closes with source change → CPU/GPU build → CTest → CLI/GUI execution verification → documentation → Build History when applicable → commit.
+
+Detailed contracts and storage layout are maintained in docs/architecture/benchmark-telemetry-roadmap.*.
