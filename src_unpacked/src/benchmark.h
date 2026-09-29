@@ -174,6 +174,11 @@ public:
   void addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
                 std::size_t decodedFrames = kFramesNotProvided, std::size_t sampledFrames = kFramesNotProvided);
   void addVideoGpu(bool used, bool fallback, double gpuMs);
+// E-3B: records one planner decision for one video file. Called for every
+// analysed file, including cache hits, because the decision is cheap input
+// analysis and is exactly what a reader needs to see when a scan looks odd.
+void addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseRejected,
+                  long long sparseSeeks, long long sparseDecoded, long long landingViolations);
   void addStreamedMatch() { streamedMatches_.fetch_add(1, std::memory_order_relaxed); }
   void startSampler(std::function<bool()> gpuActive);
   void stopSampler();
@@ -234,6 +239,16 @@ private:
   std::atomic<long long> vidBuildNs_{0};
   std::atomic<std::uint64_t> vidGpu_{0}, vidGpuFallback_{0};
   std::atomic<long long> vidGpuNs_{0};
+  // E-3B adaptive sampling planner. A fallback must never be silent, so the
+  // decision, the reason, whether a sparse result was accepted, and why one was
+  // rejected are all counted separately.
+  std::atomic<std::uint64_t> vidPlanTotal_{0}, vidPlanSeq_{0}, vidPlanSparse_{0}, vidPlanUnavail_{0};
+  std::atomic<std::uint64_t> vidPlanAccepted_{0}, vidPlanRejected_{0}, vidPlanLandingViol_{0};
+  std::atomic<long long> vidPlanSparseSeeks_{0}, vidPlanSparseDecoded_{0};
+  // Reasons are an enum today; a fixed slot per reason keeps the JSON stable
+  // without inventing a dynamic key space.
+  static constexpr int kPlanReasonCount = 9;
+  std::atomic<std::uint64_t> vidPlanReason_[kPlanReasonCount];
   // D1b walker queue: unbounded by construction, so the producer never
   // blocks (no producerBlocked counter exists); the consumer records idle
   // polls while the walker is alive as starved ticks.

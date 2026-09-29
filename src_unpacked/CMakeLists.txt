@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.41 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.42 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
@@ -39,6 +39,10 @@ add_library(msf_core STATIC
     src/incremental_index.cpp
     src/media_analyzer.cpp
     src/video_sampling.cpp
+  # E-3B: the adaptive sampling planner. Classification only — no decode, no
+  # FFmpeg calls, no I/O — so the correctness gates are provably independent of
+  # whatever the decoder does afterwards.
+  src/video_sampling_planner.cpp
     src/media_search_engine.cpp
     src/monitor.cpp
     src/benchmark.cpp
@@ -218,6 +222,19 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_sampling_strategy_probe tests/video_sampling_strategy_probe.cpp)
     target_link_libraries(msf_video_sampling_strategy_probe PRIVATE msf_core)
     add_test(NAME video_sampling_strategy_probe COMMAND msf_video_sampling_strategy_probe --selfcheck)
+    # E-3B planner selfcheck: pure classification, no dataset and no decoding.
+    # The planner must be able to say HEVC, AV1, unknown GOP and inexact
+    # candidates are sequential BEFORE any cost argument, so that is asserted
+    # directly rather than trusted.
+    add_executable(msf_video_sampling_planner_test tests/video_sampling_planner_test.cpp)
+    target_link_libraries(msf_video_sampling_planner_test PRIVATE msf_core)
+    add_test(NAME video_sampling_planner_test COMMAND msf_video_sampling_planner_test)
+    # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
+    # and a scratch app dir, and it measures wall clock, so it is run manually
+    # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in
+    # the regression suite would be a flaky test, not a useful one.
+    add_executable(msf_video_sampling_e2e_test tests/video_sampling_e2e_test.cpp)
+    target_link_libraries(msf_video_sampling_e2e_test PRIVATE msf_core)
     add_executable(msf_image_test tests/image_pipeline_test.cpp)
     target_link_libraries(msf_image_test PRIVATE msf_core)
     add_test(NAME image_pipeline_test COMMAND msf_image_test)

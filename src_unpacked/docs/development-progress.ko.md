@@ -10,12 +10,13 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.41 |
+| 기준 코드 | 0.9.4.42 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **E — Adaptive Video Decode Planner (E-3A 완료/PASS, E-3B 다음)** |
-| 현재 단계 | Node E **진행 중**. E-3A(0.9.4.41) 는 HEVC seek landing 의 해결 가능성을 **한정된 범위에서** 조사했고 production 코드를 한 줄도 바꾸지 않았다. **판정 `HEVC_EXACT_SPARSE_SEEK = NOT VERIFIED` (exit 3) → `HEVC = SequentialPreferred` 최종 확정.** 여섯 개 전략(A `av_seek_frame` BACKWARD / B `avformat_seek_file` 3 window / C `AVSEEK_FLAG_ANY` / D `avformat_flush`)이 **전부 HEVC 1080p 에서 NOT EXACT** 이었고, 진짜 keyframe seek 인 A·D 는 E-2B 와 동일한 viol=2 를 보였다. **C(AVSEEK_FLAG_ANY)는 문제를 해결하지 못하고 악화시켰다**(HEVC 2→14, H.264 270s 0→33) — 지시 §7 의 "진단 전용" 예선이 정당. **D(avformat_flush)는 8개 파일 전부에서 A 와 동일** — 원인이 아님. 유일하게 안전한 primitive 는 `av_seek_frame(..., BACKWARD)` 뿐이며 **사용 가능한 API 안에서 위반을 없앨 방법이 없다**. HEVC 1360x808 은 EXACT 라 "HEVC 는 항상 불가"도 "항상 가능"도 아니다. B 의 좁은 window 와 C 는 **H.264 exactness 도 깨뜨려**(지시 §12) 거부. **이것은 E 실패가 아니라 정확성과 성능을 함께 고려한 안전한 fallback 선택이다.** 이번 작업에서 고친 실제 결함 2건: ① verdict 로직 버그(전 파일 합산으로 `VERIFIED` 잘못 보고 → HEVC 한정으로 수정), ② use-after-free 크래시. planner 코드는 변경하지 않았다. **다음: E-3B — planner calibration, HEVC 확정 정책 반영, end-to-end validation** |
-| 현재 버전 | 0.9.4.41 |
+| 현재 노드 | **E — Adaptive Video Decode Planner (E-3B 완료/NOT ACCEPTED, sparse 채택 없음)** |
+| 현재 단계 | Node E **진행 중, E-3B 에서 sparse 후보는 기각됨**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
+| 현재 버전 | 0.9.4.42 |
+| 현재 버전 | 0.9.4.42 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

@@ -17,6 +17,15 @@ struct VideoBuildStats {
   // = sample-plan intent (unknown on cache hit); keptFrames = final hashes.
   std::size_t decodedFrames=0, sampledFrames=0, keptFrames=0;
   bool cacheHit=false;
+  // E-3B: sampling-planner telemetry. Reported so a decision can be explained
+  // and so a fallback is never silent. strategy is a samplingDecisionName(); a
+  // non-nullptr value is recorded even on a cache hit, because the decision is
+  // cheap input analysis, not decoding.
+  int  planDecision=0;              // msf::SamplingDecision
+  int  planReason=0;                // msf::SamplingReason
+  bool planSparseAccepted=false;    // sparse result was produced and used
+  bool planSparseRejected=false;    // sparse was attempted and rejected
+  long long planSparseSeeks=0, planSparseDecoded=0, planSparseLandingViolations=0;
 };
 struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; std::size_t gpuPairs=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;

@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <sstream>
+#include <chrono>   // E-3B: the exact-sparse-seek executor is timed per stage
 #ifdef MSF_HAS_FFMPEG
 extern "C" {
 #include <libavformat/avformat.h>
@@ -170,6 +171,147 @@ bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vect
         out32.push_back(std::move(d));
     }
     return !out32.empty();
+}
+
+bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32,SparseSeekStats* st){
+    // E-3B executor timing helper, file-local so it cannot be mistaken for a
+    // shared API.
+    const auto msSince=[](const std::chrono::steady_clock::time_point& t){
+        return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t).count();
+    };
+    out96.clear(); out32.clear();
+    if(path_.empty()||seconds.empty()) return false;
+#ifdef MSF_HAS_FFMPEG
+    if(!fmt_ || !codec_ || stream_<0) return false;
+    AVFormatContext* fmt=reinterpret_cast<AVFormatContext*>(fmt_);
+    AVCodecContext* cc=reinterpret_cast<AVCodecContext*>(codec_);
+    AVStream* strm=fmt->streams[stream_];
+    const double tbSec=av_q2d(strm->time_base);
+    const auto tAll=std::chrono::steady_clock::now();
+    SparseSeekStats local;
+    AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
+    if(!pkt||!fr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
+
+    for(double target:seconds){
+        // Seek to target - 0.05, not target. The predicate admits a frame up to
+        // 0.05 s EARLIER than the target, so landing on a keyframe at or before
+        // target is not enough to reach the frame production would pick. Landing
+        // at or before target-0.05 guarantees it is reachable. This is the E-2B
+        // fix; the predicate, tolerance and target are all unchanged.
+        const int64_t backPts=av_rescale_q(
+            (int64_t)(std::max(0.0,target-0.05)*1000000.0),AV_TIME_BASE_Q,strm->time_base);
+        const auto ts0=std::chrono::steady_clock::now();
+        if(av_seek_frame(fmt,stream_,backPts,AVSEEK_FLAG_BACKWARD)<0){++local.seekFailures;break;}
+        avcodec_flush_buffers(cc);
+        ++local.seeks; local.seekMs+=msSince(ts0);
+        VideoFrame vf; vf.timestamp=target; bool done=false,landingChecked=false;
+        while(!done && av_read_frame(fmt,pkt)>=0){
+            if(pkt->stream_index!=stream_){av_packet_unref(pkt);continue;}
+            const auto td0=std::chrono::steady_clock::now();
+            const int sent=avcodec_send_packet(cc,pkt);
+            local.decodeMs+=msSince(td0);
+            av_packet_unref(pkt);
+            if(sent<0) continue;
+            for(;;){
+                const auto tr0=std::chrono::steady_clock::now();
+                const int got=avcodec_receive_frame(cc,fr);
+                local.decodeMs+=msSince(tr0);
+                if(got<0) break;
+                ++local.decoded;
+                if(!landingChecked){
+                    landingChecked=true;
+                    // The executor contract. If the decoder's first output is
+                    // later than what we asked for, production's frame may be
+                    // unreachable and the whole result is untrustworthy.
+                    if(fr->best_effort_timestamp>backPts) ++local.landingViolations;
+                }
+                const double ft=fr->best_effort_timestamp==AV_NOPTS_VALUE?target:fr->best_effort_timestamp*tbSec;
+                if(ft+0.05>=target){
+                    const auto tc0=std::chrono::steady_clock::now();
+                    AVFrame* dst=av_frame_alloc();
+                    if(dst){
+                        dst->format=AV_PIX_FMT_GRAY8; dst->width=96; dst->height=96;
+                        SwsContext* sws=sws_getContext(fr->width,fr->height,(AVPixelFormat)fr->format,96,96,AV_PIX_FMT_GRAY8,SWS_BILINEAR,nullptr,nullptr,nullptr);
+                        if(sws&&av_frame_get_buffer(dst,1)>=0){
+                            sws_scale(sws,fr->data,fr->linesize,0,fr->height,dst->data,dst->linesize);
+                            vf.width=96; vf.height=96; vf.gray.resize((size_t)96*96);
+                            for(int y=0;y<96;++y) std::copy(dst->data[0]+y*dst->linesize[0],dst->data[0]+y*dst->linesize[0]+96,vf.gray.begin()+size_t(y)*96);
+                        }
+                        if(sws)sws_freeContext(sws); av_frame_free(&dst);
+                    }
+                    local.convertMs+=msSince(tc0);
+                    out96.push_back(vf); ++local.emitted; done=true; break;
+                }
+            }
+        }
+    }
+    av_packet_free(&pkt); av_frame_free(&fr);
+    local.totalMs=msSince(tAll);
+    if(st)*st=local;
+    // The executor contract. A candidate is usable only when it is COMPLETE and
+    // PROVABLY EQUAL to production, so both failure modes discard the result
+    // rather than returning a smaller set of hashes.
+    //
+    // This is not defensive padding. A read that runs out of packets before a
+    // target is reached leaves out96 short, and an earlier version returned
+    // success for that truncated set — which would have silently fingerprinted a
+    // file with fewer samples than production and changed search results.
+    if(local.landingViolations>0) { out96.clear(); out32.clear(); return false; }
+    if(out96.size()!=seconds.size()){ out96.clear(); out32.clear(); return false; }
+    out32.reserve(out96.size());
+    for(const auto& f:out96){
+        if(f.width!=96||f.height!=96||f.gray.size()!=(std::size_t)96*96) continue;
+        VideoFrame d; d.timestamp=f.timestamp; d.width=32; d.height=32;
+        d.gray.resize((std::size_t)32*32);
+        for(int y=0;y<32;++y)for(int x=0;x<32;++x){
+            unsigned s=0;
+            for(int dy=0;dy<3;++dy)for(int dx=0;dx<3;++dx) s+=f.gray[(std::size_t)(y*3+dy)*96+x*3+dx];
+            d.gray[(std::size_t)y*32+x]=(std::uint8_t)((s+4)/9);
+        }
+        out32.push_back(std::move(d));
+    }
+    // A partial 32x32 derivation would also be a wrong fingerprint, so the
+    // counts are re-checked rather than trusting the skip above.
+    return out32.size()==seconds.size();
+#else
+    (void)st;
+    return false;  // no FFmpeg: exact sparse seek is unavailable, never faked
+#endif
+}
+
+std::string VideoDecoder::codecName() const {
+#ifdef MSF_HAS_FFMPEG
+    if(!fmt_ || stream_<0) return std::string();
+    AVFormatContext* fmt=reinterpret_cast<AVFormatContext*>(fmt_);
+    if(stream_>=(int)fmt->nb_streams) return std::string();
+    const AVCodec* dec=avcodec_find_decoder(fmt->streams[stream_]->codecpar->codec_id);
+    return dec?std::string(dec->name):std::string();
+#else
+    return std::string();
+#endif
+}
+
+double VideoDecoder::gopFramesFromIndex() const {
+#ifdef MSF_HAS_FFMPEG
+    if(!fmt_ || stream_<0) return -1.0;
+    AVFormatContext* fmt=reinterpret_cast<AVFormatContext*>(fmt_);
+    if(stream_>=(int)fmt->nb_streams) return -1.0;
+    AVStream* st=fmt->streams[stream_];
+    // Container index, not a decode: cheap enough to run on every file.
+    const int entries=avformat_index_get_entries_count(st);
+    if(entries<=0) return -1.0;
+    // Prefer the real frame count when the container provides one, so the GOP
+    // is in frames rather than in index entries.
+    double frames = st->nb_frames>0 ? (double)st->nb_frames : 0.0;
+    if(frames<=0.0){
+        const double dur=info_.duration>0?info_.duration:0.0;
+        if(dur>0.0 && info_.fps>0.0) frames=dur*info_.fps;
+    }
+    if(frames<=0.0) return -1.0;
+    return frames/(double)entries;
+#else
+    return -1.0;
+#endif
 }
 
 void VideoDecoder::close(){

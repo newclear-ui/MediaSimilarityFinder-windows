@@ -336,6 +336,22 @@ void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowVideos_, std::move(item));
 }
+void BenchmarkRecorder::addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseRejected,
+                                     long long sparseSeeks, long long sparseDecoded, long long landingViolations) {
+    vidPlanTotal_.fetch_add(1, std::memory_order_relaxed);
+    // decision 0 = SequentialPreferred, 1 = SparseSeekCandidate, 2 = SparseSeekUnavailable
+    if (decision == 1) vidPlanSparse_.fetch_add(1, std::memory_order_relaxed);
+    else if (decision == 2) vidPlanUnavail_.fetch_add(1, std::memory_order_relaxed);
+    else vidPlanSeq_.fetch_add(1, std::memory_order_relaxed);
+    if (sparseAccepted) vidPlanAccepted_.fetch_add(1, std::memory_order_relaxed);
+    if (sparseRejected) vidPlanRejected_.fetch_add(1, std::memory_order_relaxed);
+    vidPlanLandingViol_.fetch_add((std::uint64_t)(landingViolations > 0 ? 1 : 0), std::memory_order_relaxed);
+    vidPlanSparseSeeks_.fetch_add(sparseSeeks, std::memory_order_relaxed);
+    vidPlanSparseDecoded_.fetch_add(sparseDecoded, std::memory_order_relaxed);
+    if (reason >= 0 && reason < kPlanReasonCount)
+        vidPlanReason_[reason].fetch_add(1, std::memory_order_relaxed);
+}
+
 void BenchmarkRecorder::addVideoGpu(bool used, bool fallback, double gpuMs) {
   if (used) vidGpu_.fetch_add(1, std::memory_order_relaxed);
   if (fallback) vidGpuFallback_.fetch_add(1, std::memory_order_relaxed);
@@ -587,6 +603,28 @@ std::string BenchmarkRecorder::toJson() const {
      << ",\"sampledFramesState\":\"" << measureStateName(vidSampledRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
      << ",\"playSec\":" << playSec << ",\"buildMs\":" << vidBuildMs
      << ",\"gpuVideos\":" << vidGpu_.load() << ",\"gpuFallbackVideos\":" << vidGpuFallback_.load() << ",\"gpuHashMs\":" << vidGpuMs
+    // E-3B: the sampling planner. `sparseRejected` is reported next to
+    // `sparseAccepted` so a fallback is never invisible, and the landing
+    // violation count explains rejections rather than leaving them unexplained.
+    << ",\"sampling\":{\"total\":" << vidPlanTotal_.load()
+    << ",\"sequential\":" << vidPlanSeq_.load()
+    << ",\"sparseSelected\":" << vidPlanSparse_.load()
+    << ",\"unavailable\":" << vidPlanUnavail_.load()
+    << ",\"sparseAccepted\":" << vidPlanAccepted_.load()
+    << ",\"sparseRejected\":" << vidPlanRejected_.load()
+    << ",\"landingViolationFiles\":" << vidPlanLandingViol_.load()
+    << ",\"sparseSeeks\":" << vidPlanSparseSeeks_.load()
+    << ",\"sparseDecodedFrames\":" << vidPlanSparseDecoded_.load()
+    << ",\"reasons\":{";
+    {
+        static const char* kReasonNames[kPlanReasonCount] = {
+            "ExactSparseVerified","CostNotAdvantageous","ExactnessUnverified","GOPUnknown",
+            "HEVCFallback","SparseUnsupported","PlannerDisabled","SequentialSafe","reserved"
+        };
+        for (int i = 0; i < kPlanReasonCount; ++i)
+            o << (i ? "," : "") << "\"" << kReasonNames[i] << "\":" << vidPlanReason_[i].load();
+    }
+    o << "}}"
     << ",\"meanBuildMs\":" << (vidN ? vidBuildMs / vidN : 0)
     << ",\"secPerPlayMin\":" << (playSec > 0 ? (vidBuildMs / 1000.0) / (playSec / 60.0) : 0)
     << ",\"secPerGB\":" << (vidBytes_.load() > 0 ? (vidBuildMs / 1000.0) / ((double)vidBytes_.load() / 1e9) : 0)

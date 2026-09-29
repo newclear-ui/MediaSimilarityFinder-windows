@@ -1,5 +1,6 @@
 #include "video_fingerprint.h"
 #include "video_sampling.h"
+#include "video_sampling_planner.h"
 #include "fingerprint.h"
 #include "similarity.h"
 #include "path_utils.h"
@@ -13,6 +14,7 @@
 #include <fstream>
 #include <mutex>
 #include <chrono>
+#include <cstdlib>
 namespace msf {
 static sqlite3* VDB(void* p){return reinterpret_cast<sqlite3*>(p);}
 static std::string quickIdentity(const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
@@ -243,10 +245,63 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
   VideoFingerprint built; auto plan=make_sample_plan(i.duration);
   std::vector<VideoFrame> frames32, frames96;
+  // E-3B: adaptive sampling planner. The production default stays sequential;
+  // the planner is enabled only by an explicit environment switch so that a
+  // controlled validation can run without changing shipped behaviour.
+  //
+  // Order matters and is enforced by the code below: the planner classifies, the
+  // executor produces the samples, and a REJECTED candidate is never used. The
+  // executor contract guarantees a candidate is only produced when it provably
+  // matches production, so a fallback here can never be hiding a mismatch.
+  bool sparseUsed=false;
+  {
+    const char* mode=std::getenv("MSF_VIDEO_SAMPLING");
+    const bool plannerOn = mode && std::strcmp(mode,"off")!=0;
+    const bool forced    = mode && std::strcmp(mode,"forced-sparse")==0;
+    if(plannerOn){
+      SamplingPlanInputs in;
+      // Taken from the already-open decoder so the file is not opened twice.
+      in.codec = d.codecName();
+      in.durationSec=i.duration; in.fps=i.fps; in.width=i.width; in.height=i.height;
+      in.sampleCount=plan.timestamps.size();
+      // The container index is a COST ESTIMATE ONLY. It is reported as
+      // Estimated, never Known: index granularity depends on the muxer, and
+      // for the 4K H.264 sample the index implied ~109 frames while the decoded
+      // I-frames implied ~120. Claiming Known there would have let the planner
+      // act on a number the evidence does not support. Only a value corroborated
+      // against decoded I-frames may be Known, and that costs a decode.
+      in.gopFrames=d.gopFramesFromIndex();
+      in.gopConfidence = in.gopFrames>0.0 ? GopConfidence::Estimated : GopConfidence::Unavailable;
+      const SamplingPlanResult res = planSampling(in);
+      if(stats){ stats->planDecision=(int)res.decision; stats->planReason=(int)res.reason; }
+      // forced-sparse is a DIAGNOSTIC mode: it bypasses the cost decision but
+      // NOT the exactness policy and NOT the executor contract. An inexact
+      // attempt is still rejected, and a codec with no production-parity proof
+      // is still refused even here, so the diagnostic can reproduce the E-2A/E-2B
+      // disagreement without being able to ship it.
+      const bool wantSparse = (forced || res.decision==SamplingDecision::SparseSeekCandidate)
+                              && canExactSparseSeek(in);
+      if(wantSparse){
+        SparseSeekStats ss;
+        if(d.framesAt96Plus32ExactSparse(plan.timestamps,frames96,frames32,&ss)){
+          sparseUsed=true;
+          if(stats){ stats->planSparseAccepted=true; stats->planSparseSeeks=ss.seeks;
+                     stats->planSparseDecoded=ss.decoded; stats->planSparseLandingViolations=ss.landingViolations; }
+        } else if(stats){
+          stats->planSparseRejected=true;
+          stats->planSparseSeeks=ss.seeks; stats->planSparseDecoded=ss.decoded;
+          stats->planSparseLandingViolations=ss.landingViolations;
+        }
+      }
+    } else if(stats){
+      stats->planDecision=(int)SamplingDecision::SequentialPreferred;
+      stats->planReason=(int)SamplingReason::PlannerDisabled;
+    }
+  }
+  if(!sparseUsed && !d.framesAt96Plus32(plan.timestamps,frames96,frames32)){d.close();return false;}
   // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
   // full-file sweep cost ~50% of build time on decode-bound files (each sweep
   // is a single sequential decode, never one seek per timestamp).
-  if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32)){d.close();return false;}
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=frames32.size();
     stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); }
