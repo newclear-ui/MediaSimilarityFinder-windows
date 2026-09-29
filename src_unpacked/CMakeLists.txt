@@ -198,6 +198,16 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_sampling_test tests/video_sampling_test.cpp)
     target_link_libraries(msf_video_sampling_test PRIVATE msf_core)
     add_test(NAME video_sampling_test COMMAND msf_video_sampling_test)
+    # E-1 measurement-only probe: counts what the product does not record — real
+    # av_read_frame / avcodec_receive_frame counts, seek count and latency, and
+    # keyframe/GOP structure — against the REAL production sampling plan
+    # (msf::make_sample_plan) and the real 96->32 + swscale path. It changes no
+    # production code and opens no hardware decode path. Only --selfcheck is
+    # registered: the dataset mode needs a measured video dataset root, which is
+    # not part of the standard image dataset and must be generated first.
+    add_executable(msf_video_decode_planner_probe tests/video_decode_planner_probe.cpp)
+    target_link_libraries(msf_video_decode_planner_probe PRIVATE msf_core)
+    add_test(NAME video_decode_planner_probe COMMAND msf_video_decode_planner_probe --selfcheck)
     add_executable(msf_image_test tests/image_pipeline_test.cpp)
     target_link_libraries(msf_image_test PRIVATE msf_core)
     add_test(NAME image_pipeline_test COMMAND msf_image_test)

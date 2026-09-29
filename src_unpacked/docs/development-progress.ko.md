@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.37 |
+| 기준 코드 | 0.9.4.38 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **I — COMPLETE** → **E** 로 진행 |
-| 현재 단계 | Node I **종료**. D9a → D9b(NOT ACCEPTED) → D9c/D9d → D1 → D2(Path C `DEFERRED`) → D3 → I-2(v0.9.4.33~0.9.4.34 계측·검증) → EXIF 결함 수정(v0.9.4.35) → **I-2 production 통합(v0.9.4.36, `PRODUCTION ADOPTION = YES`)** → **I-3 production full-scan end-to-end 검증(v0.9.4.37, `PASS`)**. I-1 은 `DEFERRED` 유지. **다음 노드: E — Adaptive Video Decode Planner** |
-| 현재 버전 | 0.9.4.37 |
+| 현재 노드 | **E — Adaptive Video Decode Planner (E-1 완료, E-2 다음)** |
+| 현재 단계 | Node E **진행 중**. E-1(0.9.4.38) 은 사전 조사·측정·설계이며 production 코드를 한 줄도 바꾸지 않았다. **핵심 측정: 샘플 140개에 12,573프레임을 디코드 — 89.81배 낭비**(300s 25fps 1건은 192.3배). decode 가 sweep 의 **97.57 %** 이고 seek 은 0.003 %. **planner input 은 후보 18개에서 5개로 축소**(duration·fps·resolution·codec·GOP). `decoded/emitted` 비율은 독립 변수가 아니라 `fps × interval(duration)` 의 함수(평균 절대오차 6.48 %). 프레임당 비용은 **codec × resolution** 으로 결정(동일 조합에서 fps 5배·duration 60배 차이에도 19.2 % 편차). **가장 중요한 재구성: 이 낭비는 sampling 전략 문제이지 hardware decode 문제가 아니며, E-2 는 hardware 없이도 가치가 있다.** 미해명: GOP 측정 원본(ffv1 에서 `AV_PKT_FLAG_KEY` 부정확), HEVC/AV1/VP9 는 번들 FFmpeg 인코더 부재로 불가, sparse-seek 절감률은 산술일 뿐 실측 아님. **다음: E-2 — (1) sampling mode(Sequential vs SparseSeek) 구현·실측 후 (2) backend 결정 구조 추가(software 만)** |
+| 현재 버전 | 0.9.4.38 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

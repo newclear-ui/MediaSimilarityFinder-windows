@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.37 |
+| Reference code | 0.9.4.38 |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **I — COMPLETE** → proceeding to **E** |
-| Current phase | Node I **closed**. D9a → D9b (NOT ACCEPTED) → D9c/D9d → D1 → D2 (Path C `DEFERRED`) → D3 → I-2 (measured 0.9.4.33, verified 0.9.4.34) → EXIF defect correction (0.9.4.35) → **I-2 production integration (0.9.4.36, `PRODUCTION ADOPTION = YES`)** → **I-3 production full-scan end-to-end validation (0.9.4.37, `PASS`)**. I-1 remains `DEFERRED`. **Next node: E — Adaptive Video Decode Planner** |
-| Current version | 0.9.4.37 |
+| Current node | **E — Adaptive Video Decode Planner (E-1 complete, E-2 next)** |
+| Current phase | Node E **in progress**. E-1 (0.9.4.38) is research, measurement and design, and changed **not one line** of production code. **Headline measurement: 12,573 frames decoded to produce 140 samples — 89.81× waste** (a single 300 s 25 fps file is 192.3×). Decode is **97.57 %** of the sweep and seek 0.003 %. **Planner inputs reduced from 18 candidates to 5** (duration, fps, resolution, codec, GOP). The decoded/emitted ratio is not an independent variable but a function of `fps × interval(duration)` (mean absolute error 6.48 %). Per-frame cost is determined by **codec × resolution** (even 5× the fps and 60× the duration cost only 19.2 % more per frame). **The most important reframing: this waste is a sampling-strategy problem, not a hardware-decode problem, so E-2 has value without hardware.** Unresolved: a trustworthy GOP source (`AV_PKT_FLAG_KEY` is inaccurate for ffv1), HEVC/AV1/VP9 are ungeneratable with the bundled FFmpeg, and the sparse-seek saving is arithmetic rather than measured. **Next: E-2 — implement and measure (1) sampling mode (Sequential vs SparseSeek), then add the (2) backend decision structure using software only** |
+| Current version | 0.9.4.38 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
