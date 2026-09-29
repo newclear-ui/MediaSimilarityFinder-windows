@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.39 |
+| 기준 코드 | 0.9.4.40 |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **E — Adaptive Video Decode Planner (E-2A 완료/CONDITIONAL, E-2B 다음)** |
-| 현재 단계 | Node E **진행 중**. E-2A(0.9.4.39) 는 실측이며 production 코드를 한 줄도 바꾸지 않았다. **핵심: sparse seek 는 대체로 훨씬 빠르지만(10/13, 최선 270.5초 실제 h264 30.1s→0.31s = 99.0 %) 정확하지 않다.** decoded 17,164→6,203(2.77x), elapsed -41.7 %, 단 **pixel parity 4/14 FAIL**(maxAbs 31~188/255 = 다른 프레임). 원인 규명: 제품 predicate `ft+0.05>=target` 가 target **이전** 프레임을 허용하므로(30fps 에서 0.05s = 1.5 프레임) 순차 스윕은 한 프레임 앞선을 고르지만 sparse seek 는 seek 착지점 이전에 도달할 수 없다. **전략의 구조적 차이지 decoder 결함이 아니다.** 또한 **역조건도 찾았다**: GOP250 -136.8 %, 실제 GOP225 -132.2 % 로 sparse 가 baseline 보다 느리며 낭비율도 악화된다. E-1 산술 모델 `GOP/2 < wasteRatio` 가 13건 중 11건 일치. **GOP 는 이중 측정**(packet key flag + decoded I-picture) 결과 Known 12 / Estimated 2 / Unavailable 0. E-1 의 ffv1 63/750 은 `-g 1` 명시 생성 시 재현되지 않았으나 4K 에서 실제 불일치 11건이 관측되어 단독 신뢰성은 보장되지 않는다. **AV1 은 이 빌드에서 디코드 불가**(`Function not implemented`) — E-1 의 "생성 불가" 기록을 정정. **판정 CONDITIONAL: exactness 실패로 production 통합하지 않는다.** **다음: E-2B — (1) pixel parity 해결 (2) 4K GOP 불일치 조사 (3) GOP 경계 calibration** |
-| 현재 버전 | 0.9.4.39 |
+| 현재 노드 | **E — Adaptive Video Decode Planner (E-2B 완료/CONDITIONAL, E-3 다음)** |
+| 현재 단계 | Node E **진행 중**. E-2B(0.9.4.40) 는 exactness 해결에 집중했고 production 코드를 한 줄도 바꾸지 않았다. **핵심 해결: seek 목표를 `target` → `target - 0.05` 로 바꿔 pixel parity 4/14 → 13/14, tsLater 발생 파일 10 → 1.** 착지 keyframe 이 `K' <= target-0.05` 를 만족하므로 제품이 고르는 프레임(`pts >= target-0.05`)이 항상 착지점 이후에 존재해 동일 predicate 가 동일 프레임을 고른다. **production predicate·tolerance·target 은 불변**(selfcheck 가 0.05 검증). **정확성의 대가는 실측했다**: sparse decoded 6,203→8,612(+38.8 %), 감소율 41.7 %→37.0 %. **잔여 실패 1건(HEVC 1080p, tsLater 2)** 은 지시 §8 의 seek 후 decoder state 검증이 필요조건(`firstDecodedPts <= seekRequestPts`)을 규명했고, **pixel parity 실패 파일과 동일한 파일**에서 위반이 검출된다 — 원인은 규명했으나 **해결하지 않았다**. **Adaptive Sampling Planner 구현**(분류만/실행만 분리, hard fallback 을 비용 비교보다 먼저 평가): SequentialPreferred 8 / SparseSeekCandidate 5 / SparseSeekUnavailable 1. **sparse 가 불리하거나 exactness 가 깨지는 7건을 7건 모두 회피**, 이득 있는 8건 중 5건 포착·3건 보수적으로 놓침. 4K GOP 불일치(mismatch 11)은 VFR+edit list 정황이 있으나 미확정이라 새 parser 를 만들지 않고 `GopEstimated` 로 보수 처리. **판정 CONDITIONAL / PRODUCTION ADOPTION = NO / production default 는 Sequential 유지.** **다음: E-3 — HEVC seek landing 특성 조사 또는 보수 처리 확정, planner calibration, end-to-end validation** |
+| 현재 버전 | 0.9.4.40 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
