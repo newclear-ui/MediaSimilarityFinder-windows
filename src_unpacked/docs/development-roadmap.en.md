@@ -287,6 +287,22 @@ The **architecture is not fixed to NVIDIA**, however. The backend abstraction is
 expected to accommodate additional hardware decode backends such as Intel/AMD in
 future. Their implementation and verification are **out of scope for this F**.
 
+### F progress (0.9.4.43)
+
+- **F-1 Random-Access Safety Contract: `CONDITIONAL` / `PRODUCTION ADOPTION = NO`**
+- **F-2 production integration is forbidden.** F-1 found that exactness **breaks even under
+  normal conditions** (IDR-start fixtures): 2 of 4 IDR-start H.264 files mismatched. Do not
+  proceed to production integration while correctness is unestablished.
+- Established contract:
+  ```text
+  RandomAccessSafe / RandomAccessUnsafe / RandomAccessUnknown
+  Unsafe → CPU fallback,  Unknown → CPU fallback
+  ```
+- **Core rule: structure (keyframe start) is necessary but not sufficient.** `Safe` requires a
+  recorded exactness proof. Capability and safety are separate axes.
+- Unresolved: the 1360x808 mismatch root cause (`INCONCLUSIVE`); no 4K IDR-start H.264 fixture.
+- Details: `docs/build-history/0.9.4.43.*`, `docs/implementation-briefs/F-random-access-safety.*`
+
 Rules:
 - Software FFmpeg is the reference/fallback.
 - Inspect codec/profile/pixel-format/bit-depth/capability per file.

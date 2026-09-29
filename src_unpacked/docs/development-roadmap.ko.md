@@ -291,6 +291,23 @@ backend 의 실제 조사와 검증은 이번 F 범위에 포함하지 않습니
 향후 Intel/AMD 등 hardware decode backend 를 추가할 수 있는 방향을 고려합니다.
 그 구현·검증은 **이번 F 의 범위가 아닙니다.**
 
+### F 진행 상태 (0.9.4.43)
+
+- **F-1 Random-Access Safety Contract: `CONDITIONAL` / `PRODUCTION ADOPTION = NO`**
+- **F-2 production integration 은 금지.** F-1 에서 **정상 조건(IDR-start fixture)에서도
+  exactness 가 깨졌다**(IDR-start H.264 4개 중 2개 mismatch). 정확성이 확보되지 않은 상태에서
+  production 통합으로 넘어가지 않는다.
+- 확립된 계약:
+  ```text
+  RandomAccessSafe / RandomAccessUnsafe / RandomAccessUnknown
+  Unsafe → CPU fallback,  Unknown → CPU fallback
+  ```
+- **핵심 규칙: structure(키프레임 시작)는 필요조건일 뿐 충분조건이 아니다.** 기록된
+  exactness 증명이 있어야 `Safe` 이다. capability 와 safety 는 별도 축이다.
+- 미확정 사항: 1360x808 mismatch 의 root cause(`INCONCLUSIVE`). 4K IDR-start H.264
+  fixture 부재.
+- 상세: `docs/build-history/0.9.4.43.*`, `docs/implementation-briefs/F-random-access-safety.*`
+
 ## Node G — Additional GPU Backends
 
 abstraction이 안정화된 뒤 독립적으로 검토합니다.
