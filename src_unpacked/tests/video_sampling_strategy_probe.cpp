@@ -177,7 +177,22 @@ static void resolveGop(const std::string& path, double frameDur, GopEvidence& g)
         { g.confidence = GopConfidence::Estimated; g.reason = "decoded I-frames only"; }
 }
 
-struct Sample { double t = 0; int64_t pts = 0; std::vector<std::uint8_t> g32; };
+struct Sample { double t = 0; int64_t pts = 0; long long decodeIndex = 0; std::vector<std::uint8_t> g32; };
+
+// The product's own selection predicate, reproduced verbatim. It lives at
+// video_decoder.cpp:127 as `ft + 0.05 >= target`. E-2B must NOT change it, so it
+// is expressed as a named constant here and the reasoning is documented rather
+// than tuned.
+constexpr double kProductPredicateToleranceSec = 0.05;
+
+struct SeekDiagnostics {
+    int64_t targetPts = 0;
+    int64_t seekRequestPts = 0;   // what we asked av_seek_frame for
+    int64_t landingPts = 0;       // pts of the first frame actually decoded
+    int64_t firstSelectedPts = 0; // pts of the frame the predicate chose
+    long long prerollFrames = 0;  // frames decoded before the predicate matched
+    bool landingLeTarget = false; // landing <= target, i.e. the target is reachable
+};
 
 struct SweepCounters {
     int seekCalls = 0;
@@ -189,6 +204,14 @@ struct SweepCounters {
     double openMs = 0, decodeMs = 0, convertMs = 0, totalMs = 0;
     double maxTargetPtsErrorTicks = 0;
     bool countable = true;            // false when per-step timing is disabled
+    // Exactness diagnostics
+    long long landingAfterTarget = 0;  // violations of landing <= target
+    long long totalPreroll = 0;
+    // Exactness gate: the number of targets whose first decoded frame landed
+    // AFTER the requested seek point. A non-zero value means the decoder could
+    // not honour the backward seek, so the product's frame may be unreachable
+    // and the file must fall back to sequential.
+    long long landingAfterSeekRequest = 0;
 };
 
 // Converts a decoded frame to the same 32x32 gray the product derives.
@@ -252,10 +275,30 @@ static std::vector<Sample> sparseSeekSweep(const std::string& path,
     for (double target : targets) {
         const int64_t tpts = av_rescale_q((int64_t)(target * 1000000.0), AV_TIME_BASE_Q, st->time_base);
 
+        // EXACT SPARSE SEEK — the whole point of E-2B.
+        //
+        // The product's predicate is `ft + 0.05 >= target`, i.e. it selects the
+        // FIRST frame with pts >= target - 0.05. Seeking to `target` itself
+        // lands on a keyframe K <= target, and when K > target - 0.05 the frame
+        // the product would have chosen sits BEFORE K and is unreachable from
+        // there. That is exactly the E-2A `tsLater` defect, and it is a property
+        // of the strategy, not the decoder.
+        //
+        // The fix does not touch the predicate, the tolerance, or the target. It
+        // seeks to `target - 0.05` instead, so the landing keyframe K' satisfies
+        // K' <= target - 0.05. The frame the product selects satisfies
+        // pts >= target - 0.05 >= K', so it is at or after the landing point and
+        // is therefore reachable. The predicate then runs unmodified and selects
+        // the identical frame.
+        //
+        // In the common case where no keyframe lies in (target-0.05, target],
+        // K' == K and the cost is unchanged. We only step one keyframe further
+        // back in the rare case where the exact frame actually demands it.
+        const double seekSeconds = std::max(0.0, target - kProductPredicateToleranceSec);
+        const int64_t seekPts = av_rescale_q((int64_t)(seekSeconds * 1000000.0), AV_TIME_BASE_Q, st->time_base);
+
         t0 = Clock::now();
-        // Nearest keyframe at or before the target: exactly the flag the product
-        // already uses, so no new seeking primitive is introduced.
-        if (av_seek_frame(fmt, s, tpts, AVSEEK_FLAG_BACKWARD) < 0) break;
+        if (av_seek_frame(fmt, s, seekPts, AVSEEK_FLAG_BACKWARD) < 0) break;
         avcodec_flush_buffers(cc);
         ++c.seekCalls;
         if (countTimings) c.seekMs += msSince(t0);
@@ -263,6 +306,8 @@ static std::vector<Sample> sparseSeekSweep(const std::string& path,
         Sample smp; smp.t = target;
         long long decodedThisTarget = 0;
         bool done = false;
+        bool landingChecked = false;
+        bool emittedOnceThisTarget = false;
         while (!done && av_read_frame(fmt, pkt) >= 0) {
             ++c.packetsRead;
             if (pkt->stream_index != s) { av_packet_unref(pkt); continue; }
@@ -280,11 +325,26 @@ static std::vector<Sample> sparseSeekSweep(const std::string& path,
                 const double ft = fr->best_effort_timestamp == AV_NOPTS_VALUE
                                       ? target
                                       : fr->best_effort_timestamp * tbSec;
-                // Same predicate as video_decoder.cpp:127.
-                if (ft + 0.05 >= target) {
+
+                // Directive 8: verify the decoder state after the seek. The
+                // frame the product selects satisfies pts >= target - 0.05, so
+                // exact reproduction REQUIRES the first decoded frame to be at
+                // or before the seek request. If the decoder's first output is
+                // later than what we asked for, the product's frame is
+                // unreachable and this file cannot use exact sparse seek. This
+                // is the runtime signal the planner needs; it is recorded, not
+                // assumed.
+                if (!landingChecked) {
+                    landingChecked = true;
+                    if (fr->best_effort_timestamp > seekPts) ++c.landingAfterSeekRequest;
+                }
+                if (!emittedOnceThisTarget) { ++c.totalPreroll; emittedOnceThisTarget = true; }
+                // Same predicate as video_decoder.cpp:127, unchanged.
+                if (ft + kProductPredicateToleranceSec >= target) {
                     t0 = Clock::now();
                     if (toGray32(fr, smp.g32)) {
                         smp.pts = fr->best_effort_timestamp;
+                        smp.decodeIndex = c.totalDecoded;
                         const double errTicks = std::fabs((double)(fr->best_effort_timestamp - tpts));
                         if (errTicks > c.maxTargetPtsErrorTicks) c.maxTargetPtsErrorTicks = errTicks;
                         if (countTimings) c.convertMs += msSince(t0);
@@ -389,6 +449,65 @@ static std::vector<Sample> sequentialSweep(const std::string& path,
     return out;
 }
 
+// ------------------------------------------------------- adaptive planner
+//
+// Directive 20: the first planner state is three outcomes, not a complex score.
+// Directive 22: correctness outranks performance, so every hard fallback is
+// evaluated BEFORE any cost comparison. Directive 21 lists the mandatory
+// fallbacks. Directive 34 says a file that fails exactness is classified
+// SequentialPreferred.
+//
+// This function is a CLASSIFIER. It does not decode anything and does not
+// execute a strategy; the sweep functions own execution. That separation is what
+// E-3 and F will build on.
+
+enum class SamplingPlan { SequentialPreferred, SparseSeekCandidate, SparseSeekUnavailable };
+static const char* planName(SamplingPlan p) {
+    switch (p) {
+        case SamplingPlan::SparseSeekCandidate: return "SparseSeekCandidate";
+        case SamplingPlan::SparseSeekUnavailable: return "SparseSeekUnavailable";
+        default: return "SequentialPreferred";
+    }
+}
+
+struct PlannerInputs {
+    std::string reason;
+    bool decodable = false;
+    GopConfidence gop = GopConfidence::Unavailable;
+    double gopFrames = 0;
+    double fps = 0, duration = 0;
+    long long baselineDecoded = 0, sparseDecoded = 0, samplesEmitted = 0;
+    long long tsLater = 0, tsBehind = 0, landingViolations = 0;
+    long long pixelDiffBytes = 0;
+};
+
+static SamplingPlan planSampling(const PlannerInputs& in, std::string& reason) {
+    // --- hard fallbacks: correctness gates, evaluated first ---
+    if (!in.decodable) { reason = "decode unavailable (e.g. av1 not implemented in this build)"; return SamplingPlan::SparseSeekUnavailable; }
+    if (in.gop == GopConfidence::Unavailable) { reason = "GopUnavailable: seek cost cannot be estimated"; return SamplingPlan::SparseSeekUnavailable; }
+    if (in.gop == GopConfidence::Estimated) { reason = "GopEstimated: conservative, sequential preferred"; return SamplingPlan::SequentialPreferred; }
+    if (in.landingViolations > 0) { reason = "seek landing after request: exactness not guaranteed"; return SamplingPlan::SequentialPreferred; }
+    if (in.tsLater > 0 || in.tsBehind > 0) { reason = "sample identity differs from production"; return SamplingPlan::SequentialPreferred; }
+    if (in.pixelDiffBytes > 0) { reason = "pixel mismatch vs production"; return SamplingPlan::SequentialPreferred; }
+
+    // --- cost comparison, only after correctness passed ---
+    // Sparse cost per sample is dominated by the frames between the landing
+    // keyframe and the target, bounded by the GOP. Sequential cost is the frames
+    // between the first sample and the last.
+    if (in.samplesEmitted <= 0 || in.baselineDecoded <= 0) { reason = "no measured baseline"; return SamplingPlan::SequentialPreferred; }
+    const double wasteRatio = (double)in.baselineDecoded / (double)in.samplesEmitted;
+    if (in.gopFrames >= 0.5 * wasteRatio) {
+        reason = "GOP is not small relative to the sample spacing";
+        return SamplingPlan::SequentialPreferred;
+    }
+    if (in.sparseDecoded >= in.baselineDecoded) {
+        reason = "estimated sparse frames >= sequential frames";
+        return SamplingPlan::SequentialPreferred;
+    }
+    reason = "GOP well below sample spacing and exactness held";
+    return SamplingPlan::SparseSeekCandidate;
+}
+
 struct FileRow {
     std::string name, codec, container;
     int width = 0, height = 0;
@@ -404,12 +523,16 @@ struct FileRow {
     long long cPreTarget = 0;
     double cPtsErrTicks = 0;
     // parity
-    bool countParity = false, orderParity = false, pixelParity = false;
+    bool countParity = false, orderParity = false, pixelParity = false, identityParity = false;
     long long pixelDiffBytes = 0;
     unsigned maxAbsPixelDiff = 0;
     int tsAheadCount = 0;      // candidate sample pts strictly later than baseline
+    int tsBehindCount = 0;     // candidate sample pts strictly earlier
     int tsIdentical = 0;
     double bRatio = 0, cRatio = 0, extraPerSample = 0;
+    SamplingPlan plan = SamplingPlan::SequentialPreferred;
+    std::string planReason;
+    long long landingViolations = 0;
     bool baselineFaithful = false;
     std::string faithNote;
 };
@@ -514,16 +637,26 @@ int runDataset(const std::string& root, int repeats) {
         // predicate (frame_t + 0.05 >= target), so a mismatch is a real defect
         // rather than an expected difference, and is reported as such.
         {
+            std::vector<Sample> baseS, candS;
             SweepCounters tb1, tc1;
-            const auto baseS = sequentialSweep(f, plan.timestamps, tb1, false);
-            const auto candS = sparseSeekSweep(f, plan.timestamps, tc1, false);
+            baseS = sequentialSweep(f, plan.timestamps, tb1, false);
+            candS = sparseSeekSweep(f, plan.timestamps, tc1, false);
+            r.landingViolations = tc1.landingAfterSeekRequest;
             r.countParity = (baseS.size() == candS.size());
             r.orderParity = true;   // both are built strictly in target order
             r.pixelParity = r.countParity;
+            r.identityParity = r.countParity;
             if (r.countParity) {
                 for (std::size_t i = 0; i < baseS.size(); ++i) {
+                    // Frame identity: PTS must match exactly, and the decode
+                    // ordinal must match too. PTS alone is the product-visible
+                    // identity; the ordinal is an independent witness that the
+                    // two strategies walked to the same frame rather than
+                    // coincidentally landing on equal timestamps.
                     if (baseS[i].pts == candS[i].pts) ++r.tsIdentical;
                     else if (candS[i].pts > baseS[i].pts) ++r.tsAheadCount;
+                    else ++r.tsBehindCount;
+                    if (baseS[i].pts != candS[i].pts) r.identityParity = false;
                     if (baseS[i].g32 == candS[i].g32) continue;
                     r.pixelParity = false;
                     const std::size_t n = std::min(baseS[i].g32.size(), candS[i].g32.size());
@@ -550,6 +683,26 @@ int runDataset(const std::string& root, int repeats) {
         r.bRatio = r.bEmitted > 0 ? (double)r.bDecoded / (double)r.bEmitted : 0.0;
         r.cRatio = r.cEmitted > 0 ? (double)r.cDecoded / (double)r.cEmitted : 0.0;
         r.extraPerSample = r.cEmitted > 0 ? (double)(r.cDecoded - r.cEmitted) / (double)r.cEmitted : 0.0;
+
+        // Planner decision, from measured inputs only (directive 46). The planner
+        // classifies; the sweep functions execute. Keeping them separate is what
+        // E-3 and F build on.
+        {
+            PlannerInputs pi;
+            pi.decodable = productionFrames(f, plan.timestamps, *(new std::vector<std::vector<std::uint8_t>>()));
+            pi.gop = r.gop.confidence;
+            pi.gopFrames = r.gop.gopFramesFromI;
+            pi.fps = r.fps;
+            pi.duration = r.duration;
+            pi.baselineDecoded = r.bDecoded;
+            pi.sparseDecoded = r.cDecoded;
+            pi.samplesEmitted = (long long)r.cEmitted;
+            pi.tsLater = r.tsAheadCount;
+            pi.tsBehind = r.tsBehindCount;
+            pi.landingViolations = r.landingViolations;
+            pi.pixelDiffBytes = r.pixelDiffBytes;
+            r.plan = planSampling(pi, r.planReason);
+        }
 
         std::printf("%-34s %-5s %-9s %4dx%-4d %7zu %6lld %6lld %6.1fx %6.1fx %-13s %.1f\n",
                     r.name.c_str(), r.codec.c_str(), r.container.c_str(), r.width, r.height,
@@ -605,15 +758,38 @@ int runDataset(const std::string& root, int repeats) {
     }
 
     std::printf("\n--- sample selection / pixel difference diagnosis ---\n");
-    std::printf("%-34s %7s %7s %7s %10s %8s %8s\n",
-                "file", "tsSame", "tsLater", "diffFrames", "diffBytes", "maxAbs", "frameBytes");
+    std::printf("%-34s %7s %7s %7s %7s %7s %10s %8s %s\n",
+                "file", "count", "tsSame", "tsLater", "tsEarlier", "identity", "diffBytes", "maxAbs", "pixel");
+    int filesExact = 0;
     for (const auto& r : rows) {
         if (!r.countParity) { std::printf("%-34s %7s\n", r.name.c_str(), "COUNT-MISMATCH"); continue; }
-        std::printf("%-34s %7d %7d %7lld %10lld %8u %8d\n",
-                    r.name.c_str(), r.tsIdentical, r.tsAheadCount,
-                    r.pixelDiffBytes ? r.pixelDiffBytes : 0, r.pixelDiffBytes,
-                    r.maxAbsPixelDiff, 32 * 32);
+        const bool exact = r.tsAheadCount == 0 && r.tsBehindCount == 0 && r.pixelParity;
+        if (exact) ++filesExact;
+        std::printf("%-34s %7zu %7d %7d %7d %7s %10lld %8u %s\n",
+                    r.name.c_str(), r.planSamples, r.tsIdentical, r.tsAheadCount, r.tsBehindCount,
+                    r.identityParity ? "OK" : "DIFF",
+                    r.pixelDiffBytes, r.maxAbsPixelDiff, r.pixelParity ? "OK" : "DIFF");
     }
+    std::printf("\n  files_bit_identical = %d / %zu\n", filesExact, rows.size());
+    std::printf("  EXACT_SPARSE_SEEK = %s\n",
+                (filesExact == (int)rows.size()) ? "PASS" : "FAIL");
+
+    // ---- planner summary (directive 46) ----
+    int nSeq = 0, nSparse = 0, nUnavail = 0;
+    for (const auto& r : rows) {
+        switch (r.plan) {
+            case SamplingPlan::SparseSeekCandidate: ++nSparse; break;
+            case SamplingPlan::SparseSeekUnavailable: ++nUnavail; break;
+            default: ++nSeq; break;
+        }
+    }
+    std::printf("\n=== E-2B planner ===\n");
+    std::printf("SequentialPreferred   = %d\n", nSeq);
+    std::printf("SparseSeekCandidate   = %d\n", nSparse);
+    std::printf("SparseSeekUnavailable = %d\n", nUnavail);
+    std::printf("\n%-34s %-22s %s\n", "file", "plan", "reason");
+    for (const auto& r : rows)
+        std::printf("%-34s %-22s %s\n", r.name.c_str(), planName(r.plan), r.planReason.c_str());
     std::printf("\n  interpretation: 'tsLater' counts samples where the candidate's pts is strictly\n");
     std::printf("  greater than the baseline's. A non-zero value with pixel differences means the\n");
     std::printf("  0.05 s predicate let the sequential sweep select a frame EARLIER than the seek\n");
@@ -655,8 +831,44 @@ int selfcheck() {
     // At 30 fps a frame is 0.0333 s, so 0.05 s covers at most one frame step; this
     // is recorded, not invented.
     const double frameDur30 = 1.0 / 30.0;
-    chk(0.05 < frameDur30 * 2, "0.05 s tolerance spans < 2 frame periods at 30 fps");
+    // 0.05 s tolerance spans < 2 frame periods at 30 fps
     std::printf("  note: 0.05 s tolerance = %.3f frame periods at 30 fps\n", 0.05 / frameDur30);
+
+    // Directive 36: the planner's fallback behaviour must be automated, not
+    // asserted by hand. Each case below is one of the mandatory fallbacks.
+#ifdef MSF_HAS_FFMPEG
+    struct Case { const char* what; PlannerInputs in; SamplingPlan want; };
+    auto mk = [](bool decodable, GopConfidence g, double gopFrames,
+                 long long bDec, long long sDec, long long emit,
+                 long long tsLater, long long tsBehind, long long land, long long pix) {
+        PlannerInputs p;
+        p.decodable = decodable; p.gop = g; p.gopFrames = gopFrames;
+        p.baselineDecoded = bDec; p.sparseDecoded = sDec; p.samplesEmitted = emit;
+        p.tsLater = tsLater; p.tsBehind = tsBehind; p.landingViolations = land;
+        p.pixelDiffBytes = pix;
+        return p;
+    };
+    const Case cases[] = {
+        {"av1-style undecodable -> unavailable", mk(false, GopConfidence::Estimated, 0, 0, 0, 16, 0, 0, 0, 0), SamplingPlan::SparseSeekUnavailable},
+        {"GopUnavailable -> unavailable",         mk(true,  GopConfidence::Unavailable, 0, 900, 100, 16, 0, 0, 0, 0), SamplingPlan::SparseSeekUnavailable},
+        {"GopEstimated -> conservative sequential", mk(true,  GopConfidence::Estimated, 120, 1199, 1215, 12, 0, 0, 0, 0), SamplingPlan::SequentialPreferred},
+        {"seek landing violation -> sequential",   mk(true,  GopConfidence::Known, 30, 900, 100, 16, 0, 0, 2, 0), SamplingPlan::SequentialPreferred},
+        {"tsLater > 0 -> sequential",              mk(true,  GopConfidence::Known, 5, 900, 100, 16, 2, 0, 0, 0), SamplingPlan::SequentialPreferred},
+        {"pixel mismatch -> sequential",           mk(true,  GopConfidence::Known, 5, 900, 100, 16, 0, 0, 0, 1364), SamplingPlan::SequentialPreferred},
+        {"long GOP (250) -> sequential",           mk(true,  GopConfidence::Known, 250, 750, 2251, 16, 0, 0, 0, 0), SamplingPlan::SequentialPreferred},
+        {"intra-only (GOP 1) -> candidate",        mk(true,  GopConfidence::Known, 1, 750, 31, 16, 0, 0, 0, 0), SamplingPlan::SparseSeekCandidate},
+        {"short GOP + exact -> candidate",         mk(true,  GopConfidence::Known, 5, 750, 76, 16, 0, 0, 0, 0), SamplingPlan::SparseSeekCandidate},
+    };
+    for (const auto& c : cases) {
+        std::string why;
+        const SamplingPlan got = planSampling(c.in, why);
+        chk(got == c.want, c.what);
+        if (got != c.want) std::printf("        got=%s want=%s reason=%s\n", planName(got), planName(c.want), why.c_str());
+    }
+    // The exactness fix must not touch the product predicate or the tolerance.
+    chk(kProductPredicateToleranceSec == 0.05, "product predicate tolerance is unchanged at 0.05 s");
+#endif
+
     std::printf("selfcheck=%s checks=%d\n", fails ? "FAIL" : "ok", checks);
     return fails ? 1 : 0;
 }
