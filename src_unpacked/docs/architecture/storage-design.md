@@ -55,3 +55,40 @@ Orphaned thumbnail rows are pruned when a scan finishes.
 
 This document describes the current storage design. Version-specific changes are
 recorded separately under `docs/build-history/`.
+
+
+## Benchmark storage separation
+
+Benchmark artifacts are not part of normal search index storage.
+
+Conceptual layout:
+
+~~~text
+Application data root
+├─ Index/
+│  └─ <root-id>/
+│     ├─ metadata.json
+│     ├─ index.sqlite
+│     └─ video_cache.sqlite
+└─ Benchmark/
+   ├─ GUI/
+   │  └─ <source-label>_<root-id-short>/
+   │     ├─ auto.json
+   │     ├─ cpu.json
+   │     └─ gpu-max.json
+   └─ Console/
+      └─ suite-<suite-id>/
+         ├─ suite.json
+         ├─ auto.json
+         ├─ cpu.json
+         └─ gpu-max.json
+~~~
+
+- Benchmark storage remains physically/logically separate from Index.
+- GUI retains only the latest result for each of the three modes.
+- Console retains results cumulatively.
+- The exact application-data base directory continues to follow the existing portable-aware path policy; this design does not create a second unrelated root policy.
+- Benchmark folder names are human-identifiable but never use the raw full source path. Use a sanitized basename plus a short stable root id, while storing the canonical full sourceRoot in JSON.
+- Benchmark-specific index/cache state must never be treated as the normal Search Index.
+- GUI must never automatically load Console benchmark files.
+- A benchmark must not leave DB/cache artifacts inside the scanned source folder.
