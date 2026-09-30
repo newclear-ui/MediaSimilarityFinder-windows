@@ -744,7 +744,7 @@ Scheduler             Software              CUDA
 
 ~~~text
 project/uimock/benchmark-console-mockup.html
-project/uimock/benchmark-console-mockup.svg
+JPG preview: benchmark-console-mockup.jpg (generated review artifact)
 ~~~
 
 목업은 다음 최종 계약을 반영한다.
