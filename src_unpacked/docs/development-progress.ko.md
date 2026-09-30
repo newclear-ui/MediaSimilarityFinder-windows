@@ -1418,5 +1418,47 @@ S5 상태: **기능 구현 완료, 자동/비대화형 E2E 검증 완료.** 위 
 별도 부채로 기록한 항목: S3 `benchmarkNowStamp()` 가 `localtime_s` 결과에 literal `Z` 를
 붙여 journal timestamp 가 UTC 를 표기하면서 로컬 시각을 담는다. S5 suite id 는 진짜 UTC 라
 약 9 시간 차이가 난다. 이번 S5 에서는 `benchmark_store.cpp` 를 변경하지 않았다.
+## 2026-10-01 — S6 Data-mining Automation 설계 조사 및 brief 작성
 
+S6 의 설계와 implementation brief 를 작성했다. **이번 단계에서 S6 코드는 작성하지 않았고,
+S6 가 CLOSED 도 아니다.** 상세는 `docs/implementation-briefs/S6-data-mining-automation.ko.md` /
+`.en.md` 에 있다.
 
+설계 조사로 확인한 사실:
+
+- **journal 을 읽는 분석 도구가 저장소에 존재하지 않는다.** journal 을 읽는 유일한 코드는
+  `replayJournal()` + `buildSummaryJson()` 이며 출력은 카운트와 `totalElapsedMs` 합계뿐이다.
+- **Python 이 프로젝트에 없다.** `.py` 0개, `requirements.txt` / `pyproject.toml` /
+  `Pipfile` / `setup.py` 0개, CI 두 개 모두 `shell: pwsh`. 스크립트 관례는 PowerShell 이다.
+- **journal schema 실측**(29개 journal / 862 line 전수 키 스캔). `run_started` /
+  `mode_result` / `case_complete` / `run_finished` / `run_cancelled` 의 실제 필드를
+  brief 6장에 전부 기록했다.
+- **최대 제약**: `git` / `resourcePolicy` / `cpuPercent` / `gpuPercent` / `gpuEnabled` /
+  `distance` 가 **모두 0건**이다. `MSF_BUILD_GIT` 가 generated header 에만 있고 journal 에는
+  기록되지 않기 때문이다. 따라서 `buildVersion` 만으로는 같은 버전의 다른 커밋을 구분할 수 없고,
+  roadmap §25 저장 요구와 §28/§30 의 S6 핵심 정의(비교 요약)를 현 상태로는 완수할 수 없다.
+  brief 22장 진입 조건 ① 에 최대 리스크로 명시했다.
+- `run_cancelled` 에는 `completedAt` 필드가 없고, **실측 표본이 0건**이다.
+- journal `timestamp` 는 `localtime_s` 값에 literal `Z` 를 붙인다. 저장소의 timestamp 는
+  네 갈래로 갈라져 있으며(실측 확인), S6 는 이를 숨기지 않고 §16-2 규칙(`suiteId` 정렬,
+  `completedAt - startedAt` 만 duration)으로 우회한다. S3 코드는 변경하지 않는다.
+- legacy `BenchmarkRecorder`(schema 9)는 journal(schema 1)과 완전히 별개이며 파일도 쓰지
+  않고 읽는 코드도 없다. S6 는 읽지도 쓰지도 않는다.
+
+설계 결정:
+
+- journal 파서를 새로 만들지 않고 `replayJournal()` 을 재사용한다(S3 recovery 규칙 이중화 방지).
+- **measured / derived / invalid** 3분류를 강제하고, invalid 제외 건수를 반드시 출력한다.
+- 회귀 판정 threshold 는 **정하지 않았다**. `AGENTS.md` 9항이 이미 기준이고,
+  `worklog` `E-3B-BUG` 에 임의 threshold 제거 선례가 있다.
+- `S2-PERF` 의 uncontrolled cache/부하 때문에 회귀 **판정** 이 아니라 회귀 **후보 + 조건 경고** 를
+  제공한다.
+- 산출물은 machine-readable + human-readable 2계층이며, 두 출력은 같은 계산 결과에서 나온다.
+- 기본 출력에는 analysis timestamp 를 넣지 않는다(재현성). `--provenance` 로만 켠다.
+
+S6 내부 작업 분해안(공식 roadmap node 가 아님): S6-1 schema 계약 → S6-2 ingestion/normalization →
+S6-3 grouping → S6-4 aggregation → S6-5 cross-run comparison → S6-6 regression 후보 → S6-7 전체 검증.
+
+DEFERRED 로 기록한 항목: 회귀 threshold, journal 에 `git` / `distance` / `resourcePolicy`
+추가 여부, 출력 포맷 최종 선택(JSON vs CSV), suite 자동 실행, p95 알고리즘, `run_cancelled`
+분석 세분화. S3 timestamp 수정은 별도 S3 follow-up.

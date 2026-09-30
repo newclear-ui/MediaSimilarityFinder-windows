@@ -458,6 +458,18 @@ Detailed judgements and S5 entry conditions: `docs/build-history/S4-phase3-4-ver
 - The existing S3 `benchmarkNowStamp()` labelling mismatch, which formats `localtime_s` output with a literal `Z`, was **not fixed in this S5** -> separate S3 follow-up.
 Detailed judgements and actual measured values: `docs/build-history/S5-verification.ko.md` / `.en.md`
 
+**S6 design status (0.9.4.43)**: Data-mining Automation brief **written, not yet started for implementation.** Not CLOSED.
+- brief: `docs/implementation-briefs/S6-data-mining-automation.ko.md` / `.en.md`
+- The roadmap gives S6 three axes (§28/§30): automated suite execution / fingerprint validation / comparison summary. This brief covers **only axes 2 and 3** (validation, comparison/mining) and recommends splitting axis 1 (automation) into a separate brief without defining it.
+- **Largest constraint found during the design investigation**: `git`, `resourcePolicy` and `distance` are **measured at 0 occurrences** in the journal (full key scan over 29 journals / 862 lines). The cause is that S5-3 added `MSF_BUILD_GIT` only to the generated header and did not write it to the journal (which is the S3 schema). As a result `buildVersion` alone **cannot distinguish two commits of the same version**, and the "cross-build comparison" required by roadmap §25 (storage requirement) and defined as S6's core in §28/§30 **cannot be completed in the current state**. This is recorded as S6's largest risk at entry condition ①.
+- Analysis possible today (8-1) and analysis **impossible** today (8-2) are recorded separately. No missing field was filled in by guess.
+- The S3 journal parser will not be rewritten; `replayJournal()` is reused. Re-parsing in PowerShell or Python would duplicate the S3 recovery rules.
+- **Python does not exist in this project** (zero `.py` files, zero packaging files, CI is `pwsh`), so it is excluded as an analysis tool candidate. The scripting convention is PowerShell, which cannot be used for journal parsing.
+- The regression verdict threshold is **not decided** (DEFERRED). `AGENTS.md` item 9 already governs it (never declare a difference outside the measurement error range an improvement, 5 or more runs recommended), and `worklog` `E-3B-BUG` is a precedent of an arbitrary threshold being removed.
+- Fundamental limit of regression analysis: `S2-PERF` accepted the OS filesystem cache and process isolation as **uncontrolled**. S6 output is therefore a regression candidate plus a measurement condition warning, not a regression verdict.
+- The S3 timestamp issue (`localtime_s` plus a literal `Z`) is classified as a **separate S3 follow-up, not an S6 prerequisite**, because it can be worked around by using `suiteId` (real UTC) as the ordering key and computing duration only as `completedAt - startedAt`.
+- Automated suite execution, the final output format choice (JSON vs CSV), the p95 algorithm, and `run_cancelled` analysis refinement are also recorded as **DEFERRED**.
+
 The CLI supports only help, version, smoke and scan with a media selector; running with no arguments still opens the existing GUI, and the CLI path never constructs a MainWindow.
 Still not implemented: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 onward).
 → S2 Run/Suite benchmark core

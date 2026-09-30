@@ -1488,3 +1488,60 @@ Recorded as separate debt: S3 `benchmarkNowStamp()` formats `localtime_s` output
 with a literal `Z`, so journal timestamps carry local time labelled as UTC. The S5
 suite id is real UTC, so the two differ by the local offset. `benchmark_store.cpp`
 was not changed in this S5.
+## 2026-10-01 — S6 Data-mining Automation design investigation and brief
+
+S6 design and its implementation brief were written. **No S6 code was written at this
+stage, and S6 is not CLOSED.** Details are in
+`docs/implementation-briefs/S6-data-mining-automation.ko.md` / `.en.md`.
+
+Facts confirmed by the design investigation:
+
+- **No analysis tool that reads the journal exists in the repository.** The only code
+  that reads it is `replayJournal()` + `buildSummaryJson()`, whose output is counts
+  and a `totalElapsedMs` sum only.
+- **Python does not exist in this project.** Zero `.py` files, zero
+  `requirements.txt` / `pyproject.toml` / `Pipfile` / `setup.py`, and both CI
+  workflows use `shell: pwsh`. The scripting convention is PowerShell.
+- **Journal schema measured** (full key scan over 29 journals / 862 lines). The actual
+  fields of `run_started` / `mode_result` / `case_complete` / `run_finished` /
+  `run_cancelled` are all recorded in brief section 6.
+- **Largest constraint**: `git` / `resourcePolicy` / `cpuPercent` / `gpuPercent` /
+  `gpuEnabled` / `distance` are **all at 0 occurrences**. The cause is that
+  `MSF_BUILD_GIT` exists only in the generated header and is not written to the
+  journal. So `buildVersion` alone cannot distinguish two commits of the same version,
+  and the "comparison summary" required by roadmap §25 (storage requirement) and defined
+  as S6's core in §28/§30 cannot be completed in the current state. This is recorded as
+  S6's largest risk at entry condition ① in brief section 22.
+- `run_cancelled` has no `completedAt` field and has **zero measured samples**.
+- The journal `timestamp` appends a literal `Z` to a `localtime_s` value.
+  Timestamps in this repository have split four ways (all confirmed by measurement), and
+  S6 neither hides this nor silently reinterprets it: section 16-2 rules work around it
+  by ordering on `suiteId` and computing duration only as
+  `completedAt - startedAt`. S3 code is not changed.
+- The legacy `BenchmarkRecorder` (schema 9) is completely separate from the journal
+  (schema 1), writes no file, and has no reader. S6 neither reads nor writes it.
+
+Design decisions:
+
+- The journal parser is not rewritten; `replayJournal()` is reused, to avoid
+  duplicating the S3 recovery rules.
+- A **measured / derived / invalid** three-way split is enforced, and the count of
+  excluded invalid entries must be printed.
+- The regression verdict threshold is **not decided**. `AGENTS.md` item 9 already
+  governs it, and `worklog` `E-3B-BUG` is a precedent of an arbitrary threshold
+  being removed.
+- Because `S2-PERF` accepted cache and load as uncontrolled, S6 provides a regression
+  **candidate plus a condition warning**, not a regression **verdict**.
+- Output is two layers, machine-readable plus human-readable, and both come from the
+  same computed result.
+- The default output contains no analysis timestamp (reproducibility). It is enabled only
+  via `--provenance`.
+
+Internal S6 decomposition (not an official roadmap node): S6-1 schema contract -> S6-2
+ingestion/normalization -> S6-3 grouping -> S6-4 aggregation -> S6-5 cross-run comparison
+-> S6-6 regression candidates -> S6-7 full verification.
+
+Recorded as DEFERRED: the regression threshold, whether to add `git` / `distance` /
+`resourcePolicy` to the journal, the final output format choice (JSON vs CSV),
+automated suite execution, the p95 algorithm, and `run_cancelled` analysis refinement.
+Fixing the S3 timestamp is a separate S3 follow-up.

@@ -415,6 +415,18 @@ CLI 는 --help / --version / --smoke / --scan <folder> [--media images|videos|al
 - S3 `benchmarkNowStamp()` 가 `localtime_s` 결과에 literal `Z` 를 붙이는 기존 timestamp 표기 불일치는 **이번 S5 에서 수정하지 않음** → S3 후속 부채.
 자세한 판정과 실제 측정값: `docs/build-history/S5-verification.ko.md` / `.en.md`
 
+**S6 설계 상태 (0.9.4.43)**: Data-mining Automation brief **작성 완료, 구현 착수 전**. CLOSED 가 아니다.
+- brief: `docs/implementation-briefs/S6-data-mining-automation.ko.md` / `.en.md`
+- roadmap 이 S6 에 부여한 정의(§28/§30)는 3축이다: suite 자동 실행 / fingerprint 검증 / 비교 요약. 이 brief 는 **2·3번(검증·비교/마이닝)** 만 다루고, 1번(자동 실행)은 별도 brief 분리 를 권고하며 정의하지 않는다.
+- **설계 조사에서 확인된 최대 제약**: journal 에 `git` / `resourcePolicy` / `distance` 가 **실측 0건**이다(29개 journal / 862 line 전수 키 스캔). 원인은 S5-3 가 `MSF_BUILD_GIT` 를 generated header 에만 추가하고 journal(S3 schema)에는 쓰지 않았기 때문이다. 결과적으로 `buildVersion` 만으로는 **같은 버전의 다른 커밋을 구분할 수 없으며**, roadmap §25(저장 요구)와 §28/§30(S6 핵심 정의)이 요구하는 "build 간 비교" 를 현 상태로는 완수할 수 없다. 이를 S6 최대 리스크로 entry condition ① 에 명시했다.
+- 지금 가능한 분석(8-1)과 **불가능한** 분석(8-2)을 분리해 기록했다. 없는 필드를 추정으로 채우지 않았다.
+- S3 journal 파싱을 다시 만들지 않고 `replayJournal()` 을 재사용하기로 했다. PowerShell/Python 으로 재파싱하면 S3 recovery 규칙이 이중화되기 때문이다.
+- **Python 은 이 프로젝트에 존재하지 않으므로**(`.py` 0개, packaging 파일 0개, CI `pwsh`) 분석 도구 후보에서 제외했다. 스크립트 관례는 PowerShell 이나 journal 파싱에는 사용할 수 없다.
+- 회귀 판정 threshold 는 **정하지 않았다**(DEFERRED). `AGENTS.md` 9항(측정 오차 범위 밖의 차이는 개선 선언 금지, 5회 이상 권장)이 이미 기준이며, `worklog` `E-3B-BUG` 에 임의 threshold 를 제거한 선례가 있다.
+- 회귀 분석의 근본 한계: `S2-PERF` 가 OS filesystem cache 와 process isolation 을 **uncontrolled** 로 accepted 했다. S6 산출물은 회귀 판정이 아니라 회귀 후보 + 측정 조건 경고다.
+- S3 timestamp(`localtime_s` + literal `Z`) 문제는 S6 prerequisite 가 아니라 **별도 S3 follow-up** 으로 분류했다. 정렬 키를 `suiteId`(진짜 UTC)로 바꾸고 duration 은 `completedAt - startedAt` 만 쓰면 우회 가능하기 때문이다.
+- suite 자동 실행, 출력 포맷 최종 선택(JSON vs CSV), p95 알고리즘, `run_cancelled` 분석 세분화도 **DEFERRED** 로 기록했다.
+
 → S2 Run/Suite benchmark core
 → S3 Benchmark storage isolation
 → S4 GUI benchmark integration
