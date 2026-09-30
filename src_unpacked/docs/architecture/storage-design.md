@@ -92,3 +92,40 @@ Application data root
 - Benchmark-specific index/cache state must never be treated as the normal Search Index.
 - GUI must never automatically load Console benchmark files.
 - A benchmark must not leave DB/cache artifacts inside the scanned source folder.
+
+## Benchmark Console storage/UI finalization — 2026-09-30
+
+The benchmark storage layer is finalized around **per-file immediate persistence** and a terminal UI that is only a view over persisted records.
+
+### Canonical Console layout
+
+~~~text
+Benchmark/Console/suite-<suite-id>/
+    suite.json
+    runs.jsonl
+    summary.json
+~~~
+
+Each completed file/mode result is appended to runs.jsonl. The recommended logical sequence is AUTO, CPU-only, GPU-max for each file, followed by the next file.
+
+The JSONL journal is the recovery source for interrupted runs. summary.json is generated/updated from the journal and must never be the only copy of per-file evidence.
+
+### Terminal rendering contract
+
+Interactive output is divided into:
+
+1. fixed three-row execution header,
+2. CURRENT FILE detail view,
+3. compact completed-file history,
+4. final or partial summary.
+
+The fixed header never wraps. Long paths use middle ellipsis on screen only. Full values remain in JSON. Non-interactive output is line-oriented and uses the same persisted data model.
+
+### GUI/Console retention
+
+GUI keeps the latest result for each of AUTO / CPU-only / GPU-max per source folder. Console retains cumulative Suites and does not automatically delete prior benchmark evidence.
+
+### Legacy preservation
+
+Existing benchmark source/schema and the v0.9.4.43 baseline backup/tag are historical baselines. New storage/telemetry work must remain traceable to that legacy benchmark rather than deleting or silently rewriting its history.
+
