@@ -20,6 +20,14 @@ public:
                         const std::filesystem::path& rootPath,
                         IndexPaths& out);
 
+    // The directory that holds the per-root index folders. Pure path arithmetic:
+    // it creates nothing. resolve() uses it, and read-only callers that only need
+    // to know WHERE indexes live must use it too, because resolve() also creates
+    // the directory and a metadata record as a side effect.
+    static std::filesystem::path indexRootFor(const std::filesystem::path& applicationDirectory) {
+        return applicationDirectory / "Index";
+    }
+
     static std::string canonicalRoot(const std::filesystem::path& rootPath);
     static std::string folderId(const std::string& canonicalRootPath);
     static bool updateLastScan(const IndexPaths& paths);

@@ -114,7 +114,7 @@ bool IndexManager::resolve(const fs::path& applicationDirectory,
     const std::string canonical = canonicalRoot(rootPath);
     if (canonical.empty()) return false;
 
-    const fs::path indexRoot = applicationDirectory / "Index";
+    const fs::path indexRoot = indexRootFor(applicationDirectory);
     std::error_code ec;
     fs::create_directories(indexRoot, ec);
     if (ec) return false;

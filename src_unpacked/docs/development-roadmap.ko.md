@@ -374,6 +374,10 @@ Benchmark/Telemetry는 새로운 Roadmap Node를 추가하지 않고 공통 인�
 S0 설계/pre-register
 → S1 Console entry foundation
 
+**S2 구현 상태 (0.9.4.43)**: Run/Suite benchmark core **완료**. Case=파일 1개, modeResults[]에 requested/effective 분리, aggregate precedence Cancelled > Failed > Success > Skipped. 실행 주입 경계(BenchmarkExecutor)로 production scan 경로를 재사용하며 별도 검색 엔진 없음. 단위 테스트 59 checks, CPU CTest 87/87, GPU CTest 88/88.
+per-file 측정은 ignoredPaths 로 구현하며 scan() 이 매 호출 폴더를 walk 하므로 **O(N²)** 이다(S2 는 correctness 우선으로 허용, 대규모 최적화는 후속). process 격리·OS filesystem cache 는 **통제 불가**.
+아직 미구현: JSONL durable journal(S3), storage isolation(S3), terminal renderer(S5), public benchmark CLI 옵션, AUTO/CPU/GPU-max 최종 정책, NVDEC 통합.
+
 **S1 구현 상태 (0.9.4.43)**: Console Entry Foundation **완료**. 파서 단위 테스트 40 checks, CPU CTest 86/86, GPU CTest 87/87.
 CLI 는 --help / --version / --smoke / --scan <folder> [--media images|videos|all] 만 지원하며, 인자 없음 실행은 기존 GUI를 그대로 연다. CLI 경로는 MainWindow 를 만들지 않는다.
 아직 미구현: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 이후).

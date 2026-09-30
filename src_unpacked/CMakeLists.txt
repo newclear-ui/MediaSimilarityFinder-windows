@@ -54,6 +54,10 @@ add_library(msf_core STATIC
   # S1: command line parsing for the console/headless entry points. Pure and
   # dependency free so the rules can be unit tested without launching the app.
   src/command_line.cpp
+  # S2: run/suite benchmark core. Owns ordering, status aggregation, cancellation
+  # and result preservation; the production adapter reuses the ordinary scan path
+  # through an injected BenchmarkExecutor, so no second search engine exists.
+  src/benchmark_core.cpp
     src/media_search_engine.cpp
     src/monitor.cpp
     src/benchmark.cpp
@@ -255,6 +259,12 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_command_line_test tests/command_line_test.cpp)
     target_link_libraries(msf_command_line_test PRIVATE msf_core)
     add_test(NAME command_line_test COMMAND msf_command_line_test)
+    # S2 benchmark core. Drives the runner through an injected fake executor, so
+    # ordering / aggregation / cancellation / result preservation are verified
+    # without running real media scans.
+    add_executable(msf_benchmark_core_test tests/benchmark_core_test.cpp)
+    target_link_libraries(msf_benchmark_core_test PRIVATE msf_core)
+    add_test(NAME benchmark_core_test COMMAND msf_benchmark_core_test)
     # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
     # and a scratch app dir, and it measures wall clock, so it is run manually
     # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in

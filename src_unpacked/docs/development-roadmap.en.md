@@ -420,6 +420,10 @@ Version numbers are not pre-assigned.
 S0 design/pre-register
 → S1 Console entry foundation
 
+**S2 implementation status (0.9.4.43)**: Run/Suite benchmark core **complete**. A case is one file, requested/effective are recorded separately in modeResults[], and the aggregate precedence is Cancelled > Failed > Success > Skipped. Execution goes through an injected BenchmarkExecutor boundary that reuses the production scan path, with no second search engine. 59 unit checks, CPU CTest 87/87, GPU CTest 88/88.
+The per-file measurement is implemented with ignoredPaths, and because scan() walks the folder on every call the cost is **O(N²)**. S2 accepts this in favour of correctness and defers the large-scale optimisation. Process isolation and the OS filesystem cache are **uncontrolled**.
+Still not implemented: durable JSONL journal (S3), storage isolation (S3), terminal renderer (S5), public benchmark CLI options, the final AUTO/CPU/GPU-max policy, and NVDEC integration.
+
 **S1 implementation status (0.9.4.43)**: Console Entry Foundation **complete**. 40 parser unit checks, CPU CTest 86/86, GPU CTest 87/87.
 The CLI supports only help, version, smoke and scan with a media selector; running with no arguments still opens the existing GUI, and the CLI path never constructs a MainWindow.
 Still not implemented: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 onward).
