@@ -430,3 +430,23 @@ S0 design/pre-register
 Every stage closes with source change → CPU/GPU build → CTest → CLI/GUI execution verification → documentation → Build History when applicable → commit.
 
 Detailed contracts and storage layout are maintained in docs/architecture/benchmark-telemetry-roadmap.*.
+
+## Final Benchmark Console Design Amendment — 2026-09-30
+
+The existing benchmark S0-S8 schedule is finalized with the following contract:
+
+- Execute AUTO -> CPU -> GPU-max per file and persist that file's results immediately.
+- Do not share analytical intermediate results between benchmark modes.
+- Ctrl+C cancellation and partial-result persistence are first-class behavior.
+- Console CPU resource reuses the existing Maximum / High / Balanced / Gaming / Manual(10-90%) policy. Balanced (55%) is the recommended default.
+- A linear extrapolation from a Balanced run is not an actual Maximum benchmark result.
+- The interactive console header is compressed to three fixed information rows and never auto-wraps.
+- Long Target paths use middle ellipsis on screen only; JSON stores the full path.
+- Priority header fields are Target / Scope / IMG+VID progress / Mode / CPU Resource / GPU / Distance / Suite ID / Build+Git identity.
+- The lower area is reserved for detailed CURRENT FILE AUTO/CPU/GPU-max information.
+- Completed history is compact, one line per file.
+- TTY and non-interactive output are separate renderers over the same journal/JSON data.
+- The existing benchmark source/schema remains a permanent legacy baseline.
+
+With this amendment, S2 owns benchmark execution and the per-file journal contract, while S5 owns Console rendering and CLI execution.
+
