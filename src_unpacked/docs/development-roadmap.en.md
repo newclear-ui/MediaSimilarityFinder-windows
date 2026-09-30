@@ -419,6 +419,10 @@ Version numbers are not pre-assigned.
 
 S0 design/pre-register
 → S1 Console entry foundation
+
+**S1 implementation status (0.9.4.43)**: Console Entry Foundation **complete**. 40 parser unit checks, CPU CTest 86/86, GPU CTest 87/87.
+The CLI supports only help, version, smoke and scan with a media selector; running with no arguments still opens the existing GUI, and the CLI path never constructs a MainWindow.
+Still not implemented: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 onward).
 → S2 Run/Suite benchmark core
 → S3 Benchmark storage isolation
 → S4 GUI benchmark integration

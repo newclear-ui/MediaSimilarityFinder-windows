@@ -373,6 +373,10 @@ Benchmark/Telemetry는 새로운 Roadmap Node를 추가하지 않고 공통 인�
 
 S0 설계/pre-register
 → S1 Console entry foundation
+
+**S1 구현 상태 (0.9.4.43)**: Console Entry Foundation **완료**. 파서 단위 테스트 40 checks, CPU CTest 86/86, GPU CTest 87/87.
+CLI 는 --help / --version / --smoke / --scan <folder> [--media images|videos|all] 만 지원하며, 인자 없음 실행은 기존 GUI를 그대로 연다. CLI 경로는 MainWindow 를 만들지 않는다.
+아직 미구현: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 이후).
 → S2 Run/Suite benchmark core
 → S3 Benchmark storage isolation
 → S4 GUI benchmark integration
