@@ -576,3 +576,145 @@ Do not pre-assign version numbers.
 - S8 Full verification: CPU build → GPU build → CTest → CLI execution → GUI verification → JSON inspection → documentation → Build History when applicable → commit
 
 Once actual benchmark performance experiments begin, apply the existing pre-register-first rule and record successful, failed, and rejected outcomes in Build History and the Performance / Tuning Experiment Index.
+
+## 29. Final Console Benchmark Execution and Terminal UI Contract — 2026-09-30
+
+This section is the **final design decision** that supplements the earlier S0-S8 outline. Implementations must follow this contract when the earlier outline is less specific.
+
+### 29.1 File-level execution order
+
+Do not run an entire dataset in one mode before moving to the next mode. Repeat the following per file:
+
+~~~text
+Prepare/identify file
+  -> AUTO
+  -> CPU-only
+  -> GPU-max
+  -> append this file's results to the journal immediately
+  -> next file
+~~~
+
+- File identification/input preparation may be shared.
+- Actual analysis, decode, and intermediate analytical results must not be shared between modes; otherwise CPU/AUTO/GPU comparison conditions become contaminated.
+- Treat each mode as an independent analysis context.
+- Persist the three mode results immediately after the file completes.
+
+### 29.2 Cancellation and partial-result persistence
+
+- Interactive Console uses Ctrl+C as the cancellation request.
+- Finish the current atomic operation safely, then terminate.
+- Because completed file/mode results already exist in the journal, an interrupted process must leave a usable partial Suite.
+- Finalization records cancelled, completionReason, filesCompleted, filesRemaining, and runsCompleted.
+- The terminal is a view, not the source of benchmark truth; the journal/summary is canonical.
+
+### 29.3 CPU Resource Policy
+
+The Console benchmark reuses the existing Resource Policy.
+
+~~~text
+--resource maximum|high|balanced|gaming|manual
+--cpu-percent 10..90
+~~~
+
+- Recommended default benchmark resource: **Balanced (55%)**.
+- Users may explicitly select Maximum/High/etc.
+- Do not treat a simple linear extrapolation from a Balanced measurement as an actual Maximum benchmark result.
+- Maximum should be measured when required. A projection may be displayed separately, but it must not be mixed with measured benchmark results in the first implementation.
+- CPU-only and GPU-max comparison conditions must not be silently changed by adaptive throttling during the run.
+
+### 29.4 Fixed console header
+
+The interactive terminal uses **three information rows plus separators**. These rows must never auto-wrap.
+
+~~~text
+MediaSimilarityFinder Benchmark
+================================================================================================================
+Target : D:\\Media\\TestSet                  | Scope : ALL       | Files : IMG 12/640  VID 3/207
+Mode   : AUTO → CPU → GPU-MAX              | CPU : Balanced 55% | GPU : ON / CUDA
+Distance : 8                               | Suite ID : 20260930-0801-01 | Build : 0.9.4.43 | Git : 22c3ac9
+================================================================================================================
+~~~
+
+At minimum, retain:
+
+- Target
+- media scope
+- image/video completion counts
+- benchmark mode order
+- CPU Resource
+- GPU state/backend
+- Distance
+- Suite ID
+- Build and Git identifiers when width permits
+
+### 29.5 No-wrap and width adaptation
+
+- The fixed header must never auto-wrap.
+- When terminal width is insufficient, compress lower-priority text first.
+- Long target paths use **middle ellipsis** so both the beginning and end remain identifiable.
+- Screen strings may be compressed, e.g. Balanced (55%) -> Balanced 55%, ON / CUDA -> CUDA.
+- Full, unshortened values remain in JSON/journal.
+- Wide/normal/compact presentation modes may be used, but the fixed header must not gain extra rows.
+
+### 29.6 CURRENT FILE detail area
+
+The current file's global position and name remain in the lower detailed region.
+
+~~~text
+CURRENT FILE
+----------------------------------------------------------------------------------------------------------------
+[16 / 847] sample_0012.jpg
+Type : Image | Size : 4.82 MB | IMG : 12/640
+
+AUTO                  CPU                   GPU-MAX
+------------------    ------------------    ------------------
+DONE                  DONE                  RUNNING
+12.41 ms              18.08 ms              7.32 ms
+Scheduler             Software              CUDA
+                      Workers : 10          CPU FB : NO
+----------------------------------------------------------------------------------------------------------------
+~~~
+
+For videos, prefer media-specific details such as codec, resolution, fps, duration, decoder/backend, and CPU fallback reason.
+
+### 29.7 Completed history and final state
+
+Completed history is intentionally compact, one line per file:
+
+~~~text
+0011 image_0011.jpg         AUTO 10.8ms | CPU 14.7ms | GPU  8.2ms
+0012 image_0012.jpg         AUTO 12.4ms | CPU 18.1ms | GPU  9.6ms
+0013 sample_0013.mp4        AUTO 842ms  | CPU 711ms  | GPU 438ms
+~~~
+
+On cancellation, show CANCELLATION REQUESTED, partial-save completion, and completed/remaining file counts. On normal completion, show BENCHMARK COMPLETE and cumulative AUTO/CPU/GPU-max summaries.
+
+### 29.8 Interactive / non-interactive split
+
+- TTY/Interactive: fixed header + CURRENT FILE + accumulated history + final/partial summary
+- Redirect/CI/non-interactive: line-oriented output that does not rely on ANSI screen rewriting
+- Both paths write the same journal/JSON benchmark data.
+
+### 29.9 Legacy Benchmark Preservation
+
+The existing benchmark source and schema are **permanent legacy baselines**.
+
+- Do not overwrite the historical benchmark implementation and lose its traceability when introducing the new architecture.
+- Keep the v0.9.4.43 Git tag/source backup and existing documentation records as the legacy reference point.
+- Future benchmark architecture changes must retain traceability among legacy source, tag, backup, and documentation snapshot.
+- This decision is documentation-only; it does not delete or replace the existing product benchmark implementation.
+
+## 30. Final S0-S8 responsibilities
+
+- **S0**: finalize Run/Suite, mode, media scope, Resource Budget, journal, isolation, cancellation, terminal contract
+- **S1**: Console entry, help/version, headless scan, media/resource option wiring
+- **S2**: file-level AUTO->CPU->GPU-max core, independent mode contexts, per-file result event/journal contract
+- **S3**: benchmark storage isolation, append-only journal, crash-safe/partial persistence, summary creation
+- **S4**: GUI benchmark integration and latest-three retention
+- **S5**: Console benchmark CLI execution and interactive/non-interactive terminal renderer
+- **S6**: Suite automation, fingerprint validation, comparison/data-mining
+- **S7**: help/usability/exit codes/verbose output
+- **S8**: CPU/GPU builds, tests, CLI/GUI verification, journal/JSON verification, documentation and release gate
+
+The existing **pre-register-first** rule remains mandatory as soon as actual performance experiments begin.
+
