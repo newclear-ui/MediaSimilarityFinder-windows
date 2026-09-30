@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.20)
 project(MediaSimilarityFinder VERSION 0.9.4.43 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# S1: generate the build version header so the reported version cannot drift from
+# the build. main.cpp used to hardcode its own string and had fallen behind the
+# real version, which made --version and the window title disagree with the build.
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/generated/msf_build_version.h"
+  @ONLY)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available (deprecated alias of MSF_ENABLE_GPU)" ON)
 # Node A: canonical internal concept is GPU. MSF_ENABLE_CUDA stays as a
@@ -43,6 +51,9 @@ add_library(msf_core STATIC
   # FFmpeg calls, no I/O — so the correctness gates are provably independent of
   # whatever the decoder does afterwards.
   src/video_sampling_planner.cpp
+  # S1: command line parsing for the console/headless entry points. Pure and
+  # dependency free so the rules can be unit tested without launching the app.
+  src/command_line.cpp
     src/media_search_engine.cpp
     src/monitor.cpp
     src/benchmark.cpp
@@ -52,6 +63,9 @@ add_library(msf_core STATIC
     src/walker_queue.cpp
 )
 target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# S1: expose the generated build version header (msf_build_version.h) to msf_core
+# consumers, i.e. the GUI executable, without hardcoding a version anywhere.
+target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if(WIN32)
     target_link_libraries(msf_core PUBLIC windowscodecs ole32 shell32 psapi pdh)
 endif()
@@ -235,6 +249,12 @@ if(MSF_BUILD_TESTS)
     # tested before any hardware path exists to gate.
     add_executable(msf_f_random_access_safety_test tests/f_random_access_safety_test.cpp)
     add_test(NAME f_random_access_safety_test COMMAND msf_f_random_access_safety_test)
+    # S1 command line parser. Pure and dependency free, so the entry-point rules
+    # (GUI default, unknown option rejected, --media validation) are tested
+    # without launching the application.
+    add_executable(msf_command_line_test tests/command_line_test.cpp)
+    target_link_libraries(msf_command_line_test PRIVATE msf_core)
+    add_test(NAME command_line_test COMMAND msf_command_line_test)
     # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
     # and a scratch app dir, and it measures wall clock, so it is run manually
     # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in

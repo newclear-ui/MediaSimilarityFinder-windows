@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "video_decoder.h"
+#include "msf_build_version.h"
 #include "../src/image_decoder.h"
 #include "../src/proc_capture.h"
 #include "../src/path_utils.h"
@@ -293,7 +294,14 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
   if (!std::strcmp(key,"stopWait")) return S("정지 처리 중입니다. 진행 중인 분석이 끝나는 대로 정리됩니다…","Stopping. Wrapping up the in-flight analysis…");
-  if (!std::strcmp(key,"about")) return S("Media Similarity Finder 0.9.4.35\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환","Media Similarity Finder 0.9.4.35\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings");
+  if (!std::strcmp(key,"about")) {
+    // Version comes from the generated build header, so the About text can no
+    // longer drift away from the actual build.
+    const std::string ver(MSF_BUILD_VERSION);
+    return S(("Media Similarity Finder " + ver + "\n미디어 중복/유사 검색 (CPU/GPU)\n언어: 설정에서 한국어/English 전환").c_str(),
+              QStringLiteral("Media Similarity Finder ") + QString::fromLatin1(MSF_BUILD_VERSION)
+                  + QStringLiteral("\nMedia duplicate/similarity search (CPU/GPU)\nLanguage: switch 한국어/English in Settings"));
+  }
   return QString::fromUtf8(key);
 }
 // High-contrast selection for result/file views: the native theme highlight
@@ -741,7 +749,7 @@ UiLang MainWindow::lang() const {
 }
 
 void MainWindow::buildUi() {
-    setWindowTitle(trStr(lang(), "app") + QStringLiteral(" 0.9.4.35"));
+    setWindowTitle(trStr(lang(), "app") + QStringLiteral(" ") + QString::fromLatin1(MSF_BUILD_VERSION));
   resize(1500, 880);
   auto* central = new QWidget(this); setCentralWidget(central);
   auto* outer = new QVBoxLayout(central); outer->setContentsMargins(6, 6, 6, 6); outer->setSpacing(6);
@@ -1127,7 +1135,7 @@ void MainWindow::buildRight(QWidget* w) {
 
 void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
-  setWindowTitle(trStr(l, "app") + QStringLiteral(" 0.9.4.35"));
+  setWindowTitle(trStr(l, "app") + QStringLiteral(" ") + QString::fromLatin1(MSF_BUILD_VERSION));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
   refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
