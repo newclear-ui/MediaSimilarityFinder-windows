@@ -166,8 +166,13 @@ void ProductionBenchmarkExecutor::runMode(const BenchmarkRequest& request,
     // letting one mode's fingerprints influence the next. Process isolation and
     // the OS filesystem cache are explicitly NOT controlled here; that remains a
     // documented uncontrolled condition.
-    const std::string modeDir = request.applicationDirectory
-                              + std::string("/benchmark-s2-") + gpuBackendKindName(requested);
+    //
+    // S3 supplies the directory so it lands under the suite runtime tree; without
+    // a provider the S2 default applies. The mode chosen here is unchanged either
+    // way, since S3 is a storage concern and must not alter what is measured.
+    const std::string modeDir = request.modeIndexApplicationDirectory
+        ? request.modeIndexApplicationDirectory(requested)
+        : request.applicationDirectory + std::string("/benchmark-s2-") + gpuBackendKindName(requested);
     std::error_code ec;
     std::filesystem::create_directories(path_from_utf8(modeDir), ec);
 
@@ -266,14 +271,20 @@ BenchmarkRun BenchmarkRunner::run(const BenchmarkRequest& request,
         }
     }
 
-    // A run id that is unique within the process; persistence and cross-process
-    // identity belong to a later stage.
+    // A run id is normally supplied by the caller, because durable storage has to
+    // know the run identity before execution starts. Falling back to a
+    // process-local counter keeps the original in-runner behaviour intact.
     static std::atomic<unsigned long long> counter{0};
-    run.runId = std::to_string(counter.fetch_add(1) + 1);
+    run.runId = request.runId.empty() ? std::to_string(counter.fetch_add(1) + 1)
+                                      : request.runId;
 
     const std::vector<BenchmarkFileItem> files = exec_->discover(request);
     run.filesStarted = files.size();
     run.filesRemaining = files.size();
+
+    // The run is identified and its file list is known, but nothing has been
+    // executed yet. This is where durable storage records the run's start.
+    if (request.onRunStarted) request.onRunStarted(run);
 
     bool anyCancelled = false;
     bool anyFailed = false;
@@ -364,6 +375,9 @@ BenchmarkRun BenchmarkRunner::run(const BenchmarkRequest& request,
 
     run.completedAt = isoNow();
     exec_->onRunFinished(run);
+    // The storage seam is notified last, so the terminal record it writes already
+    // carries the final status and completedAt.
+    if (request.onRunFinished) request.onRunFinished(run);
     return run;
 }
 

@@ -58,6 +58,14 @@ add_library(msf_core STATIC
   # and result preservation; the production adapter reuses the ordinary scan path
   # through an injected BenchmarkExecutor, so no second search engine exists.
   src/benchmark_core.cpp
+  # S3: durable storage layer. benchmark_store owns the path policy and the
+  # OS-level suite lock; benchmark_journal owns append-only JSONL evidence,
+  # recovery and replay. Neither writes anything inside a scanned source folder.
+  src/benchmark_store.cpp
+  src/benchmark_journal.cpp
+  # S3 wiring: binds the S2 runner's hooks to the suite's lock, journal and
+  # summary. Decides nothing about execution order or aggregation.
+  src/benchmark_session.cpp
     src/media_search_engine.cpp
     src/monitor.cpp
     src/benchmark.cpp
@@ -265,6 +273,21 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_core_test tests/benchmark_core_test.cpp)
     target_link_libraries(msf_benchmark_core_test PRIVATE msf_core)
     add_test(NAME benchmark_core_test COMMAND msf_benchmark_core_test)
+    # S3 journal: append ordering, truncated-tail recovery, incomplete case
+    # classification, and duplicate idempotency.
+    add_executable(msf_benchmark_journal_test tests/benchmark_journal_test.cpp)
+    target_link_libraries(msf_benchmark_journal_test PRIVATE msf_core)
+    add_test(NAME benchmark_journal_test COMMAND msf_benchmark_journal_test)
+    # S3 store: suite path policy, sanitized naming, per-mode index application
+    # directory, and the OS-level exclusive suite lock.
+    add_executable(msf_benchmark_store_test tests/benchmark_store_test.cpp)
+    target_link_libraries(msf_benchmark_store_test PRIVATE msf_core)
+    add_test(NAME benchmark_store_test COMMAND msf_benchmark_store_test)
+    # S3 end-to-end: the real S2 runner driving the real journal, plus recovery,
+    # lock contention, summary regeneration and source isolation.
+    add_executable(msf_benchmark_integration_test tests/benchmark_integration_test.cpp)
+    target_link_libraries(msf_benchmark_integration_test PRIVATE msf_core Qt6::Core)
+    add_test(NAME benchmark_integration_test COMMAND msf_benchmark_integration_test)
     # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
     # and a scratch app dir, and it measures wall clock, so it is run manually
     # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in

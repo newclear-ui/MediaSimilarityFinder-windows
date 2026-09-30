@@ -376,7 +376,14 @@ S0 설계/pre-register
 
 **S2 구현 상태 (0.9.4.43)**: Run/Suite benchmark core **완료**. Case=파일 1개, modeResults[]에 requested/effective 분리, aggregate precedence Cancelled > Failed > Success > Skipped. 실행 주입 경계(BenchmarkExecutor)로 production scan 경로를 재사용하며 별도 검색 엔진 없음. 단위 테스트 59 checks, CPU CTest 87/87, GPU CTest 88/88.
 per-file 측정은 ignoredPaths 로 구현하며 scan() 이 매 호출 폴더를 walk 하므로 **O(N²)** 이다(S2 는 correctness 우선으로 허용, 대규모 최적화는 후속). process 격리·OS filesystem cache 는 **통제 불가**.
-아직 미구현: JSONL durable journal(S3), storage isolation(S3), terminal renderer(S5), public benchmark CLI 옵션, AUTO/CPU/GPU-max 최종 정책, NVDEC 통합.
+아직 미구현: terminal renderer(S5), public benchmark CLI 옵션, AUTO/CPU/GPU-max 최종 정책, NVDEC 통합.
+(JSONL durable journal 과 storage isolation 은 S3 에서 구현되어 S2 runner 에 실제 연결되었다.)
+**S3 구현 상태 (0.9.4.43)**: Benchmark storage isolation **완료 (runner 연결 + recovery/summary E2E 검증)**. journal schema 1 은 legacy `kBenchmarkSchemaVersion`(9) 와 **분리**되어 있고, 둘은 함께 버전이 올라가지 않는다.
+배선: `onRunStarted → run_started`, `onCaseComplete → mode_result xN + case_complete(commit marker)`, `onRunFinished → run_finished / run_cancelled`, 그리고 summary 재생성. `BenchmarkRequest::runId` 로 run 을 **실행 전에** 식별할 수 있게 하여 suite lock → runtime 준비 → journal open → run_started 순서를 지킨다.
+검증: journal 51 checks, store 51 checks, 통합 137 checks(E2E 정상/취소/실패/recovery/lock/격리 + 실제 엔진 1회). CPU CTest 90/90, GPU CTest 91/91.
+확인된 사실: 취소된 case 도 commit marker 를 남긴다(S2 가 그 case 를 callback 으로 전달하고 실제 commit 지점에 도달했으므로). 취소 전에 시작되지 않은 파일은 case 자체가 없어 journal 에 기록도 없다.
+recovery: 마지막 개행 없는 tail 은 폐기, commit 없는 mode 기록은 incomplete 로 분류, 동일 recordId 중복은 무시, payload 불일치 중복은 anomaly 로 보고 **첫 record 유지**, **중간 record 손상은 fatal 이며 이후를 추측 복구하지 않는다**. `summary.json` 은 journal replay 결과일 뿐 authoritative 가 아니며 삭제 후 journal 에서 재생성된다.
+**통제 불가**: durability 는 append+flush 이며 fsync/power-loss 보장은 아니다. process 격리·OS filesystem cache·O(N²) scan 은 그대로다.
 
 **S1 구현 상태 (0.9.4.43)**: Console Entry Foundation **완료**. 파서 단위 테스트 40 checks, CPU CTest 86/86, GPU CTest 87/87.
 CLI 는 --help / --version / --smoke / --scan <folder> [--media images|videos|all] 만 지원하며, 인자 없음 실행은 기존 GUI를 그대로 연다. CLI 경로는 MainWindow 를 만들지 않는다.

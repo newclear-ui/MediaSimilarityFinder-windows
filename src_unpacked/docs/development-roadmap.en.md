@@ -422,7 +422,14 @@ S0 design/pre-register
 
 **S2 implementation status (0.9.4.43)**: Run/Suite benchmark core **complete**. A case is one file, requested/effective are recorded separately in modeResults[], and the aggregate precedence is Cancelled > Failed > Success > Skipped. Execution goes through an injected BenchmarkExecutor boundary that reuses the production scan path, with no second search engine. 59 unit checks, CPU CTest 87/87, GPU CTest 88/88.
 The per-file measurement is implemented with ignoredPaths, and because scan() walks the folder on every call the cost is **O(N²)**. S2 accepts this in favour of correctness and defers the large-scale optimisation. Process isolation and the OS filesystem cache are **uncontrolled**.
-Still not implemented: durable JSONL journal (S3), storage isolation (S3), terminal renderer (S5), public benchmark CLI options, the final AUTO/CPU/GPU-max policy, and NVDEC integration.
+Still not implemented: terminal renderer (S5), public benchmark CLI options, the final AUTO/CPU/GPU-max policy, and NVDEC integration.
+(The durable JSONL journal and storage isolation are implemented in S3 and wired into the S2 runner.)
+**S3 implementation status (0.9.4.43)**: Benchmark storage isolation **complete (wired to the runner, recovery/summary verified end to end)**. Journal schema 1 is **separate** from the legacy `kBenchmarkSchemaVersion` (9), and the two are not versioned together.
+Wiring: `onRunStarted → run_started`, `onCaseComplete → mode_result xN + case_complete (commit marker)`, `onRunFinished → run_finished / run_cancelled`, then summary regeneration. `BenchmarkRequest::runId` makes a run identifiable **before execution**, which is what preserves the order suite lock → runtime ready → journal open → run_started.
+Verified: journal 51 checks, store 51 checks, integration 137 checks (E2E normal/cancellation/failure/recovery/lock/isolation, plus one run through the real engine). CPU CTest 90/90, GPU CTest 91/91.
+Established facts: a cancelled case still gets a commit marker, because S2 delivers that case through the callback and it did reach its commit point. A file that never started before cancellation has no case at all, so nothing is recorded for it.
+Recovery: a final line without a newline is discarded; mode records without a commit become incomplete cases; a duplicate recordId with identical payload is ignored; a duplicate with a different payload is reported as an anomaly and the **first record is kept**; **mid-file corruption is fatal and nothing after it is guessed**. `summary.json` is a replay result and never authoritative, and it can be deleted and regenerated from the journal.
+**Uncontrolled**: durability is append + flush, with no fsync/power-loss guarantee. Process isolation, the OS filesystem cache and the O(N²) scan are unchanged.
 
 **S1 implementation status (0.9.4.43)**: Console Entry Foundation **complete**. 40 parser unit checks, CPU CTest 86/86, GPU CTest 87/87.
 The CLI supports only help, version, smoke and scan with a media selector; running with no arguments still opens the existing GUI, and the CLI path never constructs a MainWindow.

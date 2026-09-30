@@ -154,14 +154,53 @@ struct BenchmarkRequest {
     std::string suiteId;
     std::string buildVersion;
 
+    // Optional caller-supplied run identity. When empty the runner generates one,
+    // which is the original S2 behaviour.
+    //
+    // S3 needs this because a durable run must be nameable BEFORE execution: the
+    // suite lock, the journal path and the per-mode runtime directories are all
+    // derived from the run id. Generating the id inside the runner would make the
+    // storage layout unknowable up front. Supplying it changes no ordering,
+    // aggregation or cancellation behaviour.
+    std::string runId;
+
     // Cancellation boundary only. Restart/recovery is out of scope; this exists
     // so a future interactive caller can stop a run and still get an accurate
     // Cancelled result for the in-flight mode.
     std::function<bool()> isCancelled;
 
-    // Called once per completed case. Nothing is persisted here yet; this is the
-    // seam a durable writer will use in a later stage.
+    // Called once per completed case. This is the seam a journal writer uses:
+    // case.modeResults is complete at this point, so the journal can write the
+    // mode records followed by the case commit marker.
+    //
+    // Note the callback fires for a case whose aggregate is Cancelled as well.
+    // A case is only withheld when cancellation struck before the file was even
+    // started, and then no mode record exists either, so nothing is lost.
     std::function<void(const BenchmarkCaseResult&)> onCaseComplete;
+
+    // Called once after the run's identity and file list are known and before the
+    // first file executes. S3 uses it to write run_started.
+    std::function<void(const BenchmarkRun&)> onRunStarted;
+
+    // Called once after the terminal status and completedAt are computed and before
+    // the run is returned. S3 uses it to write the terminal event (run_finished or
+    // run_cancelled) and then regenerate summary.json from the journal.
+    //
+    // This is distinct from BenchmarkExecutor::onRunFinished, which is the legacy
+    // recorder mirror. Keeping the journal seam on the request is what stops the
+    // storage layer from leaking into the executor boundary.
+    std::function<void(const BenchmarkRun&)> onRunFinished;
+
+    // Optional per-mode index application directory provider. S2 established that
+    // IndexManager::resolve() places an index under <applicationDirectory>/Index,
+    // so isolating modes only requires giving each mode its own application
+    // directory. S3 supplies this so benchmark indexes live under the suite's
+    // runtime directory instead of beside the production index.
+    //
+    // When unset, the executor falls back to the original S2 location
+    // (<applicationDirectory>/benchmark-s2-<mode>). Leaving it optional keeps the
+    // storage policy out of the execution contract.
+    std::function<std::string(GpuBackendKind)> modeIndexApplicationDirectory;
 };
 
 struct BenchmarkSuiteRequest {
