@@ -1,14 +1,16 @@
-// S1 command line parser unit test.
+// S1 command line parser unit test, extended by S5 with the benchmark entry.
 //
-// The parser is the only part of S1 that can be tested exhaustively without
-// launching the application, and it is where the "invalid input must not be
-// ignored" rule lives. These checks are deliberately blunt: each one asserts a
-// decision, not an implementation detail.
+// The parser is the only part that can be tested exhaustively without launching
+// the application, and it is where the "invalid input must not be ignored" rule
+// lives. These checks are deliberately blunt: each one asserts a decision, not an
+// implementation detail.
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
+#include "benchmark_core.h"   // benchmarkContractModes(), the canonical mode order
+#include "benchmark_store.h"  // benchmarkModeDirName(), the canonical mode spelling
 #include "command_line.h"
 
 namespace {
@@ -92,17 +94,22 @@ int main() {
         chk(noValue.mode == msf::CommandMode::Error, "--media without value -> Error");
     }
     {
-        const auto unknown = parse({"--benchmark", "D"});
-        chk(unknown.mode == msf::CommandMode::Error, "unknown option --benchmark -> Error");
+        // S5 implemented --benchmark, so it is no longer an unknown option. The
+        // still-reserved options below remain rejected, otherwise --help and
+        // reality would drift apart.
+        const auto b = parse({"--benchmark", "D"});
+        chk(b.mode == msf::CommandMode::Benchmark, "--benchmark is now a known option");
+        const auto unknown = parse({"--nope"});
+        chk(unknown.mode == msf::CommandMode::Error, "a genuinely unknown option -> Error");
         chk(unknown.errorMessage.find("unknown option") != std::string::npos,
             "  message names the unknown option");
     }
     {
         // Options reserved for later stages must not be accepted yet, otherwise
-        // --help and reality would drift apart.
-        for (const char* opt : {"--mode", "--suite", "--resource", "--cpu-percent",
-                                "--log-dir", "--log"}) {
-            const auto r = parse({opt, "x"});
+        // --help and reality would drift apart. --benchmark/--mode/--suite/
+        // --log-dir/--log left this list in S5.
+        for (const char* opt : {"--resource", "--cpu-percent"}) {
+            const auto r = parse({"--benchmark", "D", opt, "x"});
             chk(r.mode == msf::CommandMode::Error,
                 std::string("not-yet-implemented option is rejected: ") + opt);
         }
@@ -116,6 +123,188 @@ int main() {
         // behaviour where those were handled before anything else.
         chk(parse({"--scan", "D", "--help"}).mode == msf::CommandMode::Help,
             "--help after other arguments still shows help");
+    }
+
+    // =====================================================================
+    // S5 benchmark entry
+    // =====================================================================
+    {
+        // Renders a mode list as the same "auto,cpu,gpu-max" spelling the CLI
+        // accepts, so an expectation can be read without a translation table.
+        auto modesText = [](const std::vector<msf::GpuBackendKind>& v) {
+            std::string s;
+            for (auto m : v) { if (!s.empty()) s += ","; s += msf::benchmarkModeDirName(m); }
+            return s;
+        };
+        const std::string all = modesText(msf::benchmarkContractModes());
+
+        // ---- the basic entry ------------------------------------------------
+        {
+            const auto o = parse({"--benchmark", "D:\\Media"});
+            chk(o.mode == msf::CommandMode::Benchmark, "--benchmark <folder> -> Benchmark");
+            chk(o.benchmarkRoot == "D:\\Media", "  target folder captured");
+            chk(!o.needsMainWindow(), "  Benchmark must NOT create a MainWindow");
+            chk(modesText(o.benchModes) == all, "  --mode defaults to auto,cpu,gpu-max");
+            chk(o.suiteId.empty() && o.logDir.empty() && o.logFile.empty(),
+                "  suite/log/log-dir default to empty");
+            chk(o.scope == msf::MediaScope::All, "  default media scope is all");
+        }
+
+        // ---- single, two and three modes ------------------------------------
+        {
+            chk(modesText(parse({"--benchmark", "D", "--mode", "auto"}).benchModes) == "auto",
+                "--mode auto -> auto");
+            chk(modesText(parse({"--benchmark", "D", "--mode", "cpu"}).benchModes) == "cpu",
+                "--mode cpu -> cpu");
+            chk(modesText(parse({"--benchmark", "D", "--mode", "gpu-max"}).benchModes) == "gpu-max",
+                "--mode gpu-max -> gpu-max");
+            chk(modesText(parse({"--benchmark", "D", "--mode", "auto,cpu"}).benchModes) == "auto,cpu",
+                "--mode auto,cpu -> two modes");
+            chk(modesText(parse({"--benchmark", "D", "--mode", "cpu,gpu-max"}).benchModes) ==
+                    "cpu,gpu-max",
+                "--mode cpu,gpu-max -> two modes");
+            chk(modesText(parse({"--benchmark", "D", "--mode", "auto,cpu,gpu-max"}).benchModes) == all,
+                "--mode with all three is accepted");
+        }
+
+        // ---- input order never becomes execution order ----------------------
+        {
+            chk(modesText(parse({"--benchmark", "D", "--mode", "gpu-max,auto"}).benchModes) ==
+                    "auto,gpu-max",
+                "--mode gpu-max,auto normalises to auto,gpu-max");
+            chk(modesText(parse({"--benchmark", "D", "--mode", "gpu-max,cpu,auto"}).benchModes) == all,
+                "--mode gpu-max,cpu,auto normalises to canonical order");
+        }
+
+        // ---- rejected mode lists --------------------------------------------
+        {
+            const auto dup = parse({"--benchmark", "D", "--mode", "auto,auto"});
+            chk(dup.mode == msf::CommandMode::Error, "--mode auto,auto -> Error (duplicate)");
+            chk(dup.errorMessage.find("duplicate") != std::string::npos, "  message says duplicate");
+            chk(dup.exitCode == msf::kCommandLineErrorExitCode, "  uses the shared error exit code");
+
+            const auto unknownMode = parse({"--benchmark", "D", "--mode", "auto,foo"});
+            chk(unknownMode.mode == msf::CommandMode::Error, "--mode auto,foo -> Error (unknown)");
+            chk(unknownMode.errorMessage.find("foo") != std::string::npos, "  message names the token");
+
+            chk(parse({"--benchmark", "D", "--mode", ""}).mode == msf::CommandMode::Error,
+                "--mode with an empty value -> Error");
+            chk(parse({"--benchmark", "D", "--mode", ","}).mode == msf::CommandMode::Error,
+                "--mode ',' -> Error");
+            chk(parse({"--benchmark", "D", "--mode", "auto,"}).mode == msf::CommandMode::Error,
+                "--mode 'auto,' trailing comma -> Error");
+            chk(parse({"--benchmark", "D", "--mode"}).mode == msf::CommandMode::Error,
+                "--mode without a value -> Error");
+            chk(parse({"--benchmark", "D", "--mode", "--suite", "x"}).mode == msf::CommandMode::Error,
+                "--mode followed by a flag -> Error, not a mode named --suite");
+            // Case handling follows the existing --media convention: exact
+            // lowercase only, no new case policy invented for --mode.
+            chk(parse({"--benchmark", "D", "--mode", "AUTO"}).mode == msf::CommandMode::Error,
+                "--mode AUTO -> Error (case sensitive like --media)");
+        }
+
+        // ---- suite / log-dir / log are preserved verbatim -------------------
+        {
+            const auto o = parse({"--benchmark", "D", "--suite", "20260930-0801-01",
+                                  "--log-dir", "D:\\BenchmarkLogs",
+                                  "--log", "D:\\BenchmarkLogs\\console.txt"});
+            chk(o.suiteId == "20260930-0801-01", "--suite value preserved");
+            chk(o.logDir == "D:\\BenchmarkLogs", "--log-dir value preserved");
+            chk(o.logFile == "D:\\BenchmarkLogs\\console.txt", "--log value preserved");
+            for (const char* opt : {"--suite", "--log-dir", "--log"}) {
+                chk(parse({"--benchmark", "D", opt}).mode == msf::CommandMode::Error,
+                    std::string(opt) + " without a value -> Error");
+                chk(parse({"--benchmark", "D", opt, ""}).mode == msf::CommandMode::Error,
+                    std::string(opt) + " with an empty value -> Error");
+                chk(parse({"--benchmark", "D", opt, "--media", "all"}).mode ==
+                        msf::CommandMode::Error,
+                    std::string(opt) + " followed by a flag -> Error");
+                // A second occurrence would drop the first value without saying so,
+                // so each of these is single-occurrence like --mode.
+                chk(parse({"--benchmark", "D", opt, "first", opt, "second"}).mode ==
+                        msf::CommandMode::Error,
+                    std::string(opt) + " given twice -> Error");
+            }
+        }
+
+        // ---- --mode is single-occurrence, not just single-value --------------
+        // "--mode auto --mode cpu" is the shape the brief calls out, and it must be
+        // rejected as a repeat rather than quietly keeping only the last list.
+        {
+            chk(parse({"--benchmark", "D", "--mode", "auto", "--mode", "cpu"}).mode ==
+                    msf::CommandMode::Error,
+                "--mode auto --mode cpu -> Error");
+            chk(parse({"--benchmark", "D", "--mode", "auto", "--mode", "auto"}).mode ==
+                    msf::CommandMode::Error,
+                "--mode auto --mode auto -> Error");
+        }
+
+        // ---- option order must not change the result ------------------------
+        // The all-three default is filled in where --benchmark is handled, so an
+        // explicit --mode given first has to survive that. These pairs assert the
+        // same outcome for both orders.
+        {
+            const auto before = parse({"--benchmark", "D", "--mode", "auto"});
+            const auto after  = parse({"--mode", "auto", "--benchmark", "D"});
+            chk(before.benchModes == after.benchModes,
+                "--mode auto --benchmark D and the reverse agree");
+            chk(before.benchModes.size() == 1 &&
+                    before.benchModes[0] == msf::GpuBackendKind::Auto,
+                "--mode before --benchmark is not overwritten by the all-three default");
+            const auto defBefore = parse({"--mode", "gpu-max,auto", "--benchmark", "D"});
+            chk(defBefore.benchModes.size() == 2 &&
+                    defBefore.benchModes[0] == msf::GpuBackendKind::Auto &&
+                    defBefore.benchModes[1] == msf::GpuBackendKind::Cuda,
+                "--mode before --benchmark is still canonicalized to AUTO, GPU-max");
+        }
+
+        // ---- --benchmark argument errors ------------------------------------
+        {
+            chk(parse({"--benchmark"}).mode == msf::CommandMode::Error,
+                "--benchmark without a folder -> Error");
+            chk(parse({"--benchmark", "--media", "all"}).mode == msf::CommandMode::Error,
+                "--benchmark followed by a flag -> Error");
+            chk(parse({"--benchmark", ""}).mode == msf::CommandMode::Error,
+                "--benchmark with an empty folder -> Error");
+            chk(parse({"--benchmark", "A", "--benchmark", "B"}).mode == msf::CommandMode::Error,
+                "duplicate --benchmark -> Error");
+            chk(parse({"--scan", "A", "--benchmark", "B"}).mode == msf::CommandMode::Error,
+                "--scan and --benchmark cannot be combined");
+            chk(parse({"--benchmark", "A", "--scan", "B"}).mode == msf::CommandMode::Error,
+                "  in either order");
+        }
+
+        // ---- --media is reused unchanged for benchmark ----------------------
+        {
+            const auto i = parse({"--benchmark", "D:\\Media", "--media", "images"});
+            chk(i.mode == msf::CommandMode::Benchmark && i.scope == msf::MediaScope::Images,
+                "--benchmark ... --media images -> Images");
+            chk(parse({"--benchmark", "D", "--media", "videos"}).scope == msf::MediaScope::Videos,
+                "--media videos with --benchmark");
+            chk(parse({"--benchmark", "D", "--media", "all"}).scope == msf::MediaScope::All,
+                "--media all with --benchmark");
+            chk(parse({"--benchmark", "D", "--media", "sideways"}).mode == msf::CommandMode::Error,
+                "an invalid --media value is still rejected for --benchmark");
+        }
+
+        // ---- options before --benchmark are still honoured ------------------
+        {
+            const auto o = parse({"--suite", "s1", "--benchmark", "D", "--mode", "auto"});
+            chk(o.mode == msf::CommandMode::Benchmark && o.suiteId == "s1" &&
+                    o.benchModes.size() == 1,
+                "benchmark options work in any order");
+            chk(parse({"--benchmark", "D", "--help"}).mode == msf::CommandMode::Help,
+                "--help after --benchmark still shows help");
+        }
+
+        // ---- determinism ----------------------------------------------------
+        {
+            const auto a = parse({"--benchmark", "D", "--mode", "gpu-max,auto"});
+            const auto b = parse({"--benchmark", "D", "--mode", "gpu-max,auto"});
+            chk(modesText(a.benchModes) == modesText(b.benchModes) &&
+                    a.benchmarkRoot == b.benchmarkRoot,
+                "benchmark parsing is deterministic");
+        }
     }
 
     // ---- exit code is a single stable value --------------------------------

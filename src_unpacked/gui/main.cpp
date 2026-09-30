@@ -72,13 +72,27 @@ constexpr const char* kVersion = MSF_BUILD_VERSION;
 // intentionally absent, so help text can never advertise something unimplemented.
 static void printUsage() {
     std::cout
-        << "Media Similarity Finder " << kVersion << "\n"
+        << "MediaSimilarity Finder " << kVersion << "\n"
         << "Usage:\n"
         << "  MediaSimilarityFinder.exe\n"
         << "  MediaSimilarityFinder.exe --help\n"
         << "  MediaSimilarityFinder.exe --version\n"
         << "  MediaSimilarityFinder.exe --smoke\n"
-        << "  MediaSimilarityFinder.exe --scan <folder> [--media images|videos|all]\n";
+        << "  MediaSimilarityFinder.exe --scan <folder> [--media images|videos|all]\n"
+        << "  MediaSimilarityFinder.exe --benchmark <folder> [--mode <list>]\n"
+        << "                          [--suite <id>] [--log-dir <dir>] [--log <file>]\n"
+        << "                          [--media images|videos|all]\n"
+        << "\n"
+        << "Benchmark options:\n"
+        << "  --benchmark <folder>   Source root to benchmark (not a scan target).\n"
+        << "  --mode <list>          Comma list; default: auto,cpu,gpu-max\n"
+        << "                         Execution order: AUTO -> CPU -> GPU-max\n"
+        << "  --suite <id>           Suite id. Default: generated as YYYYMMDD-HHMM-SS.\n"
+        << "  --log-dir <dir>        Benchmark durable storage root override.\n"
+        << "  --log <file>           Human-readable Console output file sink.\n"
+        << "\n"
+        << "Note: --benchmark is parsed but not executable in this build; the Console\n"
+        << "      renderer and execution path land in a later stage.\n";
 }
 
 #ifdef _WIN32
@@ -166,6 +180,17 @@ int main(int argc, char** argv) {
             return opt.exitCode;
         case msf::CommandMode::Scan:
             return runHeadlessScan(opt, argc, argv);
+        case msf::CommandMode::Benchmark:
+            // Parsing landed in the S5 CLI stage; the execution path and the
+            // Console renderer land in the next one. This branch exists so the
+            // command is refused explicitly instead of falling through to the GUI
+            // below: the Console contract says no CLI path constructs a
+            // MainWindow, and quietly opening a window would also hide the fact
+            // that the command is not wired up yet.
+            attachParentConsole();
+            printUsage();
+            std::cerr << "Error: --benchmark is recognised but not executable in this build\n";
+            return msf::kCommandLineErrorExitCode;
         case msf::CommandMode::Smoke:
         case msf::CommandMode::Gui:
             break;
