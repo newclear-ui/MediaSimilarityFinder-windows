@@ -717,4 +717,30 @@ The existing benchmark source and schema are **permanent legacy baselines**.
 - **S8**: CPU/GPU builds, tests, CLI/GUI verification, journal/JSON verification, documentation and release gate
 
 The existing **pre-register-first** rule remains mandatory as soon as actual performance experiments begin.
+## 31. Console Benchmark Visual Mockups — 2026-09-30
+
+Text examples alone are not sufficient to review the final Console UI density and fixed-header no-wrap behavior, so the finalized design is also preserved as visual mockups.
+
+Project mockup files:
+
+~~~text
+project/uimock/benchmark-console-mockup.html
+project/uimock/benchmark-console-mockup.svg
+~~~
+
+The mockups reflect the final contract:
+
+- three fixed information rows at the top
+- Target / Scope / IMG+VID progress on one row
+- Mode / CPU Resource / GPU on one row
+- Distance / Suite ID / Build / Git on one row
+- no automatic wrapping in the fixed header
+- middle ellipsis for long Target paths on screen
+- full original values preserved in JSON/journal
+- CURRENT FILE moved to the detailed lower area
+- AUTO / CPU / GPU-max shown as three horizontal columns
+- completed files accumulated as compact one-line history
+
+These mockups are **static references for pre-implementation UI review**, not actual benchmark output. The real implementation may vary displayed values according to terminal width, data, and media type.
+
 
