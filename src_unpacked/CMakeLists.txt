@@ -99,6 +99,10 @@ add_library(msf_core STATIC
   # S3 BenchmarkSession, makes the one BenchmarkRunner call and feeds the renderer.
   # It reuses S2/S3 unchanged and holds no scan, search or aggregation logic.
   src/console_benchmark_cli.cpp
+  # S6: journal discovery, ingestion and normalization. Library level only: it
+  # hands every journal to S3's own replayJournal() rather than parsing anything
+  # itself, and creates no CLI, report format or benchmark status.
+  src/benchmark_data_mining.cpp
   # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
   # reusing S3's atomic write and suite lock. It executes nothing and writes no
   # journal; the GUI drives BenchmarkRunner and hands the result here.
@@ -318,6 +322,12 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_console_benchmark_cli_test tests/console_benchmark_cli_test.cpp)
     target_link_libraries(msf_console_benchmark_cli_test PRIVATE msf_core)
     add_test(NAME console_benchmark_cli_test COMMAND msf_console_benchmark_cli_test)
+    # S6-1 ingestion and normalization: discovery, S3 recovery reuse, run
+    # classification, provenance states, missing-field preservation, exclusion
+    # accounting and determinism. No comparison, aggregation or statistics.
+    add_executable(msf_benchmark_data_mining_test tests/benchmark_data_mining_test.cpp)
+    target_link_libraries(msf_benchmark_data_mining_test PRIVATE msf_core)
+    add_test(NAME benchmark_data_mining_test COMMAND msf_benchmark_data_mining_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.

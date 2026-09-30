@@ -1596,3 +1596,80 @@ Remaining entry conditions: `distance` and `resourcePolicy` are still absent fro
 the journal (DEFERRED), and the controlled-measurement-environment definition, repeated
 run data, and a `run_cancelled` measured sample are also unresolved. S6 is still not
 CLOSED.
+## 2026-10-01 — S6-1 Data Ingestion / Journal Normalization implemented
+
+Only the `S6-1` stage of the S6 brief (collection and normalization) was
+implemented. **No comparison, aggregation, regression or statistical judgement was
+implemented, and S6 is still not CLOSED.**
+
+Location: `src/benchmark_data_mining.{h,cpp}` (member of `msf_core`). The test
+is `tests/benchmark_data_mining_test.cpp` (69 checks).
+
+### Core rule: recovery semantics are not reimplemented
+
+There is **no journal parsing here at all.** `msf::replayJournal()` makes every
+integrity, idempotency and anomaly decision, and S6 only calls it and projects the
+result. S6 does exactly one thing itself, and it is not a judgement:
+
+- It enumerates which runs exist by locating the `run_started` and terminal
+  records with S6's own copy of the minimal flat field reader
+  (`jsonFieldString`). A suite journal accumulates several runs while replay
+  returns one run at a time, so the run list is needed before a per-run replay. That
+  step copies four strings and nothing else: runId, datasetFingerprint, mediaScope
+  and completedAt.
+
+`completedAt` is not populated by S3's replay at all: `JournalReplay::completedAt`
+stays empty even though `run_finished` writes the field, because replay only reads
+`completionReason` from the terminal record. S6 therefore reads it with the same
+minimal reader.
+
+### Normalized model
+
+- `IngestRunClass` (Complete / Cancelled / Incomplete / Corrupt / Unavailable) is an
+  **S6 analysis classification, not a benchmark status.** `BenchmarkStatus` keeps
+  S2's definition unchanged.
+- Ten `IngestExclusion` values record why something was excluded. Nothing is
+  dropped silently.
+- `GitCommitState` distinguishes three states (Known / Unknown / **Legacy**). A
+  Legacy journal never has the current git value filled in for it.
+- Fields the journal does not carry (`distance` / `resourcePolicy` /
+  `gpuBackend`) are kept as absence with `std::optional` and are never replaced
+  by 0, false or `"unknown"`.
+- A mode `elapsedMs` has a value only when the mode actually ran. Storing 0.0 for a
+  mode that never ran would be a claim, because it reads as "instantly fast".
+
+### Two findings from measurement
+
+1. **Wall duration has one-second resolution.** S3 writes `startedAt` and
+   `completedAt` as `%Y-%m-%dT%H:%M:%S` with no fractional part, so the derived
+   duration is always a multiple of 1000 ms and **any run shorter than a second comes
+   out as exactly 0**. A stored 0 means "finished within the same second", not "took
+   no time". It must stay distinguishable from the absent value, and a test pins
+   that.
+2. **A multi-run journal exists in the real storage tree.** `suite-TEST-SUITE-001`
+   holds two `run_started` records. 31 runs come out of 30 journals and each keeps
+   its own datasetFingerprint and cases, which is the S3-BUG regression guard.
+
+### Verified against the real storage tree
+
+The test binary has a read-only diagnostic path so this could be checked against
+journals the product actually wrote.
+
+`	ext
+journals=30  unreadable=0  withoutRuns=0
+runsFound=31  accepted=31  excluded=0  commitless=0  anyFatal=0
+provenance: legacy=30  known=1  unknown=0   withDuration=31
+determinism: IDENTICAL
+`
+
+`legacy=30 / known=1` matches the real situation of 29 pre-provenance journals plus
+one that carries the field.
+
+Tests: ingestion **69 checks** (new). journal 66 / store 51 / integration 144 / core
+63 / gui_store 110 / worker 35 / ui 34 / ui_e2e 40 / cli 95 / renderer 100 /
+orchestrator 32 all PASS. CPU build exit 0 / CTest **97/97**, GPU build exit 0 /
+CTest **98/98**.
+
+Not changed: S2 BenchmarkRunner/Executor/Request, the S3 journal schema, recovery or
+summary generation, the Console renderer, the GUI, Scanner/MediaKind, NVDEC, and the
+legacy benchmark. No journal field was added, and no CLI was introduced.

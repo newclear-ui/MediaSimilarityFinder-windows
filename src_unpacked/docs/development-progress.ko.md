@@ -1506,3 +1506,68 @@ CPU build exit 0 / CTest **96/96**, GPU build exit 0 / CTest **97/97**.
 남는 진입 조건: `distance` 와 `resourcePolicy` 는 여전히 journal 에 없고(DEFERRED),
 통제된 측정 환경 정의와 반복 실행 데이터, `run_cancelled` 실측 표본도 미해소다.
 S6 는 여전히 CLOSED 가 아니다.
+## 2026-10-01 — S6-1 Data Ingestion / Journal Normalization 구현
+
+S6 brief 의 `S6-1` 단계(데이터 수집/정규화)만 구현했다. **비교·집계·회귀·통계 판정은
+구현하지 않았고 S6 는 여전히 CLOSED 가 아니다.**
+
+위치: `src/benchmark_data_mining.{h,cpp}` (msf_core 소속). 테스트는
+`tests/benchmark_data_mining_test.cpp` (69 checks).
+
+### 핵심: recovery 규칙을 재구현하지 않는다
+
+journal 파싱은 **전혀 하지 않는다.** `msf::replayJournal()` 이 모든 무결성·멱등성·anomaly
+판정을 내리고, S6 는 그것을 호출하고 결과를 투영할 뿐이다. S6 가 자체적으로 만든 부분은
+딱 하나이며 그것도 판단이 아니다:
+
+- `run_started` / terminal record 를 찾아 **어떤 run 이 존재하는지** 열거하기 위해
+  S6 자신의 최소 flat field reader(`jsonFieldString`)를 쓴다. suite journal 은 여러 run 이
+  누적되므로 per-run replay 전에 run 목록이 필요하고, replay 는 한 번에 한 run 만 돌려준다.
+  이 단계에서는 runId·datasetFingerprint·mediaScope·completedAt 네 문자열만 복사한다.
+
+`completedAt` 은 S3 의 replay 가 **채우지 않는다** (`JournalReplay::completedAt` 이 항상
+빈 상태). `run_finished` 가 해당 필드를 쓰기는 하지만 replay 는 `completionReason` 만
+읽는다. 그래서 S6 가 같은 최소 reader 로 직접 읽는다.
+
+### 표준화 모델
+
+- `IngestRunClass`(Complete / Cancelled / Incomplete / Corrupt / Unavailable) 는 **S6 분석용
+  분류이며 benchmark status 가 아니다.** `BenchmarkStatus` 는 S2 정의를 그대로 유지한다.
+- `IngestExclusion` 10종으로 제외 사유를 이름으로 기록한다. 아무것도 조용히 버리지 않는다.
+- `GitCommitState` 3상태(Known / Unknown / **Legacy**)를 구분한다. Legacy(필드 자체가 없는
+  journal)에 현재 git 값을 채워 넣지 않는다.
+- 모든 값이 journal 에 없는 필드(`distance` / `resourcePolicy` / `gpuBackend`)는
+  `std::optional` 로 **부재를 보존**하며 0 / false / `"unknown"` 으로 치환하지 않는다.
+- mode `elapsedMs` 는 **실행된 경우에만** 값을 갖는다. 미실행 모드의 0.0 은 "매우 빠름"으로
+  읽힐 수 있는 주장이므로 저장하지 않는다.
+
+### 실측 발견 2건
+
+1. **wall duration 의 해상도는 1초다.** S3 의 `startedAt` / `completedAt` 은
+   `%Y-%m-%dT%H:%M:%S` 로 소수부가 없다. 따라서 파생 duration 은 항상 1000 ms 의 배수이며,
+   **1초 미만 run 은 정확히 0 으로 나온다.** 저장된 0 은 "같은 초 안에 끝났다"는 뜻이지
+   "시간이 없다"가 아니다. 값이 없는 상태(취소 run 등)와 **구분 가능해야 하며** 테스트로 고정했다.
+2. **실제 저장 트리에서 multi-run journal 이 확인되었다.** `suite-TEST-SUITE-001` 은
+   `run_started` 가 2개다. 30개 journal 에서 31개 run 이 나오며 각각의 datasetFingerprint 와
+   case 가 뒤섞이지 않는다(S3-BUG 회귀 방지).
+
+### 실제 저장소 대상 검증
+
+테스트 binary 에 읽기 전용 진단 경로를 두어 실제 산출물로 확인했다.
+
+`	ext
+journals=30  unreadable=0  withoutRuns=0
+runsFound=31  accepted=31  excluded=0  commitless=0  anyFatal=0
+provenance: legacy=30  known=1  unknown=0   withDuration=31
+determinism: IDENTICAL
+`
+
+`legacy=30 / known=1` 은 실제 상황(기존 29 + provenance 1개 journal)과 일치한다.
+
+테스트: ingestion **69 checks**(신규). journal 66 / store 51 / integration 144 / core 63 /
+gui_store 110 / worker 35 / ui 34 / ui_e2e 40 / cli 95 / renderer 100 / orchestrator 32 전부
+PASS. CPU build exit 0 / CTest **97/97**, GPU build exit 0 / CTest **98/98**.
+
+변경하지 않은 것: S2 BenchmarkRunner/Executor/Request, S3 journal schema·recovery·summary,
+Console renderer, GUI, Scanner/MediaKind, NVDEC, legacy benchmark. journal 필드 추가 없음.
+CLI 도 추가하지 않았다.
