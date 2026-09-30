@@ -319,6 +319,76 @@ int main() {
         chk(r2.cases.empty() && r2.anomalies.empty(), "an empty journal has no anomalies");
     }
 
+    // ---- build provenance: gitCommit (additive, schema 1 unchanged) ----------
+    //
+    // S6 needs commit-level cross-build comparison, and buildVersion alone cannot
+    // separate two commits of the same version. The field is additive, so these
+    // checks pin three things at once: a known value is stored, an absent one is
+    // stored as an explicit "unknown", and a journal written before the field
+    // existed still replays.
+    {
+        // 1. a known short hash is written and read back
+        const std::string p = msf::path_to_utf8(dir / "git-known.jsonl");
+        msf::BenchmarkJournalWriter w;
+        chk(w.open(p), "provenance journal writer opens");
+        auto run = makeRun("run-git-known");
+        run.gitCommit = "eb5ef90";
+        chk(w.writeRunStarted(run), "run_started with a known gitCommit written");
+        w.close();
+
+        const std::string blob = msf::readFileIfExists(p);
+        chk(blob.find("\"gitCommit\":\"eb5ef90\"") != std::string::npos,
+            "the record carries the supplied short commit id");
+        const auto r = msf::replayJournal(p);
+        chk(r.gitCommit == "eb5ef90", "replay reads the gitCommit back");
+
+        // 2. no provenance available is stored as an explicit state, not empty
+        const std::string p2 = msf::path_to_utf8(dir / "git-unknown.jsonl");
+        msf::BenchmarkJournalWriter w2;
+        chk(w2.open(p2), "unknown-provenance writer opens");
+        auto run2 = makeRun("run-git-unknown");
+        run2.gitCommit.clear();   // the caller had none, e.g. a git-less build
+        chk(w2.writeRunStarted(run2), "run_started with no provenance written");
+        w2.close();
+
+        const std::string blob2 = msf::readFileIfExists(p2);
+        chk(blob2.find("\"gitCommit\":\"unknown\"") != std::string::npos,
+            "an absent provenance is recorded as the literal \"unknown\"");
+        chk(blob2.find("\"gitCommit\":\"\"") == std::string::npos,
+            "an absent provenance is never recorded as an empty string");
+        chk(msf::replayJournal(p2).gitCommit == "unknown",
+            "replay reads the unknown provenance back");
+
+        // 3. a journal written before the field existed still replays
+        const std::string p3 = msf::path_to_utf8(dir / "git-legacy.jsonl");
+        appendRaw(p3,
+            "{\"journalSchemaVersion\":1,\"eventType\":\"run_started\","
+            "\"recordId\":\"run_started:run-legacy\",\"suiteId\":\"suite-1\","
+            "\"runId\":\"run-legacy\",\"buildVersion\":\"0.9.4.43\","
+            "\"startedAt\":\"2026-09-30T00:00:00\",\"filesStarted\":0}\n");
+        const auto r3 = msf::replayJournal(p3);
+        chk(r3.runStarted && !r3.fatal, "a pre-provenance run_started still replays");
+        chk(r3.buildVersion == "0.9.4.43", "  and its buildVersion is still read");
+        chk(r3.gitCommit.empty(), "  and gitCommit stays empty rather than being invented");
+
+        // 4. the schema version is unchanged: this is an additive field
+        chk(blob.find("\"journalSchemaVersion\":1") != std::string::npos,
+            "journalSchemaVersion stays 1 for an additive field");
+        chk(msf::kBenchmarkJournalSchemaVersion == 1,
+            "the schema constant is still 1");
+
+        // 5. summary regeneration is unaffected by the new field
+        appendRaw(p3,
+            "{\"journalSchemaVersion\":1,\"eventType\":\"run_finished\","
+            "\"recordId\":\"run_finished:run-legacy\",\"runId\":\"run-legacy\","
+            "\"status\":\"SUCCESS\",\"filesStarted\":0,\"filesCompleted\":0,"
+            "\"filesRemaining\":0,\"completedAt\":\"2026-09-30T00:01:00\","
+            "\"completionReason\":\"completed\"}\n");
+        const std::string summary = msf::buildSummaryJson(msf::replayJournal(p3));
+        chk(summary.find("\"derivedFrom\":\"runs.jsonl\"") != std::string::npos,
+            "summary still regenerates from a journal whose run_started has no gitCommit");
+    }
+
     std::error_code ec;
     fs::remove_all(dir, ec);
     std::printf("\nbenchmark_journal_selfcheck=%s checks=%d\n", gFails ? "FAIL" : "ok", gChecks);

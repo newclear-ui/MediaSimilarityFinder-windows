@@ -365,6 +365,11 @@ int runConsoleBenchmark(const ConsoleBenchmarkOptions& opt) {
     request.distance = opt.distance;
     request.suiteId = suiteId;
     request.runId = runId;
+    // S3 journal provenance, from the same generated value the Console header
+    // already displays. Reusing it here means the journal and the screen can
+    // never disagree, and no second git lookup exists: nothing is executed here,
+    // the binary's own build provenance is simply recorded.
+    request.gitCommit = MSF_BUILD_GIT;
     // Brief §13: the console default is the same Balanced policy the product uses,
     // produced by the one existing policy factory. No console-only policy engine
     // and no second reading of a preset.

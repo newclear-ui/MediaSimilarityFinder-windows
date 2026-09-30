@@ -95,6 +95,11 @@ struct JournalReplay {
     bool runFinished = false;
     bool runCancelled = false;
     std::string runId, suiteId, buildVersion, startedAt, completedAt, completionReason;
+
+    // Build provenance of the run. Empty means the journal predates the field,
+    // which is a normal state for a pre-existing journal and not an error: the
+    // replay never invents a value for a record that did not carry one.
+    std::string gitCommit;
     std::vector<ReplayedCase> cases;          // committed cases, in commit order
     std::vector<ReplayedCase> incompleteCases;// modes seen without a commit
     std::vector<JournalAnomaly> anomalies;

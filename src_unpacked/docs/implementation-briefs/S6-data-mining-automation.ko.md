@@ -280,7 +280,7 @@ S6 가 계산하는 값이며 **반드시 derived 로 표시**한다.
 
 | 원하는 분석 | 필요한 필드 | journal 실측 | 결과 |
 | --- | --- | --- | --- |
-| **git commit 별 빌드 구분** | `git` / `buildGit` / `commit` | **0건** | **불가능** |
+| **git commit 별 빌드 구분** | `git` / `buildGit` / `commit` | **0건** | **해소됨 (2026-10-01)** — `run_started.gitCommit` 추가 |
 | **CPU Resource policy 별 분리** | `resourcePolicy` / `cpuPercent` / `gpuPercent` | **0건** | **불가능** |
 | **GPU 사용 여부 구분** | `gpuEnabled` / `gpuBackend` | **0건** | **불가능** |
 | **distance 별 비교** | `distance` | **0건** | **불가능** |
@@ -291,6 +291,11 @@ S6 가 계산하는 값이며 **반드시 derived 로 표시**한다.
 S5-3 에서 `MSF_BUILD_GIT` 를 generated header 에 추가하고 Console 헤더에 표시했지만,
 journal 은 S3 schema 이며 변경하지 않았다. 따라서 journal 안에는
 `buildVersion`(예 `0.9.4.43`) 만 있고, **같은 버전 번호의 서로 다른 커밋을 구분할 수 없다.**
+
+> **2026-10-01 갱신**: 이 갭은 해소되었다. `run_started.gitCommit` 이 S5 의
+> `MSF_BUILD_GIT` 을 additive field 로 기록하며, 실제 실행에서 journal 값과 binary 의
+> generated 값이 일치함을 확인했다. 위 표의 0건 수치는 **조사 시점의 실측값**으로
+> 그대로 보존한다. 상세는 22장 ①.
 
 이는 `benchmark-telemetry-roadmap` §25 가 "Run must store … `appVersion/gitCommit`"
 을 요구하고 §28/§30 이 S6 의 핵심을 "fingerprint 검증 + 비교 요약" 으로 정의한 것과
@@ -665,27 +670,36 @@ S6-7  전체 검증
 
 ## 22. 진입 조건 (Entry conditions)
 
-S6-1 착수에 필요한 조건. **아래 ① 은 미충족이며 그것이 S6 의 최대 리스크다.**
+S6-1 착수에 필요한 조건. **아래 ① 은 2026-10-01 에 해소되었다.**
 
-1. **`git` (또는 동등한 build identity) 이 journal 에 기록될 것.**
-   - 현재 journal 실측 0건(8-2). `buildVersion` 만으로는 같은 버전의 다른 커밋을
-     구분할 수 없다.
-   - roadmap §25 는 `appVersion/gitCommit` 저장을 요구하고, §28/§30 은 S6 의
-     핵심을 "build 간 비교" 로 정의한다. 즉 **현 상태로는 roadmap 이 정의한 S6 를
-     완수할 수 없다.**
-   - **결정 없음**: journal schema bump 는 S3 영역이므로 이 brief 에서 확정하지
-     않는다. 대안은 (a) S3 schema 확장, (b) S5 가 이미 만든 `MSF_BUILD_GIT` 를
-     별도 provenance 파일로 suite 에 기록, (c) S6 는 buildVersion 만 쓰고
-     "commit 수준 비교는 미지원" 을 명시. 14장 보류 참조.
-2. **`distance` 와 `resourcePolicy` 기록 여부 결정.** 8-2 참조. 동일 항목.
+1. ~~**`git` (또는 동등한 build identity) 이 journal 에 기록될 것.**~~ → **해소됨**
+   - 해소 방법: S3 journal 의 `run_started` 에 `gitCommit` 을 additive field 로 추가했다.
+     값은 S5 의 `MSF_BUILD_GIT` 을 그대로 사용하며, benchmark 실행 중 git command 를
+     다시 호출하지 않는다. 따라서 journal 값과 실행된 binary 의 build provenance 가
+     항상 일치한다.
+   - **schema version 은 1 로 유지했다.** 근거는 세 가지이며 모두 실측 확인했다.
+     (1) `kBenchmarkJournalSchemaVersion` 은 7개 위치에서 **쓰기만** 하고 읽는 곳이 없다.
+     어떤 코드도 이 값으로 분기하지 않는다. (2) replay parser 는 알려진 키만 추출하며
+     미존재 필드는 무시하고, 알 수 없는 필드를 거부하지 않는다. (3) 저장소의 기존 선례
+     `benchmark_schema_test` "meta.schemaVersion is still 9 (**additive fields did not
+     force a bump**)" 이 같은 판단을 이미 확정했다.
+   - **실측 검증**: 실제 Console benchmark 실행의 `run_started.gitCommit` 과 해당
+     binary 의 generated `MSF_BUILD_GIT` 이 **완전히 일치**했다. journal  run_started
+     필드 집합을 비교한 결과 추가된 필드는 `gitCommit` 하나뿐이고 제거된 필드는 0개였다.
+     provenance 없는 journal 은 `"unknown"` 으로 기록되며, 필드가 아예 없는 기존 29개
+     journal 은 정상 replay 된다(기존 journal 을 수정하지 않음).
+   - 남는 제약: `distance` 와 `resourcePolicy` 는 여전히 journal 에 없다(아래 ②).
+     commit 수준 비교는 가능해졌으나 조건 동일성 축은 여전히 이 두 项이 비어 있다.
+2. **`distance` 와 `resourcePolicy` 기록 여부 결정.** 8-2 참조. **미해소(DEFERRED)** —
+   journal schema 를 더 확장하는 것은 별도 결정이 필요하며 이번 범위 밖이다.
 3. **통제된 측정 환경 정의.** `S2-PERF` 가 OS filesystem cache 와 process
    isolation 을 **uncontrolled** 로 accepted 했다. 회귀 해석은 이 통제 조건 없이
-   신뢰할 수 없다(14-3).
+   신뢰할 수 없다(14-3). **미해소** — 제품 결정이 필요하다.
 4. **반복 실행 데이터.** `AGENTS.md` 9항은 실행 5회 이상을 권장한다. 현재 실제
    journal 은 S5 E2E 산출물이며 반복 실행 통계가 없다. threshold 결정은
-   실측 반복 데이터 이후에야 가능하다(14-2).
+   실측 반복 데이터 이후에야 가능하다(14-2). **미해소.**
 5. **`run_cancelled` 실측 표본.** 현재 journal 에 0건(6-6). 취소 run 분석 규칙은
-   소스 계약으로만 검증되어 있다.
+   소스 계약으로만 검증되어 있다. **미해소.**
 
 ## 23. 종료 조건 (Exit conditions)
 

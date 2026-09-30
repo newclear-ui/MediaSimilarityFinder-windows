@@ -1462,3 +1462,47 @@ S6-3 grouping → S6-4 aggregation → S6-5 cross-run comparison → S6-6 regres
 DEFERRED 로 기록한 항목: 회귀 threshold, journal 에 `git` / `distance` / `resourcePolicy`
 추가 여부, 출력 포맷 최종 선택(JSON vs CSV), suite 자동 실행, p95 알고리즘, `run_cancelled`
 분석 세분화. S3 timestamp 수정은 별도 S3 follow-up.
+## 2026-10-01 — S3 journal git provenance 추가 (S6 진입 조건 ① 해소)
+
+S6 brief 가 진입 조건으로이했던 `git provenance 없음` 을 해소했다. **S6 구현이 아니다.**
+
+변경:
+
+- `BenchmarkRun::gitCommit` / `BenchmarkRequest::gitCommit` 추가 (S2 run metadata,
+  `buildVersion` 과 같은 자리). runner 는 이를 **복사만** 하며 git 을 호출하지 않는다.
+- `run_started` 에 `gitCommit` 을 `buildVersion` 바로 뒤에 additive field 로 기록.
+  값은 S5 의 `MSF_BUILD_GIT` 을 그대로 사용한다.
+- provenance 가 없으면 **빈 문자열이 아니라 literal `"unknown"`** 을 기록한다.
+- `JournalReplay::gitCommit` 추가 및 replay 가 해당 필드를 읽는다. 필드가 없는
+  기존 journal 은 **빈 값으로 남고 값을 만들어내지 않는다.**
+
+**schema version 은 1 로 유지했다(무조건 bump 하지 않았다).** 근거 3가지:
+
+1. `kBenchmarkJournalSchemaVersion` 은 7곳에서 **쓰기만** 하고 읽는 곳이 없다.
+   어떤 코드도 이 값으로 분기하지 않는다.
+2. replay parser 는 알려진 키만 추출하며, 미존재 필드는 무시하고 알 수 없는 필드는
+   거부하지 않는다.
+3. 저장소 기존 선례: `benchmark_schema_test` 의 "meta.schemaVersion is still 9
+   (**additive fields did not force a bump**)".
+
+실측 검증:
+
+- 실제 Console benchmark 실행의 `run_started.gitCommit` = `fcace68`,
+  해당 binary 의 generated `MSF_BUILD_GIT` = `fcace68` → **완전 일치**.
+  git command 를 다시 실행해 확인한 것이 아니라 **generated 값과 journal 값을 비교**했다.
+- 같은 실행의 Console 헤더도 `Git : fcace68` 로 동일한 값을 표시한다(중복 로직 없음).
+- 구 journal 과 신 journal 의 `run_started` 필드 집합 비교: **추가 `gitCommit` 1개,
+  제거 0개**. 순수 additive.
+- provenance 없는 journal 3건, summary regeneration, 회귀 테스트 전부 PASS.
+- 기존 journal **29개는 수정하지 않았고** 필드가 없으며 정상 replay 대상이다.
+
+변경하지 않은 것: `benchmark_store.cpp` (timestamp `benchmarkNowStamp` 그대로),
+`journalSchemaVersion`, S3 recovery semantics 전체, S2 실행 semantics, GUI, Console
+renderer, MediaKind/Scanner, NVDEC, legacy benchmark schema.
+
+테스트: `benchmark_journal_test` 51 → **66**, `benchmark_integration_test` 137 → **144**.
+CPU build exit 0 / CTest **96/96**, GPU build exit 0 / CTest **97/97**.
+
+남는 진입 조건: `distance` 와 `resourcePolicy` 는 여전히 journal 에 없고(DEFERRED),
+통제된 측정 환경 정의와 반복 실행 데이터, `run_cancelled` 실측 표본도 미해소다.
+S6 는 여전히 CLOSED 가 아니다.

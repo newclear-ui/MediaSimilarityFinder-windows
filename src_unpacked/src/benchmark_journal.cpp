@@ -208,6 +208,15 @@ bool BenchmarkJournalWriter::writeRunStarted(const BenchmarkRun& run) {
       << ",\"sourceRootId\":" << jstr(run.sourceRootId)
       << ",\"datasetFingerprint\":" << jstr(run.datasetFingerprint)
       << ",\"buildVersion\":" << jstr(run.buildVersion)
+      // Build provenance, additive to schema 1. S5 decision D defines the value as
+      // the short commit id when git was usable at configure time and the literal
+      // "unknown" otherwise, so an unavailable provenance is recorded as an
+      // explicit state rather than as an empty claim or a silent omission.
+      // Read back by S6 for commit-level cross-build comparison; the replay parser
+      // treats a missing field as "this record predates provenance", which is what
+      // keeps pre-existing journals readable.
+      << ",\"gitCommit\":" << jstr(run.gitCommit.empty() ? std::string("unknown")
+                                                          : run.gitCommit)
       << ",\"startedAt\":" << jstr(run.startedAt)
       << ",\"filesStarted\":" << run.filesStarted << "}";
     return appendLine(o.str());
@@ -392,6 +401,9 @@ JournalReplay replayJournal(const std::string& runsJsonlPath,
                 r.runId = runId;
                 jsonFieldString(line, "suiteId", r.suiteId);
                 jsonFieldString(line, "buildVersion", r.buildVersion);
+                // Optional: a journal written before the field existed simply has
+                // no value here, and that is reported as empty rather than guessed.
+                jsonFieldString(line, "gitCommit", r.gitCommit);
                 jsonFieldString(line, "startedAt", r.startedAt);
                 break;
             }

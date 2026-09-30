@@ -249,6 +249,9 @@ BenchmarkRun BenchmarkRunner::run(const BenchmarkRequest& request,
     run.mediaScope = request.mediaScope;
     run.distance = request.distance;
     run.buildVersion = request.buildVersion;
+    // Provenance is copied, never resolved. The runner does not invoke git, so the
+    // recorded value is the one the caller built with.
+    run.gitCommit = request.gitCommit;
     run.startedAt = isoNow();
     run.status = BenchmarkStatus::Success;
 

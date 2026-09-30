@@ -30,6 +30,7 @@
 #include "benchmark_journal.h"
 #include "benchmark_session.h"
 #include "benchmark_store.h"
+#include "msf_build_version.h"  // MSF_BUILD_GIT, the provenance the real CLI supplies
 #include "path_utils.h"
 
 namespace {
@@ -328,6 +329,56 @@ int main(int argc, char** argv) {
         chk(second.find("\"committedCases\":3") != std::string::npos, "  same committed case count");
         chk(second.find("\"successCases\":3") != std::string::npos, "  same success count");
         chk(second.find("\"runId\":\"normal\"") != std::string::npos, "  same run identity");
+    }
+
+    // ---- build provenance survives the real session -> journal -> replay path --
+    //
+    // The journal unit test covers serialization in isolation. This covers the
+    // wiring: a provenance supplied on the request must arrive in the durable
+    // journal of a real BenchmarkSession and come back out of a replay, because
+    // that is the only path S6 will ever read.
+    {
+        const std::string suite = "provenance";
+        msf::BenchmarkSession session(makeConfig(appdata, suite, suite, source));
+        std::string err;
+        chk(session.open(err), "provenance session opens");
+
+        msf::BenchmarkRequest req;
+        req.sourceRoot = msf::path_to_utf8(source);
+        req.applicationDirectory = msf::path_to_utf8(appdata);
+        req.suiteId = suite;
+        req.buildVersion = "0.9.4.43";
+        // The value the real orchestration supplies: the generated build provenance.
+        req.gitCommit = MSF_BUILD_GIT;
+        session.attach(req);
+
+        ScriptedExecutor exec;
+        msf::BenchmarkRunner runner(exec);
+        const msf::BenchmarkRun res = runner.run(req, {msf::GpuBackendKind::Auto});
+
+        chk(res.gitCommit == MSF_BUILD_GIT,
+            "the run carries the provenance the caller supplied");
+        chk(session.finalize(res), "provenance session finalizes");
+
+        const auto rep = msf::replayJournal(session.runsJsonlPath());
+        chk(rep.gitCommit == MSF_BUILD_GIT,
+            "replay of the real session journal returns the same provenance");
+
+        // A session that was never given one must still produce a readable record.
+        const std::string suite2 = "provenance-none";
+        msf::BenchmarkSession s2(makeConfig(appdata, suite2, suite2, source));
+        chk(s2.open(err), "no-provenance session opens");
+        msf::BenchmarkRequest req2;
+        req2.sourceRoot = msf::path_to_utf8(source);
+        req2.applicationDirectory = msf::path_to_utf8(appdata);
+        req2.suiteId = suite2;
+        s2.attach(req2);
+        ScriptedExecutor exec2;
+        msf::BenchmarkRunner runner2(exec2);
+        const msf::BenchmarkRun res2 = runner2.run(req2, {msf::GpuBackendKind::Auto});
+        chk(s2.finalize(res2), "no-provenance session finalizes");
+        chk(msf::replayJournal(s2.runsJsonlPath()).gitCommit == "unknown",
+            "a run with no provenance records the explicit \"unknown\" state");
     }
 
     // =====================================================================

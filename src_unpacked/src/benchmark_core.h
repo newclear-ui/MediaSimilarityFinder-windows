@@ -138,6 +138,16 @@ struct BenchmarkRun {
     std::string startedAt;
     std::string completedAt;
 
+    // Build provenance, alongside buildVersion and for the same reason: it is
+    // run metadata, not execution state.
+    //
+    // This is the value the binary was built with, supplied by the caller from
+    // the generated MSF_BUILD_GIT. The runner never shells out to git, so the
+    // journal always records the provenance of the binary that actually ran.
+    // Empty means the caller did not supply one; the journal writer emits the
+    // literal "unknown" in that case rather than an empty provenance claim.
+    std::string gitCommit;
+
     BenchmarkStatus status = BenchmarkStatus::Success;
     std::size_t filesStarted = 0, filesCompleted = 0, filesRemaining = 0;
 
@@ -155,6 +165,13 @@ struct BenchmarkRequest {
     unsigned distance = 8;
     std::string suiteId;
     std::string buildVersion;
+
+    // Build provenance for the run record. Optional and additive: leaving it
+    // empty preserves the original S2 behaviour exactly, and the execution
+    // algorithm never reads it. It exists so BenchmarkRun can carry the
+    // provenance of the binary that is running, without the runner having to
+    // invoke git.
+    std::string gitCommit;
 
     // Optional caller-supplied run identity. When empty the runner generates one,
     // which is the original S2 behaviour.

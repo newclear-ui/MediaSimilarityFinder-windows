@@ -1545,3 +1545,54 @@ Recorded as DEFERRED: the regression threshold, whether to add `git` / `distance
 `resourcePolicy` to the journal, the final output format choice (JSON vs CSV),
 automated suite execution, the p95 algorithm, and `run_cancelled` analysis refinement.
 Fixing the S3 timestamp is a separate S3 follow-up.
+## 2026-10-01 — S3 journal git provenance added (S6 entry condition 1 resolved)
+
+The `git provenance missing` entry condition from the S6 brief has been resolved.
+**This is not an S6 implementation.**
+
+Changes:
+
+- Added `BenchmarkRun::gitCommit` / `BenchmarkRequest::gitCommit` (S2 run metadata,
+  in the same place as `buildVersion`). The runner only **copies** it and never
+  invokes git.
+- `run_started` records `gitCommit` as an additive field directly after
+  `buildVersion`. The value reuses S5's `MSF_BUILD_GIT` as-is.
+- When no provenance is available it records the literal `"unknown"`, never an empty
+  string.
+- Added `JournalReplay::gitCommit` and taught replay to read it. A journal without
+  the field leaves it **empty and never invents a value.**
+
+**The schema version stays 1** (it was not bumped unconditionally). Three grounds:
+
+1. `kBenchmarkJournalSchemaVersion` is **written** at 7 sites and read nowhere. No
+   code branches on it.
+2. The replay parser extracts only the keys it knows, ignores missing fields, and does
+   not reject unknown fields.
+3. Existing repository precedent in `benchmark_schema_test`: "meta.schemaVersion is
+   still 9 (**additive fields did not force a bump**)".
+
+Measured verification:
+
+- A real Console benchmark run wrote `run_started.gitCommit` = `fcace68` and that
+  binary's generated `MSF_BUILD_GIT` = `fcace68` -> **exact match**. This compares
+  the generated value with the journal value; no git command was re-executed.
+- The Console header of the same run also shows `Git : fcace68`, so there is no
+  duplicate logic.
+- Comparing the `run_started` field sets of an old and a new journal: **1 added
+  (`gitCommit`), 0 removed.** Purely additive.
+- Journals with no provenance (3 checks), summary regeneration, and every regression
+  test pass.
+- The **29 pre-existing journals were not modified**; they have no such field and remain
+  valid replay input.
+
+Not changed: `benchmark_store.cpp` (the `benchmarkNowStamp` timestamp is untouched),
+`journalSchemaVersion`, any S3 recovery semantics, S2 execution semantics, the GUI, the
+Console renderer, MediaKind/Scanner, NVDEC, and the legacy benchmark schema.
+
+Tests: `benchmark_journal_test` 51 -> **66**, `benchmark_integration_test` 137 ->
+**144**. CPU build exit 0 / CTest **96/96**, GPU build exit 0 / CTest **97/97**.
+
+Remaining entry conditions: `distance` and `resourcePolicy` are still absent from
+the journal (DEFERRED), and the controlled-measurement-environment definition, repeated
+run data, and a `run_cancelled` measured sample are also unresolved. S6 is still not
+CLOSED.

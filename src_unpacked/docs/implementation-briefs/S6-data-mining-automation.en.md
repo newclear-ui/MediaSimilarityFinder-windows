@@ -292,7 +292,7 @@ Measured by full-string key scan across 29 journals / 862 lines:
 
 | Wanted analysis | Required field | Journal measurement | Outcome |
 | --- | --- | --- | --- |
-| **Distinguish builds by git commit** | `git` / `buildGit` / `commit` | **0 occurrences** | **Impossible** |
+| **Distinguish builds by git commit** | `git` / `buildGit` / `commit` | **0 occurrences** | **Resolved 2026-10-01** - `run_started.gitCommit` added |
 | **Separate by CPU Resource policy** | `resourcePolicy` / `cpuPercent` / `gpuPercent` | **0 occurrences** | **Impossible** |
 | **Distinguish GPU on/off** | `gpuEnabled` / `gpuBackend` | **0 occurrences** | **Impossible** |
 | **Compare by distance** | `distance` | **0 occurrences** | **Impossible** |
@@ -304,6 +304,11 @@ Measured by full-string key scan across 29 journals / 862 lines:
 the journal is the S3 schema and was not changed. So the journal holds only
 `buildVersion` (e.g. `0.9.4.43`), and **two different commits of the same version
 number cannot be told apart.**
+
+> **Updated 2026-10-01**: this gap is resolved. `run_started.gitCommit` now records S5's
+> `MSF_BUILD_GIT` as an additive field, and a real run was confirmed to write a journal
+> value identical to the binary's generated value. The 0-occurrence figures in the table
+> above are **preserved as the measured values at survey time**. See section 22 item 1.
 
 This **directly conflicts** with `benchmark-telemetry-roadmap` §25, which requires a
 Run to store "`appVersion/gitCommit`", and with §28/§30, which define the core of S6
@@ -712,28 +717,41 @@ Each stage starts only after the previous one is actually verified (section 23).
 
 ## 22. Entry conditions
 
-Conditions needed to start S6-1. **Item ① below is unmet and is S6's largest risk.**
+Conditions needed to start S6-1. **Item ① below was resolved on 2026-10-01.**
 
-1. **`git` (or an equivalent build identity) must be recorded in the journal.**
-   - Currently 0 occurrences in the journal (8-2). `buildVersion` alone cannot
-     distinguish two commits of the same version.
-   - Roadmap §25 requires storing `appVersion/gitCommit`, and §28/§30 define the core
-     of S6 as cross-build comparison. In other words, **in the current state the S6
-     the roadmap defines cannot be completed.**
-   - **Undecided**: bumping the journal schema is S3's area, so this brief does not
-     fix it. Options are (a) extend the S3 schema, (b) have S5 write the
-     `MSF_BUILD_GIT` it already created into a separate provenance file in the suite,
-     (c) S6 uses `buildVersion` only and states "commit-level comparison is not
-     supported". See the section 14 deferral.
-2. **Decide whether `distance` and `resourcePolicy` are recorded.** Same as 8-2.
+1. ~~**`git` (or an equivalent build identity) must be recorded in the journal.**~~ -> **Resolved**
+   - How it was resolved: `gitCommit` was added to the S3 journal's `run_started` as an
+     additive field. The value reuses S5's `MSF_BUILD_GIT` as-is, and no git command is
+     re-executed during a benchmark run, so the journal value always matches the build
+     provenance of the binary that actually ran.
+   - **The schema version stays 1.** Three independent pieces of evidence, all confirmed
+     by measurement. (1) `kBenchmarkJournalSchemaVersion` is **written** at 7 sites and
+     read nowhere; no code branches on it. (2) The replay parser extracts only the keys
+     it knows, ignores missing fields, and does not reject unknown fields. (3) The
+     repository already settled this judgement in `benchmark_schema_test`: "meta.schemaVersion
+     is still 9 (**additive fields did not force a bump**)".
+   - **Measured verification**: `run_started.gitCommit` from a real Console benchmark run
+     matched that binary's generated `MSF_BUILD_GIT` **exactly**. Comparing the
+     `run_started` field sets of an old and a new journal showed `gitCommit` as the only
+     added field and zero removed fields. A run with no provenance records `"unknown"`,
+     and the 29 pre-existing journals that have no such field still replay (no existing
+     journal was modified).
+   - Remaining constraint: `distance` and `resourcePolicy` are still absent from the
+     journal (item ②). Commit-level comparison is now possible, but two of the
+     condition-sameness axes remain empty.
+2. **Decide whether `distance` and `resourcePolicy` are recorded.** See 8-2.
+   **Unresolved (DEFERRED)** — extending the journal schema further is a separate
+   decision and is out of this change's scope.
 3. **Define a controlled measurement environment.** `S2-PERF` accepted the OS
    filesystem cache and process isolation as **uncontrolled**. Regression
-   interpretation is not trustworthy without that control (14-3).
+   interpretation is not trustworthy without that control (14-3). **Unresolved** — it
+   is a product decision.
 4. **Repeated run data.** `AGENTS.md` item 9 recommends 5 or more runs. The current
    real journals are S5 E2E output and hold no repeated-run statistics. A threshold
-   can only be decided after measured repeated data (14-2).
+   can only be decided after measured repeated data (14-2). **Unresolved.**
 5. **A `run_cancelled` measured sample.** Currently 0 in the journal (6-6). The
    cancelled run analysis rule is verified only against the source contract.
+   **Unresolved.**
 
 ## 23. Exit conditions
 
