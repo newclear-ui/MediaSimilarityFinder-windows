@@ -725,7 +725,7 @@ Project mockup files:
 
 ~~~text
 project/uimock/benchmark-console-mockup.html
-project/uimock/benchmark-console-mockup.svg
+JPG preview: benchmark-console-mockup.jpg (generated review artifact)
 ~~~
 
 The mockups reflect the final contract:
