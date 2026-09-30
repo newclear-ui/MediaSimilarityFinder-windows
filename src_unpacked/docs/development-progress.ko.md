@@ -1343,4 +1343,14 @@ Benchmark/Console 설계를 구현 전에 최종 확정했다.
 - 기존 benchmark source/schema 및 v0.9.4.43 baseline을 legacy로 영구 보존
 
 다음 구현 단계는 S1 Console entry foundation이며, benchmark core는 이후 S2에서 시작한다. 이번 결정은 source implementation 변경이 아닌 문서상의 설계 게이트다.
+### Console Benchmark 목업 추가
+
+최종 Console UI 계약을 검토하기 위한 정적 목업을 추가했다.
+
+- HTML: `project/uimock/benchmark-console-mockup.html`
+- SVG: `project/uimock/benchmark-console-mockup.svg`
+- JPG 미리보기는 동일 레이아웃으로 생성했으며, 현재 작업 환경에서 별도 미리보기 파일로 보존한다.
+
+목업은 실제 실행 기능을 의미하지 않으며 S1/S2/S5 구현 시 참조용이다.
+
 
