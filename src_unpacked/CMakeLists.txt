@@ -66,6 +66,11 @@ add_library(msf_core STATIC
   # S3 wiring: binds the S2 runner's hooks to the suite's lock, journal and
   # summary. Decides nothing about execution order or aggregation.
   src/benchmark_session.cpp
+  # S5: Console benchmark renderer. Display only: it formats presentation data
+  # that S2/S3 already produced and executes nothing, so it carries no Qt and no
+  # storage responsibility. Kept in msf_core so the renderer and the layers that
+  # will feed it cannot drift apart at link time.
+  src/benchmark_console_renderer.cpp
   # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
   # reusing S3's atomic write and suite lock. It executes nothing and writes no
   # journal; the GUI drives BenchmarkRunner and hands the result here.
@@ -271,6 +276,14 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_command_line_test tests/command_line_test.cpp)
     target_link_libraries(msf_command_line_test PRIVATE msf_core)
     add_test(NAME command_line_test COMMAND msf_command_line_test)
+    # S5 Console renderer: header / CURRENT FILE / history / summary formatting,
+    # middle-ellipsis abbreviation, TTY vs line-oriented output, and the negative
+    # checks that the renderer never invents a status, an ETA or a CPU FB.
+    add_executable(msf_benchmark_console_renderer_test
+                   tests/benchmark_console_renderer_test.cpp)
+    target_link_libraries(msf_benchmark_console_renderer_test PRIVATE msf_core)
+    add_test(NAME benchmark_console_renderer_test
+             COMMAND msf_benchmark_console_renderer_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.
