@@ -15,6 +15,8 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 - docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — new Node D pipeline/queue implementation contract.
 - docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — S4 GUI benchmark integration contract: mode checkbox is execution selection, one Runner call with the selected subset, per-mode GUI snapshots under Benchmark/GUI, GUI/Console isolation, Cancel only (no Pause).
 - docs/build-history/S4-phase3-4-verification.ko.md / .en.md — S4 Phase 3-4 regression and judgement record: real-engine GUI E2E results plus the unresolved Resource Policy delivery and datasetFingerprint gaps.
+- docs/implementation-briefs/S5-console-benchmark-execution.ko.md / .en.md - S5 Console benchmark contract: --benchmark entry, Console renderer, Ctrl+C cancellation, and the five confirmed decisions.
+- docs/architecture/legacy/S5_REJECTED_CPU_FB_INDICATOR.ko.md / .en.md - REJECTED design record for the Console CPU FB column; never implemented in the product.
 - docs/build-history/<version>.ko.md / .en.md — per-version implementation and validation evidence.
 - docs/document-naming.ko.md / .en.md — canonical documentation naming, location, and role-separation rules.
 - Version progression is evidence-driven: validated states may advance 0.9.4.0 → 0.9.4.1 → 0.9.4.2 without fixed version assignments to roadmap nodes.

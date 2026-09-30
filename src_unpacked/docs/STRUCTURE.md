@@ -102,5 +102,7 @@
 - docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — Node D pipeline/queue optimization scope.
 - docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — S4 GUI benchmark integration scope: mode checkbox as execution selection, single Runner invocation with a mode subset, per-mode GUI snapshots, GUI/Console storage isolation, no Pause, legacy benchTgl_ handling.
 - docs/build-history/S4-phase3-4-verification.ko.md / .en.md — S4 Phase 3-1..3-4 regression record, real-engine GUI E2E results, and the two unresolved issues (Resource Policy not delivered to the benchmark, datasetFingerprint empty) that keep S4 from being CLOSED.
+- docs/implementation-briefs/S5-console-benchmark-execution.ko.md / .en.md - S5 Console benchmark execution scope: --benchmark entry, Console renderer (fixed header, middle-ellipsis display only), Ctrl+C cancellation, and the five confirmed decisions (S2-observable progress, --log/--log-dir, --mode list, MSF_BUILD_GIT, auto suite id).
+- docs/architecture/legacy/S5_REJECTED_CPU_FB_INDICATOR.ko.md / .en.md - REJECTED design record for the Console CPU FB column: never implemented in the product, with the absence evidence and revisit conditions.
 
 Roadmap remains the high-level direction document; implementation briefs contain node-level engineering detail.
