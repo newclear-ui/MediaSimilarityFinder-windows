@@ -1348,8 +1348,8 @@ Benchmark/Console 설계를 구현 전에 최종 확정했다.
 최종 Console UI 계약을 검토하기 위한 정적 목업을 추가했다.
 
 - HTML: `project/uimock/benchmark-console-mockup.html`
-- SVG: `project/uimock/benchmark-console-mockup.svg`
-- JPG 미리보기는 동일 레이아웃으로 생성했으며, 현재 작업 환경에서 별도 미리보기 파일로 보존한다.
+- JPG preview: `benchmark-console-mockup.jpg` (현재 작업 환경의 검토용 artifact)
+- 기존의 GUI와 유사하게 보이던 초기 SVG console 시안은 최종 Console 목업에서 제거했다.
 
 목업은 실제 실행 기능을 의미하지 않으며 S1/S2/S5 구현 시 참조용이다.
 
