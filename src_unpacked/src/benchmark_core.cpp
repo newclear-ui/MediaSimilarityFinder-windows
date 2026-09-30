@@ -184,9 +184,13 @@ void ProductionBenchmarkExecutor::runMode(const BenchmarkRequest& request,
         return;
     }
 
-    // The only mode-specific resource change is whether the GPU backend is used.
-    // S2 does not define a GPU-max resource policy, so nothing else is touched.
-    ResourcePolicy policy = engine.resourcePolicy();
+    // Start from the caller's policy when one was supplied; otherwise keep the
+    // original S2 behaviour of starting from the engine's own policy. Either way
+    // the ONLY mode-specific change is whether the GPU backend is used: S2 does not
+    // define a GPU-max resource policy, and the preset axis stays separate from the
+    // mode axis.
+    ResourcePolicy policy = request.resourcePolicy ? *request.resourcePolicy
+                                                   : engine.resourcePolicy();
     policy.gpuEnabled = (requested != GpuBackendKind::Cpu) && (out.effectiveMode != GpuBackendKind::Cpu);
     engine.setResourcePolicy(policy);
 

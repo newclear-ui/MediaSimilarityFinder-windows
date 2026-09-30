@@ -20,6 +20,7 @@
 #include "../src/database.h"
 #include "../src/resource_policy.h"
 #include "../src/monitor.h"
+#include "benchmark_worker.h"   // S4: QThread worker that drives BenchmarkRunner
 
 class QLineEdit; class QSystemTrayIcon; class QTreeWidget; class QTreeWidgetItem;
 class QListWidget; class QListWidgetItem; class QPushButton; class QProgressBar;
@@ -130,8 +131,15 @@ private slots:
   void onResults(QVector<GuiFile> files, QStringList matchRows);
   void onQuickLoaded(int);
   void onRevalidated(int,int);
-  void onBenchmark(QString);
-  void showBenchmarkDialog(const QString& json);
+    void onBenchmark(QString);
+    void showBenchmarkDialog(const QString& json);
+    // S4 GUI benchmark: mode selection is execution selection, one Runner call.
+    void startBenchmark(); void cancelBenchmark();
+    void onBenchmarkStarted(int caseTotal);
+    void onBenchmarkCase(BenchmarkGuiProgress progress);
+    void onBenchmarkFinished(BenchmarkGuiOutcome outcome);
+    void onBenchmarkFailed(QString message);
+    void onBenchmarkBusy(bool busy);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
@@ -159,6 +167,23 @@ private slots:
 private:
   UiLang lang() const;
   void closeEvent(QCloseEvent*) override;
+
+  // --- S4 GUI benchmark ---------------------------------------------------
+  // The selected checkboxes, in S2's canonical order (AUTO, CPU-only, GPU-max).
+  // This is the exact vector handed to BenchmarkRunner::run(); there is no
+  // per-mode Runner pass and therefore no reordering of the file loop.
+  std::vector<msf::GpuBackendKind> selectedBenchModes() const;
+  // Maps the existing Images/Videos GUI selection onto S1's MediaScope. The
+  // existing kindImgAct_/kindVidAct_ semantics are reused; no new scope enum.
+  msf::MediaScope benchMediaScope() const;
+  // Single gate for every benchmark-related enable state (S4 §4-13). A scan in
+  // progress blocks the benchmark, and a running benchmark blocks the scan.
+  // Pause stays a scan-only control: benchmark has Cancel/Stop and nothing else.
+  void updateBenchmarkUiState();
+  void setBenchmarkStatusText(const QString&);
+  void teardownBenchmarkThread();
+  // The raw source string a benchmark runs against, mirroring what startScan uses.
+  QString benchmarkSourceRoot() const;
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
   void rebuildGroups();          // union-find over accumulated matches
@@ -241,6 +266,17 @@ private:
   QString lastBenchJson_;
   QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* benchTgl_=nullptr;
+  // S4 benchmark controls. benchTgl_ above is the pre-existing legacy telemetry
+  // toggle and is deliberately NOT reused as a mode selector: it decides whether
+  // the ordinary scan records legacy telemetry, not which modes are measured.
+  QCheckBox *benchAuto_=nullptr,*benchCpu_=nullptr,*benchGpu_=nullptr;
+  QPushButton *benchRun_=nullptr,*benchStop_=nullptr;
+  QLabel* benchStatus_=nullptr;
+  QThread* benchThread_=nullptr;
+  BenchmarkWorker* benchWorker_=nullptr;
+  std::unique_ptr<msf::BenchmarkGuiStorage> benchStorage_;
+  bool benchmarking_=false;
+  int benchCaseTotal_=0, benchCaseDone_=0;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
     *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;

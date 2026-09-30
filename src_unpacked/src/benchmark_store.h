@@ -148,4 +148,19 @@ bool writeSuiteJson(const BenchmarkSuitePaths& suite,
 // exist in runs.jsonl, and recovery must never assume the summary is complete.
 bool writeSummaryJson(const BenchmarkSuitePaths& suite, const std::string& summaryJsonBody);
 
+// ---------------------------------------------------------------------------
+// Shared JSON / timestamp helpers
+// ---------------------------------------------------------------------------
+//
+// Every benchmark JSON writer goes through these: the Console suite.json, the
+// Console journal records and the GUI mode snapshots. They live here so three
+// writers cannot drift into three different escaping or timestamp formats.
+//
+// The escaping itself is delegated to the product's existing
+// BenchmarkRecorder::escapeJson, so no second escaper is introduced. Reusing a
+// function here does not reuse the legacy recorder's schema or meaning.
+std::string benchmarkJsonString(const std::string& value); // quoted + escaped
+std::string benchmarkJsonBool(bool value);                // true / false
+std::string benchmarkNowStamp();                          // %Y-%m-%dT%H:%M:%SZ
+
 } // namespace msf

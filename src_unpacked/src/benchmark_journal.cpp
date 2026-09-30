@@ -11,8 +11,11 @@
 namespace msf {
 namespace {
 
-std::string jstr(const std::string& s) { return "\"" + BenchmarkRecorder::escapeJson(s) + "\""; }
-std::string jbool(bool b) { return b ? "true" : "false"; }
+// Both delegate to the shared helpers in benchmark_store, so the Console journal,
+// the Console suite.json and the GUI snapshots cannot drift into three different
+// escaping or timestamp implementations. These wrappers only shorten call sites.
+std::string jstr(const std::string& s) { return benchmarkJsonString(s); }
+std::string jbool(bool b) { return benchmarkJsonBool(b); }
 
 // Deterministic record ids. Determinism is what makes a repeated commit
 // idempotent instead of duplicated.
@@ -23,18 +26,7 @@ std::string caseRecordId(const std::string& runId, const std::string& caseId) {
     return "case_complete:" + runId + ":" + caseId;
 }
 
-std::string isoNow() {
-    const std::time_t t = std::time(nullptr);
-    std::tm tm{};
-#ifdef _WIN32
-    localtime_s(&tm, &t);
-#else
-    localtime_r(&t, &tm);
-#endif
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
-    return buf;
-}
+std::string isoNow() { return benchmarkNowStamp(); }
 BenchmarkStatus statusFromName(const std::string& s) {
     if (s == "SUCCESS")   return BenchmarkStatus::Success;
     if (s == "FAILED")    return BenchmarkStatus::Failed;

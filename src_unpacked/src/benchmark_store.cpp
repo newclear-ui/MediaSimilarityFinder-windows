@@ -219,11 +219,13 @@ std::string readFileIfExists(const std::string& path) {
     return ss.str();
 }
 
-namespace {
-std::string jsonStr(const std::string& s) {
+std::string benchmarkJsonString(const std::string& s) {
     return "\"" + BenchmarkRecorder::escapeJson(s) + "\"";
 }
-std::string nowStamp() {
+
+std::string benchmarkJsonBool(bool b) { return b ? "true" : "false"; }
+
+std::string benchmarkNowStamp() {
     const std::time_t t = std::time(nullptr);
     std::tm tm{};
 #ifdef _WIN32
@@ -235,7 +237,6 @@ std::string nowStamp() {
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
     return buf;
 }
-} // namespace
 
 bool writeSuiteJson(const BenchmarkSuitePaths& suite,
                     const std::string& suiteId,
@@ -248,16 +249,16 @@ bool writeSuiteJson(const BenchmarkSuitePaths& suite,
     if (!ensureBenchmarkSuiteDir(suite)) return false;
     std::ostringstream o;
     o << "{\"journalSchemaVersion\":" << kBenchmarkJournalSchemaVersion
-      << ",\"suiteId\":" << jsonStr(suiteId)
-      << ",\"label\":" << jsonStr(label)
-      << ",\"sourceRoot\":" << jsonStr(sourceRoot)
-      << ",\"sourceRootLabel\":" << jsonStr(sourceRootLabel)
-      << ",\"sourceRootId\":" << jsonStr(sourceRootId)
-      << ",\"datasetFingerprint\":" << jsonStr(datasetFingerprint)
-      << ",\"buildVersion\":" << jsonStr(buildVersion)
-      << ",\"createdAt\":" << jsonStr(nowStamp())
+      << ",\"suiteId\":" << benchmarkJsonString(suiteId)
+      << ",\"label\":" << benchmarkJsonString(label)
+      << ",\"sourceRoot\":" << benchmarkJsonString(sourceRoot)
+      << ",\"sourceRootLabel\":" << benchmarkJsonString(sourceRootLabel)
+      << ",\"sourceRootId\":" << benchmarkJsonString(sourceRootId)
+      << ",\"datasetFingerprint\":" << benchmarkJsonString(datasetFingerprint)
+      << ",\"buildVersion\":" << benchmarkJsonString(buildVersion)
+      << ",\"createdAt\":" << benchmarkJsonString(benchmarkNowStamp())
       << ",\"storageFormat\":1"
-      << ",\"note\":" << jsonStr("runs.jsonl is the durable evidence; summary.json is regenerated from it")
+      << ",\"note\":" << benchmarkJsonString("runs.jsonl is the durable evidence; summary.json is regenerated from it")
       << "}\n";
     return writeFileAtomic(suite.suiteJson, o.str());
 }

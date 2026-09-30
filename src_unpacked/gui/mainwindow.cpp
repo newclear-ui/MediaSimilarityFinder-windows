@@ -290,6 +290,32 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
+  // S4 GUI benchmark. Kept apart from the legacy "bench*" keys above: those render
+  // the legacy recorder's JSON dialog, these drive the S2/S3 benchmark run.
+  // Progress wording deliberately says "completed"/"last": S2 reports a case only
+  // when it finishes, so there is no in-flight file that could honestly be named.
+  if (!std::strcmp(key,"benchModeAuto")) return S("AUTO","AUTO");
+  if (!std::strcmp(key,"benchModeCpu")) return S("CPU 단독","CPU only");
+  if (!std::strcmp(key,"benchModeGpu")) return S("GPU 최대화","GPU max");
+  if (!std::strcmp(key,"benchRun")) return S("벤치마크 실행","Run benchmark");
+  if (!std::strcmp(key,"benchStop")) return S("벤치마크 중지","Stop benchmark");
+  if (!std::strcmp(key,"benchIdle")) return S("벤치마크 대기","Benchmark idle");
+  if (!std::strcmp(key,"benchPreparing")) return S("벤치마크 준비 중","Preparing benchmark");
+  if (!std::strcmp(key,"benchRunning")) return S("벤치마크 실행 중","Benchmark running");
+  if (!std::strcmp(key,"benchProgress")) return S("완료 %1/%2 · 마지막 %3","Completed %1/%2 · last %3");
+  if (!std::strcmp(key,"benchSuccess")) return S("벤치마크 완료","Benchmark completed");
+  if (!std::strcmp(key,"benchCancelled")) return S("벤치마크 취소됨","Benchmark cancelled");
+  if (!std::strcmp(key,"benchFailed")) return S("벤치마크 실패","Benchmark failed");
+  if (!std::strcmp(key,"benchBusy")) return S("이 폴더의 벤치마크가 이미 실행 중","A benchmark for this folder is already running");
+  if (!std::strcmp(key,"benchSaved")) return S("결과 저장: %1","Saved: %1");
+  if (!std::strcmp(key,"benchSaveFail")) return S("결과 저장 실패 (기존 결과 유지)","Could not save the result (previous result kept)");
+  if (!std::strcmp(key,"benchNeedMode")) return S("모드를 하나 이상 선택하세요","Select at least one mode");
+  if (!std::strcmp(key,"benchNeedFolder")) return S("폴더를 선택하세요","Select a folder");
+  if (!std::strcmp(key,"benchBlockedScan")) return S("검색 중에는 벤치마크를 실행할 수 없습니다","Benchmark cannot start while a scan is running");
+  if (!std::strcmp(key,"benchTipRun")) return S("선택한 모드로 벤치마크 실행","Run a benchmark over the selected modes");
+  if (!std::strcmp(key,"benchTipModes")) return S("실행할 모드 선택 (최소 1개)","Modes to execute (at least one)");
+  if (!std::strcmp(key,"benchTipStop")) return S("벤치마크 중지 (일시정지 없음)","Stop the benchmark (there is no pause)");
+  if (!std::strcmp(key,"benchTipTgl")) return S("검색에 기존 벤치마크 기록 연결 (실행 아님)","Attach legacy benchmark telemetry to the scan (not an execution)");
   if (!std::strcmp(key,"repWaitTitle")) return S("검색 리포트 작성 중","Writing search report");
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
@@ -711,6 +737,10 @@ void MainWindow::closeEvent(QCloseEvent* ev) {
         trStr(lang(), "repWaitClose"), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (r != QMessageBox::Yes) { ev->ignore(); return; }
   }
+  // A benchmark is cancelled and joined here so the worker thread is not left
+  // running past window destruction, and so the suite lock is released.
+  if (benchWorker_) benchWorker_->cancel();
+  teardownBenchmarkThread();
   ev->accept();
 }
 MainWindow::~MainWindow() {
@@ -718,6 +748,10 @@ MainWindow::~MainWindow() {
   thumbDb_.close(); thumbDbOpen_ = false;
   if (worker_) worker_->cancel();
   if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; }
+  // A benchmark left running must also be cancelled, joined and unlocked, even if
+  // closeEvent did not run (for example on an abnormal teardown).
+  if (benchWorker_) benchWorker_->cancel();
+  teardownBenchmarkThread();
   if (monitor_) monitor_->stop();
 }
 void MainWindow::saveUiState() {
@@ -795,6 +829,9 @@ void MainWindow::buildToolbar() {
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
   scan_->setDefault(true);
   pause_ = new QPushButton(toolBar_); pause_->setCheckable(true); cancel_ = new QPushButton(toolBar_);
+  // Automation hooks, same purpose as "scan": S4 has to assert that the scan pause
+  // control is disabled while a benchmark runs, which needs a stable lookup name.
+  pause_->setObjectName("pause"); cancel_->setObjectName("cancel");
   connect(scan_, &QPushButton::clicked, this, &MainWindow::startScan);
   connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
   connect(cancel_, &QPushButton::clicked, this, &MainWindow::cancelScan);
@@ -821,6 +858,30 @@ void MainWindow::buildToolbar() {
   gpuEnabled_->setObjectName("gpuToggle"); // automation hook, see folder_
   benchTgl_ = new QCheckBox(toolBar_); benchTgl_->setChecked(true);
   benchTgl_->setObjectName("benchTgl"); // automation hook, see folder_
+  // S4 benchmark controls. A separate group after the scan group: the mode
+  // checkboxes are an execution selection and the run button starts a real
+  // benchmark, whereas benchTgl_ above only attaches legacy telemetry to a scan.
+  benchAuto_ = new QCheckBox(toolBar_); benchAuto_->setChecked(true);
+  benchCpu_  = new QCheckBox(toolBar_); benchCpu_->setChecked(true);
+  benchGpu_  = new QCheckBox(toolBar_); benchGpu_->setChecked(true);
+  benchAuto_->setObjectName("benchModeAuto");  // automation hook
+  benchCpu_->setObjectName("benchModeCpu");    // automation hook
+  benchGpu_->setObjectName("benchModeGpu");    // automation hook
+  for (QCheckBox* b : {benchAuto_, benchCpu_, benchGpu_}) {
+    b->setToolTip(trStr(lang(), "benchTipModes"));
+    connect(b, &QCheckBox::toggled, this, &MainWindow::updateBenchmarkUiState);
+  }
+  benchRun_ = new QPushButton(toolBar_); benchRun_->setObjectName("benchRun");
+  benchRun_->setToolTip(trStr(lang(), "benchTipRun"));
+  benchStop_ = new QPushButton(toolBar_); benchStop_->setObjectName("benchStop");
+  benchStop_->setToolTip(trStr(lang(), "benchTipStop"));
+  benchStatus_ = new QLabel(toolBar_); benchStatus_->setObjectName("benchStatus");
+  benchStatus_->setMinimumWidth(150);
+  connect(benchRun_,  &QPushButton::clicked, this, &MainWindow::startBenchmark);
+  connect(benchStop_, &QPushButton::clicked, this, &MainWindow::cancelBenchmark);
+  // The run button is gated on a folder being present, so editing the folder has
+  // to re-evaluate that gate; otherwise clearing it would leave the button armed.
+  connect(folder_, &QLineEdit::textChanged, this, [this](const QString&) { updateBenchmarkUiState(); });
   kindBtn_ = new QToolButton(toolBar_);
   kindBtn_->setText(trStr(lang(), "kindMenu"));
   // Combo-style arrow on the side (same look as the preset/view combos):
@@ -861,6 +922,10 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); toolBar_->addWidget(benchTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
+  toolBar_->addSeparator();
+  // S4 benchmark group.
+  toolBar_->addWidget(benchAuto_); toolBar_->addWidget(benchCpu_); toolBar_->addWidget(benchGpu_);
+  toolBar_->addWidget(benchRun_); toolBar_->addWidget(benchStop_); toolBar_->addWidget(benchStatus_);
   toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
   toolBar_->addWidget(kindBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
@@ -1142,6 +1207,19 @@ void MainWindow::applyStaticTexts() {
   pause_->setChecked(scanPaused_);
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
   benchTgl_->setText(trStr(l, "benchToggle"));
+  benchTgl_->setToolTip(trStr(l, "benchTipTgl"));
+  // S4 benchmark group. The run button is an execution entry point and is labelled
+  // as such; benchTgl_ keeps its own legacy label and only gained a tooltip that
+  // says what it does, so the two are not mistaken for the same feature.
+  benchAuto_->setText(trStr(l, "benchModeAuto"));
+  benchCpu_->setText(trStr(l, "benchModeCpu"));
+  benchGpu_->setText(trStr(l, "benchModeGpu"));
+  benchRun_->setText(QStringLiteral("▶ ") + trStr(l, "benchRun"));
+  benchStop_->setText(QStringLiteral("■ ") + trStr(l, "benchStop"));
+  for (QCheckBox* b : {benchAuto_, benchCpu_, benchGpu_}) b->setToolTip(trStr(l, "benchTipModes"));
+  benchRun_->setToolTip(trStr(l, "benchTipRun"));
+  benchStop_->setToolTip(trStr(l, "benchTipStop"));
+  if (!benchmarking_) setBenchmarkStatusText(trStr(l, "benchIdle"));
   gpuEnabled_->setText(trStr(l, "monitorGpu"));
   gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
@@ -1196,6 +1274,219 @@ void MainWindow::applyStaticTexts() {
   refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
 }
 
+// ---------------------------------------------------------------------------
+// S4 GUI benchmark
+// ---------------------------------------------------------------------------
+//
+// The checkboxes are an execution selection, and this is the only vector handed to
+// BenchmarkRunner::run(). The order is fixed to S2's canonical order so the UI can
+// never reorder the file loop into per-mode passes.
+
+std::vector<msf::GpuBackendKind> MainWindow::selectedBenchModes() const {
+  std::vector<msf::GpuBackendKind> modes;
+  if (benchAuto_ && benchAuto_->isChecked()) modes.push_back(msf::GpuBackendKind::Auto);
+  if (benchCpu_  && benchCpu_->isChecked())  modes.push_back(msf::GpuBackendKind::Cpu);
+  if (benchGpu_  && benchGpu_->isChecked())  modes.push_back(msf::GpuBackendKind::Cuda);
+  return modes;
+}
+
+// Reuses the existing Images/Videos actions so GUI and Console keep one meaning of
+// media scope. No GUI-specific scope enum is introduced.
+msf::MediaScope MainWindow::benchMediaScope() const {
+  const bool img = kindImgAct_ && kindImgAct_->isChecked();
+  const bool vid = kindVidAct_ && kindVidAct_->isChecked();
+  if (img && vid) return msf::MediaScope::All;
+  if (vid)         return msf::MediaScope::Videos;
+  if (img)         return msf::MediaScope::Images;
+  return msf::MediaScope::All;
+}
+
+QString MainWindow::benchmarkSourceRoot() const {
+  return folder_ ? folder_->text().trimmed() : QString();
+}
+
+// S4 §4-13 serial execution: a scan and a benchmark never run at the same time, so
+// CPU/GPU contention, index lifecycle and progress reporting stay unambiguous.
+// Pause remains a scan-only control, because benchmark has Cancel/Stop and nothing
+// else. There is no process-wide gate here: concurrent instances are handled by the
+// S3 suite lock inside BenchmarkGuiStorage.
+void MainWindow::updateBenchmarkUiState() {
+  if (!benchRun_) return;
+  const bool modes  = !selectedBenchModes().empty();
+  const bool folder = !benchmarkSourceRoot().isEmpty();
+
+  scan_->setEnabled(!scanning_ && !benchmarking_);
+  benchRun_->setEnabled(!scanning_ && !benchmarking_ && modes && folder);
+  benchAuto_->setEnabled(!benchmarking_);
+  benchCpu_->setEnabled(!benchmarking_);
+  benchGpu_->setEnabled(!benchmarking_);
+  benchStop_->setEnabled(benchmarking_);
+  // Pause is a scan-only control: benchmark has no pause at all. Keeping the rule
+  // in one place also makes the idle state consistent, because setRunning() only
+  // runs for scans and would otherwise leave the button enabled with no scan.
+  pause_->setEnabled(benchmarking_ ? false : scanning_);
+  if (benchmarking_) { pause_->setChecked(false); }
+}
+
+void MainWindow::setBenchmarkStatusText(const QString& text) {
+  if (benchStatus_) benchStatus_->setText(text);
+}
+
+void MainWindow::teardownBenchmarkThread() {
+  if (benchThread_) {
+    benchThread_->quit(); benchThread_->wait();
+    delete benchWorker_; benchWorker_ = nullptr;
+    delete benchThread_; benchThread_ = nullptr;
+  }
+  if (benchStorage_) { benchStorage_->release(); benchStorage_.reset(); }
+}
+
+void MainWindow::startBenchmark() {
+  // Re-checked here even though the button is gated: a queued click must never
+  // start a second benchmark.
+  if (scanning_ || benchmarking_) { setBenchmarkStatusText(trStr(lang(), "benchBlockedScan")); return; }
+  const std::vector<msf::GpuBackendKind> modes = selectedBenchModes();
+  if (modes.empty()) { setBenchmarkStatusText(trStr(lang(), "benchNeedMode")); return; }
+  const QString root = benchmarkSourceRoot();
+  if (root.isEmpty()) { setBenchmarkStatusText(trStr(lang(), "benchNeedFolder")); return; }
+
+  // A run id must exist before execution, because the per-mode runtime index
+  // directories are derived from it. Wall clock plus a counter keeps it unique.
+  static unsigned long long runCounter = 0;
+  const QString runId = QString::number(QDateTime::currentMSecsSinceEpoch()) +
+                        QStringLiteral("-") + QString::number(++runCounter);
+
+  msf::BenchmarkGuiStorage::Config cfg;
+  // Portable-aware base directory, matching where the product already keeps its
+  // settings and index (storage-design: no second root policy).
+  cfg.applicationRoot = QCoreApplication::applicationDirPath().toStdString();
+  cfg.runId = runId.toStdString();
+  cfg.sourceRoot = root.toStdString();
+  cfg.buildVersion = QCoreApplication::applicationVersion().toStdString();
+  cfg.mediaScope = benchMediaScope();
+  // The very same resolved policy the ordinary scan uses. policy_ is produced only
+  // by make_policy() inside resourceChanged()/customResourceChanged(), so no second
+  // policy is built here and no preset/CPU interpretation is duplicated.
+  cfg.resourcePolicy = policy_;
+  benchStorage_ = std::make_unique<msf::BenchmarkGuiStorage>(cfg);
+
+  std::string err;
+  if (!benchStorage_->begin(err)) {
+    // A busy suite must not start execution and must not touch the running
+    // benchmark's snapshot. Busy stays distinct from failed.
+    setBenchmarkStatusText(benchStorage_->isBusy() ? trStr(lang(), "benchBusy")
+                                                   : trStr(lang(), "benchFailed"));
+    scanLog(QString("benchmark not started: %1").arg(QString::fromStdString(err)));
+    benchStorage_.reset();
+    return;
+  }
+
+  msf::BenchmarkRequest req;
+  req.sourceRoot = cfg.sourceRoot;
+  req.applicationDirectory = QCoreApplication::applicationDirPath().toStdString();
+  req.buildVersion = cfg.buildVersion;
+  req.mediaScope = cfg.mediaScope;
+  req.distance = 8;
+  // Additive and optional: leaving this unset is what preserves the original S2
+  // behaviour, so only the GUI, which already has a resolved policy, sets it.
+  req.resourcePolicy = policy_;
+
+  // The worker's constructor calls attach(), which pins runId and the per-mode
+  // index directories. No journal hook is installed anywhere on this path.
+  benchWorker_ = new BenchmarkWorker(req, modes, benchStorage_.get());
+  benchThread_ = new QThread(this);
+  benchWorker_->moveToThread(benchThread_);
+  connect(benchThread_, &QThread::started, benchWorker_, &BenchmarkWorker::run);
+  connect(benchWorker_, &BenchmarkWorker::started,     this, &MainWindow::onBenchmarkStarted);
+  connect(benchWorker_, &BenchmarkWorker::caseProgress, this, &MainWindow::onBenchmarkCase);
+  connect(benchWorker_, &BenchmarkWorker::finished,     this, &MainWindow::onBenchmarkFinished);
+  connect(benchWorker_, &BenchmarkWorker::failed,       this, &MainWindow::onBenchmarkFailed);
+  connect(benchWorker_, &BenchmarkWorker::busyChanged,  this, &MainWindow::onBenchmarkBusy);
+  connect(benchWorker_, &BenchmarkWorker::finished, benchThread_, &QThread::quit);
+  connect(benchWorker_, &BenchmarkWorker::failed,   benchThread_, &QThread::quit);
+
+  benchmarking_ = true;
+  benchCaseTotal_ = 0; benchCaseDone_ = 0;
+  setBenchmarkStatusText(trStr(lang(), "benchPreparing"));
+  updateBenchmarkUiState();
+  benchThread_->start();
+}
+
+void MainWindow::cancelBenchmark() {
+  if (!benchmarking_ || !benchWorker_) return;
+  // Direct call, not a queued slot: while run() occupies the worker thread's event
+  // loop a queued slot cannot fire in time to stop anything. cancel() only raises
+  // the flag BenchmarkRunner::isCancelled reads.
+  benchWorker_->cancel();
+}
+
+void MainWindow::onBenchmarkBusy(bool busy) {
+  if (busy) { benchmarking_ = true; updateBenchmarkUiState(); }
+}
+
+void MainWindow::onBenchmarkStarted(int caseTotal) {
+  benchCaseTotal_ = caseTotal;
+  benchCaseDone_ = 0;
+  setBenchmarkStatusText(trStr(lang(), "benchRunning"));
+}
+
+void MainWindow::onBenchmarkCase(BenchmarkGuiProgress progress) {
+  benchCaseDone_ = progress.caseIndex;
+  benchCaseTotal_ = progress.caseTotal;
+  // "Completed k/N · last <file>": S2 hands over a case only once it has finished,
+  // so this names the last COMPLETED file. It is never a guess at what is running.
+  const QString name = QFileInfo(progress.caseLine.path).fileName();
+  setBenchmarkStatusText(trStr(lang(), "benchProgress")
+                         .arg(progress.caseIndex).arg(progress.caseTotal)
+                         .arg(name.isEmpty() ? progress.caseLine.path : name));
+}
+
+void MainWindow::onBenchmarkFailed(QString message) {
+  scanLog(QString("benchmark failed: %1").arg(message));
+  setBenchmarkStatusText(trStr(lang(), "benchFailed"));
+  teardownBenchmarkThread();
+  benchmarking_ = false;
+  updateBenchmarkUiState();
+}
+
+void MainWindow::onBenchmarkFinished(BenchmarkGuiOutcome outcome) {
+  scanLog(QString("benchmark finished status=%1 cases=%2/%3")
+          .arg(outcome.status).arg(outcome.casesCompleted).arg(outcome.casesTotal));
+
+  // Only modes that actually ran are written; an unselected mode keeps its previous
+  // snapshot. The write is atomic, so a failure leaves the old result intact.
+  QString saved;
+  bool saveFailed = false;
+  if (benchStorage_) {
+    const msf::BenchmarkGuiSnapshotResult res = benchStorage_->writeSnapshots(outcome.run);
+    QStringList names;
+    for (msf::GpuBackendKind m : res.written)
+      names << (QString::fromLatin1(msf::benchmarkModeDirName(m)) + QStringLiteral(".json"));
+    saved = names.join(QStringLiteral(", "));
+    if (!res.ok) {
+      saveFailed = true;
+      scanLog(QString("benchmark snapshot write failed: %1").arg(QString::fromStdString(res.error)));
+    }
+  }
+
+  teardownBenchmarkThread();   // also releases the suite lock
+  benchmarking_ = false;
+
+  // Cancelled and failed are different outcomes; neither is reported as success.
+  if (outcome.status == QLatin1String("CANCELLED")) {
+    setBenchmarkStatusText(trStr(lang(), "benchCancelled"));
+  } else if (outcome.status == QLatin1String("FAILED")) {
+    setBenchmarkStatusText(trStr(lang(), "benchFailed"));
+  } else if (saveFailed) {
+    setBenchmarkStatusText(trStr(lang(), "benchSaveFail"));
+  } else if (!saved.isEmpty()) {
+    setBenchmarkStatusText(trStr(lang(), "benchSaved").arg(saved));
+  } else {
+    setBenchmarkStatusText(trStr(lang(), "benchSuccess"));
+  }
+  updateBenchmarkUiState();
+}
+
 void MainWindow::setLanguage(int idx) {
   QSettings().setValue("ui/language", idx == 1 ? "en" : "ko");
   applyStaticTexts();
@@ -1229,6 +1520,9 @@ void MainWindow::setRunning(bool v) {
   uiTimer_->start();
   updateGpuLabel();
   sumValGpu_->setText(gpuStateText());
+  // A scan starting or ending changes whether a benchmark may run, so the S4 gate
+  // is reapplied here rather than being duplicated at each call site.
+  updateBenchmarkUiState();
 }
 void MainWindow::startScan() {
   if (scanning_) return;

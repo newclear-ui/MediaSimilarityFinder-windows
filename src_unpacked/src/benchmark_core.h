@@ -29,12 +29,14 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include "command_line.h"   // MediaScope
-#include "gpu_backend.h"   // GpuBackendKind
-#include "scan_pipeline.h" // MediaKind
+#include "command_line.h"     // MediaScope
+#include "gpu_backend.h"     // GpuBackendKind
+#include "resource_policy.h" // ResourcePolicy
+#include "scan_pipeline.h"   // MediaKind
 
 namespace msf {
 
@@ -168,6 +170,21 @@ struct BenchmarkRequest {
     // so a future interactive caller can stop a run and still get an accurate
     // Cancelled result for the in-flight mode.
     std::function<bool()> isCancelled;
+
+    // Optional resource policy for this run. PURELY ADDITIVE.
+    //
+    // When empty (the default) the executor behaves exactly as S2 originally did:
+    // it starts from the engine's own policy and adjusts only gpuEnabled from the
+    // requested mode. Every existing S2/S3 caller leaves this unset and is
+    // unaffected.
+    //
+    // When set, the executor starts from this policy instead, so a caller that
+    // already has a resolved policy does not have to build a second one. The GUI
+    // passes the very same ResourcePolicy its ordinary scan uses.
+    //
+    // gpuEnabled remains mode-derived in both cases: that is the S2 rule, and the
+    // policy preset and the benchmark mode stay separate axes.
+    std::optional<ResourcePolicy> resourcePolicy;
 
     // Called once per completed case. This is the seam a journal writer uses:
     // case.modeResults is complete at this point, so the journal can write the
