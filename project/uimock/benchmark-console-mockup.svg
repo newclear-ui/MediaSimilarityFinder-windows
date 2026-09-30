@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780">
+<rect width="1200" height="780" fill="#111"/>
+<rect x="20" y="18" width="1160" height="744" rx="10" fill="#0f151a" stroke="#34424b"/>
+<g font-family="Consolas, 'DejaVu Sans Mono', monospace" fill="#d9e2e8">
+<text x="38" y="50" font-size="18" font-weight="700" fill="#eef7fb">MediaSimilarityFinder Benchmark</text>
+<text x="38" y="72" font-size="12" fill="#60727d">=======================================================================================================</text>
+<text x="38" y="93" font-size="12">Target : D:MediaTestSet        | Scope : <tspan fill="#6dd2ff">ALL</tspan> | Files : IMG 12/640  VID 3/207</text>
+<text x="38" y="112" font-size="12">Mode   : <tspan fill="#6dd2ff">AUTO → CPU → GPU-MAX</tspan> | CPU : Balanced 55% | GPU : <tspan fill="#78e08f">ON / CUDA</tspan></text>
+<text x="38" y="131" font-size="12">Distance : 8 | Suite : 20260930-0801-01 | Build : 0.9.4.43 | Git : 22c3ac9</text>
+<text x="38" y="151" font-size="12" fill="#60727d">=======================================================================================================</text>
+
+<text x="38" y="180" font-size="12" font-weight="700" fill="#eef7fb">CURRENT FILE</text>
+<text x="38" y="198" font-size="12" fill="#60727d">-------------------------------------------------------------------------------------------------------</text>
+<text x="38" y="219" font-size="14" font-weight="700" fill="#f4fbff">[16 / 847] sample_0012.jpg</text>
+<text x="38" y="238" font-size="12" fill="#8fa0aa">Type : Image | Size : 4.82 MB | IMG : 12/640</text>
+
+<rect x="38" y="252" width="358" height="112" fill="#0f151a" stroke="#2b363d"/>
+<text x="52" y="274" font-size="13" font-weight="700" fill="#eef7fb">AUTO</text>
+<text x="52" y="296" font-size="12" font-weight="700" fill="#78e08f">DONE</text>
+<text x="52" y="318" font-size="12">Time : 12.41 ms</text>
+<text x="52" y="338" font-size="12">Backend : Scheduler</text>
+<text x="52" y="358" font-size="12">Policy : Adaptive</text>
+
+<rect x="408" y="252" width="358" height="112" fill="#0f151a" stroke="#2b363d"/>
+<text x="422" y="274" font-size="13" font-weight="700" fill="#eef7fb">CPU</text>
+<text x="422" y="296" font-size="12" font-weight="700" fill="#78e08f">DONE</text>
+<text x="422" y="318" font-size="12">Time : 18.08 ms</text>
+<text x="422" y="338" font-size="12">Backend : Software</text>
+<text x="422" y="358" font-size="12">Workers : 10</text>
+
+<rect x="778" y="252" width="358" height="112" fill="#0f151a" stroke="#2b363d"/>
+<text x="792" y="274" font-size="13" font-weight="700" fill="#eef7fb">GPU-MAX</text>
+<text x="792" y="296" font-size="12" font-weight="700" fill="#ffd166">RUNNING</text>
+<text x="792" y="318" font-size="12">Time : 7.32 ms</text>
+<text x="792" y="338" font-size="12">Backend : CUDA</text>
+<text x="792" y="358" font-size="12">CPU FB : NO</text>
+
+<rect x="38" y="378" width="1098" height="30" fill="#0f151a" stroke="#2b363d"/>
+<text x="50" y="398" font-size="12">Suite Progress : 16 / 847 (1.89%) | Current : GPU-MAX | Elapsed : 00:01:42 | ETA : 01:27:14</text>
+
+<text x="38" y="433" font-size="12" font-weight="700" fill="#eef7fb">COMPLETED</text>
+<text x="38" y="451" font-size="12" fill="#60727d">-------------------------------------------------------------------------------------------------------</text>
+<text x="38" y="474" font-size="12">0011  image_0011.jpg            AUTO  10.8ms | CPU  14.7ms | GPU   8.2ms</text>
+<text x="38" y="496" font-size="12">0012  image_0012.jpg            AUTO  12.4ms | CPU  18.1ms | GPU   9.6ms</text>
+<text x="38" y="518" font-size="12">0013  sample_0013.mp4            AUTO   842ms | CPU   711ms | GPU   438ms</text>
+<text x="38" y="540" font-size="12">0014  image_0014.jpg            AUTO  11.2ms | CPU  15.0ms | GPU  CPU FB</text>
+
+<rect x="38" y="568" width="1098" height="32" fill="#0f151a" stroke="#2b363d"/>
+<text x="50" y="589" font-size="12" fill="#8fa0aa">Terminal is a view. Canonical benchmark data is persisted in the append-only journal and final/partial summary.</text>
+</g></svg>
