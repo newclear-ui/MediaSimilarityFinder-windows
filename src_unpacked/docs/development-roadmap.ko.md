@@ -384,3 +384,23 @@ S0 설계/pre-register
 각 단계는 소스 변경 → CPU/GPU 빌드 → CTest → CLI/GUI 실행 검증 → 문서 갱신 → 필요 시 Build History → commit 순으로 닫는다.
 
 세부 계약과 저장 레이아웃은 docs/architecture/benchmark-telemetry-roadmap.*를 기준으로 한다.
+
+## Benchmark Console 최종 설계 보완 — 2026-09-30
+
+기존 benchmark S0~S8 일정을 다음 최종 계약으로 보완한다.
+
+- 파일 단위로 AUTO → CPU → GPU-max를 실행하고 파일별 결과를 즉시 저장한다.
+- 분석용 중간 결과를 benchmark mode 사이에 공유하지 않는다.
+- Ctrl+C 취소와 부분 결과 보존을 기본 지원한다.
+- Console CPU resource는 기존 Maximum / High / Balanced / Gaming / Manual(10–90%) 정책을 재사용한다. 기본값은 Balanced(55%)로 권장한다.
+- Balanced 결과를 선형 보간한 Maximum 값은 실제 benchmark 결과로 간주하지 않는다.
+- Interactive Console 상단은 3줄 고정 정보 영역으로 압축하며 자동 줄바꿈하지 않는다.
+- Target 경로가 길면 화면에서 middle ellipsis로 축약하고 JSON에는 원본을 저장한다.
+- 상단에는 Target / Scope / IMG·VID 진행률 / Mode / CPU Resource / GPU / Distance / Suite ID / Build·Git 식별자를 우선 배치한다.
+- 하단에는 CURRENT FILE의 파일명과 AUTO/CPU/GPU-max 상세 결과를 충분히 표시한다.
+- 완료 이력은 파일당 한 줄의 compact form으로 누적한다.
+- TTY와 non-interactive 출력은 분리하되 동일 journal/JSON을 사용한다.
+- 기존 benchmark source/schema는 legacy baseline으로 영구 보존한다.
+
+이 결정으로 S2는 benchmark execution + per-file journal contract, S5는 Console renderer + CLI execution을 담당한다.
+
