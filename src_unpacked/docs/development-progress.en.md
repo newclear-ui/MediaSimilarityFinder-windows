@@ -1406,4 +1406,14 @@ Key decisions:
 - existing benchmark source/schema and the v0.9.4.43 baseline remain permanent legacy references
 
 The next implementation stage is S1 Console entry foundation; benchmark core follows in S2. This is a documentation design gate only and does not change product source.
+### Benchmark Console Mockups Added
+
+Static mockups were added for review of the finalized Console UI contract.
+
+- HTML: `project/uimock/benchmark-console-mockup.html`
+- SVG: `project/uimock/benchmark-console-mockup.svg`
+- A JPG preview was generated with the same layout and is kept as a separate preview artifact in the current working environment.
+
+The mockups are not executable benchmark functionality; they are references for S1/S2/S5 implementation.
+
 
