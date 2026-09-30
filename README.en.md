@@ -2,11 +2,30 @@
 
 Windows x64 media duplicate and visual-similarity search application.
 
-MediaSimilarityFinder is designed as a **CPU + GPU cooperative application**. CPU remains the stable reference/fallback path; GPU accelerates suitable workloads.
+MediaSimilarityFinder is designed as a **CPU + GPU cooperative application**. CPU remains the stable reference/fallback path; GPU accelerates suitable workloads automatically.
+
+## UI Mockup
+
+The Windows UI currently under development is designed around a **file-explorer-oriented interface similar to Windows Explorer**.
+
+- Left: folder navigation and search summary
+- Center: similar file/group list with sorting and view options
+- Right: selected file preview and detailed information
+- Bottom: search progress and processing status
+- File management: open, show in Explorer, copy, cut, paste, move, recycle
+- Search resources: CPU resource mode and GPU automatic acceleration status
+
+### Current UI Mockup
+
+![MediaSimilarityFinder UI Mockup B — v0.9.4.25](uimock/mockup-B-ko-list.jpg)
+
+[View the original UI mockup HTML](uimock/mockup-B-ko-list.html)
+
+> The mockup is a design reference for explaining the current UI structure and functional direction. The final UI may be adjusted during development based on actual usability and performance validation.
 
 ## Resource Management
 
-User-facing modes:
+The following resource modes are provided to users.
 
 - Maximum
 - High
@@ -14,42 +33,34 @@ User-facing modes:
 - Gaming
 - Manual
 
-CPU policy remains user-selectable. GPU is ON/OFF only.
+CPU resource policy is user-selectable, while GPU utilization is not directly specified by the user.
 
-- GPU ON → Adaptive GPU Scheduler chooses GPU workload automatically
+- GPU ON → Adaptive GPU Scheduler automatically determines the GPU workload
 - GPU OFF → CPU path
-- CPU/GPU allocation is dynamic rather than fixed 50:50
-- Hardware performance profiles are stored in INI as the next-run starting estimate
-- Live CPU/GPU load from other applications is incorporated at runtime
-- Low-end iGPU/dGPU systems may converge toward CPU-heavy or CPU-only execution
+- CPU/GPU workload distribution is dynamic rather than fixed at 50:50, based on actual processing capability, real-time load, queue state, and data-transfer cost
+- Initial hardware performance profiles are stored in INI and reused as starting values for subsequent searches
+- CPU/GPU load caused by other applications is reflected in real time when adjusting workload
+- Low-end iGPU/dGPU systems may automatically switch toward CPU-heavy or CPU-only execution
 
 ## Multi-vendor GPU Direction
 
-The current concrete GPU compute backend is **NVIDIA CUDA**.
+The current GPU compute reference implementation is **NVIDIA CUDA**.
 
-The architecture does not use CUDA as the generic name for the GPU system. The planned backend connection points are:
+However, the upper-level architecture does not use CUDA as the generic name for the GPU system.
 
-- NVIDIA CUDA
-- NVIDIA NVDEC
-- Vulkan
-- AMD HIP/ROCm
-- Intel Level Zero
+The target backend hierarchy includes NVIDIA CUDA, NVIDIA NVDEC, Vulkan, AMD HIP/ROCm, and Intel Level Zero. Intel/AMD iGPUs and dGPUs are designed to connect through the same GPU abstraction.
 
-Intel and AMD integrated/discrete GPUs use the same common GPU abstraction. Actual availability and performance are determined by capability and workload measurement.
-
-## Benchmark / Telemetry
-
-The 0.9.4.x redesign updates benchmarking as a first-class architecture layer. It records scheduler decisions, calibration, backend/decoder selection, fallback reasons, queue/transfer costs, detailed video decode stages, and explicit measurement states. Unmeasured values are not written as zero.
+Vulkan is a vendor-neutral GPU compute candidate, while Intel Level Zero and AMD HIP/ROCm are optional vendor-specific backend candidates. Actual support and performance are determined by device/driver/backend capabilities and real workload measurements.
 
 ## Development Documentation Model
 
-The 0.9.4 development line uses the A→B→C Development Roadmap rather than assigning roadmap stages to fixed version numbers.
+The actual workflow of the 0.9.4 development line is managed according to the A→B→C Development Roadmap rather than version numbers.
 
 - Development Roadmap: `src_unpacked/docs/development-roadmap.en.md`
 - Development Progress: `src_unpacked/docs/development-progress.en.md`
 - Build History: `src_unpacked/docs/build-history/`
 
-Roadmap nodes are directional stages, not version numbers. Versions advance when validated code states are actually established.
+Roadmap nodes are not version numbers. Versions advance according to actual progress when validated code states are established.
 
 ## Detailed Architecture
 
@@ -61,17 +72,17 @@ Roadmap nodes are directional stages, not version numbers. Versions advance when
 
 ## Build Naming
 
-Top-level build entry points use CPU/GPU terminology:
+Top-level build entry points use CPU/GPU terminology.
 
 - CPU build: build-windows-cpu
 - GPU build: build-windows-gpu
 
-The old 0.9.3.19 build-windows-cuda tree remains during migration. A clean build-windows-gpu tree is created for the 0.9.4.x transition.
+The existing 0.9.3.19 build-windows-cuda tree is preserved during the transition, while the new 0.9.4.x GPU build tree is created with a clean configure.
 
-Concrete NVIDIA implementation code continues to use the CUDA name. Generic layers use GPU terminology; concrete layers use their real backend technology name.
+The actual NVIDIA implementation continues to use the CUDA technology name. In other words, **upper layers use GPU terminology, while lower-level implementations use the actual backend name**.
 
 ## Baseline
 
-Official preserved baseline: 0.9.2.32.
+The official preserved GPU baseline is 0.9.2.32 and must not be modified or overwritten.
 
-CPU fallback remains mandatory.
+The CPU fallback is always maintained.
