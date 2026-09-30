@@ -17,7 +17,9 @@ MediaSimilarityFinder는 **CPU + GPU 공동 실행**을 기본 아키텍처로 �
 
 ### 현재 UI 목업
 
-[**MediaSimilarityFinder UI Mockup B — v0.9.4.25**](uimock/mockup-B-ko-list.html)
+![MediaSimilarityFinder UI Mockup B — v0.9.4.25](uimock/mockup-B-ko-list.jpg)
+
+[UI 목업 원본 HTML 보기](uimock/mockup-B-ko-list.html)
 
 > 목업은 현재 구현된 UI 구조와 기능 방향을 시각적으로 설명하기 위한 설계 자료이며, 최종 UI는 개발 과정에서 실제 사용성과 성능 검증 결과에 따라 조정됩니다.
 
