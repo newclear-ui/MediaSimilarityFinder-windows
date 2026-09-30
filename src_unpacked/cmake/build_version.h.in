@@ -7,3 +7,9 @@
 // and this header is generated from PROJECT_VERSION, so the string can no longer
 // drift from the build.
 #define MSF_BUILD_VERSION "@PROJECT_VERSION@"
+
+// S5 decision D (additive). Short commit id when git was usable at configure
+// time, otherwise the literal "unknown". This value exists only to be displayed;
+// a git problem is never allowed to fail configure or the build, so the fallback
+// is baked in rather than being a runtime probe.
+#define MSF_BUILD_GIT "@MSF_BUILD_GIT@"

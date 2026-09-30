@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "command_line.h"
+#include "console_benchmark_cli.h"
 #include "media_search_engine.h"
 #include "msf_build_version.h"
 #include "path_utils.h"
@@ -89,10 +90,7 @@ static void printUsage() {
         << "                         Execution order: AUTO -> CPU -> GPU-max\n"
         << "  --suite <id>           Suite id. Default: generated as YYYYMMDD-HHMM-SS.\n"
         << "  --log-dir <dir>        Benchmark durable storage root override.\n"
-        << "  --log <file>           Human-readable Console output file sink.\n"
-        << "\n"
-        << "Note: --benchmark is parsed but not executable in this build; the Console\n"
-        << "      renderer and execution path land in a later stage.\n";
+        << "  --log <file>           Human-readable Console output file sink.\n";
 }
 
 #ifdef _WIN32
@@ -159,6 +157,39 @@ static int runHeadlessScan(const msf::CommandLineOptions& opt, int argc, char** 
     return 0;
 }
 
+// S5 Console benchmark. Reuses S2's BenchmarkRunner/ProductionBenchmarkExecutor and
+// S3's BenchmarkSession exactly as the GUI does; this only supplies the environment
+// those layers need. No MainWindow is constructed, and the platform plugin is not
+// required, so a benchmark run never needs a display.
+static int runConsoleBenchmark(const msf::CommandLineOptions& opt, int argc, char** argv) {
+    attachParentConsole();
+
+    // QCoreApplication, not QApplication: the benchmark path creates no widget, and
+    // it must keep working on a machine with no Qt platform plugin.
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setApplicationVersion(kVersion);
+    initAppSettings(QCoreApplication::applicationDirPath());
+
+    msf::ConsoleBenchmarkOptions options;
+    options.sourceRoot = msf::path_to_utf8(msf::path_from_utf8(opt.benchmarkRoot));
+    options.applicationDirectory = QCoreApplication::applicationDirPath().toStdString();
+    // S5: --log-dir is the durable storage root, --log is the renderer sink. They
+    // are different things and are never crossed here.
+    options.storageRootOverride = opt.logDir.empty()
+        ? std::string()
+        : msf::path_to_utf8(msf::path_from_utf8(opt.logDir));
+    options.logFile = opt.logFile.empty()
+        ? std::string()
+        : msf::path_to_utf8(msf::path_from_utf8(opt.logFile));
+    options.suiteId = opt.suiteId;
+    options.mediaScope = opt.scope;
+    // The parser already canonicalised this list; the execution layer must not
+    // parse it again.
+    options.modes = opt.benchModes;
+
+    return msf::runConsoleBenchmark(options);
+}
+
 int main(int argc, char** argv) {
     const msf::CommandLineOptions opt = msf::parseCommandLine(argc, argv);
 
@@ -181,16 +212,9 @@ int main(int argc, char** argv) {
         case msf::CommandMode::Scan:
             return runHeadlessScan(opt, argc, argv);
         case msf::CommandMode::Benchmark:
-            // Parsing landed in the S5 CLI stage; the execution path and the
-            // Console renderer land in the next one. This branch exists so the
-            // command is refused explicitly instead of falling through to the GUI
-            // below: the Console contract says no CLI path constructs a
-            // MainWindow, and quietly opening a window would also hide the fact
-            // that the command is not wired up yet.
-            attachParentConsole();
-            printUsage();
-            std::cerr << "Error: --benchmark is recognised but not executable in this build\n";
-            return msf::kCommandLineErrorExitCode;
+            // S5: the Console benchmark path. It builds no MainWindow, reaches the
+            // product scan path only through S2/S3, and returns an exit code.
+            return runConsoleBenchmark(opt, argc, argv);
         case msf::CommandMode::Smoke:
         case msf::CommandMode::Gui:
             break;

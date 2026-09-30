@@ -1,5 +1,6 @@
 #include "scanner.h"
 #include "path_utils.h"
+#include "scan_pipeline.h"  // MediaKind, so the walker can report the kind it already decided
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -70,7 +71,16 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
    if(!e && p==excluded){it.disable_recursion_pending();continue;}
   }
   if(!it->is_regular_file(e)||!media(it->path()))continue;
-  FileState s;s.path=path_to_utf8(fs::absolute(it->path(),ec).lexically_normal());s.size=it->file_size(e);s.modified=stamp(it->path());s.quickHash=quick(it->path());++n;
+  FileState s;s.path=path_to_utf8(fs::absolute(it->path(),ec).lexically_normal());s.size=it->file_size(e);s.modified=stamp(it->path());s.quickHash=quick(it->path());
+  // Media kind was left at Unknown here, which made any consumer of the returned
+  // FileState unable to tell an image from a video. The classifier is the one the
+  // rest of the product already uses (media_search_engine's kindOf() is built on
+  // Scanner::isVideoPath), so no second rule is introduced: isMediaPath() already
+  // passed above, so a file reaching this line is an image or a video and never
+  // Unknown. The production scan path is unaffected either way, because
+  // MediaSearchEngine::processOne() recomputes the kind from the path itself.
+  s.kind=(int)(isVideoPath(it->path())?MediaKind::Video:MediaKind::Image);
+  ++n;
   if(cb.onProgress && (n%2000)==0) cb.onProgress(n);
   if(cb.onFile) cb.onFile(std::move(s)); else o.push_back(std::move(s));
  }

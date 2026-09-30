@@ -6,6 +6,30 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # S1: generate the build version header so the reported version cannot drift from
 # the build. main.cpp used to hardcode its own string and had fallen behind the
 # real version, which made --version and the window title disagree with the build.
+#
+# S5 decision D: add MSF_BUILD_GIT alongside it, additively. A git problem must
+# NEVER fail configure or the build, so the lookup is guarded at every step and
+# falls back to the literal "unknown". An optional cache entry lets a build
+# override the value without touching the repository (e.g. a source archive that
+# has no .git at all).
+set(MSF_BUILD_GIT "unknown" CACHE STRING "Short commit id shown in the benchmark header")
+if(NOT MSF_BUILD_GIT STREQUAL "unknown")
+    # An explicit override was supplied; do not probe git.
+else()
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE MSF_GIT_OUT
+            ERROR_QUIET
+            RESULT_VARIABLE MSF_GIT_RC
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(MSF_GIT_RC EQUAL 0 AND MSF_GIT_OUT)
+            set(MSF_BUILD_GIT "${MSF_GIT_OUT}")
+        endif()
+    endif()
+endif()
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_version.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/msf_build_version.h"
@@ -71,6 +95,10 @@ add_library(msf_core STATIC
   # storage responsibility. Kept in msf_core so the renderer and the layers that
   # will feed it cannot drift apart at link time.
   src/benchmark_console_renderer.cpp
+  # S5: Console benchmark CLI orchestration. Builds a BenchmarkRequest, opens an
+  # S3 BenchmarkSession, makes the one BenchmarkRunner call and feeds the renderer.
+  # It reuses S2/S3 unchanged and holds no scan, search or aggregation logic.
+  src/console_benchmark_cli.cpp
   # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
   # reusing S3's atomic write and suite lock. It executes nothing and writes no
   # journal; the GUI drives BenchmarkRunner and hands the result here.
@@ -284,6 +312,12 @@ if(MSF_BUILD_TESTS)
     target_link_libraries(msf_benchmark_console_renderer_test PRIVATE msf_core)
     add_test(NAME benchmark_console_renderer_test
              COMMAND msf_benchmark_console_renderer_test)
+    # S5 Console orchestration: suite id format and safety, the storage-root
+    # collision walk, and the mode order label. Deliberately does not run a
+    # benchmark; the S2/S3 run contracts are covered by the tests above.
+    add_executable(msf_console_benchmark_cli_test tests/console_benchmark_cli_test.cpp)
+    target_link_libraries(msf_console_benchmark_cli_test PRIVATE msf_core)
+    add_test(NAME console_benchmark_cli_test COMMAND msf_console_benchmark_cli_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.
