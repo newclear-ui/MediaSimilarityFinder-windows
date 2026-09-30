@@ -1388,3 +1388,22 @@ Each stage closes before the next stage starts:
 source change → CPU/GPU build → CTest → execution verification → documentation → Build History when applicable → commit
 
 This entry records the approved design and implementation order, not an implementation result or benchmark measurement. The detailed contract is maintained in docs/architecture/benchmark-telemetry-roadmap.*.
+
+## 2026-09-30 — Benchmark Console Design Finalized
+
+The Benchmark/Console design is finalized before implementation.
+
+Key decisions:
+- file-level AUTO -> CPU -> GPU-max execution
+- immediate append-only journal persistence per completed file
+- Ctrl+C cancellation with partial Suite preservation
+- reuse the existing CPU Resource Policy; recommended default Balanced 55%
+- Maximum is an actual measured condition, not a simple linear extrapolation
+- interactive fixed header is three rows and never auto-wraps
+- Target paths may use middle ellipsis on screen while JSON stores the full value
+- header owns execution conditions and IMG/VID progress; the lower area owns detailed CURRENT FILE information and compact completed history
+- TTY/non-interactive use different renderers but the same journal/JSON model
+- existing benchmark source/schema and the v0.9.4.43 baseline remain permanent legacy references
+
+The next implementation stage is S1 Console entry foundation; benchmark core follows in S2. This is a documentation design gate only and does not change product source.
+
