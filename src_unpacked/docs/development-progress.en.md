@@ -1416,4 +1416,75 @@ Static mockups were added for review of the finalized Console UI contract.
 
 The mockups are not executable benchmark functionality; they are references for S1/S2/S5 implementation.
 
+## 2026-10-01 — S5 Console benchmark execution implemented and verified
 
+S5 was implemented across three commits (S5-1 CLI, S5-2 renderer, S5-3 execution
+wiring) and verified by actually running `--benchmark`. The detailed record is in
+`docs/build-history/S5-verification.ko.md` / `.en.md`.
+
+Baseline commits:
+
+```text
+f4c3fdd  S5: add benchmark CLI parsing
+fcace68  S5: add console benchmark renderer
+842ba01  S5: connect console benchmark execution
+```
+
+Implemented scope:
+
+- **S5-1**: parses `--benchmark <folder>` plus `--mode/--suite/--log-dir/--log`.
+  `--mode` is a single comma list and is normalized to canonical order. Invalid
+  input is never silently ignored and is always an argument error. 40 -> 95 checks.
+- **S5-2**: Qt-free display-only renderer `src/benchmark_console_renderer.*`.
+  The presentation model reuses S2's `GpuBackendKind` / `BenchmarkStatus` /
+  `MediaKind` rather than copying them, so the renderer cannot express a state S2
+  never produced. Every observable value is `std::optional` and an absent value is
+  omitted rather than replaced by 0 or a dash. 100 checks.
+- **S5-3**: `runConsoleBenchmark()` reuses S3 `BenchmarkSession` -> S2
+  `BenchmarkRunner` -> the product scan path unchanged. No new engine. Includes
+  automatic suite id generation, `--log-dir` storage root override, `--log` renderer
+  sink and Ctrl+C wiring. 32 checks.
+
+Defect found during E2E and fixed:
+
+- `Scanner::scan_stream()` in `src/scanner.cpp` never set `FileState.kind`, so it
+  stayed `Unknown` and the benchmark media filter never fired at all.
+  `--media images` / `videos` / `all` all processed the same 10 files.
+- Restored in one line by reusing the `isVideoPath()` rule that already existed in
+  the product. No new classifier was created and `toMediaKind()` was not changed.
+- Impact scope was established by tracing the code. The only reader of the
+  scanner's `kind` is the `toMediaKind` call in `benchmark_core.cpp`, and
+  `MediaSearchEngine` recomputes it itself via `kindOf(path)`, so there is
+  **no impact on production indexing/search**. (The initial "product-wide
+  image/video classification broken" estimate was wrong and is corrected here.)
+- The regression test was confirmed to actually catch the defect: with the fix
+  disabled it fails with exit=3, and with it restored it passes with exit=0.
+
+Measured results:
+
+- `--media`: images 8 cases (`Image=8`), videos 2 cases (`Video=2`), all 10 cases
+  (`Image=8, Video=2`), matching the real dataset composition (Image 8, Video 2,
+  Total 10). Option order independence also confirmed.
+- Default 3-mode: exit 0, Cases 10, Records 42, correct journal sequence.
+- Suite: an explicit id is identical across suite.json / runs.jsonl / summary.json.
+  Auto generation is `YYYYMMDD-HHMM-SS` (UTC). `..\..\evil` is refused with exit 2.
+- `--log-dir` does not pollute the default storage, and `--log` is a text artifact
+  with no ANSI.
+- On the CPU build AUTO / GPU-max are `SKIPPED`; on the GPU build they succeed with
+  `effectiveMode=CUDA`.
+- CPU CTest 96/96, GPU CTest 97/97, both builds exit 0.
+
+Verifications not run (not recorded as PASS):
+
+- Real TTY ANSI repaint: **NOT RUN** — the verification environment had no Windows
+  console.
+- Real Windows Ctrl+C trigger: **NOT RUN** — same reason. A process kill was not
+  substituted for it.
+
+S5 status: **feature implementation complete, automated/non-interactive E2E
+verification complete.** Only the two items above are preserved as not run.
+
+Recorded as separate debt: S3 `benchmarkNowStamp()` formats `localtime_s` output
+with a literal `Z`, so journal timestamps carry local time labelled as UTC. The S5
+suite id is real UTC, so the two differ by the local offset. `benchmark_store.cpp`
+was not changed in this S5.

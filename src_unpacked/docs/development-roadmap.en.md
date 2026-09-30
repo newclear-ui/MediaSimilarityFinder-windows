@@ -444,6 +444,20 @@ Observed in the real E2E: CPU build `gpu-max` = **SKIPPED**, GPU build `gpu-max`
 Detailed judgements and S5 entry conditions: `docs/build-history/S4-phase3-4-verification.ko.md` / `.en.md`
 
 **S1 implementation status (0.9.4.43)**: Console Entry Foundation **complete**. 40 parser unit checks, CPU CTest 86/86, GPU CTest 87/87.
+
+**S5 implementation status (0.9.4.43)**: Console benchmark execution **feature implementation complete, automated/non-interactive E2E verification complete**.
+- S5-1 `f4c3fdd`: parses `--benchmark <folder>` plus `--mode/--suite/--log-dir/--log`, canonical normalization (`AUTO -> CPU -> GPU-max`). `command_line_test` 40 -> **95** checks.
+- S5-2 `fcace68`: Qt-free display-only renderer. Presentation model, S2 enum reuse, optional observable fields, TTY/non-TTY split, width handling (no wrap). **100** checks.
+- S5-3 `842ba01`: `runConsoleBenchmark()` orchestration -> S3 `BenchmarkSession` -> S2 `BenchmarkRunner` -> product scan path. `MSF_BUILD_GIT` added. `SetConsoleCtrlHandler` -> atomic flag -> `BenchmarkRequest::isCancelled`. **32** checks.
+- **Defect found during E2E and fixed**: `Scanner::scan_stream()` in `src/scanner.cpp` never set `FileState.kind`, so it stayed `Unknown` and the benchmark media filter never fired. Restored in one line by reusing the existing `isVideoPath()` rule (no new classifier). Impact trace: **no impact on production indexing/search**, because `MediaSearchEngine` recomputes the kind itself via `kindOf(path)`. The initial "product-wide classification broken" estimate was wrong and is corrected here.
+- Actual `--media` (dataset Image 8 / Video 2 / Total 10): images -> **8** cases `Image=8`, videos -> **2** cases `Video=2`, all -> **10** cases `Image=8, Video=2`. Option order independence confirmed.
+- Real E2E: default 3-mode exit 0 / Cases 10 / Records 42, journal sequence `run_started -> (mode_result+case_complete)xN -> run_finished`, matching suiteId across suite.json/journal/summary, `--log-dir` isolation, `--log` text artifact (no ANSI), non-TTY no ESC, `--suite ..\..\evil` refused with exit 2.
+- CPU CTest **96/96**, GPU CTest **97/97**, both builds exit 0, no stale objects.
+- **NOT RUN**: real TTY ANSI repaint, real Windows Ctrl+C trigger. The verification environment had no Windows console (`GetConsoleWindow() == NULL`). A process kill was not substituted. `SetConsoleCtrlHandler` registration, the atomic flag wiring, the `isCancelled` connection and the deterministic cancellation test (137 checks) were confirmed.
+- A1 preserved (no live callback added, CURRENT FILE = completed case only, no ETA), A2 preserved (CPU FB not implemented).
+- The existing S3 `benchmarkNowStamp()` labelling mismatch, which formats `localtime_s` output with a literal `Z`, was **not fixed in this S5** -> separate S3 follow-up.
+Detailed judgements and actual measured values: `docs/build-history/S5-verification.ko.md` / `.en.md`
+
 The CLI supports only help, version, smoke and scan with a media selector; running with no arguments still opens the existing GUI, and the CLI path never constructs a MainWindow.
 Still not implemented: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 onward).
 → S2 Run/Suite benchmark core

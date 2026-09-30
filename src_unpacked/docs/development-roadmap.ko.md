@@ -401,7 +401,20 @@ Phase 3-3 MainWindow 배선(mode checkbox 3개 + 실행 버튼 + 중지 + 상태
 
 **S1 구현 상태 (0.9.4.43)**: Console Entry Foundation **완료**. 파서 단위 테스트 40 checks, CPU CTest 86/86, GPU CTest 87/87.
 CLI 는 --help / --version / --smoke / --scan <folder> [--media images|videos|all] 만 지원하며, 인자 없음 실행은 기존 GUI를 그대로 연다. CLI 경로는 MainWindow 를 만들지 않는다.
-아직 미구현: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 이후).
+
+**S5 구현 상태 (0.9.4.43)**: Console benchmark execution **기능 구현 완료, 자동/비대화형 E2E 검증 완료**.
+- S5-1 `f4c3fdd`: `--benchmark <folder>` + `--mode/--suite/--log-dir/--log` 파싱, canonical 정규화(`AUTO → CPU → GPU-max`). `command_line_test` 40 → **95** checks.
+- S5-2 `fcace68`: Qt-free 표시 전용 renderer. presentation model, S2 enum 재사용, optional 관측 필드, TTY/non-TTY 분리, 폭 처리(no-wrap). **100** checks.
+- S5-3 `842ba01`: `runConsoleBenchmark()` orchestration → S3 `BenchmarkSession` → S2 `BenchmarkRunner` → 제품 scan 경로. `MSF_BUILD_GIT` 추가. `SetConsoleCtrlHandler` → atomic flag → `BenchmarkRequest::isCancelled`. **32** checks.
+- **E2E 중 발견한 결함 수정**: `src/scanner.cpp` 의 `Scanner::scan_stream()` 이 `FileState.kind` 를 설정하지 않아 `Unknown` 으로 남았고, benchmark media filter 가 무력화되었다. 기존 `isVideoPath()` 규칙을 그대로 재사용해 1줄로 복구(새 classifier 없음). 영향 추적 결과 **production indexing/search 영향 없음**(`MediaSearchEngine` 이 `kindOf(path)` 로 자체 재계산). 초기 "제품 전체 구분 손상" 추정은 오류였으며 정정함.
+- 실제 `--media` (dataset Image 8 / Video 2 / Total 10): images → **8** case `Image=8`, videos → **2** case `Video=2`, all → **10** case `Image=8, Video=2`. 옵션 순서 독립성 확인.
+- 실제 E2E: 기본 3-mode exit 0 / Cases 10 / Records 42, journal sequence `run_started → (mode_result+case_complete)×N → run_finished`, suite.json·journal·summary 3곳 suiteId 일치, `--log-dir` 격리, `--log` text 산출물(ANSI 없음), non-TTY ESC 없음, `--suite ..\..\evil` exit 2 거부.
+- CPU CTest **96/96**, GPU CTest **97/97**, 양쪽 build exit 0, stale object 없음.
+- **NOT RUN**: 실제 TTY ANSI repaint, 실제 Windows Ctrl+C trigger. 검증 환경에 Windows console 이 없었음(`GetConsoleWindow() == NULL`). 프로세스 kill 로 대체하지 않음. `SetConsoleCtrlHandler` 등록·atomic flag wiring·`isCancelled` 연결과 deterministic cancellation 테스트(137 checks)는 확인됨.
+- A1 보존(live callback 미추가, CURRENT FILE = 완료 case 만, ETA 미사용), A2 보존(CPU FB 미구현).
+- S3 `benchmarkNowStamp()` 가 `localtime_s` 결과에 literal `Z` 를 붙이는 기존 timestamp 표기 불일치는 **이번 S5 에서 수정하지 않음** → S3 후속 부채.
+자세한 판정과 실제 측정값: `docs/build-history/S5-verification.ko.md` / `.en.md`
+
 → S2 Run/Suite benchmark core
 → S3 Benchmark storage isolation
 → S4 GUI benchmark integration

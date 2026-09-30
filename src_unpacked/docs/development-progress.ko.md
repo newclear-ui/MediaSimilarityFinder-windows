@@ -1353,4 +1353,70 @@ Benchmark/Console 설계를 구현 전에 최종 확정했다.
 
 목업은 실제 실행 기능을 의미하지 않으며 S1/S2/S5 구현 시 참조용이다.
 
+## 2026-10-01 — S5 Console benchmark execution 구현 및 검증
+
+S5 를 S5-1(CLI) / S5-2(renderer) / S5-3(실행 연결) 세 커밋으로 나누어 구현하고
+실제 `--benchmark` 를 실행해 검증했다. 상세 기록은
+`docs/build-history/S5-verification.ko.md` / `.en.md` 에 있다.
+
+기준 커밋:
+
+```text
+f4c3fdd  S5: add benchmark CLI parsing
+fcace68  S5: add console benchmark renderer
+842ba01  S5: connect console benchmark execution
+```
+
+구현 범위:
+
+- **S5-1**: `--benchmark <folder>` + `--mode/--suite/--log-dir/--log` 파싱.
+  `--mode` 는 단일 쉼표 목록이고 canonical order 로 정규화한다. 잘못된 입력은
+  조용히 무시하지 않고 모두 인자 오류로 거절한다. 40 → 95 checks.
+- **S5-2**: Qt-free 표시 전용 renderer `src/benchmark_console_renderer.*`.
+  presentation model 은 S2 의 `GpuBackendKind` / `BenchmarkStatus` / `MediaKind` 를
+  복사하지 않고 재사용하므로 S2 가 생산하지 않은 상태를 표현할 수 없다.
+  모든 관측 값은 `std::optional` 이며 부재한 값은 생략한다(0 이나 `-` 로 대체하지 않음).
+  100 checks.
+- **S5-3**: `runConsoleBenchmark()` 가 S3 `BenchmarkSession` → S2 `BenchmarkRunner`
+  → 제품 scan 경로를 그대로 재사용한다. 새 engine 이 없다. suite id 자동 생성,
+  `--log-dir` storage root override, `--log` renderer sink, Ctrl+C 연결을 포함한다.
+  32 checks.
+
+E2E 중 발견하고 수정한 결함:
+
+- `src/scanner.cpp` 의 `Scanner::scan_stream()` 이 `FileState.kind` 를 설정하지 않아
+  `Unknown` 이 남았고, 그 결과 benchmark 의 media filter 가 한 번도 발동하지 않았다.
+  `--media images` / `videos` / `all` 이 모두 동일한 10개 파일을 처리했다.
+- 제품에 이미 있던 `isVideoPath()` 규칙을 그대로 재사용해 1줄로 복구했다.
+  새 classifier 를 만들지 않았고 `toMediaKind()` 도 변경하지 않았다.
+- 영향 범위는 코드 추적으로 확인했다. Scanner 의 `kind` 를 읽는 곳은
+  `benchmark_core.cpp` 의 `toMediaKind` 호출 **한 곳뿐**이고,
+  `MediaSearchEngine` 은 `kindOf(path)` 로 자체 재계산하므로
+  **production indexing/search 영향 없음**이다.
+  (초기 "제품 전체 image/video 구분 손상" 추정은 오류였으며 정정한다.)
+- 회귀 테스트는 수정을 비활성화하면 exit=3 으로 실패하고 복원하면 exit=0 으로
+  통과함을 확인해 실제로 결함을 잡는다.
+
+실측 결과:
+
+- `--media`: images 8 case(`Image=8`), videos 2 case(`Video=2`), all 10 case(`Image=8, Video=2`)
+  — 실제 dataset 구성(Image 8, Video 2, Total 10)과 일치. 옵션 순서 무관성도 확인.
+- 기본 3-mode: exit 0, Cases 10, Records 42, journal sequence 정상.
+- suite: explicit 값이 suite.json / runs.jsonl / summary.json 3곳 일치.
+  자동 생성은 `YYYYMMDD-HHMM-SS`(UTC). `..\..\evil` 형식은 exit 2 로 거부.
+- `--log-dir` 는 기본 저장소를 오염시키지 않고, `--log` 는 ANSI 없는 text 산출물이다.
+- CPU 빌드는 AUTO / GPU-max 가 `SKIPPED`, GPU 빌드는 `effectiveMode=CUDA` 로 `SUCCESS`.
+- CPU CTest 96/96, GPU CTest 97/97, 양쪽 build exit 0.
+
+미실행 검증( PASS 로 기록하지 않는다):
+
+- 실제 TTY ANSI repaint: **NOT RUN** — 검증 환경에 Windows console 이 없었음.
+- 실제 Windows Ctrl+C trigger: **NOT RUN** — 같은 사유. 프로세스 kill 로 대체하지 않음.
+
+S5 상태: **기능 구현 완료, 자동/비대화형 E2E 검증 완료.** 위 두 항목만 미실행으로 보존한다.
+
+별도 부채로 기록한 항목: S3 `benchmarkNowStamp()` 가 `localtime_s` 결과에 literal `Z` 를
+붙여 journal timestamp 가 UTC 를 표기하면서 로컬 시각을 담는다. S5 suite id 는 진짜 UTC 라
+약 9 시간 차이가 난다. 이번 S5 에서는 `benchmark_store.cpp` 를 변경하지 않았다.
+
 

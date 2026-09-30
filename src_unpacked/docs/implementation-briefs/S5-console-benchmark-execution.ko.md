@@ -354,3 +354,27 @@ Console mockup 이 mode 결과 행마다 두던 `CPU FB`(CPU fallback 발생 여
 - S1 CLI 기존 동작 (`--help`/`--version`/`--smoke`/`--scan`/인자 없음 GUI)
 - legacy `BenchmarkRecorder` schema
 - F/NVDEC 상태 (`NO` 유지)
+
+## 19. 구현 상태와 verification reference
+
+이 문서는 **설계 기준 문서**이며 위 A1 / A2 / B / C / D / E 결정은 구현 결과와 무관하게
+그대로 유지된다. 실제 구현·검증 결과는 아래 문서에 분리되어 있다.
+
+```text
+f4c3fdd  S5: add benchmark CLI parsing
+fcace68  S5: add console benchmark renderer
+842ba01  S5: connect console benchmark execution
+```
+
+검증 기록: `docs/build-history/S5-verification.ko.md` / `.en.md`
+
+상태: 기능 구현 완료, 자동/비대화형 E2E 검증 완료. 실제 TTY ANSI repaint 와 실제
+Windows Ctrl+C trigger 검증은 **NOT RUN** 이다(검증 환경에 Windows console 이 없었음).
+
+설계 문서와 실제 결과 사이에 확인된 차이는 두 가지뿐이며, 설계는 수정하지 않았다.
+
+1. `Scanner::scan_stream()` 이 `FileState.kind` 를 설정하지 않아 benchmark 의
+   `--media` 필터가 동작하지 않았다. S1 결함이며 S5-3 에서 최소 수정했다.
+   제품에 이미 있던 `isVideoPath()` 규칙을 재사용했으며 새 classifier 는 없다.
+2. S3 `benchmarkNowStamp()` 가 `localtime_s` 결과에 literal `Z` 를 붙인다.
+   S3 문제이므로 이번 S5 에서 수정하지 않고 별도 부채로 기록한다.

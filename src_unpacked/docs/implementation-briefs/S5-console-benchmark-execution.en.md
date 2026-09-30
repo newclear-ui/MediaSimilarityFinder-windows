@@ -365,3 +365,30 @@ S5 is not declared CLOSED until all of the following hold.
 - Existing S1 CLI behaviour (`--help`/`--version`/`--smoke`/`--scan`/no arguments)
 - The legacy `BenchmarkRecorder` schema
 - The F/NVDEC state (stays `NO`)
+
+## 19. Implementation status and verification reference
+
+This is the **design baseline document**. The A1 / A2 / B / C / D / E decisions above
+are preserved as written and are not adjusted to match the implementation. The actual
+implementation and verification results are kept separate, in the documents below.
+
+```text
+f4c3fdd  S5: add benchmark CLI parsing
+fcace68  S5: add console benchmark renderer
+842ba01  S5: connect console benchmark execution
+```
+
+Verification record: `docs/build-history/S5-verification.ko.md` / `.en.md`
+
+Status: feature implementation complete, automated/non-interactive E2E verification
+complete. Real TTY ANSI repaint and real Windows Ctrl+C trigger verification are
+**NOT RUN** (the verification environment had no Windows console).
+
+There are exactly two confirmed differences between the design and the actual result.
+The design was not changed for either.
+
+1. `Scanner::scan_stream()` did not set `FileState.kind`, so the benchmark `--media`
+   filter did not work. This is an S1 defect and was minimally fixed in S5-3 by
+   reusing the `isVideoPath()` rule that already existed. No new classifier.
+2. S3 `benchmarkNowStamp()` appends a literal `Z` to `localtime_s` output. This is an
+   S3 problem, was not fixed in this S5, and is recorded as separate debt.
