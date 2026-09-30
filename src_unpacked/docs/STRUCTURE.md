@@ -100,5 +100,7 @@
 - docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — Node B staged Scheduler implementation scope and gate.
 - docs/implementation-briefs/C-calibration-profile.ko.md / .en.md — Node C profile/calibration reuse + extension scope.
 - docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — Node D pipeline/queue optimization scope.
+- docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — S4 GUI benchmark integration scope: mode checkbox as execution selection, single Runner invocation with a mode subset, per-mode GUI snapshots, GUI/Console storage isolation, no Pause, legacy benchTgl_ handling.
+- docs/build-history/S4-phase3-4-verification.ko.md / .en.md — S4 Phase 3-1..3-4 regression record, real-engine GUI E2E results, and the two unresolved issues (Resource Policy not delivered to the benchmark, datasetFingerprint empty) that keep S4 from being CLOSED.
 
 Roadmap remains the high-level direction document; implementation briefs contain node-level engineering detail.

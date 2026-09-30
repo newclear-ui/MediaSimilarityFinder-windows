@@ -384,6 +384,20 @@ per-file 측정은 ignoredPaths 로 구현하며 scan() 이 매 호출 폴더를
 확인된 사실: 취소된 case 도 commit marker 를 남긴다(S2 가 그 case 를 callback 으로 전달하고 실제 commit 지점에 도달했으므로). 취소 전에 시작되지 않은 파일은 case 자체가 없어 journal 에 기록도 없다.
 recovery: 마지막 개행 없는 tail 은 폐기, commit 없는 mode 기록은 incomplete 로 분류, 동일 recordId 중복은 무시, payload 불일치 중복은 anomaly 로 보고 **첫 record 유지**, **중간 record 손상은 fatal 이며 이후를 추측 복구하지 않는다**. `summary.json` 은 journal replay 결과일 뿐 authoritative 가 아니며 삭제 후 journal 에서 재생성된다.
 **통제 불가**: durability 는 append+flush 이며 fsync/power-loss 보장은 아니다. process 격리·OS filesystem cache·O(N²) scan 은 그대로다.
+**S4 구현 상태 (0.9.4.43)**: GUI benchmark integration **구현 완료 / 검증 완료, 단 CLOSED 아님**.
+Phase 3-1 저장 계층(`src/benchmark_gui_store.*`), Phase 3-2 worker(`gui/benchmark_worker.*`),
+Phase 3-3 MainWindow 배선(mode checkbox 3개 + 실행 버튼 + 중지 + 상태 표시 + 직렬 실행 게이트) 구현.
+**모드 checkbox 는 실행 선택**이며 유효 조합 7개, 최소 1개 필수. `BenchmarkRunner::run(request, selectedModes)` 를 **단일 호출**하고 mode 별 분리 실행은 하지 않는다. 파일별 mode 순서 유지.
+**`benchTgl_` 은 기존 legacy telemetry checkbox 로 유지**되었고 mode selector 로 재사용되지 않았으며, benchmark 실행은 별도 실행 버튼으로 제공된다(스캔 중 benchmark / benchmark 중 스캔 상호 배적, §4-13). Pause/Resume 은 benchmark 에 없고 Cancel/Stop 만 존재한다.
+저장: `Benchmark/GUI/<label>_<shortid>/{auto.json,cpu.json,gpu-max.json}` + `runtime/run-<id>/<mode>/`. atomic replace, **실행된 mode 만 갱신**하고 미선택 mode snapshot 은 보존한다. mode 별 aggregate 는 `modeResults[]` 로 재계산하며 Case aggregate 를 복사하지 않는다.
+인스턴스 간 상호 배제는 **S3 `BenchmarkSuiteLock` 재사용**이며 별도 locking system 을 만들지 않는다. 이미 실행 중이면 실행을 시작하지 않고 기존 snapshot 을 변경하지 않는다.
+진행 표시는 **"완료 k/N · 마지막 <파일>"** 이다. S2 가 case 완료를hook 으로만 주므로 **진행 중인 파일/mode 는 알 수 없어 추측 표시하지 않는다.**
+검증: storage 110, worker 35, UI 34, **실제 엔진 GUI E2E 40** checks. CPU CTest 94/94, GPU CTest 95/95.
+실제 E2E 관측값: CPU 빌드 `gpu-max` = **SKIPPED**, GPU 빌드 `gpu-max` = **SUCCESS**. production Index 오염 0건(전후 내용 비교), 스캔 폴더 오염 0건.
+**Resource Policy 전달 해결**: `BenchmarkRequest::resourcePolicy`(optional, additive)를 추가하고 executor 가 전달된 policy 에서 출발한다. 미지정 시 기존 S2 동작(엔진 기본 policy + mode 별 gpuEnabled) 그대로 유지되어 기존 호출자 무영향. GUI 는 MainWindow 가 `make_policy()` 로 이미 해석한 `policy_` 를 그대로 전달한다. 실제 E2E 에서 toolbar preset "Maximum 90%" → snapshot `cpuPercent: 90` 기록 확인. **남는 제약**: `gpuEnabled` 는 mode 가 결정하므로 GUI `gpuEnabled_` 는 AUTO/GPU-max 실행에 영향 없음(S2 규칙 유지).
+**datasetFingerprint 해결**: worker 가 fingerprint 미지정 시 기존 `msf::computeDatasetFingerprint(root).fingerprint` 를 verbatim 사용. 새 해시·새 직렬화 형식 없음, `DatasetFingerprint` 가 공개 멤버 구조체라 accessor 추가 불필요. worker 스레드에서 계산해 UI 비차단. 실제 E2E 에서 64자 hex 값이 기록되고 `computeDatasetFingerprint(root).fingerprint` 와 완전히 동일함을 확인(`3793e510…`).
+**S4 상태: CLOSED.** 남는 것은 구현 결함이 아닌 제품 결정 3가지다: ① O(N²) walk 감수 여부 ② CPU 빌드 `SKIPPED` 표현의 UX 적정성 ③ GUI GPU 토글을 benchmark 에 반영할지 여부. 그 밖에 `selectedBenchModes()` 는 private 유지(간접 검증).
+자세한 판정과 S5 진입 조건: `docs/build-history/S4-phase3-4-verification.ko.md` / `.en.md`
 
 **S1 구현 상태 (0.9.4.43)**: Console Entry Foundation **완료**. 파서 단위 테스트 40 checks, CPU CTest 86/86, GPU CTest 87/87.
 CLI 는 --help / --version / --smoke / --scan <folder> [--media images|videos|all] 만 지원하며, 인자 없음 실행은 기존 GUI를 그대로 연다. CLI 경로는 MainWindow 를 만들지 않는다.
