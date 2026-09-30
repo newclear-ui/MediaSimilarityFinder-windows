@@ -1411,8 +1411,8 @@ The next implementation stage is S1 Console entry foundation; benchmark core fol
 Static mockups were added for review of the finalized Console UI contract.
 
 - HTML: `project/uimock/benchmark-console-mockup.html`
-- SVG: `project/uimock/benchmark-console-mockup.svg`
-- A JPG preview was generated with the same layout and is kept as a separate preview artifact in the current working environment.
+- JPG preview: `benchmark-console-mockup.jpg` (review artifact in the current working environment)
+- The superseded GUI-like SVG console draft was removed from the final Console mockup set.
 
 The mockups are not executable benchmark functionality; they are references for S1/S2/S5 implementation.
 
