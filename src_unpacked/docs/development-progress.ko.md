@@ -1325,3 +1325,22 @@ S8  Full verification / release gate
 소스 변경 → CPU/GPU 빌드 → CTest → 실행 검증 → 문서 갱신 → 필요 시 Build History → commit
 
 이 기록은 구현 완료나 성능 측정 결과가 아니라 **설계 확정과 구현 순서 등록**이다. 상세 계약은 docs/architecture/benchmark-telemetry-roadmap.*에 기록한다.
+
+## 2026-09-30 — Benchmark Console 설계 최종 확정
+
+Benchmark/Console 설계를 구현 전에 최종 확정했다.
+
+핵심 결정:
+- 파일 단위 AUTO → CPU → GPU-max 실행
+- 파일별 완료 결과 즉시 append-only journal 저장
+- Ctrl+C 취소 및 부분 Suite 보존
+- 기존 CPU Resource Policy 재사용, 권장 기본 Balanced 55%
+- Maximum 결과는 실제 측정값으로만 취급하며 단순 선형 추정 금지
+- Interactive 상단 고정영역은 3줄이며 절대 자동 줄바꿈하지 않음
+- Target 경로는 화면에서 middle ellipsis 가능, JSON에는 원문 저장
+- 상단은 실행 조건과 IMG/VID 진행률, 하단은 CURRENT FILE 상세와 compact 완료 이력으로 역할 분리
+- TTY/non-interactive는 서로 다른 표시 방법을 사용하지만 동일 journal/JSON을 기록
+- 기존 benchmark source/schema 및 v0.9.4.43 baseline을 legacy로 영구 보존
+
+다음 구현 단계는 S1 Console entry foundation이며, benchmark core는 이후 S2에서 시작한다. 이번 결정은 source implementation 변경이 아닌 문서상의 설계 게이트다.
+
