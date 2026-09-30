@@ -595,3 +595,145 @@ QuickLook은 MediaSimilarityFinder의 필수 종속성이 아니다.
 - S8 full verification: CPU build → GPU build → CTest → CLI 실행 → GUI 검증 → JSON 검사 → 문서 → 필요 시 Build History → commit
 
 실제 benchmark 성능 실험이 시작되는 시점부터는 기존 pre-register-first 규칙을 적용하고 성공/실패/기각을 Build History와 Performance / Tuning Experiment Index에 남긴다.
+
+## 29. Console Benchmark 최종 실행/터미널 UI 확정안 — 2026-09-30
+
+이 절은 기존 S0~S8 개요를 보완하는 **최종 설계 결정**이다. 이후 구현 시 본 절의 계약을 우선한다.
+
+### 29.1 파일 단위 실행 순서
+
+Suite 전체를 mode별로 한 번에 실행하지 않고, **파일 단위로 다음 순서를 반복**한다.
+
+~~~text
+파일 준비/식별
+  → AUTO
+  → CPU 단독
+  → GPU 최대화
+  → 해당 파일의 결과 즉시 journal 기록
+  → 다음 파일
+~~~
+
+- 파일 식별/입력 준비는 공통으로 사용할 수 있다.
+- 그러나 실제 분석, decode, intermediate 결과는 mode 간 공유하지 않는다. 공유하면 CPU/AUTO/GPU 비교 조건이 오염될 수 있다.
+- 각 mode의 실행 context는 독립적으로 취급한다.
+- 한 파일의 세 mode가 모두 끝난 뒤 즉시 결과를 append-only journal에 기록한다.
+
+### 29.2 중단 및 부분 결과 보존
+
+- Interactive Console에서는 Ctrl+C를 취소 신호로 사용한다.
+- 현재 원자적 작업을 안전하게 마무리한 뒤 종료한다.
+- 완료된 file/mode 결과는 이미 journal에 존재하므로 프로세스 중단 후에도 부분 Suite를 복구할 수 있어야 한다.
+- 종료 시 cancelled, completionReason, filesCompleted, filesRemaining, runsCompleted를 기록한다.
+- 터미널 표시 내용은 데이터 원본이 아니며 journal/summary가 canonical source다.
+
+### 29.3 CPU Resource Policy
+
+Console benchmark는 기존 Resource Policy를 재사용한다.
+
+~~~text
+--resource maximum|high|balanced|gaming|manual
+--cpu-percent 10..90
+~~~
+
+- 기본 benchmark resource는 **Balanced (55%)**를 권장한다.
+- Maximum/High 등은 사용자가 명시적으로 선택할 수 있다.
+- Balanced 측정값에서 Maximum 결과를 단순 선형 보간하여 실제 benchmark 결과로 취급하지 않는다.
+- Maximum은 필요하면 실제 측정한다. 예상값은 별도의 projection으로 표시할 수 있으나 첫 구현에서는 benchmark 결과와 섞지 않는다.
+- CPU-only와 GPU-max benchmark의 비교 조건은 실행 중 임의의 자동 throttling으로 변경하지 않는다.
+
+### 29.4 Console 고정 헤더
+
+Interactive terminal의 상단은 **3줄 + 구분선**을 기본으로 한다. 각 줄은 자동 줄바꿈하지 않는다.
+
+~~~text
+MediaSimilarityFinder Benchmark
+================================================================================================================
+Target : D:\\Media\\TestSet                  | Scope : ALL       | Files : IMG 12/640  VID 3/207
+Mode   : AUTO → CPU → GPU-MAX              | CPU : Balanced 55% | GPU : ON / CUDA
+Distance : 8                               | Suite ID : 20260930-0801-01 | Build : 0.9.4.43 | Git : 22c3ac9
+================================================================================================================
+~~~
+
+고정 헤더에 최소한 다음 정보는 보존한다.
+
+- Target
+- Media Scope
+- 이미지/비디오 완료 진행률
+- Benchmark Mode 순서
+- CPU Resource
+- GPU 상태/backend
+- Distance
+- Suite ID
+- Build 및 Git 식별자(폭이 허용되는 경우 우선 유지)
+
+### 29.5 한 줄 보장 및 폭 대응
+
+- 상단 헤더는 절대 자동 줄바꿈하지 않는다.
+- 콘솔 폭이 부족하면 덜 중요한 문자열부터 축약한다.
+- 긴 Target 경로는 **중간 생략(middle ellipsis)**으로 앞/뒤를 보존한다.
+- Balanced (55%) → Balanced 55%, ON / CUDA → CUDA와 같이 화면용 문자열을 압축할 수 있다.
+- 화면에서 값이 축약되어도 JSON/journal에는 원본 값을 그대로 저장한다.
+- 터미널 폭에 따라 wide / normal / compact 표시를 사용할 수 있으나 줄 수는 늘리지 않는다.
+
+### 29.6 CURRENT FILE 상세 영역
+
+현재 파일의 전체 순번과 이름은 하단에서 상세하게 표시한다.
+
+~~~text
+CURRENT FILE
+----------------------------------------------------------------------------------------------------------------
+[16 / 847] sample_0012.jpg
+Type : Image | Size : 4.82 MB | IMG : 12/640
+
+AUTO                  CPU                   GPU-MAX
+------------------    ------------------    ------------------
+DONE                  DONE                  RUNNING
+12.41 ms              18.08 ms              7.32 ms
+Scheduler             Software              CUDA
+                      Workers : 10          CPU FB : NO
+----------------------------------------------------------------------------------------------------------------
+~~~
+
+비디오에서는 codec, resolution, fps, duration, decoder/backend, CPU fallback reason 등 매체에 특화된 정보를 우선 표시한다.
+
+### 29.7 완료 이력과 최종 상태
+
+완료 이력은 한 파일을 한 줄로 압축해 누적한다.
+
+~~~text
+0011 image_0011.jpg         AUTO 10.8ms | CPU 14.7ms | GPU  8.2ms
+0012 image_0012.jpg         AUTO 12.4ms | CPU 18.1ms | GPU  9.6ms
+0013 sample_0013.mp4        AUTO 842ms  | CPU 711ms  | GPU 438ms
+~~~
+
+취소 시에는 CANCELLATION REQUESTED 이후 부분 저장 완료 여부와 완료/잔여 파일 수를 명확히 표시한다. 정상 종료 시에는 BENCHMARK COMPLETE와 AUTO/CPU/GPU-max의 누적 요약을 표시한다.
+
+### 29.8 Interactive / non-interactive 분리
+
+- TTY/Interactive: 고정 헤더 + CURRENT FILE + 누적 이력 + 최종/부분 요약
+- Redirect/CI/non-interactive: ANSI 재작성에 의존하지 않는 line-oriented 출력
+- 두 경로가 기록하는 benchmark 데이터는 동일한 journal/JSON 구조를 사용한다.
+
+### 29.9 Legacy Benchmark 보존
+
+기존 benchmark source와 schema는 **legacy baseline으로 영구 보존**한다.
+
+- 기존 benchmark 구현을 새 구조로 덮어써서 이력을 잃지 않는다.
+- v0.9.4.43 Git tag/source backup 및 기존 문서 기록을 legacy 기준점으로 유지한다.
+- 새 benchmark architecture로 전환할 때 legacy source, tag, backup, documentation snapshot 간 추적성을 유지한다.
+- 이번 결정 자체는 문서 변경이며 기존 product source/benchmark implementation을 삭제하거나 교체하지 않는다.
+
+## 30. 최종 S0~S8 세부 책임
+
+- **S0**: Run/Suite, mode, media scope, Resource Budget, journal, isolation, cancellation, terminal contract 확정
+- **S1**: Console entry, help/version, headless scan, media/resource option 연결
+- **S2**: 파일 단위 AUTO→CPU→GPU-max 실행 core, 독립 mode context, per-file result event/journal contract
+- **S3**: benchmark 저장소 격리, append-only journal, crash-safe/partial persistence, summary 생성
+- **S4**: GUI benchmark 연동 및 최신 3개 보존
+- **S5**: Console benchmark CLI 실행과 interactive/non-interactive terminal renderer
+- **S6**: Suite 자동 실행, fingerprint 검증, 비교/데이터 마이닝
+- **S7**: help/usability/exit code/verbose
+- **S8**: CPU/GPU build, tests, CLI/GUI 검증, JSON/journal 검증, 문서 및 release gate
+
+실제 성능 실험을 시작하는 순간부터 기존의 **pre-register-first** 규칙은 그대로 적용한다.
+
