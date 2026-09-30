@@ -736,4 +736,30 @@ Scheduler             Software              CUDA
 - **S8**: CPU/GPU build, tests, CLI/GUI 검증, JSON/journal 검증, 문서 및 release gate
 
 실제 성능 실험을 시작하는 순간부터 기존의 **pre-register-first** 규칙은 그대로 적용한다.
+## 31. Console Benchmark 시각 목업 — 2026-09-30
+
+텍스트 예시만으로는 최종 Console UI의 밀도와 상단 고정영역의 no-wrap 동작을 충분히 검토하기 어렵기 때문에, 확정 설계를 시각 목업으로 함께 보존한다.
+
+프로젝트 목업 파일:
+
+~~~text
+project/uimock/benchmark-console-mockup.html
+project/uimock/benchmark-console-mockup.svg
+~~~
+
+목업은 다음 최종 계약을 반영한다.
+
+- 상단 고정영역 3개 정보 행
+- Target / Scope / IMG·VID 진행률을 같은 행에 배치
+- Mode / CPU Resource / GPU를 같은 행에 배치
+- Distance / Suite ID / Build / Git를 같은 행에 배치
+- 고정영역 자동 줄바꿈 금지
+- 긴 Target 경로는 화면에서 middle ellipsis 가능
+- 전체 원본 값은 JSON/journal에 보존
+- CURRENT FILE을 하단 상세 영역으로 분리
+- AUTO / CPU / GPU-max 상태를 가로 3열로 표시
+- 완료 파일은 compact one-line history로 누적
+
+이 목업은 실제 benchmark 실행 화면이 아니라 **구현 전 UI 계약을 검토하기 위한 정적 reference**다. 실제 구현에서는 데이터 값, 터미널 폭, 파일 특성에 따라 표시 문자열이 달라진다.
+
 
