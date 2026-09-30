@@ -331,8 +331,25 @@ The project `scratch/` was left untouched.
 
 `C:\m5s5` was a directory junction pointing at `msf_s5_e2e`. Because moving a reparse
 point to the Recycle Bin risks following it into the dataset that must be kept, it was
-**deliberately not cleaned up and left in place** (it still exists). The target dataset
-is intact with all 10 files.
+**deliberately left in place.** It was later **removed** with `scripts/safe_remove.ps1`.
+No hard-delete path such as `rmdir` was used.
+
+After removal, the target dataset was actually verified to still exist.
+
+```text
+before removal  msf_s5_e2e : 10 files / 226714 bytes
+after removal   msf_s5_e2e : 10 files / 226714 bytes  (identical)
+file read-back  : JPEG FFD8FFE0..., PNG 89504E47..., MP4 ftyp, all 10 valid
+```
+
+In other words only the junction link disappeared and the 10 target files were kept as
+is. `%TEMP%\msf_s5_cancel` (50 files) is also still in place.
+
+Note that `safe_remove.ps1` reported `recycled_bytes` as the target size (226714), i.e.
+it measured through the link rather than the link itself. Whether emptying the Recycle
+Bin could affect the target dataset was **not verified at this stage**. The target is a
+reproducible verification copy, so it can be regenerated from
+`C:\project\test_sample_img_vid` if it ever becomes an issue.
 
 ## 12. S5 status verdict
 
@@ -352,4 +369,3 @@ recorded in section 7 with their reasons.
 - Whether `SKIPPED` for AUTO / GPU-max on a CPU build is the right UX -- product decision
 - S3 timestamp labelling mismatch (section 8) -- S3 follow-up work
 - Real TTY / Ctrl+C verification -- needs an actual Windows console environment
-- `C:\m5s5` junction removal -- the user can clean it with `rmdir C:\m5s5`

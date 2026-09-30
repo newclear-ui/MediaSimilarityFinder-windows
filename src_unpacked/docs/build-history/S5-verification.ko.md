@@ -320,9 +320,25 @@ demo.obj
 
 프로젝트 `scratch/` 는 그대로 두었다.
 
-`C:\m5s5` 는 `msf_s5_e2e` 대상 디렉터리 junction 이었다. Reparse point 를 휴지통으로
-옮길 때 대상 데이터셋까지 지울 위험이 있어 **정리하지 않고 남겨 두었다** (현재도 존재).
-대상 dataset 은 10개 파일 그대로 유지되어 있다.
+`C:\m5s5` 는 `msf_s5_e2e` 를 가리키는 디렉터리 junction 이었다. Reparse point 를 휴지통으로
+옮길 때 대상 데이터셋까지 지울 위험이 있어 **인위적으로 정리하지 않고 남겨 두었다.**
+이후 `scripts/safe_remove.ps1` 로 **제거했다.** `rmdir` 등 하드 삭제 경로는 사용하지 않았다.
+
+제거 후 대상 데이터셋이 살아 있는지 실제로 확인했다.
+
+```text
+제거 전  msf_s5_e2e : 10개 파일 / 226714 bytes
+제거 후  msf_s5_e2e : 10개 파일 / 226714 bytes  (동일)
+파일 내용 read-back : JPEG FFD8FFE0..., PNG 89504E47..., MP4 ftyp 10개 모두 정상
+```
+
+즉 junction 링크만 사라졌고 대상 10개 파일은 그대로 유지되었다.
+`%TEMP%\msf_s5_cancel` (50개 파일) 도 그대로 유지되어 있다.
+
+단, `safe_remove.ps1` 의 `recycled_bytes` 가 대상 크기(226714)를 보고한다. 링크 자체가 아니라
+그 너머의 내용을 세어 낸 것으로, 휴지통을 비울 때 대상 데이터셋이 영향받는지는
+**이 단계에서 확인하지 않았다.** 대상은 다시 만들 수 있는 검증용 사본이므로 문제가 생겨도
+`C:\project\test_sample_img_vid` 원본에서 재생성 가능하다.
 
 ## 12. S5 상태 판정
 
@@ -341,4 +357,3 @@ S5 구현 및 자동/비대화형 E2E 검증 완료
 - CPU 빌드에서 AUTO / GPU-max 가 `SKIPPED` 로 기록되는 표현이 UX 적정한지 — 제품 결정 필요
 - S3 timestamp 표기 불일치 (8장) — S3 후속 작업
 - 실제 TTY / Ctrl+C 검증 — 실제 Windows console 환경에서 수행 필요
-- `C:\m5s5` junction 제거 — 사용자가 `rmdir C:\m5s5` 로 정리
