@@ -107,6 +107,9 @@ add_library(msf_core STATIC
     # cohorts as separate typed views; it re-reads no journal, recomputes no
     # normalized field, and computes no statistic.
     src/benchmark_data_grouping.cpp
+    # S6-4 aggregation. Statistics over the S6-3 cohorts, with run/case/mode kept as
+    # separate populations and every excluded sample carrying a reason.
+    src/benchmark_data_aggregation.cpp
   # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
   # reusing S3's atomic write and suite lock. It executes nothing and writes no
   # journal; the GUI drives BenchmarkRunner and hands the result here.
@@ -348,6 +351,13 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_data_grouping_test tests/benchmark_data_grouping_test.cpp)
     target_link_libraries(msf_benchmark_data_grouping_test PRIVATE msf_core)
     add_test(NAME benchmark_data_grouping_test COMMAND msf_benchmark_data_grouping_test)
+    # S6-4 aggregation: count/min/max/mean/median/p95 per metric with the three
+    # populations kept apart, observed == eligible + excluded, Skipped/Failed/Cancelled
+    # excluded from performance but kept in status tallies, one-second run wall
+    # resolution, scopes and build provenance never merged, and determinism.
+    add_executable(msf_benchmark_data_aggregation_test tests/benchmark_data_aggregation_test.cpp)
+    target_link_libraries(msf_benchmark_data_aggregation_test PRIVATE msf_core)
+    add_test(NAME benchmark_data_aggregation_test COMMAND msf_benchmark_data_aggregation_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.

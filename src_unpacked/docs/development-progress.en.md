@@ -1791,3 +1791,80 @@ inference, CLI, GUI, journal schema changes.
 unavailable in this environment`). Had requested and effective been merged, 60 CUDA
 observations would have been disguised as CPU runs and the capability observation
 would have disappeared. Brief §9's rationale is confirmed by real data.
+## 2026-10-01 — S6-4 aggregation / separated populations and deterministic statistics
+
+Location: new `src/benchmark_data_aggregation.{h,cpp}` +
+`tests/benchmark_data_aggregation_test.cpp` (**97 checks**).
+
+### Three populations, structurally separated
+
+| Level | `MetricLevel` | `MetricResolution` | Eligible when |
+| --- | --- | --- | --- |
+| mode | `ModeElapsed` | `Recorded` | `Success` and an elapsed exists |
+| case | `CaseElapsed` | `Recorded` | `Success` |
+| run | `RunWallDuration` | `OneSecond` | a status exists, is `Success`, and a wall exists |
+
+mode `elapsedMs` is optional, so `missingElapsed` is possible there. case `elapsedMs` is
+a non-optional `double`, so it **cannot occur** at that level. A run with no terminal
+record has no status, so it is excluded as `invalid` rather than assumed Success and is
+counted separately as `runsWithoutStatus`. The three are never added together: run wall
+duration is not corrected by summing modes or cases.
+
+### `observed = eligible + excluded` everywhere
+
+`SampleAccounting` preserves the identity and keeps the reason for every exclusion. A
+bare excluded count would be indistinguishable from a bug. That **all 384 real
+exclusions are `skipped`** is only explicable in this form. With zero eligible samples
+the statistic **does not exist** (rather than being 0).
+
+### Real storage, 30 journals / 31 runs, read-only
+
+| Population | observed | eligible | excluded | Reason |
+| --- | --- | --- | --- | --- |
+| mode | 494 | 110 | 384 | skipped 384 |
+| case | 324 | 110 | 214 | skipped 214 |
+| run | 31 | 31 | 0 | — |
+
+- **Scope**: `all` 22 runs / caseN 60 / case median 619.405 ms; `all` (other
+  fingerprint) 1 / caseN 50 / 645.322 ms; `images` 6 / **caseN 0**; `videos` 3 /
+  **caseN 0**
+- **Build**: Legacy 30 runs (comparable=no), Known `fcace68` 1 run (comparable=yes),
+  unknown 0
+- **Mode**: `AUTO/CPU` 260 observed **eligible 0, skipped 260**; `CPU/CPU` 110 observed,
+  eligible 110, median 645.322; `CUDA/CPU` 60 observed **eligible 0, skipped 60**
+- **Statistics**: count/min/max/mean/median/**p95** implemented. Median is the middle
+  sample or the mean of the two middle ones; p95 is nearest rank. `n = 1` and `n = 2`
+  are computed and **not hidden**, with the sample count alongside. Reported values
+  are rounded to 6 decimal places.
+- **Determinism**: IDENTICAL in-process and **identical across processes**
+- `all` was not decomposed into images/videos and no elapsed was distributed between
+  them. The `caseN` of 0 for images and videos means every case in those scope runs was
+  Skipped, and that was not filled in by estimation.
+
+### Real defect found — runId is not unique
+
+`suite-ORDER-A/B/C` share one `runId`, so **31 accepted runs carry only 29 distinct
+runIds.** Keying per-file aggregation on `runId` alone kept one of the three and silently
+dropped the other two runs' cases (case observations rose from **314 to 324** once
+fixed). Deduplicating instead would discard measurements in the opposite direction.
+The journal cannot say whether these are one measurement written three times or three
+separate measurements, so **neither is applied silently**: per-file populations are keyed
+on `(sourceJournalPath, runId)` and the collision is only reported through
+`runsWithCollidingIdentity`. S6-1's "31 accepted" hid this, so it is recorded in the
+worklog.
+
+### Duplicate protection confirmed
+
+Logical mode entities 494 equals the aggregated observed 494. Raw journal line counts
+were not used; the logical entities recovered by S6-1/S6-2 were.
+
+Not implemented: regression percentage, thresholds, anomaly judgement, statistical
+confidence, winner ranking, resourcePolicy/distance/gpuBackend inference, CLI, GUI,
+CSV/Markdown reports, journal schema changes.
+
+### Verification
+
+aggregation **97 checks** (new), S6-3 grouping 58, S6-2 contract 67, S6-1 ingestion 71,
+journal 66 / store 51 / integration 144 / core 63, all PASS. CPU build exit 0 / CTest
+**100/100**, GPU build exit 0 / CTest **101/101**. `git diff --check` clean, no stale
+objects.

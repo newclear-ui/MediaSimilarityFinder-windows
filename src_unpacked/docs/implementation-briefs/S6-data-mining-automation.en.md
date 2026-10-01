@@ -491,6 +491,76 @@ mean, median, p95, min, max, range
 sourceRunIds — the runs the result rests on
 ```
 
+### 13-1. S6-4 implemented contract (2026-10-01)
+
+Aggregation nests the S6-3 `dataset → scope → build → mode` hierarchy rather than
+flattening it. Each level accumulates its own samples; statistics are never assembled
+afterwards, because a mean of means is not a mean.
+
+Every statistics block carries `MetricLevel` and `MetricResolution` together.
+
+| Level | `MetricLevel` | `MetricResolution` | Why |
+| --- | --- | --- | --- |
+| mode | `ModeElapsed` | `Recorded` | written per record by S2 |
+| case | `CaseElapsed` | `Recorded` | written per record by S2 |
+| run | `RunWallDuration` | `OneSecond` | derived from second-resolution stamps |
+
+### 13-2. Eligibility differs per level
+
+| Level | Eligible when | Exclusion reasons |
+| --- | --- | --- |
+| mode | `status == Success` **and** an elapsed exists | skipped / failed / cancelled / missingElapsed |
+| case | `status == Success` | skipped / failed / cancelled |
+| run | a status exists, is `Success`, and a wall exists | skipped / failed / cancelled / missingElapsed / **invalid** |
+
+- mode `elapsedMs` is optional, so `missingElapsed` is possible there. **A Success
+  with no duration is excluded as `missingElapsed`, never read as 0.**
+- case `elapsedMs` is a non-optional `double`, so `missingElapsed` **cannot occur** at
+  that level. Status alone decides.
+- A run with no terminal record has no status at all. That is excluded as `invalid`
+  rather than assumed Success, and it is tallied under no existing status value: it is
+  counted separately as `runsWithoutStatus`.
+
+### 13-3. `observed = eligible + excluded` is enforced everywhere
+
+`SampleAccounting` preserves that identity and keeps the **reason** for every exclusion.
+A bare excluded count is not an acceptable result, because it cannot be told apart from
+a bug. That 384 of 384 real exclusions are `skipped` is only explicable in this form.
+
+### 13-4. `all` is never decomposed
+
+`all` is its own scope. It is never converted to `images + videos`, and its elapsed is
+never distributed between them, because the journal does not record how many cases of
+each scope an `all` run actually covered.
+
+### 13-5. Logical entities, not raw journal lines, are aggregated
+
+The real store's `suite-ORDER-A/B/C` wrote the same journal more than once. Averaging raw
+lines would weight a repeatedly-written suite above an identical one written once, so
+aggregation uses the logical `(journal, runId, caseId, mode)` entities that S6-1/S6-2
+recovered and normalized.
+
+> **runId is not unique in a real store.** `suite-ORDER-A/B/C` share one `runId`, so
+> **31 accepted runs carry only 29 distinct runIds**. Per-file populations are therefore
+> keyed on `(sourceJournalPath, runId)`, and the collision is only **reported** through
+> `runsWithCollidingIdentity`. Whether those are one measurement recorded three times or
+> three separate measurements is not something the journal can answer, so **neither
+> interpretation is applied silently.**
+
+### 13-6. Statistics and the rounding rule
+
+`count / min / max / mean / median / p95` are provided.
+
+- median: the middle sample for an odd count, the mean of the two middle samples for an
+  even one
+- p95: nearest rank, `index = ceil(0.95 * n) - 1`. It is computed and **not hidden** for
+  `n = 1` and `n = 2` either, and travels with its sample count. Interpreting it is a
+  later stage's job.
+- every reported value is rounded to **6 decimal places** (`aggregationRoundMs`). Double
+  summation can vary slightly with order, so the printed form is fixed.
+- with zero eligible samples the statistic **does not exist** (and is not 0). A 0 is a
+  measurement.
+
 ## 14. Comparison / Regression — threshold undecided
 
 ### 14-1. Comparison possible today

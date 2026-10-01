@@ -464,6 +464,72 @@ mean, median, p95, min, max, range
 sourceRunIds — 근거가 된 run
 ```
 
+### 13-1. S6-4 구현 계약 (2026-10-01)
+
+집계는 S6-3 의 `dataset → scope → build → mode` 계층을 **중첩**해서 만든다.
+각 level 이 자기 sample 을 직접 누적하며, statistic 을 사후 합치지 않는다
+(mean of mean 은 mean 이 아니다).
+
+집계값은 `MetricLevel` 과 `MetricResolution` 을 함께 가진다.
+
+| 수준 | `MetricLevel` | `MetricResolution` | 사유 |
+| --- | --- | --- | --- |
+| mode | `ModeElapsed` | `Recorded` | S2 가 record 별 기록 |
+| case | `CaseElapsed` | `Recorded` | S2 가 record 별 기록 |
+| run | `RunWallDuration` | `OneSecond` | 1초 해상도 timestamp 파생 |
+
+### 13-2. 모집단 포함 규칙은 level 별로 다르다
+
+| 수준 | eligible 조건 | 제외 사유 |
+| --- | --- | --- |
+| mode | `status == Success` **그리고** elapsed 존재 | skipped / failed / cancelled / missingElapsed |
+| case | `status == Success` | skipped / failed / cancelled |
+| run | status 존재 **그리고** `Success` **그리고** wall 존재 | skipped / failed / cancelled / missingElapsed / **invalid** |
+
+- mode 는 `elapsedMs` 가 optional 이라 `missingElapsed` 가 가능하다. **Success 인데
+  duration 이 없으면 0 으로 읽지 않고 `missingElapsed` 로 제외**한다.
+- case 는 `elapsedMs` 가 non-optional `double` 이라 이 level 에서 `missingElapsed` 는
+  **발생할 수 없다.** status 만으로 판정한다.
+- run 은 terminal record 가 없으면 status 자체가 없다. 이때 Success 로 가정하지 않고
+  `invalid` 로 제외하며, status tally 에도 어느 status 로도 넣지 않는다
+  (`runsWithoutStatus` 로 별도 집계).
+
+### 13-3. `observed = eligible + excluded` 를 결과마다 강제
+
+`SampleAccounting` 은 이 등식을 유지하고, 제외된 sample 의 **사유**를 함께 보존한다.
+사유 없는 제외 개수만 남기는 것은 bug 와 구분되지 않으므로 허용하지 않는다.
+실측에서 excluded 384 건 전부가 `skipped` 라는 사실도 이 형태로만 설명된다.
+
+### 13-4. `all` 은 분해하지 않는다
+
+`all` 은 독립 scope 다. `images + videos` 로 환산하지 않고, `all` 의 elapsed 를
+images/videos 에 분배하지도 않는다. journal 은 한 `all` run 이 각 scope 에서 몇
+case 를 실제로 덮었는지 기록하지 않기 때문이다.
+
+### 13-5. raw journal record 가 아니라 logical entity 를 집계한다
+
+실제 store 의 `suite-ORDER-A/B/C` 는 동일 journal 을 여러 번 썼다. raw line 수를
+평균 모집단으로 쓰면 여러 번 쓴 suite 가 한 번 쓴 suite 보다 무게게 잡힌다.
+집계는 S6-1/2 가 복구·정규화한 logical `(journal, runId, caseId, mode)` entity 를 쓴다.
+
+> **runId 는 사설 store 에서 유일하지 않다.** `suite-ORDER-A/B/C` 가 같은 `runId`
+> 를 공유하므로 **accepted 31 run 에 대해 distinct runId 는 29 개**다. 따라서
+> 파일 단위 모집단은 `(sourceJournalPath, runId)` 로 keying 하고, 충돌 건수는
+> `runsWithCollidingIdentity` 로 **보고만 한다.** 이것이 "같은 측정이 3번 기록된 것"
+> 인지 "별개 측정 3건" 인지는 journal 이 답해 주지 않으므로, **어느 쪽으로든
+> 임의로 처리하지 않는다.**
+
+### 13-6. 통계와 rounding 규칙
+
+`count / min / max / mean / median / p95` 를 제공한다.
+
+- median: 홀수면 가운데 sample, 짝수면 가운데 두 sample 의 평균
+- p95: nearest rank, `index = ceil(0.95 * n) - 1`. `n = 1`, `n = 2` 에도 **숨기지 않고**
+  그대로 계산하며 sample count 가 함께 travels 한다. 해석은 후속 단계 몫이다.
+- 모든 보고값은 **소수점 6자리로 반올림**(`aggregationRoundMs`). double 합산은
+  순서에 따라 미세하게 달라질 수 있으므로 출력 형태를 고정한다.
+- eligible sample 이 0 이면 statistic 은 **존재하지 않는다**(0 이 아님). 0 은 실측값이다.
+
 ## 14. Comparison / Regression — threshold 미확정
 
 ### 14-1. 지금 가능한 비교

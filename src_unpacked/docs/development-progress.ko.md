@@ -1677,3 +1677,73 @@ journal schema 변경.
 (`status=SKIPPED`, `mode unavailable in this environment`). requested/effective 를
 합쳤다면 60건의 CUDA 관찰이 CPU 실행으로 위장되어 capability 관찰이 사라진다.
 brief §9 의 근거가 실제 데이터로 확인된 사례다.
+## 2026-10-01 — S6-4 Aggregation / 모집단 분리 + 결정적 집계
+
+위치: 신규 `src/benchmark_data_aggregation.{h,cpp}` +
+`tests/benchmark_data_aggregation_test.cpp` (**97 checks**).
+
+### 세 모집단을 구조적으로 분리
+
+| 수준 | `MetricLevel` | `MetricResolution` | eligible 조건 |
+| --- | --- | --- | --- |
+| mode | `ModeElapsed` | `Recorded` | `Success` + elapsed 존재 |
+| case | `CaseElapsed` | `Recorded` | `Success` |
+| run | `RunWallDuration` | `OneSecond` | status 존재 + `Success` + wall 존재 |
+
+mode 는 `elapsedMs` 가 optional 이라 `missingElapsed` 가 가능하고, case 는
+non-optional `double` 이라 **발생할 수 없으며**, run 은 terminal record 가 없으면 status 가
+없으므로 Success 로 가정하지 않고 `invalid` 로 제외한다(`runsWithoutStatus` 별도 집계).
+세 값은 합치지 않는다 — run wall duration 을 mode/case 합으로 보정하지 않는다.
+
+### `observed = eligible + excluded` 를 결과마다 강제
+
+`SampleAccounting` 이 등식을 유지하고 제외 사유를 함께 보존한다. 사유 없는 제외 개수만
+남기면 bug 와 구분되지 않는다. 실측에서 **excluded 384건 전부가 `skipped`** 라는 사실도
+이 형태로만 설명된다. eligible 0 이면 statistic 은 **존재하지 않는다**(0 이 아님).
+
+### 실제 저장소 검증 (30 journal / 31 run, read-only)
+
+| 모집단 | observed | eligible | excluded | 사유 |
+| --- | --- | --- | --- | --- |
+| mode | 494 | 110 | 384 | skipped 384 |
+| case | 324 | 110 | 214 | skipped 214 |
+| run | 31 | 31 | 0 | — |
+
+- **Scope**: `all` 22 run / caseN 60 / case median 619.405 ms, `all`(다른 fingerprint) 1 /
+  caseN 50 / 645.322 ms, `images` 6 / **caseN 0**, `videos` 3 / **caseN 0**
+- **Build**: Legacy 30 run(comparable=no), Known `fcace68` 1 run(comparable=yes), unknown 0
+- **Mode**: `AUTO/CPU` 260 obs **elig 0 skip 260**, `CPU/CPU` 110 obs elig 110
+  median 645.322, `CUDA/CPU` 60 obs **elig 0 skip 60**
+- **통계**: count/min/max/mean/median/**p95** 구현. median 은 홀수면 가운데·짝수면 가운데
+  둘의 평균, p95 는 nearest rank. `n = 1`, `n = 2` 도 **숨기지 않고** 계산하며 sample
+  count 를 함께 보낸다. 보고값은 소수점 6자리 반올림.
+- **Determinism**: process 내 IDENTICAL + **교차 프로세스 동일**
+- `all` 은 images/videos 로 분해하지 않았고 elapsed 도 분배하지 않았다. images/videos 의
+  caseN 이 0 인 것은 그 scope run 의 case 가 전부 Skipped 라는 뜻이며, 추정으로 채우지
+  않았다.
+
+### 실제 결함 발견 — runId 가 유일하지 않다
+
+`suite-ORDER-A/B/C` 가 **같은 `runId`** 를 공유한다. **accepted 31 run 에 대해 distinct
+runId 는 29 개**다. `runId` 만으로 파일 단위 집계를 하면 세 run 중 하나만 남고 나머지
+두 run 의 case 가 사라진다(실제로 case 관측이 **314 → 324** 로 늘어났다). dedupe 로
+처리하면 반대 방향으로 측정을 버린다. journal 이 "같은 측정이 3번 기록된 것" 인지
+"별개 측정 3건" 인지를 답해 주지 않으므로 **어느 쪽으로든 임의 처리하지 않고**,
+`(sourceJournalPath, runId)` 로 keying 하고 충돌 건수만 `runsWithCollidingIdentity`
+로 보고한다. S6-1 의 "31 accepted" 에서는 드러나지 않던 사실이므로 worklog 에 기록했다.
+
+### raw duplicate 보호 확인
+
+logical mode entity 494 = 집계 observed 494. raw journal line 수를 그대로 쓰지 않았고
+S6-1/2 가 복구·정규화한 logical entity 를 사용했다.
+
+미구현: regression percentage, threshold, anomaly 판정, statistical confidence,
+winner 순위, resourcePolicy/distance/gpuBackend 추론, CLI, GUI, CSV/Markdown report,
+journal schema 변경.
+
+### 검증
+
+aggregation **97 checks**(신규), S6-3 grouping 58, S6-2 contract 67, S6-1 ingestion 71,
+journal 66 / store 51 / integration 144 / core 63 전부 PASS.
+CPU build exit 0 / CTest **100/100**, GPU build exit 0 / CTest **101/101**.
+`git diff --check` clean, stale object 없음.
