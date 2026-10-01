@@ -101,8 +101,12 @@ add_library(msf_core STATIC
   src/console_benchmark_cli.cpp
   # S6: journal discovery, ingestion and normalization. Library level only: it
   # hands every journal to S3's own replayJournal() rather than parsing anything
-  # itself, and creates no CLI, report format or benchmark status.
-  src/benchmark_data_mining.cpp
+# itself, and creates no CLI, report format or benchmark status.
+    src/benchmark_data_mining.cpp
+    # S6-3 grouping. Sits on the S6-2 normalized dataset and produces deterministic
+    # cohorts as separate typed views; it re-reads no journal, recomputes no
+    # normalized field, and computes no statistic.
+    src/benchmark_data_grouping.cpp
   # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
   # reusing S3's atomic write and suite lock. It executes nothing and writes no
   # journal; the GUI drives BenchmarkRunner and hands the result here.
@@ -335,6 +339,15 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_data_contract_test tests/benchmark_data_contract_test.cpp)
     target_link_libraries(msf_benchmark_data_contract_test PRIVATE msf_core)
     add_test(NAME benchmark_data_contract_test COMMAND msf_benchmark_data_contract_test)
+    # S6-3 grouping: separate typed cohort views (dataset, dataset+scope, build,
+    # requested+effective mode, case) over the S6-2 normalized dataset. Covers
+    # cross-build cohorting, "all" as its own scope, Legacy/Unknown provenance
+    # never merged or back-filled, multi-run separation and determinism.
+    # Membership and provenance only: no aggregation, statistics or comparability
+    # verdict.
+    add_executable(msf_benchmark_data_grouping_test tests/benchmark_data_grouping_test.cpp)
+    target_link_libraries(msf_benchmark_data_grouping_test PRIVATE msf_core)
+    add_test(NAME benchmark_data_grouping_test COMMAND msf_benchmark_data_grouping_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.

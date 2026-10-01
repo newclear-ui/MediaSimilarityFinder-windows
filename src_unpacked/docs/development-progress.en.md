@@ -1739,3 +1739,55 @@ Not changed: BenchmarkRunner/Executor/Request, the journal schema, recovery or s
 generation, the Console renderer, the GUI, Scanner/MediaKind, NVDEC and the legacy
 benchmark. No journal field was added, no CLI was introduced, and there is no
 grouping, aggregation or statistics.
+## 2026-10-01 — S6-3 grouping / separation of analysis views
+
+The S6 brief §12 contract was aligned with the implementation. Location: new
+`src/benchmark_data_grouping.{h,cpp}` + `tests/benchmark_data_grouping_test.cpp`
+(58 checks).
+
+### The important decision — no single composite key
+
+One key combining `fingerprint + mediaScope + buildVersion + gitCommit +
+requestedMode + effectiveMode` puts every run in a cohort of its own and makes
+**cross-build comparison structurally impossible**. It is the simplest thing to build,
+and it deletes the comparison, so it was rejected. Instead there are five typed keys
+(`DatasetCohortKey` / `ScopeCohortKey` / `BuildCohortKey` / `ModeCohortKey` /
+`CaseCohortKey`), one per analysis axis, and combining axes is the caller's job. The
+reasoning is recorded in `docs/worklog/0.9.4.*.md`.
+
+### `caseId` is not run-scoped (measured correction)
+
+S2 uses `caseId = IndexManager::folderId(file.path)` (canonical-path FNV-1a), so
+**the same file in two runs yields the same `caseId`**. The brief's run-scoped
+assumption was corrected by measurement, and no new hash was invented: the existing
+id is paired with the dataset fingerprint.
+
+### Deterministic order and state separation
+
+The canonical mode order `AUTO → CPU → GPU-MAX` differs from the `GpuBackendKind`
+declaration order, so an explicit rank is used; it orders display and group results
+and does not redefine execution order. Known, Unknown and Legacy cohorts are separated
+structurally, and `commitComparable` is true only for Known — a provenance-quality
+statement, not a comparability verdict. An empty or missing fingerprint never
+becomes a cohort and is only counted. An excluded run enters no cohort at all.
+
+Tests: grouping **58 checks** (new), S6-2 contract 67, S6-1 ingestion 71, journal 66 /
+store 51 / integration 144 / core 63, all PASS. CPU build exit 0 / CTest **99/99**,
+GPU build exit 0 / CTest **100/100**. `git diff --check` clean.
+
+Real storage (30 journals / 31 runs, read-only): dataset cohorts **2**, scope cohorts
+**4** (`all` 22, `images` 5, `videos` 3), build cohorts **2** (Known 1 commit-comparable
+/ Legacy 28), mode cohorts **3**, case cohorts **70** (10 recur in more than one run,
+up to 26). Determinism IDENTICAL. Insufficient build diversity is recorded as normal
+per brief §23; none was fabricated.
+
+Not implemented: aggregation, mean/median/p95, delta, speedup, regression, thresholds,
+anomalies, final comparability judgement, distance/resourcePolicy/gpuBackend
+inference, CLI, GUI, journal schema changes.
+
+### Capability observation confirmed in the real journals
+
+**60 records have `requested=CUDA` with `effective=CPU`** (`status=SKIPPED`, `mode
+unavailable in this environment`). Had requested and effective been merged, 60 CUDA
+observations would have been disguised as CPU runs and the capability observation
+would have disappeared. Brief §9's rationale is confirmed by real data.

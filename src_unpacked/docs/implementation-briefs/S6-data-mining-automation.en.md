@@ -402,23 +402,69 @@ identical.** The following must be carried as comparison conditions alongside it
 
 | Axis | Field | Note |
 | --- | --- | --- |
-| media scope | `mediaScope` / `scanImages` / `scanVideos` | |
-| build | `buildVersion` | **Cannot be subdivided by git — 8-2** |
+| media scope | `mediaScope` / `scanImages` / `scanVideos` | `all` is never decomposed into images+videos |
+| build | `buildVersion` | Carries the provenance state (`Known`/`Unknown`/`Legacy`) too |
 | requested mode | `mode_result.requestedMode` | The run-level list is derived |
-| effective mode | `mode_result.effectiveMode` | Capability observation |
-| case sameness | `caseId` | The key for per-file comparison |
+| effective mode | `mode_result.effectiveMode` | Capability observation. **Never merged with the requested mode** |
+| case sameness | `caseId` | The key for per-file comparison, paired with the dataset |
 
 ### 12-3. Keys that **must not** be used as grouping (8-2)
 
 ```text
-git commit          — not in the journal
 resourcePolicy      — not in the journal
 gpuEnabled          — not in the journal
+gpuBackend          — not in the journal
 distance            — not in the journal
 ```
 
 Using them would make the claim "same conditions" false. **They are not used, and
 the output states that the condition was not recorded.**
+
+> **2026-10-01 update**: `git commit` was **removed** from the list above. S3 added
+> `run_started.gitCommit`, so it now exists in the journal (see 8-2). Its presence
+> in the journal is not the same as being able to compare by commit, so the three
+> provenance states (`Known`/`Unknown`/`Legacy`) are kept alongside it. `Legacy` has
+> no field at all, is not a commit-level comparison target, and is never filled in
+> with the current HEAD.
+
+### 12-4. Why there is no single composite key (S6-3 decision)
+
+A key combining `datasetFingerprint + mediaScope + buildVersion + gitCommit +
+requestedMode + effectiveMode` puts every run in a cohort of its own and makes
+**cross-build comparison structurally impossible**. It looks tidier, and it quietly
+deletes the comparison, so it was not adopted.
+
+Instead each analysis axis is a **typed key struct**, and the caller picks the view
+its question needs (`src/benchmark_data_grouping.h`).
+
+| View | Key | Question it answers |
+| --- | --- | --- |
+| `DatasetCohortKey` | `datasetFingerprint` | Observing one dataset across builds and modes |
+| `ScopeCohortKey` | `datasetFingerprint` + `mediaScope` | The baseline population for cross-build observation |
+| `BuildCohortKey` | `buildVersion` + `gitCommitState` + `gitCommit` | Which runs came from the same build |
+| `ModeCohortKey` | `requestedMode` + `effectiveMode` | Fallback and capability observations |
+| `CaseCohortKey` | `datasetFingerprint` + `caseId` | Per-file comparison |
+
+### 12-5. What `caseId` actually means (S6-3, measured)
+
+S2 derives `caseId` as `IndexManager::folderId(file.path)`, a hash of the canonical
+path. So it is **not run-scoped: the same file in two runs yields the same
+`caseId`** (confirmed by measurement — two runs over the same file produced the same
+id). No new hash is invented; the existing `caseId` is used, but **paired with the
+dataset fingerprint** rather than trusted alone, because it hashes an absolute path.
+
+### 12-6. Grouping does not judge comparability
+
+S6-3 only *constitutes* cohorts and never concludes `comparable = true`.
+`BuildCohort::commitComparable` expresses **provenance quality only** (true only for
+`Known`) and is not a judgement about the data. The absent resourcePolicy, distance
+and GPU backend, the undefined controlled environment and the insufficient repeat
+runs all carry forward unchanged.
+
+Mode ordering uses the canonical `AUTO → CPU → GPU-MAX` order. That differs from the
+`GpuBackendKind` declaration order (`Auto, Cuda, Cpu`), so an explicit rank is used.
+This ordering is for **display and group results** and does not redefine execution
+order.
 
 ## 13. Aggregation responsibility
 

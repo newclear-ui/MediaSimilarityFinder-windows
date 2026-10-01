@@ -1627,3 +1627,53 @@ provenance legacy 30 · known 1 / determinism IDENTICAL.
 변경하지 않은 것: BenchmarkRunner/Executor/Request, journal schema·recovery·summary,
 Console renderer, GUI, Scanner/MediaKind, NVDEC, legacy benchmark. journal 필드 추가 없음.
 CLI 추가 없음. grouping/aggregation/통계 없음.
+## 2026-10-01 — S6-3 Grouping / 분석 view 분리
+
+S6 brief §12 계약을 실제 구현과 맞췄다. 위치: 신규 `src/benchmark_data_grouping.{h,cpp}`
++ `tests/benchmark_data_grouping_test.cpp` (58 checks).
+
+### 가장 중요한 결정 — 단일 composite key 를 쓰지 않았다
+
+`fingerprint + mediaScope + buildVersion + gitCommit + requestedMode + effectiveMode`
+을 하나로 묶으면 모든 run 이 자기 고유 cohort 에 들어가 **build 간 비교가 구조적으로
+불가능**해진다. 구현은 가장 단순해 보이지만 비교를 삭제하는 설계이므로 기각했다.
+대신 분석 축별 typed key 5종(`DatasetCohortKey` / `ScopeCohortKey` / `BuildCohortKey` /
+`ModeCohortKey` / `CaseCohortKey`)을 분리했고, 축을 합치는 것은 호출부의 몫이다.
+근거는 `docs/worklog/0.9.4.*.md` 에 기록했다.
+
+### `caseId` 는 run-scoped 가 아님 (실측 정정)
+
+S2 는 `caseId = IndexManager::folderId(file.path)` (canonical path FNV-1a) 이므로
+**같은 파일을 다른 run 이 실행하면 동일 `caseId`** 다. brief 의 run-scoped 가정을
+실측으로 정정했고, 새 hash 를 만들지 않고 dataset fingerprint 와 짝을 이루어 key 로
+썼다.
+
+### 결정적 정렬과 상태 분리
+
+mode canonical 순서 `AUTO → CPU → GPU-MAX` 는 `GpuBackendKind` 선언 순서와 다르므로
+명시적 rank 를 쓴다(정렬은 표시·그룹 용이며 execution 순서를 재정의하지 않는다).
+Known/Unknown/Legacy cohort 는 구조적으로 분리되고 `commitComparable` 은 Known 에서만
+true 다. provenance 품질 표시이지 comparability 판정이 아니다.
+empty/missing fingerprint 는 cohort 가 되지 않고 개수만 집계된다. excluded run 은
+어떤 cohort 에도 들어가지 않는다.
+
+테스트: grouping **58 checks**(신규), S6-2 contract 67, S6-1 ingestion 71, journal 66 /
+store 51 / integration 144 / core 63 전부 PASS. CPU build exit 0 / CTest **99/99**,
+GPU build exit 0 / CTest **100/100**. `git diff --check` clean.
+
+실제 저장소(30 journal / 31 run, read-only): dataset cohort **2**, scope cohort **4**
+(`all` 22, `images` 5, `videos` 3), build cohort **2** (Known 1 commit-comparable /
+Legacy 28), mode cohort **3**, case cohort **70** (10개가 2개 이상 run 에 걸쳐 재등장,
+최대 26 run). determinism IDENTICAL. build diversity 부족은 brief §23 에 따라 정상으로
+기록했고 다양성을 만들어내지 않았다.
+
+미구현: aggregation, mean/median/p95, delta, speedup, regression, threshold, anomaly,
+comparability 최종 판정, distance/resourcePolicy/gpuBackend 추론, CLI, GUI,
+journal schema 변경.
+
+### 실제 journal 에서 확인한 capability 관찰
+
+`requested=CUDA` 인데 `effective=CPU` 인 record **60건**이 실측됨
+(`status=SKIPPED`, `mode unavailable in this environment`). requested/effective 를
+합쳤다면 60건의 CUDA 관찰이 CPU 실행으로 위장되어 capability 관찰이 사라진다.
+brief §9 의 근거가 실제 데이터로 확인된 사례다.

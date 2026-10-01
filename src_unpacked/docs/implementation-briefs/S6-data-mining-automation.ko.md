@@ -378,23 +378,67 @@ grouping key 는 **존재하는 필드만** 사용한다. 없는 키를 쓰면 �
 
 | 축 | 필드 | 비고 |
 | --- | --- | --- |
-| media 범위 | `mediaScope` / `scanImages` / `scanVideos` | |
-| 빌드 | `buildVersion` | **git 로细分 불가 — 8-2** |
+| media 범위 | `mediaScope` / `scanImages` / `scanVideos` | `all` 은 images+videos 로 분해하지 않는다 |
+| 빌드 | `buildVersion` | provenance 상태(`Known`/`Unknown`/`Legacy`) 를 함께 쓴다 |
 | 요청 mode | `mode_result.requestedMode` | run 단위 목록은 파생 |
-| 실효 mode | `mode_result.effectiveMode` | capability 관찰 |
-| case 동일성 | `caseId` | 파일 단위 비교의 키 |
+| 실효 mode | `mode_result.effectiveMode` | capability 관찰. 요청과 **합치지 않는다** |
+| case 동일성 | `caseId` | 파일 단위 비교의 키. dataset 과 짝을 이룬다 |
 
 ### 12-3. grouping 키로 **쓸 수 없는** 것 (8-2)
 
 ```text
-git commit          — journal 에 없음
 resourcePolicy      — journal 에 없음
 gpuEnabled          — journal 에 없음
+gpuBackend          — journal 에 없음
 distance            — journal 에 없음
 ```
 
 이 키를 쓰면 "같은 조건" 이라는 주장이 거짓이 된다. **사용하지 않으며,
 출력에도 "해당 조건 미기록" 이라고 명시한다.**
+
+> **2026-10-01 갱신**: 위 목록에서 `git commit` 은 **제거**되었다. S3 가
+> `run_started.gitCommit` 을 추가하여 이제 journal 에 존재한다(8-2 참조).
+> 다만 journal 에 값이 있다는 것과 commit 으로 비교할 수 있다는 것은 다르므로,
+> provenance 3상태(`Known`/`Unknown`/`Legacy`) 를 함께 유지한다. `Legacy` 는
+> 필드 자체가 없어 commit 수준 비교 대상이 아니며 현재 HEAD 로 채우지 않는다.
+
+### 12-4. 단일 composite key 를 쓰지 않는 이유 (S6-3 결정)
+
+`datasetFingerprint + mediaScope + buildVersion + gitCommit + requestedMode +
+effectiveMode` 을 하나로 묶은 key 를 쓰면 모든 run 이 자기 고유 그룹에 들어가
+**build 간 비교가 구조적으로 불가능**해진다. 겉으로는 단순해 보이지만 비교를
+삭제하는 설계이므로 채택하지 않았다.
+
+대신 분석 축을 **typed key 구조체**로 분리하고, 호출부가 질문에 맞는 view 를
+선택하게 한다(`src/benchmark_data_grouping.h`).
+
+| view | key | 쓰이는 질문 |
+| --- | --- | --- |
+| `DatasetCohortKey` | `datasetFingerprint` | 같은 dataset 을 여러 build/mode 로 관찰 |
+| `ScopeCohortKey` | `datasetFingerprint` + `mediaScope` | build 간 관찰의 기준 모집단 |
+| `BuildCohortKey` | `buildVersion` + `gitCommitState` + `gitCommit` | 같은 build 의 run 묶기 |
+| `ModeCohortKey` | `requestedMode` + `effectiveMode` | fallback/capability 관찰 |
+| `CaseCohortKey` | `datasetFingerprint` + `caseId` | 파일 단위 비교 |
+
+### 12-5. `caseId` 의 실제 의미 (S6-3 실측)
+
+S2 는 `caseId = IndexManager::folderId(file.path)` 로 canonical path 를 해시한다.
+따라서 **run-scoped 가 아니라 run 간 동일 파일이면 동일 `caseId`** 다(실측 확인:
+같은 파일을 실행한 두 run 이 동일 `caseId` 를 냈다). 새 hash 를 만들지 않고
+기존 `caseId` 를 쓰되, dataset fingerprint 와 **짝을 이루어** key 로 삼는다.
+절대경로 해시이므로 단독 신뢰하지 않는다.
+
+### 12-6. grouping 은 비교 가능성을 판정하지 않는다
+
+S6-3 은 같은 cohort 를 **구성만** 하고 `comparable = true` 를 판정하지 않는다.
+`BuildCohort::commitComparable` 은 commit **provenance 품질** 만 나타내며
+(`Known` 에서만 true), 데이터의 비교 가능성 판정이 아니다. resourcePolicy ·
+distance · GPU backend 부재, controlled env 미정의, 반복 run 부족은 그대로
+후속 단계로 넘긴다.
+
+mode 정렬은 `AUTO → CPU → GPU-MAX` canonical 순서를 쓴다. 이는
+`GpuBackendKind` 의 선언 순서(`Auto, Cuda, Cpu`)와 다르므로 명시적 rank 를 쓴다.
+이 정렬은 **표시·그룹 결과** 용이며 execution 순서를 재정의하지 않는다.
 
 ## 13. Aggregation 책임
 
