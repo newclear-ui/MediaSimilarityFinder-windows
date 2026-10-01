@@ -66,3 +66,4 @@
    - 해당 규칙은 측정 오염 여부와 별개인 **PC 부담/안정성 규칙**이다. 한 run이 S6에서 제외되어 측정값을 오염시키지 않았더라도 반복 process spawn 자체는 개선 대상이다.
    - GPU telemetry는 가능하면 NVML 등 in-process API를 우선 검토한다. `nvidia-smi`를 반복 spawn하는 구조는 금지하며, persistent sampler가 필요하면 별도 승인/설계 후 적용한다.
    - 새 release gate에서는 소스/스크립트의 raw process-creation 경로를 점검하고, 승인된 wrapper 외의 반복 spawn이 없는지 확인한다.
+   - **측정 run 단위의 독립 프로세스 실행은 금지 대상이 아니다.** A/B benchmark에서 run마다 `MediaSimilarityFinder.exe`를 새 프로세스로 실행하는 것은 cache/process 상태를 분리하기 위한 정상적인 측정 방법으로 허용한다. 금지 대상은 **하나의 run 내부에서 sampling/파일/프레임/queue 반복마다 짧은 child process를 다시 만드는 hot-path spawn**이다.
