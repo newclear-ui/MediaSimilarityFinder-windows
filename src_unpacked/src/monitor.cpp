@@ -1,4 +1,5 @@
 #include "monitor.h"
+#include "proc_capture.h"
 #include "path_utils.h"
 #include "crop_fingerprint.h"
 #include "image_decoder.h"
@@ -44,8 +45,20 @@ SystemLoad SystemLoadMonitor::sample(){
     MEMORYSTATUSEX m{}; m.dwLength=sizeof(m); if(GlobalMemoryStatusEx(&m)) l.memoryPercent=(double)m.dwMemoryLoad;
     auto now=std::chrono::steady_clock::now();
     if(lastGpuSample_.time_since_epoch().count()==0 || now-lastGpuSample_>=std::chrono::seconds(3)){
-        FILE* f=_popen("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>NUL","r");
-        if(f){ char buf[64]{}; if(fgets(buf,sizeof(buf),f)){ try{cachedGpuPercent_=std::stod(buf);}catch(...){cachedGpuPercent_=-1.0;} } _pclose(f); }
+        // Windowless GPU sampling. The previous _popen("nvidia-smi ...") spawned a
+        // cmd.exe child that allocated a fresh VISIBLE console on every call (up to
+        // once per 3 s for an entire benchmark run: thousands of flashing windows).
+        // captureSilent uses CREATE_NO_WINDOW, so no console is ever allocated.
+        // Notes: (1) the "2>NUL" redirection is dropped on purpose -- without
+        // cmd.exe there is no shell to interpret it, and nvidia-smi would receive
+        // it as a bogus argument; stderr is merged into the capture pipe instead.
+        // (2) On spawn/read failure the cached value is kept, exactly like the old
+        // "if(f)" guard. Measurement semantics are unchanged: same binary, same
+        // query, same 3 s throttle, same cached value on failure.
+        std::string gpuOut;
+        if(captureSilent("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits",gpuOut)){
+            try{cachedGpuPercent_=std::stod(gpuOut);}catch(...){cachedGpuPercent_=-1.0;}
+        }
         lastGpuSample_=now;
     }
     l.gpuPercent=cachedGpuPercent_;
