@@ -135,7 +135,7 @@ C:\project 전체 재귀 검색 .mp4 .mkv .mov .avi .webm .ts .m4v  →  0건
 표준 dataset test_sample_img_vid (3347 files)  →  video 0건
 ```
 
-표준 dataset 이 video 를 의도적으로 제외한理由는 문서화되어 있다
+표준 dataset 이 video 를 의도적으로 제외한 이유는 문서화되어 있다
 (`docs/test_sample_img_vid.md:116-129`): ffmpeg 출력이 **byte 재현가능하지 않아**
 content hash 가 실행마다 흔들린다. 기존 test fixture 는 전부
 **≤8초, ≤256x192, 2~10fps, mpeg4 또는 libx264, 합성 lavfi** 다
@@ -285,7 +285,7 @@ UI 노출은 불필요. 개발 telemetry 수준이면 충분하다.
 SoftwareDecodeCost
   = open + demux + seek + Σ(decodePerFrame) + convert + fingerprint
 HardwareEstimatedCost
-  = setup + Σ(hwDecodePerFrame) + transferPerFrame×frames + surface管理
+  = setup + Σ(hwDecodePerFrame) + transferPerFrame×frames + surface 관리
 FallbackCost
   = setup 낭비 + software 재실행
 ```

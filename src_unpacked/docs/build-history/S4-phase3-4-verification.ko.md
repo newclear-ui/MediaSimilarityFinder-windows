@@ -65,7 +65,7 @@ GPU 가 없는데 성공으로 기록하지 않는다.
 - 선택 부분집합 재실행 → **선택 안 한 `cpu.json` 이 byte 단위로 보존**, 선택한 `auto.json` 은 교체
 - **production Index 오염 없음**: 실행 전후 `Index/` 항목 집합을 **내용 비교**했다.
   MainWindow 생성으로 추가된 항목 0건, benchmark 실행으로 추가된 항목 **0건**.
-  (기존 항목은 과거 CLI/테스트 산재物이며 benchmark 와 무관하다)
+  (기존 항목은 과거 CLI/테스트 산재물이며 benchmark 와 무관하다)
 - benchmark 인덱스는 `Benchmark/GUI/<label>_<id>/runtime/run-<id>/<mode>/` 아래에만 생성됨
 - 스캔 대상 폴더에는 json/jsonl/Index/db 산출물 **0건**
 - suite lock busy: 외부 holder 가 쥔 상태에서 실행 시도 → **시작되지 않고** 기존 snapshot **변경 없음**

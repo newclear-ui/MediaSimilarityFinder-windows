@@ -351,7 +351,7 @@ journal 을 다시 파싱하는 것은 S3 recovery 규칙의 중복 구현이 �
 | 주체 | `BenchmarkRecorder` (`src/benchmark.{h,cpp}`) | `BenchmarkJournalWriter` (`src/benchmark_journal.{h,cpp}`) |
 | schema version | `kBenchmarkSchemaVersion = 9` | `kBenchmarkJournalSchemaVersion = 1` |
 | 저장 | **파일을 쓰지 않는다.** `toJson()` 가 문자열 반환 | `runs.jsonl` append |
-| 파싱读者 | 없음. GUI dialog 가 in-memory 로만 읽음 | `replayJournal()` |
+| 파싱 읽는 곳 | 없음. GUI dialog 가 in-memory 로만 읽음 | `replayJournal()` |
 | schema 변경 | 금지 | 금지 |
 
 - 두 schema 번호는 **의도적으로 독립**이며 함께 bump 하지 않는다
@@ -768,7 +768,7 @@ S6 는 **두 계층 출력**을 제공한다.
 - 정렬은 **전부 결정적**(사전순 또는 명시적 키 순서). 해시 기반 container 순서
   (`std::unordered_map`) 순회 결과를 그대로 출력하지 않는다.
 - 부동소수 출력은 고정 소수 자리. 반올림 규칙을 명시한다.
-- 실행 시각·호스트명·사용자名 같은 환경 의존 값은 **결과에 섞지 않는다.**
+- 실행 시각·호스트명·사용자 이름 같은 환경 의존 값은 **결과에 섞지 않는다.**
 
 ## 19. Provenance
 
@@ -897,7 +897,7 @@ S6-1 착수에 필요한 조건. **아래 ① 은 2026-10-01 에 해소되었다
      provenance 없는 journal 은 `"unknown"` 으로 기록되며, 필드가 아예 없는 기존 29개
      journal 은 정상 replay 된다(기존 journal 을 수정하지 않음).
    - 남는 제약: `distance` 와 `resourcePolicy` 는 여전히 journal 에 없다(아래 ②).
-     commit 수준 비교는 가능해졌으나 조건 동일성 축은 여전히 이 두 项이 비어 있다.
+     commit 수준 비교는 가능해졌으나 조건 동일성 축은 여전히 이 두 항목이 비어 있다.
 2. **`distance` 와 `resourcePolicy` 기록 여부 결정.** 8-2 참조. **미해소(DEFERRED)** —
    journal schema 를 더 확장하는 것은 별도 결정이 필요하며 이번 범위 밖이다.
 3. **통제된 측정 환경 정의.** `S2-PERF` 가 OS filesystem cache 와 process

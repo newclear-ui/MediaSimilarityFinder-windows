@@ -223,7 +223,7 @@ Git
   (mockup 예시 `20260930-0801-01`)
 - **고유성은 기존 S3 identity/storage 계약을 우선한다.**
   동일 시각에 같은 suite 디렉터리가 이미 존재하면 suffix 를 붙여 다음으로 넘어간다
-  (`-2`, `-3`, …)并在 journal 안의 `suiteId` 와 반드시 일치시킨다.
+  (`-2`, `-3`, …)그리고 journal 안의 `suiteId` 와 반드시 일치시킨다.
 
 ## 10. Resource Policy
 
