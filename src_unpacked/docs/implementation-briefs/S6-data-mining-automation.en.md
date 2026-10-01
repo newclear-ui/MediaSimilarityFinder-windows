@@ -569,6 +569,54 @@ Mode-to-mode elapsed comparison across the same `caseId`, within the same
 `datasetFingerprint` + `mediaScope` + `buildVersion`. And delta / ratio against a
 baseline run.
 
+### 14-1a. S6-5 implemented contract (2026-10-01)
+
+S6-5 does **not** decide which side is faster. It decides whether two populations may be
+compared at all and creates a candidate only when they may. Regression percentage, speedup,
+confidence interval, p-value, threshold pass/fail, winner and better/worse are **all not
+implemented**.
+
+**The run reference is `(sourceJournalPath, runId)`, not `runId`.** In the real store
+`suite-ORDER-A/B/C` share one `runId`, giving 31 accepted runs and 29 distinct ids. Looking
+up by `runId` alone keeps one of the three and loses the others' case observations, which
+actually happened.
+
+**A candidate is population-versus-population, not a run pairing.** Even with N repeats of
+the same condition, run 1 is not paired with run 1: that discards the remaining samples and
+invents a correspondence the data does not contain. Each side is a whole aggregate carrying
+its own sample count, and the `RunReference` list behind it exists only for traceability.
+`left < right` is fixed by typed key order, so no pair is emitted twice.
+
+**The two comparison dimensions are never collapsed.**
+
+| Dimension | Conditions |
+| --- | --- |
+| `BuildProvenance` | same dataset, scope, metric and mode; different **Known** commits |
+| `ModeSemantics` | same dataset, scope, metric and build; different mode semantics |
+
+**Nine eligibility states**, an analysis state sharing no vocabulary with S2's
+`BenchmarkStatus`:
+
+```text
+Eligible              MismatchedDataset     MismatchedScope
+MismatchedMetric      MismatchedMode       MissingProvenance
+SameProvenance        NoComparableSamples  InsufficientData
+```
+
+Dataset identity is checked first, because "a different dataset" is the more fundamental
+reason and a caller should not have to satisfy itself about every other condition before
+learning it.
+
+**CaseElapsed cannot be split by build or mode.** S6-4 puts `caseElapsed` on
+`AggregatedScope` and `AggregatedDataset` but not on `AggregatedBuild`, so it exists only per
+dataset+scope and **no per-build or per-mode breakdown exists**. A case-elapsed build or mode
+comparison is therefore recorded as `InsufficientData` rather than emitted as a candidate
+whose numbers do not exist.
+
+**It was provenance that was missing, not measurements.** The real store already holds
+per-build run wall samples of **1 and 5** in the `images` scope. Had the Legacy side carried
+a `gitCommit`, a build-vs-build candidate would exist today.
+
 ### 14-2. Regression verdict threshold — **deferred, not decided in this brief**
 
 The directive says not to arbitrarily fix criteria such as 5% / 10% / 20%. That is

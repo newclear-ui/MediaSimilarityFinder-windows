@@ -537,6 +537,48 @@ case 를 실제로 덮었는지 기록하지 않기 때문이다.
 동일 `datasetFingerprint` + 동일 `mediaScope` + 동일 `buildVersion` 안에서,
 동일 `caseId` 의 mode 간 elapsed 비교. 그리고 기준 run 대비 delta / 비율.
 
+### 14-1a. S6-5 구현 계약 (2026-10-01)
+
+S6-5 는 "어느 쪽이 더 빠르다" 를 **판정하지 않는다.** 먼저 "비교 가능한가" 를 판정하고,
+가능할 때만 candidate 를 만든다. regression % · speedup · confidence interval · p-value ·
+threshold pass/fail · winner · better/worse 는 **전부 미구현**이다.
+
+**run reference 는 `runId` 가 아니라 `(sourceJournalPath, runId)` 다.** 실제 저장소에서
+`suite-ORDER-A/B/C` 가 같은 `runId` 를 공유해 accepted 31 run / distinct 29 이다.
+`runId` 만으로 조회하면 세 run 중 하나만 남고 나머지 case 관측이 사라진다(실제로 발생).
+
+**candidate 는 pairwise run 이 아니라 population-vs-population 다.** 반복 실행 N 개가 있어도
+run 1 대 run 1 을 짝짓지 않는다. 나머지 표본을 버리고 데이터에 없는 대응을 만들기 때문이다.
+각 side 는 자기 표본 수를 가진 aggregate 전체이며 `RunReference` 목록은 추적 가능성만 위해
+남는다. `left < right` 는 typed key 순서로 고정되어 쌍이 중복되지 않는다.
+
+**comparison dimension 은 둘을 합치지 않는다.**
+
+| dimension | 조건 |
+| --- | --- |
+| `BuildProvenance` | dataset·scope·metric·mode 동일, 서로 다른 **Known** commit |
+| `ModeSemantics` | dataset·scope·metric·build 동일, 서로 다른 mode 의미 |
+
+**eligibility 9종** (S2 `BenchmarkStatus` 와 어휘를 공유하지 않는 **분석 상태** 다):
+
+```text
+Eligible              MismatchedDataset     MismatchedScope
+MismatchedMetric      MismatchedMode       MissingProvenance
+SameProvenance        NoComparableSamples  InsufficientData
+```
+
+판정 순서에서 dataset 동일성이 가장 먼저다. "다른 dataset" 이 더 근본적인 이유이므로
+호출자가 다른 조건을 다 확인한 뒤에야 알 필요가 없어야 한다.
+
+**CaseElapsed 은 build/mode 로 쪼갤 수 없다.** S6-4 의 `caseElapsed` 는
+`AggregatedScope`/`AggregatedDataset` 에만 있고 `AggregatedBuild` 에 없다. 즉 dataset+scope
+단위 값일 뿐 build 별·mode 별 분해가 **존재하지 않는다.** 그래서 case elapsed 의 build/mode
+비교는 수치가 없는 candidate 가 아니라 `InsufficientData` 로 기록한다.
+
+**measurement 자체가 아니라 provenance 가 부족했다.** 실측에서 `images` scope 에 build 별
+run wall 표본이 이미 **1 과 5** 존재한다. Legacy 인 쪽에만 `gitCommit` 이 있었다면 지금
+바로 build-vs-build 후보가 되었을 데이터다.
+
 ### 14-2. 회귀 판정 threshold — **보류, 이 brief에서 정하지 않는다**
 
 지시는 5% / 10% / 20% 같은 기준을 임의로 확정하지 말라고 했다. 그 지시를 따른다.

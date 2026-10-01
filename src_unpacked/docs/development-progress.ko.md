@@ -1747,3 +1747,86 @@ aggregation **97 checks**(신규), S6-3 grouping 58, S6-2 contract 67, S6-1 inge
 journal 66 / store 51 / integration 144 / core 63 전부 PASS.
 CPU build exit 0 / CTest **100/100**, GPU build exit 0 / CTest **101/101**.
 `git diff --check` clean, stale object 없음.
+## 2026-10-01 — S6-5 Comparison Eligibility / 후보 생성
+
+위치: 신규 `src/benchmark_data_comparison.{h,cpp}` +
+`tests/benchmark_data_comparison_test.cpp` (**78 checks**).
+
+### Comparison model
+
+| 항목 | 내용 |
+| --- | --- |
+| candidate type | `ComparisonCandidate` |
+| dimension | `BuildProvenance` / `ModeSemantics` (합치지 않음) |
+| left/right | `ComparisonSide` = aggregate 전체 (population-vs-population) |
+| run reference | `RunReference { sourceJournalPath, runId }` |
+
+좌우는 typed key 순서로 고정되어 어떤 쌍이든 한 번만 나오고 좌우가 매 실행 같습니다.
+pairwise run 매칭은 하지 않습니다 — 반복 표본을 버리고 데이터에 없는 대응을 만들기
+때문입니다.
+
+### Eligibility 9종
+
+`Eligible` / `MismatchedDataset` / `MismatchedScope` / `MismatchedMetric` /
+`MismatchedMode` / `MissingProvenance` / `SameProvenance` / `NoComparableSamples` /
+`InsufficientData`
+
+판정 순서는 dataset 동일성 우선입니다 — "다른 dataset" 이 더 근본적인 이유이므로
+호출자가 다른 조건을 모두 확인한 뒤에야 알 필요가 없어야 합니다.
+
+### 실제 저장소 (30 journal / 31 run, read-only)
+
+**candidate 0건 / opportunity 8건 / rejected 8건 / accounted=yes**
+
+| 사유 | 건수 |
+| --- | --- |
+| `missing-provenance` | 2 |
+| `no-comparable-samples` | 4 |
+| `insufficient-data` | 2 |
+
+**0건의 이유 (전건 개별 설명 가능)**
+
+1. `images` / build-provenance / mode-elapsed — Known(`fcace68`) vs Legacy, 양쪽 eligible 0
+   → **Legacy 는 commit-level 비교 불가**
+2. `images` / build-provenance / run-wall — Known(n=1) vs Legacy(n=5) → **Legacy 는
+   commit-level 비교 불가**
+3-4. `all`(2개 fingerprint) / case-elapsed → **S6-4 에 case elapsed 의 build 별·mode 별
+   분해가 없어 비교 자체가 성립하지 않음** (`InsufficientData`)
+5-8. `all` / mode-semantics — `AUTO>CPU`(eligible 0) · `CUDA>CPU`(eligible 0) 대
+   `CPU>CPU`(eligible 50·60) → **한쪽 표본 0**
+
+핵심: **eligible 표본이 있는 mode cohort 는 `CPU/CPU` 뿐**이고, **Known commit build 은 1개**
+라 build-vs-build 비교 대상이 존재하지 않습니다. brief §20 이 예시한 그대로입니다.
+
+**중요한 실측 근거**: `images` scope 에 build 별 run wall 표본이 이미 **1 과 5** 존재합니다.
+Legacy 인 쪽에만 `gitCommit` 이 있었다면 지금 바로 build-vs-build 후보가 되었을 데이터입니다.
+**provenance 부재가 데이터 부족의 원인**임을 실제 수치로 확인했습니다.
+
+### Run identity
+
+`distinctRunIds=29` / `sharedRunIdRuns=3` / `references=31`. `runId` 만으로 조회하면 3개 중
+1개만 남고 나머지가 사라집니다. `(journal, runId)` 로 keying 했고, candidate 어느 쪽도
+동일 `(journal, runId)` 를 양쪽에 갖지 않음을 테스트로 검증합니다.
+
+### Limitations
+
+candidate 마다 **9개**가 함께 전달됩니다: distance/resourcePolicy/gpuBackend unavailable,
+controlled env 미정의, process isolation 비통제, OS filesystem cache 비통제, 반복 run 부족,
+run wall 1초 해상도, cancellation 미관측. `comparable=true` 만 남기고 버리지 않습니다.
+
+### Regression **이번 단계에서 계산하지 않았습니다**
+
+regression %, speedup %, confidence interval, p-value, threshold pass/fail, winner,
+better/worse, anomaly — 전부 미구현. threshold 도 정하지 않았습니다. 5%/10%/20% 어느 것도
+만들지 않았습니다.
+
+### Determinism
+
+process 내 IDENTICAL + **교차 프로세스 동일**. 동일 쌍이 두 번 나오지 않음을 확인했습니다.
+
+### 검증
+
+comparison **78 checks**(신규), S6-4 aggregation 97, S6-3 grouping 58, S6-2 contract 67,
+S6-1 ingestion 71, journal 66 / store 51 / integration 144 / core 63 전부 PASS.
+CPU build exit 0 / CTest **101/101**, GPU build exit 0 / CTest **102/102**.
+`git diff --check` clean, stale object 없음.

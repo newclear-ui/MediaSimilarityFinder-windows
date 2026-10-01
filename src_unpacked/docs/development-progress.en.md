@@ -1868,3 +1868,93 @@ aggregation **97 checks** (new), S6-3 grouping 58, S6-2 contract 67, S6-1 ingest
 journal 66 / store 51 / integration 144 / core 63, all PASS. CPU build exit 0 / CTest
 **100/100**, GPU build exit 0 / CTest **101/101**. `git diff --check` clean, no stale
 objects.
+## 2026-10-01 — S6-5 comparison eligibility and candidate generation
+
+Location: new `src/benchmark_data_comparison.{h,cpp}` +
+`tests/benchmark_data_comparison_test.cpp` (**78 checks**).
+
+### Comparison model
+
+| Item | Value |
+| --- | --- |
+| candidate type | `ComparisonCandidate` |
+| dimension | `BuildProvenance` / `ModeSemantics` (never collapsed) |
+| left / right | `ComparisonSide`, a whole aggregate (population-vs-population) |
+| run reference | `RunReference { sourceJournalPath, runId }` |
+
+Left and right are fixed by typed key order, so any pair appears once with the same
+orientation on every run. No pairwise run matching: it would discard the rest of the
+samples and invent a correspondence the data does not contain.
+
+### Eligibility, nine states
+
+`Eligible` / `MismatchedDataset` / `MismatchedScope` / `MismatchedMetric` /
+`MismatchedMode` / `MissingProvenance` / `SameProvenance` / `NoComparableSamples` /
+`InsufficientData`
+
+Dataset identity is checked first, because "a different dataset" is the more fundamental
+reason and a caller should not have to satisfy itself about every other condition before
+learning it.
+
+### Real storage, 30 journals / 31 runs, read-only
+
+**0 candidates / 8 opportunities / 8 rejected / accounted=yes**
+
+| Reason | Count |
+| --- | --- |
+| `missing-provenance` | 2 |
+| `no-comparable-samples` | 4 |
+| `insufficient-data` | 2 |
+
+**Why zero, with every rejection individually accounted**
+
+1. `images` / build-provenance / mode-elapsed — Known (`fcace68`) vs Legacy, both eligible 0
+   → **a Legacy side cannot join commit-level comparison**
+2. `images` / build-provenance / run-wall — Known (n=1) vs Legacy (n=5) → **a Legacy side
+   cannot join commit-level comparison**
+3-4. `all` (two fingerprints) / case-elapsed → **S6-4 keeps no per-build or per-mode
+   breakdown of case elapsed, so the comparison is not expressible** (`InsufficientData`)
+5-8. `all` / mode-semantics — `AUTO>CPU` (eligible 0) and `CUDA>CPU` (eligible 0) against
+   `CPU>CPU` (eligible 50 and 60) → **one side has no samples**
+
+The core fact: **`CPU/CPU` is the only mode cohort with any eligible sample**, and there is
+**exactly one Known-commit build**, so no build-vs-build pair exists to compare. This is
+precisely what brief §20 anticipated.
+
+**A measured result worth keeping**: the `images` scope already holds per-build run wall
+samples of **1 and 5**. Had the Legacy side carried a `gitCommit`, a build-vs-build
+candidate would exist today. **Missing provenance is the measured cause of the missing
+data**, not missing measurements.
+
+### Run identity
+
+`distinctRunIds=29` / `sharedRunIdRuns=3` / `references=31`. Looking up by `runId` alone
+keeps one of the three and loses the others, so everything is keyed on
+`(journal, runId)`. A test asserts that no candidate lists the same `(journal, runId)` on
+both sides.
+
+### Limitations
+
+**Nine** travel with every candidate: distance, resourcePolicy and gpuBackend unavailable;
+controlled environment undefined; process isolation uncontrolled; OS filesystem cache
+uncontrolled; repeated runs insufficient; run wall one-second resolution; cancellation
+unobserved. A bare `comparable=true` with these dropped would be a claim the data cannot
+support.
+
+### Regression **not computed in this stage**
+
+Regression percentage, speedup percentage, confidence interval, p-value, threshold
+pass/fail, winner, better/worse and anomaly are all not implemented, and **no threshold was
+chosen** — not 5%, not 10%, not 20%.
+
+### Determinism
+
+IDENTICAL in-process and **identical across processes**. Verified that no pair is emitted
+twice.
+
+### Verification
+
+comparison **78 checks** (new), S6-4 aggregation 97, S6-3 grouping 58, S6-2 contract 67,
+S6-1 ingestion 71, journal 66 / store 51 / integration 144 / core 63, all PASS. CPU build
+exit 0 / CTest **101/101**, GPU build exit 0 / CTest **102/102**. `git diff --check` clean,
+no stale objects.

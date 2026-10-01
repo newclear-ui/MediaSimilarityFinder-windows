@@ -110,6 +110,10 @@ add_library(msf_core STATIC
     # S6-4 aggregation. Statistics over the S6-3 cohorts, with run/case/mode kept as
     # separate populations and every excluded sample carrying a reason.
     src/benchmark_data_aggregation.cpp
+    # S6-5 comparison eligibility. Decides which two populations may be compared and
+    # records every refusal with its reason. Computes no regression, speedup,
+    # threshold, anomaly or winner.
+    src/benchmark_data_comparison.cpp
   # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
   # reusing S3's atomic write and suite lock. It executes nothing and writes no
   # journal; the GUI drives BenchmarkRunner and hands the result here.
@@ -358,6 +362,13 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_data_aggregation_test tests/benchmark_data_aggregation_test.cpp)
     target_link_libraries(msf_benchmark_data_aggregation_test PRIVATE msf_core)
     add_test(NAME benchmark_data_aggregation_test COMMAND msf_benchmark_data_aggregation_test)
+    # S6-5 comparison eligibility: dataset/scope/metric/mode compatibility, Known vs
+    # Legacy/Unknown provenance, population-vs-population candidates, (journal, runId)
+    # run references under runId collision, limitations carried on every candidate,
+    # rejection accounting and determinism. No regression or threshold.
+    add_executable(msf_benchmark_data_comparison_test tests/benchmark_data_comparison_test.cpp)
+    target_link_libraries(msf_benchmark_data_comparison_test PRIVATE msf_core)
+    add_test(NAME benchmark_data_comparison_test COMMAND msf_benchmark_data_comparison_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.
