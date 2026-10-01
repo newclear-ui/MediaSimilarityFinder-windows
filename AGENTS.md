@@ -72,7 +72,16 @@
      4. 제품에는 이미 무창 실행 헬퍼가 있다: `src/proc_capture.h::captureSilent`
         (`CREATE_NO_WINDOW`, 주석에 명시). `monitor.cpp` 만 raw `_popen` 을 쓴다.
         이 1줄 교체가 창 폭풍의 근본 수정이다. 단 제품 코드 변경이므로 지시 30항에 따라
-        **사용자 승인 없이 적용하지 않는다.**
+        **사용자 승인 없이 적용하지 않는다.** (2026-10-01 승인됨, `6cc19ba`.)
+     5. **미수정 구 바이너리는 어떤 숨김 실행으로도 팝업을 막을 수 없다 (2026-10-01 증명됨).**
+        `MediaSimilarityFinder.exe` 는 PE subsystem 2 (`WINDOWS_GUI`)라서 부모 콘솔을
+        **상속하지 않으므로**, 그 `_popen` 자식(`cmd.exe`)은 매번 새로 보이는 콘솔을
+        할당한다. 숨김 콘솔 호스트(`console2\`) 안에서 실행해도 동일하다.
+        실측: 미수정 Build A 40파일 실행 중 보이는 콘솔창 11건 / idle 75초 0건.
+        따라서 순수 `5e2b5c1` 바이너리 실행 = 팝업 필연. A 측정이 필요하면 소스에
+        수정을 포함한 새 Known commit 정의가 필요하고, 이는 사용자 승인 사항이다.
+        (지시 4항이 금지하는 혼합 바이너리 위장과 혼동하지 말 것: 새 commit은 정직한
+        provenance이며 지시 2항의 목적 기반 선택에 해당한다.)
    - **폴링/감시도 창을 만들지 않는 방식으로만 하며, 간격을 충분히 길게 잡는다**(45분 이상 권장).
    - 상태 확인이 필요하면 짧은 확인 창 하나만 쓰고, 곧바로 닫히게 하는 것보다
      기존 오케스트레이터가 `.done` 마커와 로그를 남기게 하여 무창으로 확인한다.
@@ -93,3 +102,20 @@
      `-FingerprintOnly` 스위치를 쓰지 않아 dataset을 통째로 재생성하면서
      `test_sample_img_vid/images/format` 의 수백 개 픽스처가 하드 삭제되었다.
      원본 풀(`G:\Downloads\ss_twit`)에서 재선택하여 복구했으나, **지문만 갱신할 때는 반드시 `-FingerprintOnly`.**
+
+6. **외부 프로세스 안전 — hot-path 반복 생성 금지 (예외 없음)**
+   - Benchmark hot path/monitor/frame loop에서 `_popen`, `system`, `CreateProcess`,
+     `ShellExecute` 등의 외부 프로세스 반복 생성을 금지한다.
+   - Run-level isolation(측정 run마다 제품 exe 1개)은 허용한다. 금지 대상은
+     run 내부의 반복 child spawn이다.
+   - 외부 프로세스가 필요하면 `in-process API > persistent helper > 단발성 프로세스` 순으로 검토한다.
+   - Windows child는 `CREATE_NO_WINDOW` 또는 검증된 동등 방식. `src/proc_capture.h::captureSilent` 가 유일한 wrapper다.
+   - Wrapper는 `INFINITE` 대기를 기본 계약으로 갖지 않는다. timeout은 호출별 등급으로 명시한다
+     (telemetry 10000ms / metadata 30000ms / decode 120000ms).
+   - Timeout 시 종료 요청 → 강제 종료 → handle 정리 → 명시적 실패. 필요시 Job Object 또는 동등 수단으로 tree 정리.
+   - Runaway(프로세스/콘솔/orphan/반복 재시도 폭증) 시 자동 체인을 중단한다 (circuit breaker).
+   - Release Gate에서 raw 반복 생성·콘솔 팝업·무한 대기·orphan·FFmpeg 폴백 경로를 검사한다.
+   - **실측 사례 (2026-10-01)**: `src/monitor.cpp` 의 3초 throttle `_popen(nvidia-smi)` 가
+     2.7시간 run에서 약 3000개 콘솔창을 반복 생성 → `captureSilent` 교체로 해결 (`6cc19ba`).
+     미수정 구 바이너리(`WINDOWS_GUI`)는 어떤 숨김 실행으로도 팝업을 막을 수 없음이 증명됨 → Build A를
+     `5e2b5c1`+수정 branch commit (`55578d1`)으로 재정의. 상세는 `src_unpacked/AGENTS.md` 11항.

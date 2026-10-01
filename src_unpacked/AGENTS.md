@@ -105,6 +105,25 @@
      원본 풀(`G:\Downloads\ss_twit`)에서 재선택하여 복구했으나, **지문만 갱신할 때는 반드시 `-FingerprintOnly`.**
 
 
+11. **외부 프로세스 안전 (C++ 구현 규칙 — 예외 없음)**
+   - 외부 프로세스 실행은 `src/proc_capture.h::captureSilent` 로만 한다.
+     raw `_popen` / `system` / `CreateProcess` / `ShellExecute` 직접 호출을 금지한다.
+   - `captureSilent(cmd, out, timeoutMs)` — timeout은 호출자가 등급별로 명시한다. 전역 기본값은 두지 않는다.
+     telemetry 10000ms / metadata 30000ms / decode 120000ms. 등급과 근거는 호출부 주석에 남긴다.
+   - Timeout은 실패다. child 종료 요청 → 강제 종료 → handle 정리 → `false` 반환.
+     부모는 timeout에 bounded 정리 시간을 더한 범위를 넘겨 대기하지 않는다.
+   - POSIX 경로는 `popen` 유지 (release 대상이 아니므로). Windows가 아닌 플랫폼의 bounded 대기는 재검토 항목으로 남긴다.
+   - GPU telemetry 우선순위: `in-process API (NVML 후보, deferred) > persistent helper (별도 설계 후) > 단발성 프로세스 (현재)`.
+   - FFmpeg는 native library path를 우선한다. CLI fallback은 no-FFmpeg 빌드용으로 유지하되,
+     frame/sample 단위 반복 호출과 timeout을 release gate에서 검증한다.
+   - Benchmark hot path/monitor/frame loop의 반복 spawn은 Category C (unsafe)로 취급하고 release에 남기지 않는다.
+     run-level isolation(측정 run마다 제품 프로세스 1개)은 허용한다.
+   - Validation harness는 실패 시 즉시 재시도를 반복해서 process explosion을 만들지 않는다 (circuit breaker).
+   - Release Gate 검증 항목: raw 반복 생성 0 / console popup 0 / 무한 대기 0 / orphan 0 / FFmpeg release path 확인 / GPU telemetry 반복 spawn 금지.
+   - **실측 사례 (2026-10-01)**: `monitor.cpp` 3초 throttle `_popen` → 약 3000개 창 반복 (`6cc19ba` 로 교체),
+     `captureSilent` INFINITE 대기 → bounded lifecycle + 호출별 timeout (`proc_capture_test` · `monitor_test` 반복 샘플로 검증),
+     `WINDOWS_GUI` 미수정 바이너리는 팝업 불가피함이 증명됨 (40파일 실행 중 보이는 창 11건).
+
 ## 문서 네이밍 및 구조
 
 - 정식 명명/위치 규칙은 `docs/document-naming.ko.md` + `.en.md`를 따른다.
