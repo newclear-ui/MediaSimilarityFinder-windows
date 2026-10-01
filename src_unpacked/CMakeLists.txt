@@ -328,6 +328,13 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_data_mining_test tests/benchmark_data_mining_test.cpp)
     target_link_libraries(msf_benchmark_data_mining_test PRIVATE msf_core)
     add_test(NAME benchmark_data_mining_test COMMAND msf_benchmark_data_mining_test)
+    # S6-2 analysis data contract: run/mode/case layering, identity vs provenance,
+    # the measured/derived/missing origin of each run-level field, dataset identity
+    # tri-state, one-second duration resolution, status preservation, exclusion
+    # provenance and determinism. No grouping or aggregation.
+    add_executable(msf_benchmark_data_contract_test tests/benchmark_data_contract_test.cpp)
+    target_link_libraries(msf_benchmark_data_contract_test PRIVATE msf_core)
+    add_test(NAME benchmark_data_contract_test COMMAND msf_benchmark_data_contract_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.

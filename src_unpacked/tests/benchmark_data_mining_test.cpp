@@ -304,7 +304,14 @@ int main(int argc, char** argv) {
         const auto r = msf::ingestBenchmarks(appdata);
         const auto* run = findRun(r, "run-nofp");
         chk(run != nullptr, "a run with no dataset fingerprint is still returned, not dropped");
-        chk(run && !run->datasetFingerprint.has_value(), "  its fingerprint stays absent");
+        // S6-2 sharpened this: the writer always emits datasetFingerprint, so a blank
+        // one is PRESENT and empty (the source was not measurable), which is not
+        // the same statement as the field being absent.
+        chk(run && run->datasetFingerprint.has_value(), "  its fingerprint is present");
+        chk(run && run->datasetFingerprint && run->datasetFingerprint->empty(),
+            "  and empty, not a generated value");
+        chk(run && run->datasetIdentity == msf::DatasetIdentityState::Empty,
+            "  recorded as the Empty identity state");
         chk(run && run->runClass == msf::IngestRunClass::Complete,
             "  its own status is still Complete (S6 classification is not a benchmark status)");
         chk(run && hasExclusion(*run, msf::IngestExclusion::NoDatasetFingerprint),

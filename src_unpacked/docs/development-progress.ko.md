@@ -1571,3 +1571,59 @@ PASS. CPU build exit 0 / CTest **97/97**, GPU build exit 0 / CTest **98/98**.
 변경하지 않은 것: S2 BenchmarkRunner/Executor/Request, S3 journal schema·recovery·summary,
 Console renderer, GUI, Scanner/MediaKind, NVDEC, legacy benchmark. journal 필드 추가 없음.
 CLI 도 추가하지 않았다.
+## 2026-10-01 — S6-2 Normalization 보강 / 분석 데이터 계약 고정
+
+S6 brief 의 `S6-2` 단계(정규화 데이터 계약 확정)를 구현했다. **grouping 실행·집계·
+통계·회귀 판정은 구현하지 않았고 S6 는 여전히 CLOSED 가 아니다.**
+
+위치: 기존 `src/benchmark_data_mining.{h,cpp}` 보강 + 신규
+`tests/benchmark_data_contract_test.cpp` (67 checks).
+
+### S6-1 감사에서 발견한 실제 갭 5건
+
+1. **run 의 benchmark status 가 저장되지 않았다.** `BenchmarkStatus` 가 mode/case 에만
+   있었고 run 은 `IngestRunClass`(S6 분류)만 갖고 있었다. terminal record 의 status 를
+   읽어 `std::optional<BenchmarkStatus> runStatus` 로 추가했다. S3 replay 가 이 필드도
+   채우지 않으므로(`completedAt` 와 동일) 같은 최소 reader 로 읽는다.
+2. **fingerprint 의 empty 와 missing 이 구분되지 않았다.** writer 는 항상 필드를 쓰므로
+   빈 문자열은 "source 를 측정할 수 없음"이라는 **실제 의미**인데 S6-1 은 이를 absent 로
+   접어버렸다. `DatasetIdentityState{Missing,Empty,Valid}` 로 3상태를 고정했다.
+3. **집계 타입이 없었다.** `NormalizedBenchmarkData` 를 도입했다. S6-1 의 이름은
+   `using IngestResult = NormalizedBenchmarkData;` 로 유지해 기존 테스트가 그대로 컴파일된다.
+4. **duration 해상도가 문서에만 있었다.** `TimestampResolution::OneSecond` 로 실행 가능한
+   계약으로 만들고 `benchmarkTimestampResolution()` 로 노출했다. run 별 metadata 를
+   늘리지 않기 위해 값 하나로 충분하다(저장 방식 자체의 속성이라 모든 run 에서 동일).
+5. **exclusion 에 journal/run provenance 가 없었다.** `IngestExclusionRecord` 를 추가해
+   `sourceJournalPath` / `runId` / `suiteId` / `reason` 을 담은 평탄 목록을 제공했다.
+
+### Measured / Derived / Missing 를 실행 가능한 계약으로
+
+`valueOrigin(run, RunField)` 가 run 수준 필드마다 Measured / Derived / Missing 를
+반환한다. Case/Mode 수준은 record 에서 그대로 복사되므로 구조상 전부 Measured 다.
+`distance` / `resourcePolicy` / `gpuBackend` 는 **구조적으로 항상 Missing** 이며
+`0` / `false` / `"unknown"` 으로 치환되지 않는다. resourcePolicy 를 preset 에서
+추론하지 않고, gpuBackend 를 effectiveMode 에서 추론하지 않는다.
+
+### Run identity 와 provenance 분리
+
+`gitCommit` 은 identity 가 아니라 provenance 다. `datasetFingerprint + gitCommit` 을
+새 runId 로 합성하지 않으며 S3 runId 를 그대로 보존한다. 후속 S6-3 이 조합을 고를 수 있도록
+`groupingKey(run)` 가 비교 가능 필드를 한 곳에 모으지만, **어떤 조합을 group key 로 쓸지는
+S6-3 의 결정**이며 이 단계에서 고정하지 않는다.
+
+### Legacy provenance 는 채워 넣지 않는다
+
+dataset 전체를 훑어 `GitCommitState::Legacy` 인 run 중 `gitCommit` 값을 가진 것이
+하나도 없음을 테스트로 검증한다. 현재 HEAD 를 legacy journal 에 채워 넣지 않는다.
+
+테스트: contract **67 checks**(신규), S6-1 ingestion **71 checks**(회귀), journal 66 /
+store 51 / integration 144 / core 63 / gui_store 110 / worker 35 / ui 34 / ui_e2e 40 /
+cli 95 / renderer 100 / orchestrator 32 전부 PASS. CPU build exit 0 / CTest **98/98**,
+GPU build exit 0 / CTest **99/99**.
+
+실제 저장소 재확인: journals 30 / runsFound 31 / accepted 31 / excluded 0 /
+provenance legacy 30 · known 1 / determinism IDENTICAL.
+
+변경하지 않은 것: BenchmarkRunner/Executor/Request, journal schema·recovery·summary,
+Console renderer, GUI, Scanner/MediaKind, NVDEC, legacy benchmark. journal 필드 추가 없음.
+CLI 추가 없음. grouping/aggregation/통계 없음.

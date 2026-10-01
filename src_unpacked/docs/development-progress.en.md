@@ -1673,3 +1673,69 @@ CTest **98/98**.
 Not changed: S2 BenchmarkRunner/Executor/Request, the S3 journal schema, recovery or
 summary generation, the Console renderer, the GUI, Scanner/MediaKind, NVDEC, and the
 legacy benchmark. No journal field was added, and no CLI was introduced.
+## 2026-10-01 — S6-2 normalization hardening / analysis data contract fixed
+
+The `S6-2` stage of the S6 brief (fixing the normalized data contract) was
+implemented. **No grouping execution, aggregation, statistics or regression judgement
+was implemented, and S6 is still not CLOSED.**
+
+Location: existing `src/benchmark_data_mining.{h,cpp}` hardened, plus a new
+`tests/benchmark_data_contract_test.cpp` (67 checks).
+
+### Five real gaps found while auditing S6-1
+
+1. **The run's benchmark status was not stored.** `BenchmarkStatus` existed on
+   mode and case but the run only had `IngestRunClass`, which is an S6
+   classification. The terminal record's status is now read and kept as
+   `std::optional<BenchmarkStatus> runStatus`. S3's replay does not fill this
+   field either, so it is read with the same minimal reader as completedAt.
+2. **An empty fingerprint and a missing one were not distinguishable.** The writer
+   always emits the field, so a blank value is a real answer meaning "the source
+   could not be measured", and S6-1 collapsed it into absent. That is now fixed as
+   `DatasetIdentityState{Missing,Empty,Valid}`.
+3. **There was no aggregate type.** `NormalizedBenchmarkData` was introduced.
+   The S6-1 name is kept as `using IngestResult = NormalizedBenchmarkData;` so the
+   existing test keeps compiling unchanged.
+4. **The duration resolution existed only in a comment.** It is now an executable
+   contract, `TimestampResolution::OneSecond`, exposed through
+   `benchmarkTimestampResolution()`. It is a single value rather than a per-run
+   field because it is a property of how the journal is written and is therefore
+   identical for every run.
+5. **Exclusions carried no journal or run provenance.** `IngestExclusionRecord`
+   adds a flat list with `sourceJournalPath`, `runId`, `suiteId` and reason.
+
+### Measured / Derived / Missing as an executable contract
+
+`valueOrigin(run, RunField)` returns Measured, Derived or Missing for each
+run-level field. Case- and mode-level fields are Measured by construction because
+they are copied straight from their record. `distance`, `resourcePolicy` and
+`gpuBackend` are **structurally always Missing** and are never replaced with 0,
+false or `"unknown"`. resourcePolicy is not inferred from a preset and gpuBackend
+is not inferred from effectiveMode.
+
+### Run identity and provenance are separate
+
+gitCommit is provenance, not identity. `datasetFingerprint + gitCommit` is not
+synthesised into a new run id, and the S3 run id is preserved verbatim.
+`groupingKey(run)` gathers the comparable fields in one place so a later stage can
+choose among them, but **which combination becomes a group key is S6-3's decision**
+and is deliberately not fixed here.
+
+### Legacy provenance is never back-filled
+
+A test sweeps the whole dataset and asserts that no run in the
+`GitCommitState::Legacy` state carries a gitCommit value, so the current HEAD can
+never be written into a legacy journal.
+
+Tests: contract **67 checks** (new), S6-1 ingestion **71 checks** (regression),
+journal 66 / store 51 / integration 144 / core 63 / gui_store 110 / worker 35 / ui 34 /
+ui_e2e 40 / cli 95 / renderer 100 / orchestrator 32, all PASS. CPU build exit 0 /
+CTest **98/98**, GPU build exit 0 / CTest **99/99**.
+
+Real storage re-check: journals 30 / runsFound 31 / accepted 31 / excluded 0 /
+provenance legacy 30 and known 1 / determinism IDENTICAL.
+
+Not changed: BenchmarkRunner/Executor/Request, the journal schema, recovery or summary
+generation, the Console renderer, the GUI, Scanner/MediaKind, NVDEC and the legacy
+benchmark. No journal field was added, no CLI was introduced, and there is no
+grouping, aggregation or statistics.

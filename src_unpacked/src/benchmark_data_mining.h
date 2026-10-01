@@ -89,6 +89,42 @@ enum class GitCommitState {
 const char* gitCommitStateName(GitCommitState s);
 
 // ---------------------------------------------------------------------------
+// Dataset identity
+// ---------------------------------------------------------------------------
+//
+// Three states that must stay apart. The journal records the field always, and an
+// empty value is a real, meaningful answer: it means the source could not be
+// measured (DatasetFingerprint state not_available / failed). Collapsing that
+// into "absent" would claim the identity is merely unknown, which is a different
+// statement and would let a later stage group an unmeasurable dataset as if it
+// were merely undocumented.
+enum class DatasetIdentityState {
+    Missing,  // the field is not present on the run_started record
+    Empty,    // the field is present and empty: the source could not be measured
+    Valid,    // a fingerprint was measured
+};
+
+const char* datasetIdentityStateName(DatasetIdentityState s);
+
+// ---------------------------------------------------------------------------
+// Timestamp resolution
+// ---------------------------------------------------------------------------
+//
+// S3 writes startedAt and completedAt with "%Y-%m-%dT%H:%M:%S": no fractional
+// part. Every duration S6 derives from them therefore inherits that resolution.
+//
+// This is exposed as one value rather than as a per-run field, because it is a
+// property of how the journal is written and is the same for every run. It exists
+// so a consumer can state the limit instead of quietly reporting a whole number
+// of milliseconds that was never measured.
+enum class TimestampResolution {
+    OneSecond,  // the only value: S3 stamps to whole seconds
+};
+
+TimestampResolution benchmarkTimestampResolution();
+const char* timestampResolutionName(TimestampResolution r);
+
+// ---------------------------------------------------------------------------
 // Normalized model
 // ---------------------------------------------------------------------------
 
@@ -129,14 +165,26 @@ struct IngestRun {
     std::string runId;
     std::string suiteId;
 
-    // Optional because absence is a real, meaningful state. An empty dataset
-    // fingerprint means the source could not be measured (DatasetFingerprint
-    // state not_available / failed), which is different from "fingerprint is the
-    // empty string".
+    // Dataset identity, kept in two parts so the three states stay apart.
+    //
+    // datasetFingerprint is empty AND datasetIdentity is Missing when the
+    // run_started record has no such field; empty with datasetIdentity Empty when
+    // the field is present but blank, which means the source was not measurable.
+    // A missing or empty identity is never replaced with a generated one.
     std::optional<std::string> datasetFingerprint;
+    DatasetIdentityState datasetIdentity = DatasetIdentityState::Missing;
+
     std::optional<std::string> buildVersion;
     std::optional<std::string> gitCommit;
     GitCommitState gitCommitState = GitCommitState::Legacy;
+
+    // The run's own benchmark status, straight from the terminal record, using
+    // S2's vocabulary. Absent when the run has no terminal record at all.
+    //
+    // This is separate from runClass on purpose: runClass answers "may this be
+    // analysed", this answers "what did the benchmark record", and neither
+    // replaces the other.
+    std::optional<BenchmarkStatus> runStatus;
 
     // Preserved verbatim from the journal. Never converted to UTC and never
     // reinterpreted: the S3 timestamp formatter writes a local time with a
@@ -153,14 +201,13 @@ struct IngestRun {
     // comparable with each other; the journal record timestamp is not, and is
     // never used for a duration or an ordering.
     //
-    // RESOLUTION IS ONE SECOND. S3 writes startedAt and completedAt as
-    // "%Y-%m-%dT%H:%M:%S" with no fractional part, so this value is always a
+    // RESOLUTION IS ONE SECOND, see benchmarkTimestampResolution(). S3 writes
+    // startedAt and completedAt with no fractional part, so this value is always a
     // multiple of 1000 ms and any run shorter than a second yields exactly 0.
     // A stored 0 therefore means "started and completed within the same second",
-    // NOT "took no time", and a later stage must not read it as a measurement of
-    // zero duration. It is empty only when one of the two stamps is absent, which
-    // is the normal state for a cancelled run because run_cancelled carries no
-    // completedAt.
+    // NOT "took no time", and must never be read as a measured zero duration. It
+    // is absent only when one of the two stamps is absent, which is the normal
+    // state for a cancelled run because run_cancelled carries no completedAt.
     std::optional<double> wallDurationMs;
 
     // --- fields the journal does not carry -----------------------------------
@@ -177,14 +224,87 @@ struct IngestRun {
     std::vector<IngestExclusion> exclusions;
 };
 
+// ---------------------------------------------------------------------------
+// Stable key material
+// ---------------------------------------------------------------------------
+
+// The comparable identity of a run, gathered in one place.
+//
+// This is NOT a grouping decision. It is the set of fields a later grouping stage
+// may choose from, collected so that grouping cannot invent a key the model does
+// not actually carry, and cannot reach into a run for a field that is absent
+// without noticing. Which combination of these becomes a group key is S6-3's
+// choice, not this stage's.
+struct RunGroupingKey {
+    std::optional<std::string> datasetFingerprint;
+    DatasetIdentityState datasetIdentity = DatasetIdentityState::Missing;
+    std::optional<std::string> mediaScope;
+    std::optional<std::string> buildVersion;
+    std::optional<std::string> gitCommit;
+    GitCommitState gitCommitState = GitCommitState::Legacy;
+};
+
+RunGroupingKey groupingKey(const IngestRun& run);
+
+// ---------------------------------------------------------------------------
+// Measured / Derived / Missing
+// ---------------------------------------------------------------------------
+
+enum class ValueOrigin {
+    Measured,  // recorded in the journal
+    Derived,   // computed by S6
+    Missing,   // absent from the source and deliberately not substituted
+};
+
+// The run-level fields whose origin is part of the data contract. Case-level and
+// mode-level fields are Measured by construction: they are copied straight from
+// their record and S6 computes nothing at those levels.
+enum class RunField {
+    DatasetFingerprint,
+    BuildVersion,
+    GitCommit,
+    MediaScope,
+    RunStatus,
+    WallDurationMs,
+    Distance,
+    ResourcePolicy,
+    GpuBackend,
+};
+
+ValueOrigin valueOrigin(const IngestRun& run, RunField field);
+const char* valueOriginName(ValueOrigin o);
+
+// ---------------------------------------------------------------------------
+// Exclusion records
+// ---------------------------------------------------------------------------
+
+// One exclusion, with enough provenance to identify which run and which journal
+// it came from. S3's anomaly names are not renamed here: the reason is carried as
+// the S6 exclusion that maps from them, and the mapping lives in one switch.
+struct IngestExclusionRecord {
+    std::string sourceJournalPath;
+    std::string runId;
+    std::string suiteId;
+    IngestExclusion reason = IngestExclusion::None;
+};
+
 // How many runs were excluded for one reason.
 struct IngestExclusionTally {
     IngestExclusion reason = IngestExclusion::None;
     std::size_t count = 0;
 };
 
-// The whole ingestion outcome.
-struct IngestResult {
+// The whole ingestion outcome, and the analysis dataset S6-2 hands forward.
+//
+// This is the aggregate the later stages consume: runs, the runs that were kept
+// out and why, and the accounting that makes "42 found -> 37 analysable ->
+// 5 excluded" reportable. It is analysis input only and replaces no S2/S3
+// runtime model.
+//
+// Presentation is deliberately not modelled here: console, JSON, CSV and Markdown
+// are all views over this same structure, so the report format stays a separate
+// later decision.
+struct NormalizedBenchmarkData {
     // Analysable runs, in a deterministic order.
     std::vector<IngestRun> runs;
 
@@ -192,6 +312,11 @@ struct IngestResult {
     // rejected run without re-reading the journal. Journals with no run identity
     // at all are NOT here; they are counted in journalsWithoutRuns.
     std::vector<IngestRun> excludedRuns;
+
+    // Every exclusion, flattened, with the journal and run it belongs to. The
+    // per-run lists above and this flat view carry the same information; this one
+    // exists so a report can enumerate reasons without walking the runs.
+    std::vector<IngestExclusionRecord> exclusionRecords;
 
     std::size_t journalsDiscovered = 0;
     std::size_t journalsUnreadable = 0;
@@ -213,6 +338,11 @@ struct IngestResult {
     // on partial data can check this before using runs.
     bool anyFatal = false;
 };
+
+// S6-1 named this type IngestResult. The name is kept so existing callers and its
+// test keep compiling; S6-2 is where the dataset contract was fixed, and
+// NormalizedBenchmarkData is that name.
+using IngestResult = NormalizedBenchmarkData;
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -236,5 +366,12 @@ struct IngestResult {
 // stays proportional to the largest single journal rather than to the whole
 // tree.
 IngestResult ingestBenchmarks(const std::string& applicationDataRoot);
+
+// Convenience wrapper returning the analysis dataset under its S6-2 name.
+// Identical to ingestBenchmarks; the distinct name marks the type whose contract
+// is now fixed.
+inline NormalizedBenchmarkData normalizeBenchmarks(const std::string& applicationDataRoot) {
+    return ingestBenchmarks(applicationDataRoot);
+}
 
 }  // namespace msf

@@ -82,8 +82,10 @@ std::vector<JournalCandidate> discoverJournals(const std::string& applicationDat
 struct RunStartInfo {
     std::string runId;
     std::string datasetFingerprint;
+    bool datasetFingerprintPresent = false;
     std::string mediaScope;
     std::string completedAt;
+    std::string runStatus;
 };
 
 // Lists the runs a journal contains, with their run_started provenance and the
@@ -118,10 +120,15 @@ std::vector<RunStartInfo> listRuns(const std::string& journalPath) {
 
         if (ev == "run_started") {
             it->second.runId = runId;
-            jsonFieldString(line, "datasetFingerprint", it->second.datasetFingerprint);
+            // Presence and value are tracked separately: a field that is present
+            // but blank is a real answer meaning the source could not be measured,
+            // and it must not collapse into "not present".
+            it->second.datasetFingerprintPresent =
+                jsonFieldString(line, "datasetFingerprint", it->second.datasetFingerprint);
             jsonFieldString(line, "mediaScope", it->second.mediaScope);
         } else if (ev == "run_finished" || ev == "run_cancelled") {
             jsonFieldString(line, "completedAt", it->second.completedAt);
+            jsonFieldString(line, "status", it->second.runStatus);
         }
     }
 
@@ -252,6 +259,24 @@ const char* gitCommitStateName(GitCommitState s) {
     return "Legacy";
 }
 
+const char* datasetIdentityStateName(DatasetIdentityState s) {
+    switch (s) {
+        case DatasetIdentityState::Missing: return "Missing";
+        case DatasetIdentityState::Empty:   return "Empty";
+        case DatasetIdentityState::Valid:   return "Valid";
+    }
+    return "Missing";
+}
+
+TimestampResolution benchmarkTimestampResolution() { return TimestampResolution::OneSecond; }
+
+const char* timestampResolutionName(TimestampResolution r) {
+    switch (r) {
+        case TimestampResolution::OneSecond: return "OneSecond";
+    }
+    return "OneSecond";
+}
+
 // ---------------------------------------------------------------------------
 // Ingestion
 // ---------------------------------------------------------------------------
@@ -316,8 +341,28 @@ IngestResult ingestBenchmarks(const std::string& applicationDataRoot) {
             // record verbatim. S3 does not carry them into JournalReplay, and the
             // fingerprint is never recomputed here: an absent value stays absent
             // rather than becoming an empty identity.
-            if (!info.datasetFingerprint.empty()) run.datasetFingerprint = info.datasetFingerprint;
+            if (!info.datasetFingerprintPresent) {
+            run.datasetIdentity = DatasetIdentityState::Missing;
+        } else if (info.datasetFingerprint.empty()) {
+            // Present but blank: the source could not be measured. Preserved as an
+            // explicit empty identity, never replaced with a generated value.
+            run.datasetFingerprint = std::string();
+            run.datasetIdentity = DatasetIdentityState::Empty;
+        } else {
+            run.datasetFingerprint = info.datasetFingerprint;
+            run.datasetIdentity = DatasetIdentityState::Valid;
+        }
             if (!info.mediaScope.empty()) run.mediaScope = info.mediaScope;
+
+            // The run's own benchmark status, using S2's vocabulary and S3's exact
+            // record strings. A status this layer does not recognise is left absent
+            // rather than guessed at.
+            if (!info.runStatus.empty()) {
+                if (info.runStatus == "SUCCESS")        run.runStatus = BenchmarkStatus::Success;
+                else if (info.runStatus == "FAILED")   run.runStatus = BenchmarkStatus::Failed;
+                else if (info.runStatus == "CANCELLED") run.runStatus = BenchmarkStatus::Cancelled;
+                else if (info.runStatus == "SKIPPED")   run.runStatus = BenchmarkStatus::Skipped;
+            }
 
             // S3 recovery outcomes, recorded rather than reinterpreted. S3 already
             // decided what each one means; S6 only carries the reason so the
@@ -363,16 +408,23 @@ IngestResult ingestBenchmarks(const std::string& applicationDataRoot) {
                 run.runClass = IngestRunClass::Complete;
             }
 
-            if (!run.datasetFingerprint) {
+            if (run.datasetIdentity != DatasetIdentityState::Valid) {
                 run.exclusions.push_back(IngestExclusion::NoDatasetFingerprint);
             }
 
             ++result.runsFound;
 
+            // Flatten every exclusion with the journal and run it belongs to, so a
+            // report can name its reasons without walking the run vectors.
+            for (auto e : run.exclusions) {
+                result.exclusionRecords.push_back(
+                    {cand.path, run.runId, run.suiteId, e});
+            }
+
             // A complete run with a dataset identity is the analysis input.
             // Everything else is kept in excludedRuns with its reasons.
             const bool analysable = (run.runClass == IngestRunClass::Complete) &&
-                                    run.datasetFingerprint.has_value();
+                                    (run.datasetIdentity == DatasetIdentityState::Valid);
             if (analysable) {
                 for (auto e : run.exclusions) tally(exclusionCounts, e);
                 ++result.runsAccepted;
@@ -401,7 +453,62 @@ IngestResult ingestBenchmarks(const std::string& applicationDataRoot) {
                   if (a.sourceJournalPath != b.sourceJournalPath) return a.sourceJournalPath < b.sourceJournalPath;
                   return a.runId < b.runId;
               });
+    // Deterministic exclusion record order too: journal, then run, then reason.
+    std::sort(result.exclusionRecords.begin(), result.exclusionRecords.end(),
+              [](const IngestExclusionRecord& a, const IngestExclusionRecord& b) {
+                  if (a.sourceJournalPath != b.sourceJournalPath) return a.sourceJournalPath < b.sourceJournalPath;
+                  if (a.runId != b.runId) return a.runId < b.runId;
+                  return static_cast<int>(a.reason) < static_cast<int>(b.reason);
+              });
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Stable key material and value origins
+// ---------------------------------------------------------------------------
+
+RunGroupingKey groupingKey(const IngestRun& run) {
+    RunGroupingKey key;
+    key.datasetFingerprint = run.datasetFingerprint;
+    key.datasetIdentity = run.datasetIdentity;
+    key.mediaScope = run.mediaScope;
+    key.buildVersion = run.buildVersion;
+    key.gitCommit = run.gitCommit;
+    key.gitCommitState = run.gitCommitState;
+    return key;
+}
+
+ValueOrigin valueOrigin(const IngestRun& run, RunField field) {
+    switch (field) {
+        // Measured: copied out of the journal record, never computed.
+        case RunField::DatasetFingerprint:
+            return run.datasetIdentity == DatasetIdentityState::Missing ? ValueOrigin::Missing
+                                                                        : ValueOrigin::Measured;
+        case RunField::BuildVersion: return run.buildVersion ? ValueOrigin::Measured : ValueOrigin::Missing;
+        case RunField::GitCommit:    return run.gitCommit ? ValueOrigin::Measured : ValueOrigin::Missing;
+        case RunField::MediaScope:   return run.mediaScope ? ValueOrigin::Measured : ValueOrigin::Missing;
+        case RunField::RunStatus:    return run.runStatus ? ValueOrigin::Measured : ValueOrigin::Missing;
+
+        // Derived: S6 computed it from two measured stamps.
+        case RunField::WallDurationMs: return run.wallDurationMs ? ValueOrigin::Derived : ValueOrigin::Missing;
+
+        // Missing: the journal does not carry these, and S6 does not infer them.
+        // ResourcePolicy is not derived from a preset and distance is not read from
+        // the request, because neither was ever recorded.
+        case RunField::Distance:
+        case RunField::ResourcePolicy:
+        case RunField::GpuBackend:    return ValueOrigin::Missing;
+    }
+    return ValueOrigin::Missing;
+}
+
+const char* valueOriginName(ValueOrigin o) {
+    switch (o) {
+        case ValueOrigin::Measured: return "measured";
+        case ValueOrigin::Derived:  return "derived";
+        case ValueOrigin::Missing:  return "missing";
+    }
+    return "missing";
 }
 
 }  // namespace msf
