@@ -287,6 +287,12 @@ bool checkFaithful(const std::string& path, const std::vector<double>& targets,
     return true;
 }
 
+// The dataset run needs DecodeCounters and instrumentedSweep, which are only
+// declared under MSF_HAS_FFMPEG (see the guard above). main() already refuses to
+// run this probe without linked FFmpeg, so the whole function is guarded rather
+// than each of its call sites individually: an unguarded call site would break
+// every MSF_ENABLE_FFMPEG=OFF build, which is a supported configuration.
+#ifdef MSF_HAS_FFMPEG
 int runDataset(const std::string& root, int repeats) {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -403,6 +409,12 @@ int runDataset(const std::string& root, int repeats) {
                     r.name.c_str(), r.openMs, r.seekMs, r.decodeMs, r.convertMs, r.totalMs);
     return 0;
 }
+#else  // !MSF_HAS_FFMPEG
+int runDataset(const std::string&, int) {
+    std::fprintf(stderr, "this probe requires linked FFmpeg (MSF_HAS_FFMPEG)\n");
+    return 2;
+}
+#endif  // MSF_HAS_FFMPEG
 
 int selfcheck() {
     int checks = 0, fails = 0;
