@@ -54,3 +54,15 @@
      `-FingerprintOnly` 스위치를 쓰지 않아 dataset을 통째로 재생성하면서
      `test_sample_img_vid/images/format` 의 수백 개 픽스처가 하드 삭제되었다.
      원본 풀(`G:\Downloads\ss_twit`)에서 재선택하여 복구했으나, **지문만 갱신할 때는 반드시 `-FingerprintOnly`.**
+
+
+5. **벤치마크 자동화 안전 규칙 — 반복 외부 프로세스 생성 금지**
+   - 제품 benchmark hot path와 benchmark 자동화 harness에서는 **짧게 실행되고 곧바로 종료되는 외부 프로세스를 반복 생성하지 않는다.** 특히 telemetry/monitoring에서 `_popen`, `system`, 반복 `CreateProcess`, `ShellExecute` 등을 샘플마다 호출하는 구조를 금지한다.
+   - 외부 도구가 꼭 필요하면 우선순위를 **in-process API → run/session 수명 동안 유지하는 persistent helper 1개 → 불가피한 단발 호출** 순으로 검토한다. 반복 telemetry에서는 매 sample마다 child process를 새로 만들지 않는다.
+   - Windows child process는 **console window가 생성되지 않는 방식**과 stdout/stderr capture를 기본으로 한다. 프로젝트의 검증된 process-capture wrapper가 있으면 이를 재사용하고, 각 호출부가 임의의 숨김 실행 방식을 새로 만들지 않는다.
+   - 외부 process wrapper는 무한 대기를 기본 계약으로 두지 않는다. timeout/lifecycle/실패 시 child 종료 및 부모 프로세스 보호를 고려하며, 장시간 백그라운드 helper를 쓰는 경우 소유권과 종료 경계를 명확히 한다.
+   - benchmark/test harness도 동일한 규칙을 따른다. `Start-Job`, 반복 `Start-Process`, `cmd`, `powershell` 등을 조합하여 console/child process를 폭증시키는 자동화는 금지한다.
+   - 자동 실행 체인은 **runaway child process, 예상치 못한 console window, orphan process, 반복 비정상 종료**가 감지되면 자동 retry를 계속하지 않고 즉시 stop하는 circuit-breaker 원칙을 따른다.
+   - 해당 규칙은 측정 오염 여부와 별개인 **PC 부담/안정성 규칙**이다. 한 run이 S6에서 제외되어 측정값을 오염시키지 않았더라도 반복 process spawn 자체는 개선 대상이다.
+   - GPU telemetry는 가능하면 NVML 등 in-process API를 우선 검토한다. `nvidia-smi`를 반복 spawn하는 구조는 금지하며, persistent sampler가 필요하면 별도 승인/설계 후 적용한다.
+   - 새 release gate에서는 소스/스크립트의 raw process-creation 경로를 점검하고, 승인된 wrapper 외의 반복 spawn이 없는지 확인한다.
