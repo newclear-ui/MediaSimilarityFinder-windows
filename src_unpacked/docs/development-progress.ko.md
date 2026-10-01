@@ -2012,3 +2012,65 @@ CPU build exit 0 / CTest **102/102**, GPU build exit 0 / CTest **103/103**. stal
 S6-5 는 mode semantics 별로 이 후보를 생성하므로 **mode key가 실려 있습니다.** 그 결과
 synthetic fixture 에서 metrics 는 계산됐지만 값이 전부 absent 였습니다. dimension 이 아니라
 **무엇을 주소하는가** 로 nesting level 을 판단하도록 고쳤습니다.
+## 2026-10-01 — S6 Measurement Gate / 통제 A/B 측정 절차 확정
+
+**이번 단계는 코드 구현이 아니라 문서 작업이다.** 제품 코드 변경 없음.
+신규: `docs/implementation-briefs/S6-measurement-gate.ko.md` + `.en.md`.
+`STRUCTURE.md` / `llms.txt` 색인 갱신. **S6 는 CLOSED 가 아니다** (roadmap 변경 없음).
+
+### 이미 측정된 변동성을 출발점으로 삼았다
+
+새 기준을 만들지 않고 `0.9.4.32` 실측값을 재사용한다.
+
+| 대상 | 실측 변동폭 |
+| --- | --- |
+| 전체 실행 | **3.7 ~ 7.5 %** |
+| 짧은 probe | **19.4 ~ 45.9 %** |
+
+> **7.5 % 이하 차이는 측정 오차 안**이며 개선/회귀로 선언할 수 없다. 짧은 probe 는
+> 반복 횟수를 늘려도 판정 근거가 되지 않고 **측정 단위 자체가 짧으면 안 된다.**
+
+### 조사로 확정된 사실 3건
+
+**① 현재 store 31 run 은 실제 dataset 이 아니다.** case 경로
+`...\Temp\msf_s5_e2e`, **10개 파일**의 S5 e2e fixture 이다. `caseMedian 619~645 ms`,
+`run wall 0 ms` 는 **10 파일 fixture 의 성질**이며 성능 근거가 될 수 없다.
+
+**② GPU 는 존재한다 — CUDA unavailable 은 build 구성 문제다.** 이 머신에 **RTX 3080 Ti** 가
+있으나 `CUDA→CPU / SKIPPED` 60건이 기록됐다. 원인은 store 가 `build-windows-cpu\Release`
+아래에 있고 그 binary 에 CUDA 가 링크되어 있지 않기 때문이다. 이전 단계의 "GPU 미지원
+환경 fallback" 해석을 수정했고, 관측값(60건/SKIPPED)은 그대로 두었다.
+
+**③ dataset 에 비디오 파일이 0개다.** `videos` scope 는 Gate 대상 불가이며 `all` 과
+`images` 가 같은 파일 집합을 가리킨다. 실제 dataset 은
+`C:\project\test_sample_img_vid` = **3347 파일 / 102,475,315 바이트 / 디렉터리 102개**.
+`format` 하위 `.md` 1개는 media 가 아니므로 Gate 전 확인이 필요하고, 제거하면 fingerprint
+가 바뀌므로 양쪽을 재측정해야 한다.
+
+### 확정한 절차
+
+scope `images` / mode `--mode cpu` 명시 / primary metric `ModeElapsed` /
+`CaseElapsed` 보조 / **`RunWallDuration` 는 primary 제외(해상도 1초)** /
+교차 순서 `A B B A B B A` / cache 는 warm 표준 채택(OS cache 통제 주장 안 함) /
+build 마다 5회 반복(AGENTS.md 9항).
+
+`runId` 가 `run-YYYYMMDD-HHMM-SS` 로 **1초 해상도**이므로 반복은 suite 마다 분리하고
+`--suite` 를 명시 지정하며 시작 시각을 2초 이상 벌린다. `RunReference =
+(sourceJournalPath, runId)` 유지.
+
+CLI 에 `--resource` / `--cpu-percent` 가 없고 journal 에도 `resourcePolicy` 가 없다.
+동일 machine·OS 세션·전원 모드에서 실행하고 resource policy 는 문서 명시만 한다.
+
+### Gate 진입 조건
+
+regression 발견이 아니라 **Known build 2개 + 동일 dataset/scope/mode + 실제 SUCCESS sample
++ build 마다 5회 + 변동폭 산출 + 교차 순서·환경 기록 + S6 candidate > 0** 의 데이터 생성.
+S6 read-only diagnostic 4종으로 기계적 확인(`known>=2`, `eligibleCandidates>0`,
+`absolute deltas available>0`, `missing-provenance=0`, `no-comparable-samples=0`).
+**threshold 는 여전히 미정**이며 별도 결정 단계가 남는다.
+
+### 범위
+
+코드 변경 없음. S2 실행 · S3 journal schema · S6 전 계층 · Scanner/GUI/renderer/CLI 미변경.
+benchmark 실행 자동화 · 측정 engine · threshold/regression/anomaly code · report formatter
+미구현.

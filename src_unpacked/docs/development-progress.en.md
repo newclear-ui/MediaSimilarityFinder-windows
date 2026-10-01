@@ -2146,3 +2146,69 @@ expressible", but S6-5 generates that candidate per mode semantics, so it **carr
 key**. The result was that the synthetic fixture produced metrics whose every value was
 absent. The nesting level is now decided by **what is addressed** rather than by the
 dimension alone.
+## 2026-10-01 — S6 measurement gate / controlled A/B measurement procedure
+
+**This stage is documentation, not code.** No product code changed.
+Added `docs/implementation-briefs/S6-measurement-gate.ko.md` + `.en.md`. Updated the
+`STRUCTURE.md` / `llms.txt` indexes. **S6 is not CLOSED** and the roadmap was not changed.
+
+### Started from variation that was already measured
+
+No new baseline was invented; the measured 0.9.4.32 figures were reused.
+
+| Target | Measured spread |
+| --- | --- |
+| Full execution | **3.7 – 7.5 %** |
+| Short probe | **19.4 – 45.9 %** |
+
+> **Any difference below 7.5 % sits inside measurement error** and cannot be declared an
+> improvement or a regression. Short probes do not become usable by adding repeats alone —
+> **the measurement unit itself must not be short.**
+
+### Three facts fixed by investigation
+
+**1. The current 31-run store is not a real dataset.** The case paths resolve to
+`...\Temp\msf_s5_e2e`, an S5 end-to-end fixture of **10 files**. `caseMedian 619–645 ms` and
+`run wall 0 ms` are **properties of a 10-file fixture** and cannot be performance evidence.
+
+**2. The GPU exists — CUDA being unavailable is a build configuration issue.** The machine
+**has an RTX 3080 Ti**, yet 60 `CUDA → CPU / SKIPPED` records exist. The cause is that the
+store sits under `build-windows-cpu\Release` and that binary does not link CUDA. The earlier
+"fallback on a machine without GPU support" reading is corrected, while the observed values
+(60 records / SKIPPED) are kept exactly as they were.
+
+**3. The dataset has zero video files.** The `videos` scope is impossible for this Gate, and
+`all` points at the same file set as `images`. The real dataset
+`C:\project\test_sample_img_vid` is **3347 files / 102,475,315 bytes / 102 directories**.
+One `.md` under `format` is not media, so it must be confirmed before the Gate; removing it
+changes the fingerprint and both sides must then be re-measured.
+
+### The procedure that was fixed
+
+Scope `images` / `--mode cpu` stated explicitly / primary metric `ModeElapsed` /
+`CaseElapsed` secondary / **`RunWallDuration` excluded from primary for its one-second
+resolution** / crossed order `A B B A B B A` / warm cache adopted as the standard without
+claiming OS cache control / 5 repeats per build (AGENTS.md item 9).
+
+`runId` is `run-YYYYMMDD-HHMM-SS`, **one-second resolution**, so each repeat uses its own
+suite, passes `--suite` explicitly, and starts at least 2 seconds apart.
+`RunReference = (sourceJournalPath, runId)` is kept.
+
+There is no `--resource` / `--cpu-percent` on the CLI and no `resourcePolicy` in the
+journal. The Gate runs on the same machine, OS session and power scheme, and the resource
+policy is only stated in the document.
+
+### Gate entry conditions
+
+Not discovering a regression, but **generating data with 2 Known builds + identical
+dataset/scope/mode + real SUCCESS samples + 5 repeats per build + a computed spread +
+recorded crossed order and environment + S6 candidate > 0.** Verified mechanically with S6's
+four read-only diagnostics (`known>=2`, `eligibleCandidates>0`,
+`absolute deltas available>0`, `missing-provenance=0`, `no-comparable-samples=0`).
+**The threshold is still undefined** and a separate decision stage remains.
+
+### Scope
+
+No code change. S2 execution, the S3 journal schema, all S6 layers, Scanner, GUI, renderer
+and CLI were not touched. Benchmark execution automation, a measurement engine,
+threshold/regression/anomaly code and a report formatter were not implemented.
