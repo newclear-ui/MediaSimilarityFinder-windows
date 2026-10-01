@@ -621,6 +621,50 @@ run wall 표본이 이미 **1 과 5** 존재한다. Legacy 인 쪽에만 `gitCom
 **결정**: S6 산출물은 회귀 판정이 아니라 **회귀 후보 + 측정 조건 경고**를 제공한다.
 cache / 부하 통제 여부를 함께 출력하며, 통제되지 않은 조건임을 명시한다.
 
+### 14-2. ComparisonMetrics 수학 정의 (S6-6)
+
+```text
+absoluteDeltaMs        = right - left                       원 metric 단위 (ms)
+relativeDeltaPercent   = ((right - left) / left) * 100
+ratio                  = right / left
+```
+
+**left 는 baseline 이 아니다.** S6-5 의 `left < right` 는 쌍을 재현 가능하게 하는
+deterministic ordering 이다. `left = old` / `right = new`, 또는 `left = better` /
+`right = worse` 로 읽지 않는다. 순서가 방향까지 암시하면 그 순서가 조용히 방향을 선택한다.
+`baseline` / `target` 역할을 public 으로 부여하지 않으며, 사용자가 명시적으로 지정하는
+단계가 올 때 그때 부여한다.
+
+**계산된 숫자는 판정이 아니다.** `relativeDeltaPercent = +50%` 는 `+50%` 로 보고하며
+regression · improvement · better · worse · winner 로 부르지 않는다. 이 layer 는
+**threshold 를 정의하지 않으므로 pass/fail 도 구조상 불가능**하다.
+
+**`left == 0` 처리:**
+
+| 값 | 결과 |
+| --- | --- |
+| `absoluteDeltaMs` | **계산한다** (존재) |
+| `relativeDeltaPercent` | **unavailable** |
+| `ratio` | **unavailable** |
+
+0 으로 대체하지 않는다. NaN/inf 문자열도 output contract 에 넣지 않는다. **그 각각이
+발명한 값**이기 때문이다. 사유는 `leftValueIsZero` 플래그와 `ZeroLeftReference` 로
+남겨 "값이 없어서" 와 "나누는 기준이 0이라서" 를 구분한다.
+
+특히 `RunWallDuration` 의 0 ms 는 **두 timestamp 가 같은 초**라는 실제 derived 값이며
+absent 가 아니다. 0 을 missing 으로 재분류하지 않는다.
+
+**statistic 별 독립 비교**: `Min / Max / Mean / Median / P95` 를 각각 비교하며, 하나가
+unavailable 이어도 다른 것을 삭제하지 않는다.
+
+**layering**: ComparisonMetrics 는 S6-4 aggregate 를 **포인터로 소비**하며 값을 다시
+계산하지 않는다. journal 을 읽지 않고 grouping 을 다시 하지 않고 aggregation 을 다시
+하지 않는다. metric level / resolution 불일치는 **방어적으로 재검증**해 어떤 숫자도
+내지 않는다.
+
+**제한 전달**: S6-5 의 `ComparisonLimitations` 9개를 그대로 전달한다. 별도 limitation
+system 을 만들지 않는다.
+
 ## 15. Cancellation / Failure 처리
 
 - S2 aggregate precedence 를 **재정의하지 않는다.**

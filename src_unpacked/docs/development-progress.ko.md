@@ -1910,3 +1910,105 @@ aggregation 129, comparison 123, S6-3 grouping 58, S6-2 contract 67, S6-1 ingest
 journal 66 / store 51 / integration 144 / core 63 전부 PASS.
 실제 journal read-only 양쪽 exit 0, aggregation·comparison **교차 프로세스 동일**.
 CPU build exit 0 / CTest **101/101**, GPU build exit 0 / CTest **102/102**. stale object 없음.
+## 2026-10-01 — S6-6 Comparison Metrics / 수치 계산과 regression 입력 모델
+
+위치: 신규 `src/benchmark_data_comparison_metrics.{h,cpp}` +
+`tests/benchmark_data_comparison_metrics_test.cpp` (**77 checks**).
+
+### ComparisonMetrics
+
+```text
+absoluteDeltaMs        = right - left                        (원 metric 단위, ms)
+relativeDeltaPercent   = ((right - left) / left) * 100
+ratio                  = right / left
+```
+
+`left` 는 **baseline 이 아니다.** deterministic orientation 일 뿐이며 `old/new`,
+`better/worse` 로 읽지 않는다. `+50%` 는 **+50% 로 보고**하며 regression·improvement·
+better·worse·winner 어느 것도 아니다.
+
+### Synthetic known-known (§22)
+
+```
+Build A: case 100, 120  -> mean 110
+Build B: case 150, 180  -> mean 165
+```
+
+**absoluteDelta = +55 ms · relativeDelta = +50% · ratio = 1.5** 로 확인했습니다.
+보고서에서 이를 "50% regression" 이라고 쓰지 않았습니다.
+
+이 fixture 은 **synthetic** 이며 실제 benchmark result 가 아닙니다. 후보는 metric 별로
+3건(ModeElapsed·CaseElapsed·RunWallDuration) 생성됩니다.
+
+### Zero behavior (§23)
+
+| left | 결과 |
+|---|---|
+| 0 | absoluteDelta = **존재**, relative/ratio = **unavailable** |
+| 0 vs 0 | absoluteDelta = 0 존재, relative/ratio unavailable (0/0 도 답이 없음) |
+
+0 으로 대체하지 않았고 NaN/inf 문자열도 output contract 에 넣지 않았습니다.
+`leftValueIsZero` 플래그와 `ZeroLeftReference` 사유로 **값이 없어서인지 기준이 0이라서인지
+구분**합니다. `RunWallDuration` 의 0 ms 는 "두 timestamp 가 같은 초"라는 실제 측정값이며
+missing 으로 재분류하지 않았습니다.
+
+### Statistics
+
+`Min / Max / Mean / Median / P95` 를 **각각 독립 비교**합니다. 한 statistic 이 unavailable
+이어도 다른 statistic 을 삭제하지 않습니다. p95 가 mean 반복이 아님을 확인했습니다
+(left 110/120 → p95 120, delta +60).
+
+### Resolution
+
+| metric | resolution |
+|---|---|
+| ModeElapsed | `Recorded` |
+| CaseElapsed | `Recorded` |
+| RunWallDuration | `OneSecond` |
+
+RunWallDuration 비교에서 `OneSecond` 가 유지됩니다. 서로 다른 metric level / resolution 은
+**방어적으로 재검증**해 어떤 숫자도 계산하지 않습니다.
+
+### Provenance
+
+Legacy/Unknown 을 known 으로 변환하지 않습니다. 그런 candidate 는 생성되지 않으므로
+**해당 metrics 도 없습니다** — 테스트로 확인.
+
+### Limitations
+
+S6-5 의 9개를 **그대로** 전달합니다. 별도 limitation system 을 만들지 않았고 개수가
+여전히 9 임을 고정했습니다.
+
+### 현재 실제 데이터 (30 journal / 31 run, read-only)
+
+```text
+candidates = 0
+comparisonMetrics = 0
+absolute deltas available = 0
+rejections: missing-provenance=3, no-comparable-samples=8
+determinism: IDENTICAL
+```
+
+brief §21 그대로 **후보 0 → metrics 0 은 정상**이며 코드 실패가 아닙니다. 실제 저장소에는
+eligible candidate 자체가 없으므로 계산할 대상이 없습니다.
+
+### Regression 판정을 하지 않았습니다
+
+threshold, regression classification, winner, better/worse, confidence interval, p-value,
+statistical significance, anomaly, controlled-environment score, CLI, GUI, report formatter,
+journal schema 변경, S2/S3 변경 — **전부 미구현**입니다. 5%/10%/20% 중 어떤 것도 정하지
+않았습니다.
+
+### 검증
+
+metrics **77 checks**(신규), S6-5 comparison 123, S6-4 aggregation 129, S6-3 grouping 58,
+S6-2 contract 67, S6-1 ingestion 71, journal 66 / store 51 / integration 144 / core 63
+전부 PASS. 실제 journal read-only exit 0, **교차 프로세스 동일**.
+CPU build exit 0 / CTest **102/102**, GPU build exit 0 / CTest **103/103**. stale object 없음.
+
+### 구현 중 고친 실제 버그
+
+`resolveSide()` 초안이 `BuildProvenance + ModeElapsed` 조합을 "표현 불가"로 거절했는데,
+S6-5 는 mode semantics 별로 이 후보를 생성하므로 **mode key가 실려 있습니다.** 그 결과
+synthetic fixture 에서 metrics 는 계산됐지만 값이 전부 absent 였습니다. dimension 이 아니라
+**무엇을 주소하는가** 로 nesting level 을 판단하도록 고쳤습니다.

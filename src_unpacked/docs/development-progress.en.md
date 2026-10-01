@@ -2043,3 +2043,106 @@ aggregation 129, comparison 123, S6-3 grouping 58, S6-2 contract 67, S6-1 ingest
 journal 66 / store 51 / integration 144 / core 63, all PASS. Real journal read-only exits 0
 for both; aggregation and comparison are **identical across processes**. CPU build exit 0 /
 CTest **101/101**, GPU build exit 0 / CTest **102/102**. No stale objects.
+## 2026-10-01 — S6-6 comparison metrics / numeric calculation and the regression input model
+
+Location: new `src/benchmark_data_comparison_metrics.{h,cpp}` +
+`tests/benchmark_data_comparison_metrics_test.cpp` (**77 checks**).
+
+### ComparisonMetrics
+
+```text
+absoluteDeltaMs        = right - left                        (the metric's own unit, ms)
+relativeDeltaPercent   = ((right - left) / left) * 100
+ratio                  = right / left
+```
+
+`left` is **not a baseline.** It is a deterministic orientation only, and is not read as
+`old`/`new` or `better`/`worse`. `+50%` is reported as **+50%** and is not a regression,
+improvement, better, worse or winner.
+
+### Synthetic known-known
+
+```
+Build A: case 100, 120  -> mean 110
+Build B: case 150, 180  -> mean 165
+```
+
+Verified as **absoluteDelta = +55 ms, relativeDelta = +50%, ratio = 1.5**. The report does
+not call this a 50% regression.
+
+This fixture is **synthetic** and is not a benchmark result. It produces 3 candidates, one
+per metric: ModeElapsed, CaseElapsed and RunWallDuration.
+
+### Zero behaviour
+
+| left | Result |
+| --- | --- |
+| 0 | absoluteDelta **present**, relative/ratio **unavailable** |
+| 0 vs 0 | absoluteDelta = 0 present, relative/ratio unavailable (0/0 has no answer either) |
+
+Nothing was replaced with 0, and no NaN or infinity string entered the output contract. The
+`leftValueIsZero` flag and a `ZeroLeftReference` reason distinguish "absent because a value
+was missing" from "absent because the reference was a measured zero". A `RunWallDuration` of
+0 ms means the two timestamps fell in the same second; it was not reclassified as missing.
+
+### Statistics
+
+`Min / Max / Mean / Median / P95` are each compared independently. One statistic being
+unavailable never removes another. Verified that p95 is not the mean repeated: left values
+110 and 120 give a p95 of 120 and a delta of +60.
+
+### Resolution
+
+| metric | resolution |
+| --- | --- |
+| ModeElapsed | `Recorded` |
+| CaseElapsed | `Recorded` |
+| RunWallDuration | `OneSecond` |
+
+`OneSecond` is preserved through a RunWallDuration comparison. A mismatched metric level or
+resolution is **re-checked defensively** and produces no numbers at all.
+
+### Provenance
+
+Legacy and Unknown are never converted to Known. Such a candidate is never generated, so
+**there are no metrics for it either**, which a test confirms.
+
+### Limitations
+
+The nine limitations from S6-5 are passed through unchanged. No second limitation system was
+created and the count is pinned at nine.
+
+### Current actual data, 30 journals / 31 runs, read-only
+
+```text
+candidates = 0
+comparisonMetrics = 0
+absolute deltas available = 0
+rejections: missing-provenance=3, no-comparable-samples=8
+determinism: IDENTICAL
+```
+
+Per brief §21, **0 candidates and therefore 0 metrics is the correct result** and not a code
+failure. The real store has no eligible candidate, so there is nothing to compute.
+
+### Regression was not judged
+
+Thresholds, regression classification, winners, better/worse, confidence intervals,
+p-values, statistical significance, anomalies, controlled-environment scores, CLI, GUI,
+report formatters, journal schema changes and S2/S3 changes are **all not implemented**.
+None of 5% / 10% / 20% was chosen.
+
+### Verification
+
+metrics **77 checks** (new), S6-5 comparison 123, S6-4 aggregation 129, S6-3 grouping 58,
+S6-2 contract 67, S6-1 ingestion 71, journal 66 / store 51 / integration 144 / core 63, all
+PASS. Real journal read-only exits 0 and is **identical across processes**. CPU build exit 0
+/ CTest **102/102**, GPU build exit 0 / CTest **103/103**. No stale objects.
+
+### A real bug found while implementing
+
+The first `resolveSide()` refused the `BuildProvenance + ModeElapsed` combination as "not
+expressible", but S6-5 generates that candidate per mode semantics, so it **carries a mode
+key**. The result was that the synthetic fixture produced metrics whose every value was
+absent. The nesting level is now decided by **what is addressed** rather than by the
+dimension alone.

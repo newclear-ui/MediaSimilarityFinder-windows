@@ -114,6 +114,9 @@ add_library(msf_core STATIC
     # records every refusal with its reason. Computes no regression, speedup,
     # threshold, anomaly or winner.
     src/benchmark_data_comparison.cpp
+    # S6-6 comparison metrics. Numeric deltas over the S6-5 candidates, consuming the
+    # S6-4 aggregates. A computed number is not a verdict: no threshold or direction.
+    src/benchmark_data_comparison_metrics.cpp
   # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
   # reusing S3's atomic write and suite lock. It executes nothing and writes no
   # journal; the GUI drives BenchmarkRunner and hands the result here.
@@ -369,6 +372,16 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_data_comparison_test tests/benchmark_data_comparison_test.cpp)
     target_link_libraries(msf_benchmark_data_comparison_test PRIVATE msf_core)
     add_test(NAME benchmark_data_comparison_test COMMAND msf_benchmark_data_comparison_test)
+    # S6-6 comparison metrics: absolute delta, relative delta and ratio per statistic
+    # over the S6-5 candidates, with a measured zero kept distinct from a missing value,
+    # zero references refused rather than divided, sample accounting and limitations
+    # carried through, metric level and resolution mismatches refused defensively, and
+    # determinism. No threshold, direction or verdict.
+    add_executable(msf_benchmark_data_comparison_metrics_test
+                   tests/benchmark_data_comparison_metrics_test.cpp)
+    target_link_libraries(msf_benchmark_data_comparison_metrics_test PRIVATE msf_core)
+    add_test(NAME benchmark_data_comparison_metrics_test
+             COMMAND msf_benchmark_data_comparison_metrics_test)
     # S2 benchmark core. Drives the runner through an injected fake executor, so
     # ordering / aggregation / cancellation / result preservation are verified
     # without running real media scans.

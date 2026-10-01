@@ -665,6 +665,50 @@ the code.
 warning**, not a regression verdict. It prints whether cache / load were controlled
 and states plainly when they were not.
 
+### 14-2. ComparisonMetrics mathematical definition (S6-6)
+
+```text
+absoluteDeltaMs        = right - left                       the metric's own unit (ms)
+relativeDeltaPercent   = ((right - left) / left) * 100
+ratio                  = right / left
+```
+
+**`left` is not a baseline.** The `left < right` order from S6-5 is a deterministic ordering
+whose whole job is to make the pair reproducible. It is not read as `left = old` /
+`right = new`, nor as `left = better` / `right = worse`. An ordering that also implied a
+direction would quietly choose one. No public `baseline` or `target` role is attached; those
+can be assigned when a stage lets a user name them explicitly.
+
+**A computed number is not a verdict.** `relativeDeltaPercent = +50%` is reported as `+50%`
+and is not called a regression, improvement, better, worse or winner. This layer defines **no
+threshold, so pass/fail is structurally impossible** here.
+
+**`left == 0` handling:**
+
+| Value | Result |
+| --- | --- |
+| `absoluteDeltaMs` | **computed** (present) |
+| `relativeDeltaPercent` | **unavailable** |
+| `ratio` | **unavailable** |
+
+Neither is replaced with 0, and no NaN or infinity string enters the output contract, because
+each would be an invented value. The reason is recorded through the `leftValueIsZero` flag
+and `ZeroLeftReference`, so "absent because a value was missing" can be told from "absent
+because the reference was a measured zero".
+
+A `RunWallDuration` of 0 ms in particular is a **real derived value** meaning the two
+timestamps fell in the same second, not an absence. A 0 is never reclassified as missing.
+
+**Statistics are compared independently**: `Min / Max / Mean / Median / P95`, and one being
+unavailable never removes another.
+
+**Layering**: ComparisonMetrics consumes the S6-4 aggregate **by pointer** and recomputes
+nothing. It reads no journal, performs no grouping and performs no aggregation. A metric
+level or resolution mismatch is **re-checked defensively** and produces no numbers at all.
+
+**Limitations**: the nine `ComparisonLimitations` from S6-5 are passed through unchanged. No
+second limitation system is created.
+
 ## 15. Cancellation / Failure handling
 
 - The S2 aggregate precedence is **not redefined**:
