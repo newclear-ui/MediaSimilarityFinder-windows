@@ -163,6 +163,25 @@ struct AggregatedMode {
 
     SampleAccounting accounting;   // over mode results in this cohort
     DurationStatistics elapsed;     // mode_result.elapsedMs, Success only
+
+    // Case-level elapsed restricted to the cases in which THIS mode semantics
+    // actually ran.
+    //
+    // This is a FILTER on the case population, NOT an attribution of the case total to
+    // this mode. `case_complete.elapsedMs` is by S2 definition the sum of ALL of that
+    // case's modes, so splitting it between modes would mean dividing a measured total
+    // by a factor the journal does not record.
+    //
+    // The consequence is that these populations OVERLAP: a case with two successful
+    // modes is counted in both. They are therefore never added across modes, and
+    // summing them would double count. The overlap is visible here because
+    // caseAccounting reports what was observed and what was excluded per cohort.
+    //
+    // A mode that was Skipped contributes nothing: a requested=CUDA/effective=CPU
+    // /SKIPPED case is not a CPU performance sample at any level.
+    std::vector<StatusTally> caseStatuses;
+    SampleAccounting caseAccounting;
+    DurationStatistics caseElapsed;  // MetricLevel::CaseElapsed, Recorded
 };
 
 struct AggregatedBuild {
@@ -176,6 +195,21 @@ struct AggregatedBuild {
     std::vector<StatusTally> runStatuses;
     SampleAccounting runAccounting;
     DurationStatistics runWallDuration;  // MetricLevel::RunWallDuration, OneSecond
+
+    // Case-level elapsed for the cases of this build, with the same eligibility rule as
+    // the scope and dataset levels (case status Success).
+    //
+    // S6-5 needs this axis. Without it, two builds over the same dataset and scope
+    // cannot be compared on case elapsed at all, because the scope and dataset
+    // aggregates carry no per-build breakdown. The measurement already exists in the
+    // normalized data; this is a projection of it, not a new measurement.
+    //
+    // The build totals equal the sum of its scopes' contributions, but this block and
+    // the scope block are the SAME samples seen from two levels. They are alternative
+    // views of one population and are never added together.
+    std::vector<StatusTally> caseStatuses;
+    SampleAccounting caseAccounting;
+    DurationStatistics caseElapsed;  // MetricLevel::CaseElapsed, Recorded
 };
 
 struct AggregatedScope {

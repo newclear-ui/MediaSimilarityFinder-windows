@@ -315,22 +315,120 @@ int main(int argc, char** argv) {
                 "every emitted candidate has eligible samples on both sides");
     }
 
-    // --- 6. case elapsed cannot be compared by build or mode ---------------
+    // --- 6. case elapsed IS comparable by build and mode now ----------------
+    //
+    // Before the aggregation completion this axis did not exist and the comparison was
+    // refused as InsufficientData. Two Known commits now produce a real CaseElapsed
+    // candidate, which is the point of the completion.
     {
         msf::NormalizedBenchmarkData d;
         d.runs.push_back(cpuRun("run-a", "jA", "fp-1", "images", "1.0.0",
-                                msf::GitCommitState::Known, "commitA", 1000.0, 10.0, 3));
+                                msf::GitCommitState::Known, "commitA", 1000.0, 100.0, 2));
         d.runs.push_back(cpuRun("run-b", "jB", "fp-1", "images", "2.0.0",
-                                msf::GitCommitState::Known, "commitB", 2000.0, 20.0, 4));
+                                msf::GitCommitState::Known, "commitB", 2000.0, 150.0, 2));
+        const auto a = analyse(d);
+        std::size_t caseBuild = 0;
+        for (const auto& c : a.candidates)
+            if (c.metricLevel == msf::MetricLevel::CaseElapsed &&
+                c.dimension == msf::ComparisonDimension::BuildProvenance)
+                ++caseBuild;
+        chk(caseBuild == 1,
+            "two Known commits now produce a real CaseElapsed build-provenance candidate");
+        chk(a.accounted(), "the accounting still balances");
+
+        for (const auto& c : a.candidates) {
+            if (c.metricLevel != msf::MetricLevel::CaseElapsed) continue;
+            chk(c.left.eligibleSamples == 2 && c.right.eligibleSamples == 2,
+                "the CaseElapsed candidate carries the per-build case sample counts");
+            chk(c.metricResolution == msf::MetricResolution::Recorded,
+                "CaseElapsed is a Recorded metric, not a one-second one");
+        }
+    }
+
+    // --- 6b. a Legacy side still blocks a CaseElapsed comparison ------------
+    {
+        msf::NormalizedBenchmarkData d;
+        d.runs.push_back(cpuRun("run-a", "jA", "fp-1", "images", "1.0.0",
+                                msf::GitCommitState::Known, "commitA", 1000.0, 100.0, 2));
+        d.runs.push_back(cpuRun("run-b", "jB", "fp-1", "images", "0.9.0",
+                                msf::GitCommitState::Legacy, "", 2000.0, 150.0, 2));
         const auto a = analyse(d);
         std::size_t caseCandidates = 0;
         for (const auto& c : a.candidates)
             if (c.metricLevel == msf::MetricLevel::CaseElapsed) ++caseCandidates;
         chk(caseCandidates == 0,
-            "no case-elapsed build candidate is produced, because S6-4 keeps no per-build "
-            "breakdown of it");
-        chk(rejectionCount(a, msf::ComparisonEligibility::InsufficientData) > 0,
-            "the impossibility is recorded as insufficient-data rather than left silent");
+            "a Legacy build still produces no CaseElapsed candidate, so the axis existing does "
+            "not weaken the provenance rule");
+        chk(rejectionCount(a, msf::ComparisonEligibility::MissingProvenance) > 0,
+            "the refusal is missing-provenance, not insufficient-data: the axis now exists, the "
+            "commit simply is not known");
+    }
+
+    // --- 6c. CaseElapsed by mode, with requested/effective kept apart -------
+    {
+        msf::NormalizedBenchmarkData d;
+        std::vector<msf::IngestCase> cs;
+        cs.push_back(makeCase("c1", msf::BenchmarkStatus::Success, 10.0,
+                              {makeMode(msf::GpuBackendKind::Auto, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success,
+                                        std::optional<double>{6.0}),
+                               makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success,
+                                        std::optional<double>{4.0})}));
+        // A second case where only CPU ran, so the two mode populations differ in size.
+        cs.push_back(makeCase("c2", msf::BenchmarkStatus::Success, 20.0,
+                              {makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success,
+                                        std::optional<double>{20.0})}));
+        d.runs.push_back(makeRun("run-a", "jA", "fp-1", "images", "1.0.0",
+                                 msf::GitCommitState::Known, "commitA",
+                                 std::optional<double>{1000.0}, cs));
+        const auto a = analyse(d);
+        std::size_t caseModeDim = 0;
+        for (const auto& c : a.candidates)
+            if (c.metricLevel == msf::MetricLevel::CaseElapsed &&
+                c.dimension == msf::ComparisonDimension::ModeSemantics)
+                ++caseModeDim;
+        chk(caseModeDim == 1, "a CaseElapsed mode-semantics candidate is produced");
+        for (const auto& c : a.candidates) {
+            if (c.metricLevel != msf::MetricLevel::CaseElapsed) continue;
+            chk(c.left.requestedMode != c.right.requestedMode,
+                "the mode-semantics case candidate separates the two requested modes");
+            chk(c.left.eligibleSamples != c.right.eligibleSamples,
+                "the per-mode case populations keep their own sizes instead of being equalised");
+            chk(c.left.eligibleSamples == 1 && c.right.eligibleSamples == 2,
+                "CPU/CPU covers both cases while AUTO/CPU covers only the case it ran in");
+        }
+        chk(a.accounted(), "the accounting balances");
+    }
+
+    // --- 6d. a skipped mode contributes no case elapsed ---------------------
+    {
+        msf::NormalizedBenchmarkData d;
+        std::vector<msf::IngestCase> cs;
+        cs.push_back(makeCase("c1", msf::BenchmarkStatus::Success, 10.0,
+                              {makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success,
+                                        std::optional<double>{10.0}),
+                               // The real shape: CUDA requested, CPU effective, skipped.
+                               makeMode(msf::GpuBackendKind::Cuda, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Skipped, std::nullopt)}));
+        d.runs.push_back(makeRun("run-a", "jA", "fp-1", "images", "1.0.0",
+                                 msf::GitCommitState::Known, "commitA",
+                                 std::optional<double>{1000.0}, cs));
+        const auto a = analyse(d);
+        // The CUDA/CPU cohort must have no eligible case sample, so a CUDA-vs-CPU
+        // CaseElapsed comparison cannot be built from it.
+        std::size_t cudaCaseDim = 0;
+        for (const auto& c : a.candidates)
+            if (c.metricLevel == msf::MetricLevel::CaseElapsed &&
+                (c.left.requestedMode == msf::GpuBackendKind::Cuda ||
+                 c.right.requestedMode == msf::GpuBackendKind::Cuda))
+                ++cudaCaseDim;
+        chk(cudaCaseDim == 0,
+            "a Skipped CUDA request never enters a CaseElapsed mode comparison as a sample");
+        chk(rejectionCount(a, msf::ComparisonEligibility::NoComparableSamples) > 0,
+            "the refusal is recorded as no-comparable-samples");
     }
 
     // --- 7. mode semantics dimension ---------------------------------------
@@ -351,7 +449,9 @@ int main(int argc, char** argv) {
         std::size_t modeDim = 0;
         for (const auto& c : a.candidates)
             if (c.dimension == msf::ComparisonDimension::ModeSemantics) ++modeDim;
-        chk(modeDim == 1, "AUTO/CPU and CPU/CPU in one build produce one mode-semantics candidate");
+        chk(modeDim == 2,
+            "AUTO/CPU and CPU/CPU in one build produce two mode-semantics candidates: one "
+            "ModeElapsed and one CaseElapsed");
         chk(a.accounted(), "the accounting balances");
         for (const auto& c : a.candidates)
             chk(c.dimension != msf::ComparisonDimension::ModeSemantics ||
@@ -419,6 +519,30 @@ int main(int argc, char** argv) {
         chk(a.candidates.empty(), "an empty dataset produces no candidates");
         chk(a.comparisonOpportunities == 0, "and no opportunities");
         chk(a.accounted(), "and the accounting still balances");
+    }
+
+    // --- 10b. the unusable-dimension guard still reports InsufficientData ----
+    //
+    // Generation no longer needs this, because the CaseElapsed axes now exist. The state
+    // stays part of the contract for a caller judging a combination the result cannot
+    // express, so it must keep working rather than being deleted untested.
+    {
+        const auto x = side("fp-1", "images", msf::MetricLevel::CaseElapsed,
+                            msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu, "1.0.0",
+                            msf::GitCommitState::Known, "commitA", 5);
+        const auto y = side("fp-1", "images", msf::MetricLevel::CaseElapsed,
+                            msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu, "2.0.0",
+                            msf::GitCommitState::Known, "commitB", 5);
+        chk(msf::evaluateComparison(x, y, msf::ComparisonDimension::BuildProvenance, true) ==
+                msf::ComparisonEligibility::Eligible,
+            "the same pair is now eligible, because the axis exists");
+        chk(msf::evaluateComparison(x, y, msf::ComparisonDimension::BuildProvenance, false) ==
+                msf::ComparisonEligibility::InsufficientData,
+            "declaring the combination unusable reports insufficient-data rather than pretending "
+            "to compare");
+        chk(msf::evaluateComparison(y, x, msf::ComparisonDimension::BuildProvenance, true) ==
+                msf::ComparisonEligibility::Eligible,
+            "the verdict does not depend on which side is passed first");
     }
 
     // --- 11. determinism ------------------------------------------------------

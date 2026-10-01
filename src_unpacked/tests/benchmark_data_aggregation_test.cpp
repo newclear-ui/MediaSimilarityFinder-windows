@@ -61,6 +61,12 @@ msf::IngestCase makeCase(const std::string& id, const std::string& path,
     return c;
 }
 
+// Shorthand for the case-only fixtures, which do not care about the path.
+msf::IngestCase makeCase(const std::string& id, msf::BenchmarkStatus st, double elapsed,
+                         const std::vector<msf::IngestModeResult>& modes) {
+    return makeCase(id, "/d/" + id, st, elapsed, modes);
+}
+
 msf::IngestRun makeRun(const std::string& runId, const std::string& journal,
                        const std::string& fp, const std::string& scope,
                        const std::string& build, msf::GitCommitState gs,
@@ -247,6 +253,30 @@ msf::NormalizedBenchmarkData buildDataset() {
     d.runs.push_back(one("r-b", "2.0.0", msf::GitCommitState::Known, "commitB", 2000.0));
     d.runs.push_back(one("r-u", "1.0.0", msf::GitCommitState::Unknown, "", 3000.0));
     d.runs.push_back(one("r-l", "0.9.0", msf::GitCommitState::Legacy, "", 4000.0));
+    return d;
+}
+
+// Two Known builds over one dataset and scope, each with its own measured cases.
+//
+// This is a SYNTHETIC FIXTURE for the future known-known shape, not a benchmark result
+// and not data from the real store.
+msf::NormalizedBenchmarkData buildCaseElapsedDataset() {
+    msf::NormalizedBenchmarkData d;
+    const auto ok = [](double v) { return std::optional<double>{v}; };
+    auto mk = [&](const std::string& id, const std::string& journal, const std::string& build,
+                  const std::string& git, const std::vector<double>& caseMs) {
+        std::vector<msf::IngestCase> cs;
+        for (std::size_t i = 0; i < caseMs.size(); ++i)
+            cs.push_back(makeCase("c" + std::to_string(i), msf::BenchmarkStatus::Success, caseMs[i],
+                                  {makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                            msf::BenchmarkStatus::Success, ok(caseMs[i]))}));
+        return makeRun(id, journal, "fp-1", "images", build, msf::GitCommitState::Known, git,
+                       msf::BenchmarkStatus::Success, ok(1000.0), cs);
+    };
+    // Build A: 100, 120  -> mean 110
+    d.runs.push_back(mk("run-a", "jA", "1.0.0", "commitA", {100.0, 120.0}));
+    // Build B: 150, 180  -> mean 165
+    d.runs.push_back(mk("run-b", "jB", "2.0.0", "commitB", {150.0, 180.0}));
     return d;
 }
 
@@ -596,6 +626,160 @@ int main(int argc, char** argv) {
         chk(c1 != nullptr && c1->accounting.observed == 3,
             "the case cohort holds all three observations rather than one");
         chk(c1 && c1->elapsed.sampleCount == 3, "its statistics use all three");
+    }
+
+    // --- build-level case elapsed -----------------------------------------
+    //
+    // The synthetic known-known shape from the S6-4 completion: two builds over one
+    // dataset and scope, each with its own measured cases. This is a TEST FIXTURE, not a
+    // benchmark result.
+    {
+        const auto d = buildCaseElapsedDataset();
+        const auto a = msf::aggregateBenchmarks(d, msf::groupBenchmarks(d));
+        const auto* sc = findScope(a, "fp-1", "images");
+        chk(sc != nullptr, "the scope cohort aggregates");
+        const auto* bA = findBuild(sc, "1.0.0", msf::GitCommitState::Known);
+        const auto* bB = findBuild(sc, "2.0.0", msf::GitCommitState::Known);
+        chk(bA != nullptr && bB != nullptr && bA != bB, "two Known builds form two cohorts");
+
+        if (bA != nullptr) {
+            chk(bA->caseElapsed.sampleCount == 2, "build A has 2 case elapsed samples");
+            chk(bA->caseElapsed.level == msf::MetricLevel::CaseElapsed,
+                "build case metric is labelled CaseElapsed");
+            chk(bA->caseElapsed.resolution == msf::MetricResolution::Recorded,
+                "build case metric is Recorded, not one-second");
+            chk(bA->caseElapsed.minMs.has_value() && std::abs(*bA->caseElapsed.minMs - 100.0) < kEps,
+                "build A case min is 100");
+            chk(bA->caseElapsed.maxMs.has_value() && std::abs(*bA->caseElapsed.maxMs - 120.0) < kEps,
+                "build A case max is 120");
+            chk(bA->caseElapsed.meanMs.has_value() && std::abs(*bA->caseElapsed.meanMs - 110.0) < kEps,
+                "build A case mean is 110");
+            chk(bA->caseElapsed.medianMs.has_value() &&
+                    std::abs(*bA->caseElapsed.medianMs - 110.0) < kEps,
+                "build A case median is 110");
+            chk(bA->caseElapsed.p95Ms.has_value() && std::abs(*bA->caseElapsed.p95Ms - 120.0) < kEps,
+                "build A case p95 is 120");
+            chk(bA->caseAccounting.observed == 2 && bA->caseAccounting.eligible == 2,
+                "build A case accounting is 2 observed and 2 eligible");
+            chk(bA->caseAccounting.balanced(), "build A case accounting balances");
+        }
+        if (bB != nullptr) {
+            chk(bB->caseElapsed.sampleCount == 2, "build B has 2 case elapsed samples");
+            chk(bB->caseElapsed.meanMs.has_value() && std::abs(*bB->caseElapsed.meanMs - 165.0) < kEps,
+                "build B case mean is 165");
+        }
+        chk(sc && sc->caseElapsed.sampleCount == 4,
+            "the scope view still sees all 4 cases, so the build view did not steal them");
+        chk(sc && sc->caseElapsed.meanMs.has_value() &&
+                std::abs(*sc->caseElapsed.meanMs - 137.5) < kEps,
+            "the scope mean is unchanged at 137.5");
+    }
+
+    // --- mode-level case elapsed ------------------------------------------
+    {
+        // Same dataset and build, CPU/CPU and AUTO/CPU. The case population is filtered
+        // by which mode actually ran, and the two modes do not get equalised.
+        msf::NormalizedBenchmarkData d;
+        const auto ok = [](double v) { return std::optional<double>{v}; };
+        std::vector<msf::IngestCase> cs;
+        cs.push_back(makeCase("c1", msf::BenchmarkStatus::Success, 100.0,
+                              {makeMode(msf::GpuBackendKind::Auto, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success, ok(60.0)),
+                               makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success, ok(40.0))}));
+        cs.push_back(makeCase("c2", msf::BenchmarkStatus::Success, 200.0,
+                              {makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success, ok(200.0))}));
+        d.runs.push_back(makeRun("r", "j", "fp-1", "images", "1.0.0", msf::GitCommitState::Known,
+                                 "commitA", msf::BenchmarkStatus::Success, ok(1000.0), cs));
+        const auto a = msf::aggregateBenchmarks(d, msf::groupBenchmarks(d));
+        const auto* sc = findScope(a, "fp-1", "images");
+        const auto* b = findBuild(sc, "1.0.0", msf::GitCommitState::Known);
+        const auto* cpu = findMode(b, msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu);
+        const auto* autoMode =
+            findMode(b, msf::GpuBackendKind::Auto, msf::GpuBackendKind::Cpu);
+
+        chk(cpu != nullptr && autoMode != nullptr,
+            "the CPU/CPU and AUTO/CPU cohorts stay separate");
+        if (cpu != nullptr) {
+            chk(cpu->caseElapsed.sampleCount == 2,
+                "CPU/CPU covers both cases, so its case population is 2");
+            chk(cpu->caseElapsed.meanMs.has_value() &&
+                    std::abs(*cpu->caseElapsed.meanMs - 150.0) < kEps,
+                "CPU/CPU case mean is 150");
+            chk(cpu->elapsed.sampleCount == 2, "CPU/CPU still has its own 2 mode elapsed samples");
+        }
+        if (autoMode != nullptr) {
+            chk(autoMode->caseElapsed.sampleCount == 1,
+                "AUTO/CPU covers only the case it actually ran in");
+            chk(autoMode->caseElapsed.meanMs.has_value() &&
+                    std::abs(*autoMode->caseElapsed.meanMs - 100.0) < kEps,
+                "AUTO/CPU case mean is the single case it ran");
+            chk(autoMode->caseElapsed.level == msf::MetricLevel::CaseElapsed,
+                "mode case metric is labelled CaseElapsed, not ModeElapsed");
+        }
+        // The case total is not split between modes.
+        chk(cpu && autoMode && cpu->caseElapsed.sampleCount != autoMode->caseElapsed.sampleCount,
+            "the case total is filtered onto modes, never divided between them");
+        // Overlapping populations are visible rather than implied.
+        chk(cpu && autoMode && cpu->caseAccounting.observed == 2 &&
+                autoMode->caseAccounting.observed == 1,
+            "each mode cohort states its own observed count, so the overlap is visible");
+    }
+
+    // --- a skipped mode contributes no case elapsed -------------------------
+    {
+        msf::NormalizedBenchmarkData d;
+        const auto ok = [](double v) { return std::optional<double>{v}; };
+        std::vector<msf::IngestCase> cs;
+        cs.push_back(makeCase("c1", msf::BenchmarkStatus::Success, 10.0,
+                              {makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Success, ok(10.0)),
+                               makeMode(msf::GpuBackendKind::Cuda, msf::GpuBackendKind::Cpu,
+                                        msf::BenchmarkStatus::Skipped, std::nullopt)}));
+        d.runs.push_back(makeRun("r", "j", "fp-1", "images", "1.0.0", msf::GitCommitState::Known,
+                                 "commitA", msf::BenchmarkStatus::Success, ok(1000.0), cs));
+        const auto a = msf::aggregateBenchmarks(d, msf::groupBenchmarks(d));
+        const auto* sc = findScope(a, "fp-1", "images");
+        const auto* b = findBuild(sc, "1.0.0", msf::GitCommitState::Known);
+        const auto* cuda = findMode(b, msf::GpuBackendKind::Cuda, msf::GpuBackendKind::Cpu);
+        const auto* cpu = findMode(b, msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu);
+        chk(cuda != nullptr && cuda->caseElapsed.sampleCount == 0,
+            "the skipped CUDA cohort has no case elapsed sample at all");
+        chk(cuda && cuda->caseAccounting.observed == 1 && cuda->caseAccounting.excluded == 1 &&
+                exclusionCount(cuda->caseAccounting, msf::SampleExclusion::Skipped) == 1,
+            "the skipped case is observed and excluded as skipped, with its reason kept");
+        chk(cuda && !cuda->caseElapsed.meanMs.has_value(),
+            "no mean is produced for a population with no eligible case");
+        chk(cpu != nullptr && cpu->caseElapsed.sampleCount == 1,
+            "the CPU cohort still has its own case sample");
+    }
+
+    // --- runId collision keeps both journals' case samples ------------------
+    {
+        msf::NormalizedBenchmarkData d;
+        const auto ok = [](double v) { return std::optional<double>{v}; };
+        auto mk = [&](const std::string& journal, double caseMs, int n) {
+            std::vector<msf::IngestCase> cs;
+            for (int i = 0; i < n; ++i)
+                cs.push_back(makeCase("c" + std::to_string(i), msf::BenchmarkStatus::Success, caseMs,
+                                      {makeMode(msf::GpuBackendKind::Cpu, msf::GpuBackendKind::Cpu,
+                                                msf::BenchmarkStatus::Success, ok(caseMs))}));
+            return makeRun("same-run", journal, "fp-1", "images", "1.0.0",
+                           msf::GitCommitState::Known, "commitA", msf::BenchmarkStatus::Success,
+                           ok(1000.0), cs);
+        };
+        d.runs.push_back(mk("j-A", 100.0, 2));
+        d.runs.push_back(mk("j-B", 200.0, 3));
+        const auto a = msf::aggregateBenchmarks(d, msf::groupBenchmarks(d));
+        const auto* sc = findScope(a, "fp-1", "images");
+        chk(sc != nullptr && sc->caseElapsed.sampleCount == 5,
+            "both journals' cases are counted even though they share one runId");
+        chk(sc && sc->caseAccounting.observed == 5 && sc->caseAccounting.eligible == 5,
+            "the shared runId does not drop or merge case observations");
+        const auto* b = findBuild(sc, "1.0.0", msf::GitCommitState::Known);
+        chk(b != nullptr && b->caseElapsed.sampleCount == 5,
+            "the build level also sees all 5, so the runId collision costs nothing on either axis");
     }
 
     // --- determinism --------------------------------------------------------

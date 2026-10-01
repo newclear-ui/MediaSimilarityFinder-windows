@@ -389,27 +389,110 @@ ComparisonAnalysis findComparisonCandidates(const NormalizedBenchmarkData& data,
 
             // ---- 4. case elapsed ------------------------------------------
             //
-            // CaseElapsed is aggregated per dataset+scope. S6-4 keeps no per-build and
-            // no per-mode breakdown of it, so neither a build comparison nor a mode
-            // comparison of case elapsed can be stated from the result at all. That is
-            // recorded as insufficient data rather than emitted as a candidate whose
-            // numbers do not exist.
-            if (sc.caseElapsed.sampleCount > 0) {
-                ComparisonSide a, b;
-                a.datasetFingerprint = b.datasetFingerprint = fp;
-                a.mediaScope = b.mediaScope = scope;
-                a.metricLevel = b.metricLevel = MetricLevel::CaseElapsed;
-                a.metricResolution = b.metricResolution = MetricResolution::Recorded;
-                a.buildVersion = b.buildVersion = "(scope-level only)";
-                a.gitCommitState = b.gitCommitState = GitCommitState::Legacy;
-                a.eligibleSamples = b.eligibleSamples = sc.caseAccounting.eligible;
-                a.runReferences = b.runReferences = refsFor(fp, scope, "", GitCommitState::Legacy, "");
+            // CaseElapsed is projected onto the build and mode axes as well as the
+            // dataset and scope ones, so both a build comparison and a mode comparison
+            // of case elapsed are now expressible.
+            //
+            // The per-mode populations OVERLAP, because a case's elapsed is the sum of all
+            // of its modes and the journal records no split. Two mode cohorts may
+            // therefore contain the same case. They are still valid comparisons, but
+            // their samples must never be added together, and the case-level view is
+            // where per-file comparison belongs.
+            //
+            // ---- 4a. case elapsed, build provenance
+            for (std::size_t i = 0; i < sc.builds.size(); ++i) {
+                for (std::size_t j = i + 1; j < sc.builds.size(); ++j) {
+                    const AggregatedBuild& A = sc.builds[i];
+                    const AggregatedBuild& B = sc.builds[j];
+                    ComparisonSide a, b;
+                    a.datasetFingerprint = b.datasetFingerprint = fp;
+                    a.mediaScope = b.mediaScope = scope;
+                    a.metricLevel = b.metricLevel = MetricLevel::CaseElapsed;
+                    a.metricResolution = b.metricResolution = MetricResolution::Recorded;
+                    a.buildVersion = A.key.buildVersion;
+                    a.gitCommitState = A.key.gitCommitState;
+                    a.gitCommit = A.key.gitCommit;
+                    a.eligibleSamples = A.caseAccounting.eligible;
+                    b.buildVersion = B.key.buildVersion;
+                    b.gitCommitState = B.key.gitCommitState;
+                    b.gitCommit = B.key.gitCommit;
+                    b.eligibleSamples = B.caseAccounting.eligible;
+                    a.runReferences = refsFor(fp, scope, A.key.buildVersion, A.key.gitCommitState,
+                                              A.key.gitCommit);
+                    b.runReferences = refsFor(fp, scope, B.key.buildVersion, B.key.gitCommitState,
+                                              B.key.gitCommit);
+                    if (sideSortKey(a) > sideSortKey(b)) std::swap(a, b);
 
-                ++out.comparisonOpportunities;
-                ++out.rejectedCandidates;
-                addRejection(out.rejections, out.rejectionReasons,
-                             ComparisonDimension::BuildProvenance,
-                             ComparisonEligibility::InsufficientData, a, b);
+                    ++out.comparisonOpportunities;
+                    const ComparisonEligibility e = evaluateComparison(
+                        a, b, ComparisonDimension::BuildProvenance, true);
+                    if (e == ComparisonEligibility::Eligible) {
+                        ComparisonCandidate cand;
+                        cand.dimension = ComparisonDimension::BuildProvenance;
+                        cand.datasetFingerprint = fp;
+                        cand.mediaScope = scope;
+                        cand.metricLevel = MetricLevel::CaseElapsed;
+                        cand.metricResolution = MetricResolution::Recorded;
+                        cand.left = a;
+                        cand.right = b;
+                        cand.limitations = out.limitations;
+                        out.candidates.push_back(std::move(cand));
+                        ++out.eligibleCandidates;
+                    } else {
+                        ++out.rejectedCandidates;
+                        addRejection(out.rejections, out.rejectionReasons,
+                                     ComparisonDimension::BuildProvenance, e, a, b);
+                    }
+                }
+            }
+
+            // ---- 4b. case elapsed, mode semantics
+            for (const AggregatedBuild& B : sc.builds) {
+                for (std::size_t i = 0; i < B.modes.size(); ++i) {
+                    for (std::size_t j = i + 1; j < B.modes.size(); ++j) {
+                        const AggregatedMode& MA = B.modes[i];
+                        const AggregatedMode& MB = B.modes[j];
+                        ComparisonSide a, b;
+                        a.datasetFingerprint = b.datasetFingerprint = fp;
+                        a.mediaScope = b.mediaScope = scope;
+                        a.metricLevel = b.metricLevel = MetricLevel::CaseElapsed;
+                        a.metricResolution = b.metricResolution = MetricResolution::Recorded;
+                        a.buildVersion = b.buildVersion = B.key.buildVersion;
+                        a.gitCommitState = b.gitCommitState = B.key.gitCommitState;
+                        a.gitCommit = b.gitCommit = B.key.gitCommit;
+                        a.requestedMode = MA.key.requestedMode;
+                        a.effectiveMode = MA.key.effectiveMode;
+                        b.requestedMode = MB.key.requestedMode;
+                        b.effectiveMode = MB.key.effectiveMode;
+                        a.eligibleSamples = MA.caseAccounting.eligible;
+                        b.eligibleSamples = MB.caseAccounting.eligible;
+                        a.runReferences = refsFor(fp, scope, B.key.buildVersion,
+                                                  B.key.gitCommitState, B.key.gitCommit);
+                        b.runReferences = a.runReferences;
+                        if (sideSortKey(a) > sideSortKey(b)) std::swap(a, b);
+
+                        ++out.comparisonOpportunities;
+                        const ComparisonEligibility e = evaluateComparison(
+                            a, b, ComparisonDimension::ModeSemantics, true);
+                        if (e == ComparisonEligibility::Eligible) {
+                            ComparisonCandidate cand;
+                            cand.dimension = ComparisonDimension::ModeSemantics;
+                            cand.datasetFingerprint = fp;
+                            cand.mediaScope = scope;
+                            cand.metricLevel = MetricLevel::CaseElapsed;
+                            cand.metricResolution = MetricResolution::Recorded;
+                            cand.left = a;
+                            cand.right = b;
+                            cand.limitations = out.limitations;
+                            out.candidates.push_back(std::move(cand));
+                            ++out.eligibleCandidates;
+                        } else {
+                            ++out.rejectedCandidates;
+                            addRejection(out.rejections, out.rejectionReasons,
+                                         ComparisonDimension::ModeSemantics, e, a, b);
+                        }
+                    }
+                }
             }
         }
     }

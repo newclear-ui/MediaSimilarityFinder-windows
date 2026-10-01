@@ -95,6 +95,14 @@ struct Cell {
     // Populated at build level only.
     std::map<ModeCohortKey, std::pair<SampleAccumulator, SampleAccounting>> modes;
     std::map<ModeCohortKey, std::vector<StatusTally>> modeStatusByKey;
+
+    // Per-mode CASE population, restricted to the cases where that mode semantics ran.
+    //
+    // Keyed per mode cohort rather than folded into the mode's own accounting, because
+    // the two populations are different things: this one holds case elapsed values,
+    // the other holds mode elapsed values.
+    std::map<ModeCohortKey, std::pair<SampleAccumulator, SampleAccounting>> modeCases;
+    std::map<ModeCohortKey, std::vector<StatusTally>> modeCaseStatusByKey;
 };
 
 void addStatus(std::vector<StatusTally>& t, BenchmarkStatus s) {
@@ -127,6 +135,34 @@ void admitCase(const IngestCase& c, SampleAccumulator& acc, SampleAccounting& ac
     if (c.status != BenchmarkStatus::Success) {
         ++acct.excluded;
         acct.addExcluded(exclusionForStatus(c.status));
+        return;
+    }
+    ++acct.eligible;
+    acc.add(c.elapsedMs);
+}
+
+// Case-level elapsed for one mode cohort.
+//
+// The case's own status decides, exactly as at the scope level. The mode status
+// decides too, because a case whose mode never ran says nothing about that mode's case
+// elapsed: the real requested=CUDA/effective=CPU/SKIPPED records would otherwise appear
+// in the CPU cohort's case population, which is exactly the misreading this stage exists
+// to prevent.
+//
+// The case elapsed value is NOT split between modes. S2 defines it as the sum of all of
+// that case's modes and the journal records no split, so dividing it would be inventing
+// a factor.
+void admitCaseForMode(const IngestCase& c, const IngestModeResult& m, SampleAccumulator& acc,
+                      SampleAccounting& acct) {
+    acct.observed++;
+    if (c.status != BenchmarkStatus::Success) {
+        ++acct.excluded;
+        acct.addExcluded(exclusionForStatus(c.status));
+        return;
+    }
+    if (m.status != BenchmarkStatus::Success) {
+        ++acct.excluded;
+        acct.addExcluded(exclusionForStatus(m.status));
         return;
     }
     ++acct.eligible;
@@ -180,6 +216,11 @@ void placeRun(const IngestRun& run, Cell& dataset, Cell& scope, Cell& build) {
             auto& slot = build.modes[mk];
             admitMode(m, slot.first, slot.second);
             addStatus(build.modeStatusByKey[mk], m.status);
+
+            // The same case, filtered onto this mode cohort's case population.
+            auto& cslot = build.modeCases[mk];
+            admitCaseForMode(c, m, cslot.first, cslot.second);
+            addStatus(build.modeCaseStatusByKey[mk], c.status);
         }
     }
 }
@@ -425,11 +466,30 @@ BenchmarkAggregation aggregateBenchmarks(const NormalizedBenchmarkData& data,
                     am.accounting = slot.second;
                     am.elapsed =
                         slot.first.finish(MetricLevel::ModeElapsed, MetricResolution::Recorded);
+                    // Per-mode case population.
+                    auto cslot = bNode.cell.modeCases.find(mKey);
+                    if (cslot != bNode.cell.modeCases.end()) {
+                        am.caseAccounting = cslot->second.second;
+                        am.caseElapsed =
+                            cslot->second.first.finish(MetricLevel::CaseElapsed,
+                                                       MetricResolution::Recorded);
+                        auto cst = bNode.cell.modeCaseStatusByKey.find(mKey);
+                        if (cst != bNode.cell.modeCaseStatusByKey.end())
+                            am.caseStatuses = cst->second;
+                    } else {
+                        // A mode cohort observed with no case at all still needs a stated
+                        // population rather than a silent absence.
+                        am.caseElapsed.level = MetricLevel::CaseElapsed;
+                        am.caseElapsed.resolution = MetricResolution::Recorded;
+                    }
                     ab.modes.push_back(std::move(am));
                 }
                 ab.runStatuses = bNode.cell.runStatuses;
                 ab.runAccounting = bNode.cell.runAcct;
                 ab.runWallDuration = runStats(bNode.cell);
+                ab.caseStatuses = bNode.cell.caseStatuses;
+                ab.caseAccounting = bNode.cell.caseAcct;
+                ab.caseElapsed = caseStats(bNode.cell);
                 sc.builds.push_back(std::move(ab));
             }
             sc.caseStatuses = sNode.cell.caseStatuses;

@@ -1958,3 +1958,88 @@ comparison **78 checks** (new), S6-4 aggregation 97, S6-3 grouping 58, S6-2 cont
 S6-1 ingestion 71, journal 66 / store 51 / integration 144 / core 63, all PASS. CPU build
 exit 0 / CTest **101/101**, GPU build exit 0 / CTest **102/102**. `git diff --check` clean,
 no stale objects.
+## 2026-10-01 — S6-4 completion / CaseElapsed on the build and mode axes
+
+Location: `src/benchmark_data_aggregation.{h,cpp}` +
+`src/benchmark_data_comparison.cpp` (the candidate generation path) + two test binaries.
+aggregation **129 checks**, comparison **123 checks**.
+
+### Aggregation — the added axes
+
+| Axis | Fields | Note |
+| --- | --- | --- |
+| Build | `AggregatedBuild.caseStatuses` / `caseAccounting` / `caseElapsed` | all cases of that build |
+| Mode | `AggregatedMode.caseStatuses` / `caseAccounting` / `caseElapsed` | only cases where that mode succeeded |
+
+The build axis was nearly free: `placeRun()` already fed every case into the dataset, scope
+and build cells and the result was simply **never exposed**. Only the mode axis was new.
+**No new measurement was created** — this is a projection of the `case_complete.elapsedMs`
+values S6-2 had already normalized.
+
+**The mode axis is a filter, not an allocation.** Case elapsed is by S2 definition the sum of
+all of that case's modes and the journal records no split, so dividing it between modes would
+mean **inventing a factor that was never measured**. Instead each mode cohort contains only
+the cases where that mode semantics actually succeeded. A case where both modes succeeded
+enters both, so **the two populations overlap by design and must never be added**. The overlap
+is not hidden: each cohort states it in `caseAccounting.observed`.
+
+**Skipped contributes nothing.** A `requested=CUDA / effective=CPU / SKIPPED` case is excluded
+on the case axis too, so it never becomes a CPU case performance sample.
+
+### Current actual data, 30 journals / 31 runs
+
+```text
+opportunities  8 -> 11
+eligible           0        (unchanged)
+rejected      8 -> 11
+  missing-provenance    2 -> 3
+  no-comparable-samples 4 -> 8
+  insufficient-data     2 -> 0
+```
+
+**That `insufficient-data` count falling from 2 to 0 is the evidence the completion worked.**
+The structural impossibility is gone and `missing-provenance` took its place: the axis exists
+and **the commit is still unknown**. Every case in the `images` scope is Skipped, so per-build
+CaseElapsed there still has 0 samples.
+
+**No gitCommit was backdated onto the Legacy journals to force a candidate.** That would
+invent provenance for 30 measurements that the journal never recorded. Nor was a Known commit
+synthesised from `buildVersion`, nor was CaseElapsed back-computed from the dataset/scope
+aggregates, nor was mode elapsed substituted for case elapsed.
+
+The existing Run and Scope metrics are **all unchanged** (mode 494/110/384, case 324/110/214,
+run 31/31/0, wall median `OneSecond`).
+
+### Synthetic known-known
+
+```
+Dataset A / images
+  Build A commitA: case 100, 120  -> count=2 mean=110 median=110 p95=120
+  Build B commitB: case 150, 180  -> count=2 mean=165
+```
+
+**S6-5 now produces a real CaseElapsed candidate** — one `CaseElapsed / BuildProvenance`
+candidate from the two Known builds, carrying 2 samples on each side. Passing the same pair
+directly to `evaluateComparison` also returns `Eligible`. This is a **synthetic fixture**,
+not a benchmark result.
+
+### RunId collision preserved
+
+Two runs sharing one runId across different journals, with 2 and 3 cases, give **5** on the
+scope axis and **5** on the build axis. No observation is lost on either axis and the cases
+stay separate rather than being merged.
+
+### Statistics
+
+Implemented: `count / min / max / mean / median / p95`, 6-decimal rounding, no statistic when
+eligible is zero. The existing algorithm is reused and nothing new was introduced.
+Not computed: **thresholds, winner, better/worse, regression percentage** — none of
+5% / 10% / 20% was chosen. `RunWallDuration` keeps its one-second resolution, no correction by
+mode or case sums, and no reclassifying 0 ms as missing.
+
+### Verification
+
+aggregation 129, comparison 123, S6-3 grouping 58, S6-2 contract 67, S6-1 ingestion 71,
+journal 66 / store 51 / integration 144 / core 63, all PASS. Real journal read-only exits 0
+for both; aggregation and comparison are **identical across processes**. CPU build exit 0 /
+CTest **101/101**, GPU build exit 0 / CTest **102/102**. No stale objects.

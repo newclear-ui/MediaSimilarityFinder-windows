@@ -570,10 +570,22 @@ SameProvenance        NoComparableSamples  InsufficientData
 판정 순서에서 dataset 동일성이 가장 먼저다. "다른 dataset" 이 더 근본적인 이유이므로
 호출자가 다른 조건을 다 확인한 뒤에야 알 필요가 없어야 한다.
 
-**CaseElapsed 은 build/mode 로 쪼갤 수 없다.** S6-4 의 `caseElapsed` 는
-`AggregatedScope`/`AggregatedDataset` 에만 있고 `AggregatedBuild` 에 없다. 즉 dataset+scope
-단위 값일 뿐 build 별·mode 별 분해가 **존재하지 않는다.** 그래서 case elapsed 의 build/mode
-비교는 수치가 없는 candidate 가 아니라 `InsufficientData` 로 기록한다.
+**CaseElapsed 는 Dataset/Scope 뿐 아니라 Build/Mode 수준에서도 필요하다.** 이 축이 없으면
+미래의 Known-build 간 case-level comparison candidate 를 생성할 수 없다. (아래 보완 기록 참조)
+
+> **2026-10-01 갱신**: 위 concerns 는 **해소되었다.** `case_complete.elapsedMs` 는 S6-2 가
+
+> 이미 정규화해 둔 값이므로 새 측정이 아니라 **추가 projection** 이었다.
+> `AggregatedBuild.caseElapsed` 와 `AggregatedMode.caseElapsed` 가 추가되었다.
+>
+> mode 축은 case elapsed 를 mode 사이에 **분배하지 않고**, 그 mode semantics 가 실제로
+> 성공한 case 로 **필터**한다. `case_complete.elapsedMs` 는 그 case 의 모든 mode 합이고
+> journal 은 분할을 기록하지 않으므로 나누면 측정되지 않은 계수를 발명하게 된다.
+> 두 mode 가 모두 성공한 case 는 양쪽에 들어가므로 **두 모집단은 겹치며 더할 수 없다.**
+>
+> 실측 결과 `insufficient-data` 거절이 **2건 → 0건** 이 되었고, 그 자리에
+> `missing-provenance` 이 들어왔다. 즉 **축은 존재하고 commit 이 아직 없는** 상태다.
+> Legacy journal 에 `gitCommit` 을 소급해 후보를 만드는 우회는 하지 않았다.
 
 **measurement 자체가 아니라 provenance 가 부족했다.** 실측에서 `images` scope 에 build 별
 run wall 표본이 이미 **1 과 5** 존재한다. Legacy 인 쪽에만 `gitCommit` 이 있었다면 지금

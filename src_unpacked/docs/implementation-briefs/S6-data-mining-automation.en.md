@@ -607,11 +607,23 @@ Dataset identity is checked first, because "a different dataset" is the more fun
 reason and a caller should not have to satisfy itself about every other condition before
 learning it.
 
-**CaseElapsed cannot be split by build or mode.** S6-4 puts `caseElapsed` on
-`AggregatedScope` and `AggregatedDataset` but not on `AggregatedBuild`, so it exists only per
-dataset+scope and **no per-build or per-mode breakdown exists**. A case-elapsed build or mode
-comparison is therefore recorded as `InsufficientData` rather than emitted as a candidate
-whose numbers do not exist.
+**CaseElapsed is needed at Build/Mode level, not only Dataset/Scope.** Without those axes, a
+future case-level comparison candidate between Known builds cannot be created. (See the
+completion record below.)
+
+> **2026-10-01 update**: the concern above is **resolved.** `case_complete.elapsedMs` had
+> already been normalized by S6-2, so this was an **additional projection** and not a new
+> measurement. `AggregatedBuild.caseElapsed` and `AggregatedMode.caseElapsed` were added.
+>
+> The mode axis does **not** divide case elapsed between modes; it **filters** to the cases
+> where that mode semantics actually succeeded. `case_complete.elapsedMs` is the sum of all
+> of a case's modes and the journal records no split, so dividing it would invent a factor
+> that was never measured. A case where both modes succeeded enters both, so **the two
+> populations overlap and must never be added.**
+>
+> Measured result: `insufficient-data` refusals went from **2 to 0**, with `missing-provenance`
+> taking their place. In other words, **the axis exists and the commit is still unknown.**
+> No gitCommit was backdated onto the Legacy journals to manufacture a candidate.
 
 **It was provenance that was missing, not measurements.** The real store already holds
 per-build run wall samples of **1 and 5** in the `images` scope. Had the Legacy side carried

@@ -1830,3 +1830,83 @@ comparison **78 checks**(신규), S6-4 aggregation 97, S6-3 grouping 58, S6-2 co
 S6-1 ingestion 71, journal 66 / store 51 / integration 144 / core 63 전부 PASS.
 CPU build exit 0 / CTest **101/101**, GPU build exit 0 / CTest **102/102**.
 `git diff --check` clean, stale object 없음.
+## 2026-10-01 — S6-4 보완 / CaseElapsed 의 Build·Mode 축 추가
+
+위치: `src/benchmark_data_aggregation.{h,cpp}` +
+`src/benchmark_data_comparison.cpp` (후보 생성 경로) +
+테스트 2종. aggregation **129 checks**(신규 포함), comparison **123 checks**.
+
+### Aggregation — 추가된 축
+
+| 축 | 필드 | 비고 |
+| --- | --- | --- |
+| Build | `AggregatedBuild.caseStatuses` / `caseAccounting` / `caseElapsed` | build 의 모든 case |
+| Mode | `AggregatedMode.caseStatuses` / `caseAccounting` / `caseElapsed` | 그 mode 가 성공한 case 만 |
+
+Build 축은 이미 `placeRun()` 이 세 cell 에 case 를 넣고 있었으나 **노출되지 않았을 뿐**이라
+구현이 거의 없었습니다. Mode 축만 새로 계산했습니다. **새 측정은 만들지 않았습니다** —
+S6-2 가 정규화한 `case_complete.elapsedMs` 의 projection 입니다.
+
+**Mode 축은 분배가 아니라 필터입니다.** case elapsed 는 S2 정의상 그 case 의 모든 mode 합이고
+journal 은 분할을 기록하지 않으므로, mode 사이에 나누면 **측정되지 않은 계수를 발명**하게 됩니다.
+대신 각 mode cohort 는 그 mode semantics 가 실제로 성공한 case 만 포함합니다. 두 mode 가 모두
+성공한 case 는 양쪽에 들어가므로 **두 모집단은 의도적으로 겹치며 더할 수 없습니다.** 겹침은
+`caseAccounting.observed` 로 각 cohort 가 스스로 밝힙니다.
+
+**SKIPPED 는 아무것도 넣지 않습니다.** `requested=CUDA / effective=CPU / SKIPPED` case 는
+case 축에서도 제외되어 CPU case performance sample 이 되지 않습니다.
+
+### 현재 실제 데이터 (30 journal / 31 run)
+
+```text
+opportunities  8 -> 11
+eligible           0        (변화 없음)
+rejected      8 -> 11
+  missing-provenance    2 -> 3
+  no-comparable-samples 4 -> 8
+  insufficient-data     2 -> 0
+```
+
+**`insufficient-data` 2 → 0 이 이 보완의 성공 증거입니다.** 구조적 불가능성이 사라졌고 그 자리에
+`missing-provenance` 이 들어왔습니다 — 축은 있고 **commit 이 아직 없는** 상태입니다.
+`images` scope 는 case 가 전부 Skipped 라 build 별 CaseElapsed 표본이 여전히 0 입니다.
+
+**후대표를 만들려고 Legacy journal 에 gitCommit 을 소급하지 않았습니다.** 30건의 measurement 에
+journal 이 기록하지 않은 provenance 를 지어내는 셈이므로 기각했습니다. buildVersion 만으로
+Known commit 생성, Dataset/Scope 값의 역산, mode elapsed 로 case elapsed 대체도 모두 하지 않았습니다.
+
+기존 Run / Scope metric 은 **전부 그대로**입니다 (mode 494/110/384, case 324/110/214,
+run 31/31/0, wall median `OneSecond`).
+
+### Synthetic known-known (§12)
+
+```
+Dataset A / images
+  Build A commitA: case 100, 120  -> count=2 mean=110 median=110 p95=120
+  Build B commitB: case 150, 180  -> count=2 mean=165
+```
+
+**S6-5 가 실제로 CaseElapsed 후보를 생성합니다** — Known 2개에서 1건의
+`CaseElapsed / BuildProvenance` 후보가 나오며 양쪽 표본 수가 2씩 실립니다. 같은 input 을
+`evaluateComparison` 으로 직접 판정해도 `Eligible` 입니다. 이는 **synthetic fixture** 이며
+실제 benchmark result 가 아닙니다.
+
+### RunId collision 보존
+
+같은 runId / 다른 journal 두 개가 각 2·3 case 를 가지면 scope 축 **5건**, build 축 **5건**으로
+둘 다 관측을 잃지 않습니다. 합쳐지지 않고 각각 유지됩니다.
+
+### Statistics
+
+구현된 값: `count / min / max / mean / median / p95`, 소수점 6자리 반올림, eligible 0 이면
+통계값 자체 없음. 기존 알고리즘을 그대로 재사용했고 새로 만들지 않았습니다.
+계산하지 않은 값: **threshold, winner, better/worse, regression %** — 5%/10%/20% 중
+어느 것도 정하지 않았습니다. `RunWallDuration` 은 1초 해상도 유지, mode/case 합 보정 금지,
+0ms 의 missing 변환 금지가 그대로입니다.
+
+### 검증
+
+aggregation 129, comparison 123, S6-3 grouping 58, S6-2 contract 67, S6-1 ingestion 71,
+journal 66 / store 51 / integration 144 / core 63 전부 PASS.
+실제 journal read-only 양쪽 exit 0, aggregation·comparison **교차 프로세스 동일**.
+CPU build exit 0 / CTest **101/101**, GPU build exit 0 / CTest **102/102**. stale object 없음.
