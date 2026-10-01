@@ -2384,7 +2384,8 @@ static QSize ffprobeSize(const QString& path) {
   // system code page, so Korean filenames keep working as before.
   const QByteArray cmd = (QStringLiteral("ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"") + path + '"').toLocal8Bit();
   std::string out;
-  if (!msf::captureSilent(std::string(cmd.constData(), (std::size_t)cmd.size()), out)) return QSize();
+  // Metadata class: 30 s budget (local probe, normally < 2 s; cached per path).
+  if (!msf::captureSilent(std::string(cmd.constData(), (std::size_t)cmd.size()), out, 30000)) return QSize();
   const QStringList parts = QString::fromLocal8Bit(out.c_str()).trimmed().split(',');
   if (parts.size() != 2) return QSize();
   bool okW = false, okH = false;

@@ -39,7 +39,8 @@ bool VideoDecoder::open(const std::string&p){
     std::ifstream f(p,std::ios::binary);if(!f)return false;
     path_=p; info_={};
     std::string q="ffprobe -v error -select_streams v:0 -show_entries stream=width,height,duration,r_frame_rate -of default=noprint_wrappers=1 \""+p+"\"";
-    std::string out; if(!captureSilent(q,out))return false;
+    // Metadata class: 30 s budget (local probe, normally < 2 s).
+    std::string out; if(!captureSilent(q,out,30000))return false;
     std::istringstream ss(out);std::string line;while(std::getline(ss,line)){auto pos=line.find('=');if(pos==std::string::npos)continue;auto k=line.substr(0,pos),v=line.substr(pos+1);try{if(k=="width")info_.width=std::stoi(v);else if(k=="height")info_.height=std::stoi(v);else if(k=="duration")info_.duration=std::stod(v);}catch(...){}}
     return info_.width>0&&info_.height>0&&info_.duration>0;
 #endif
@@ -146,7 +147,8 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
     for(double secondsAt:seconds){
         if(!std::isfinite(secondsAt)||secondsAt<0) continue;
         std::ostringstream cmd; cmd<<"ffmpeg -v error -ss "<<secondsAt<<" -i \""<<path_<<"\" -frames:v 1 -vf scale="<<w<<":"<<h<<",format=gray -f rawvideo pipe:1";
-        std::string raw; if(!captureSilent(cmd.str(),raw)) continue;
+        // Decode class: 120 s budget (single frame, normally < 10 s).
+        std::string raw; if(!captureSilent(cmd.str(),raw,120000)) continue;
         if(raw.size()!=(size_t)w*h) continue;
         std::vector<std::uint8_t> data(raw.begin(),raw.end());
         out.push_back({secondsAt,w,h,std::move(data)});

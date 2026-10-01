@@ -56,7 +56,8 @@ SystemLoad SystemLoadMonitor::sample(){
         // "if(f)" guard. Measurement semantics are unchanged: same binary, same
         // query, same 3 s throttle, same cached value on failure.
         std::string gpuOut;
-        if(captureSilent("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits",gpuOut)){
+        // Telemetry class: 10 s budget (normally < 1 s; only a true hang dies).
+        if(captureSilent("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits",gpuOut,10000)){
             try{cachedGpuPercent_=std::stod(gpuOut);}catch(...){cachedGpuPercent_=-1.0;}
         }
         lastGpuSample_=now;

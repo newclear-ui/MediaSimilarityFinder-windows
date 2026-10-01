@@ -1,5 +1,6 @@
 #include "monitor.h"
 #include <cassert>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -14,5 +15,11 @@ int main(){
     auto bulkMatches=engine.compareFingerprint(0x8000000000000000ULL,1,98.0);
     assert(!bulkMatches.empty());
     for(const auto& m:bulkMatches) assert(m.percent>=98.0);
-    auto updated=dir/"updated.jpg"; assert(engine.upsertFingerprint(updated.string(),0x0f0f0f0f0f0f0f0fULL,1,42,77)); auto um=engine.compareFingerprint(0x0f0f0f0f0f0f0f0fULL,1,100.0); assert(um.size()==1&&um[0].rightPath==updated.string()); assert(engine.removePath(updated.string())); assert(engine.compareFingerprint(0x0f0f0f0f0f0f0f0fULL,1,100.0).empty());auto f=dir/"a.txt";{std::ofstream o(f);o<<"x";} msf::StableFileDetector d;assert(!d.isStable(f.string(),1));std::this_thread::sleep_for(std::chrono::milliseconds(1100));assert(d.isStable(f.string(),1));assert(!d.isStable(f.string(),1));std::filesystem::remove_all(dir);std::cout<<"monitor test ok\n";
+    auto updated=dir/"updated.jpg"; assert(engine.upsertFingerprint(updated.string(),0x0f0f0f0f0f0f0f0fULL,1,42,77)); auto um=engine.compareFingerprint(0x0f0f0f0f0f0f0f0fULL,1,100.0); assert(um.size()==1&&um[0].rightPath==updated.string()); assert(engine.removePath(updated.string())); assert(engine.compareFingerprint(0x0f0f0f0f0f0f0f0fULL,1,100.0).empty());auto f=dir/"a.txt";{std::ofstream o(f);o<<"x";} msf::StableFileDetector d;assert(!d.isStable(f.string(),1));std::this_thread::sleep_for(std::chrono::milliseconds(1100));assert(d.isStable(f.string(),1));assert(!d.isStable(f.string(),1));
+    // External process safety: repeated sampling must return promptly and must
+    // not accumulate children. The GPU leg is throttled (first call may spawn
+    // one bounded child, the rest are cached), so 20 samples complete in a
+    // fraction of the budget on any machine, with or without a GPU.
+    { msf::SystemLoadMonitor m; auto t0=std::chrono::steady_clock::now(); for(int i=0;i<20;++i){ auto l=m.sample(); (void)l.cpuPercent; (void)l.memoryPercent; (void)l.gpuPercent; } auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-t0).count(); assert(ms<120000); }
+    std::filesystem::remove_all(dir);std::cout<<"monitor test ok\n";
 }
