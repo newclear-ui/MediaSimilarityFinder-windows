@@ -113,3 +113,16 @@
 - Implementation Brief는 `docs/implementation-briefs/<Node>-<topic>.ko.md` + `.en.md` 규칙을 따른다.
 - 문서를 이동/이름 변경할 때는 내부 링크, `STRUCTURE.md`, `llms.txt`를 같은 변경에서 갱신한다.
 - 문서-only 정리는 제품 버전을 올리지 않고 별도의 `docs:` 커밋으로 분리한다.
+
+11. **벤치마크/실시간 모니터 자동화의 프로세스 안전 규칙**
+
+- benchmark hot path, 실시간 monitor/telemetry, 자동 benchmark harness에서는 **짧은 외부 프로세스를 반복 spawn하는 구조를 금지한다.** 특히 sample 주기마다 `_popen`, `system`, 반복 `CreateProcess`, `ShellExecute` 등을 호출하여 child/console을 계속 만들고 닫는 패턴을 사용하지 않는다.
+- 외부 프로그램이 꼭 필요하면 **in-process API를 우선**하고, 불가피하면 session/run 수명 동안 하나의 persistent helper를 재사용하는 방식을 우선 검토한다. 반복 GPU telemetry에서 `nvidia-smi`를 sample마다 새로 실행하는 구조는 금지한다. NVML 등 in-process API는 별도 설계 후보로 우선한다.
+- Windows의 child process는 **console 없는 실행(`CREATE_NO_WINDOW` 또는 검증된 동등 방식)**과 stdout/stderr capture를 기본으로 한다. 이미 존재하는 `captureSilent` 같은 승인된 wrapper를 재사용하고 호출부마다 숨김 실행 방식을 다시 구현하지 않는다.
+- 외부 process wrapper에는 **무한 대기(예: `WaitForSingleObject(INFINITE)`)를 정상 계약으로 두지 않는다.** timeout, 소유권, 정상 종료, 비정상 종료 시 child 정리와 부모 프로세스 보호를 설계한다. 장기 helper는 명확한 start/stop lifecycle을 가져야 한다.
+- benchmark harness는 공통 실행 정책을 사용한다. `Start-Job`, 반복 `Start-Process`, 임의의 `cmd/powershell` 중첩 실행 등으로 child/console을 폭증시키지 않는다.
+- 자동 chain에서 **unexpected console window, child process runaway, orphan process, 반복 비정상 종료**가 관찰되면 다음 run을 자동으로 계속하지 않는다. 원인 기록 후 chain을 중단하는 circuit-breaker를 우선한다.
+- **측정 오염 여부와 PC 안정성은 별도 판정한다.** 오염된 run이 S6에서 제외되었다고 해서 반복 spawn 문제를 정상으로 간주하지 않는다.
+- 새 Windows release gate에서는 source와 validation script의 raw process creation 경로를 점검한다. 제품 hot path의 반복 spawn은 승인된 예외가 아니면 통과시키지 않는다.
+- 이번 규칙은 기존 benchmark/telemetry 정확성 원칙을 보완하는 안전성 규칙이며, 새로운 process API 구현 자체를 요구하는 것이 아니다. 필요성이 입증되었을 때만 별도 implementation brief로 제품 코드를 변경한다.
+
