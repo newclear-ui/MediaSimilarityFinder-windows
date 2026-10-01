@@ -125,4 +125,4 @@
 - **측정 오염 여부와 PC 안정성은 별도 판정한다.** 오염된 run이 S6에서 제외되었다고 해서 반복 spawn 문제를 정상으로 간주하지 않는다.
 - 새 Windows release gate에서는 source와 validation script의 raw process creation 경로를 점검한다. 제품 hot path의 반복 spawn은 승인된 예외가 아니면 통과시키지 않는다.
 - 이번 규칙은 기존 benchmark/telemetry 정확성 원칙을 보완하는 안전성 규칙이며, 새로운 process API 구현 자체를 요구하는 것이 아니다. 필요성이 입증되었을 때만 별도 implementation brief로 제품 코드를 변경한다.
-
+- **run-level process isolation은 예외가 아니다.** A/B/회귀 benchmark가 각 측정 run마다 제품 executable을 새 프로세스로 시작하는 것은 허용하며, 오히려 측정 격리를 위해 권장될 수 있다. 이 규칙이 금지하는 것은 하나의 측정 run 내부에서 sampling/file/frame/queue 반복마다 짧은 child process를 새로 spawn하는 구조다.
