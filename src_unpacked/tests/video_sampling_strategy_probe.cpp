@@ -1215,8 +1215,16 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::strcmp(argv[1], "--selfcheck") == 0) return selfcheck();
     if (argc >= 2 && std::strcmp(argv[1], "--hevc-landing") == 0) {
         if (argc < 3) { std::fprintf(stderr, "--hevc-landing needs a dataset dir\n"); return 2; }
+#ifdef MSF_HAS_FFMPEG
         const int r = argc >= 4 ? std::atoi(argv[3]) : 3;
         return runHevcLanding(argv[2], r > 0 ? r : 3);
+#else
+        // runHevcLanding is only compiled with linked FFmpeg. main() already
+        // returned 2 above in that configuration, so reaching here is
+        // impossible; the guard keeps MSF_ENABLE_FFMPEG=OFF builds compiling.
+        std::fprintf(stderr, "--hevc-landing requires linked FFmpeg (MSF_HAS_FFMPEG)\n");
+        return 2;
+#endif
     }
     if (argc < 2) {
         std::fprintf(stderr, "usage: msf_video_sampling_strategy_probe <video-dir> [repeats]"
