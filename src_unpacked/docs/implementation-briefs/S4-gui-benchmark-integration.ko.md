@@ -3,7 +3,22 @@
 Status: **PRE-REGISTERED** — 이 문서는 brief 와 Phase 1 조사 결과만 포함하며, S4 구현 코드는 이 문서보다 먼저 들어가면 안 된다.
 Version 기준: v0.9.4.43
 
+> **현재 상태 정정 (2026-10-03, commit `030aaf2`)** — Phase 3-4 회귀/문서 갱신 시점에 확인한 실제 구현과 아래 본문의 일부 표현은 다르다.
+>
+> - **GUI 벤치마크 진입점은 `[벤치마크]` 체크박스(`benchTgl_`)만 남긴다.** 소비자가 S4 의 별도 `벤치마크 실행 / 중지 / 대기` 툴바를 **제거했다** (`benchRun_`/`benchStop_`/`benchStatus_`). GUI 에서 독립 benchmark 실행 workflow 는 더 이상 존재하지 않는다.
+> - `AUTO / CPU 단독 / GPU 최대 활용` 은 더 이상 "벤치마크 mode 실행 선택"이 아니다. **실행 자원/성능 설정의 상위 mode**이며 단일 선택(상호배타)이다. 하위에 `Balanced…` preset 과 CPU 사용량이 있다. `preset_`/`cpu_`/`gpuEnabled_` 는 동일 자원 설정 영역에 통합되었다.
+> - 사진/영상 선택은 `kindBtn_` 드롭다운이 아니라 **두 개의 독립 토글 버튼** (`mediaImgBtn_`/`mediaVidBtn_`)이다. 둘 다 OFF 는 금지(마지막 1개는 off 불가). `kindMask`/`benchMediaScope()`/`ScanWorker` 로 이어지는 연결은 유지된다.
+> - **`benchTgl_` 경로의 실측 특성**: 스캔 중 레거시 `BenchmarkRecorder` (`MediaSearchEngine::beginBenchmark`)가 파일별 타이밍을 수집해 스캔 종료 시 `engine_.benchmarkJson()` 로 **legacy JSON** 을 만든다. **append-only S3 저널·`datasetFingerprint` 기록·S6 수용은 이 경로에 없다.** 이 저널 기록은 제거된 S4 startBenchmark 경로(`BenchmarkGuiStorage`)의 역할이었으며, 현재 GUI 에서는 미연결 상태다. 이것은 후속 작업 대상이다 (아래 "미해결" 참고).
+> - `selectedBenchModes()`/`startBenchmark()`/`cancelBenchmark()` 는 UI 진입 제거와 함께 **DORMANT** 이다. 컴파일은 유지하되 GUI 동작에 사용되지 않는다.
+>
+> ### 미해결 (Phase 3-4 기록)
+> - GUI `[벤치마크]` ON 상태의 검색이 durable 저널(S3)을 남기지 않는다 (legacy JSON 만 생성). "벤치마크 데이터 수집/기록(저널)" 설계가 바로 요구하듯이려면 `benchTgl_` 스캔 경로와 `BenchmarkGuiStorage`/S3 저널을 연결하는 후속 작업이 필요하다. 이번 Phase 3-4 에서는 코드를 우회 수정하지 않고 이 사실만 기록했다.
+> - `datasetFingerprint` 는 GUI 저널 경로에서 비어 있을 수 있다. 재사용 가능한 생성 경로는 S3 콘솔 benchmark 가 가지고 있으나 GUI 경로에 아직 배선되지 않았다. 성공적인 동일성 증명처럼 기록하지 않고 "미구현/미연결"로 명시한다.
+> - CLI의 `--benchmark` 는 S5 전까지 계속 `rejected` 이다.
+
 ---
+
+*아래 본문은 S4 설계 원안(사전 등록)으로 보존한다. 2026-10-03 의 실제 구현은 위 정정을 기준으로 한다.*
 
 ## 1. 목적
 

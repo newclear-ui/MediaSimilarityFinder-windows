@@ -385,6 +385,7 @@ per-file 측정은 ignoredPaths 로 구현하며 scan() 이 매 호출 폴더를
 recovery: 마지막 개행 없는 tail 은 폐기, commit 없는 mode 기록은 incomplete 로 분류, 동일 recordId 중복은 무시, payload 불일치 중복은 anomaly 로 보고 **첫 record 유지**, **중간 record 손상은 fatal 이며 이후를 추측 복구하지 않는다**. `summary.json` 은 journal replay 결과일 뿐 authoritative 가 아니며 삭제 후 journal 에서 재생성된다.
 **통제 불가**: durability 는 append+flush 이며 fsync/power-loss 보장은 아니다. process 격리·OS filesystem cache·O(N²) scan 은 그대로다.
 **S4 구현 상태 (0.9.4.43)**: GUI benchmark integration **구현 완료 / 검증 완료, 단 CLOSED 아님**.
+> **2026-10-03 정정**: GUI consolidation(commit `030aaf2`)으로 `[벤치마크]` 진입점만 남기고 별도 run/stop/status 툴바는 제거됨. `AUTO/CPU/GPU`는 벤치마크 mode 선택이 아니라 단일 선택 자원 정책으로 통합됨. `benchTgl_` 경로는 legacy telemetry(legacy JSON)이며 S3 저널/`datasetFingerprint`/S6 수용은 미연결 상태로 명시됨. 정확한 현재 동작은 `docs/implementation-briefs/S4-gui-benchmark-integration.ko.md` 상단 "현재 상태 정정"을 기준으로 하고, 아래 본문의 run 버튼·다중 mode 실행 선택·`Benchmark/GUI` snapshot 산출 표현은 역사적 S4 설명으로 유지됨.
 Phase 3-1 저장 계층(`src/benchmark_gui_store.*`), Phase 3-2 worker(`gui/benchmark_worker.*`),
 Phase 3-3 MainWindow 배선(mode checkbox 3개 + 실행 버튼 + 중지 + 상태 표시 + 직렬 실행 게이트) 구현.
 **모드 checkbox 는 실행 선택**이며 유효 조합 7개, 최소 1개 필수. `BenchmarkRunner::run(request, selectedModes)` 를 **단일 호출**하고 mode 별 분리 실행은 하지 않는다. 파일별 mode 순서 유지.

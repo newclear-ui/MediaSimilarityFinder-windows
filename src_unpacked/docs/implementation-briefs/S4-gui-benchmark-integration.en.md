@@ -3,7 +3,22 @@
 Status: **PRE-REGISTERED** — this document contains the brief and the Phase 1 investigation results only; S4 implementation code must not land before it.
 Version basis: v0.9.4.43
 
+> **Actual state, corrected 2026-10-03 (commit `030aaf2`)** — at Phase 3-4 regression/doc refresh time the shipped implementation differs from some statements in the body below.
+>
+> - **The GUI benchmark entry point is only the `[Benchmark]` checkbox (`benchTgl_`).** The separate `Run benchmark / Stop / Status` toolbar was **removed** (`benchRun_`/`benchStop_`/`benchStatus_`). The GUI no longer has a standalone benchmark-execution workflow.
+> - `AUTO / CPU only / GPU MAX` are **no longer "benchmark mode execution selection".** They are the **upper entries of the execution resource/performance setting**, single-select (mutually exclusive). The fine CPU budget (`Balanced…` preset and CPU usage) sits below them. `preset_`/`cpu_`/`gpuEnabled_` are integrated into the same resource setting area.
+> - Photo/video scope is **two independent toggle buttons** (`mediaImgBtn_`/`mediaVidBtn_`) instead of a `kindBtn_` dropdown. Both OFF is forbidden (the last one left ON cannot be turned off). The `kindMask`/`benchMediaScope()`/`ScanWorker` wiring is kept.
+> - **Actual behaviour of the `benchTgl_` path:** during a scan the legacy `BenchmarkRecorder` (`MediaSearchEngine::beginBenchmark`) collects per-file timings and at scan end yields `engine_.benchmarkJson()` — a **legacy JSON** summary. It does **not** write the append-only S3 journal, does **not** record `datasetFingerprint`, and is therefore **not** ingestible by S6. That durable-journal role belonged to the removed S4 startBenchmark path (`BenchmarkGuiStorage`), now disconnected. This is a follow-up item (see "Open" below).
+> - `selectedBenchModes()`/`startBenchmark()`/`cancelBenchmark()` are **DORMANT** now that the entry points were removed. They remain compilable but are not used for GUI behaviour.
+>
+> ### Open (recorded from Phase 3-4)
+> - A GUI search performed with `[Benchmark]` ON does **not** produce a durable S3 journal (legacy JSON only). To satisfy "benchmark data collected/recorded", the `benchTgl_` scan path must be wired to `BenchmarkGuiStorage`/the S3 journal — follow-up work. This Phase 3-4 only records that fact rather than forcing a workaround.
+> - `datasetFingerprint` can be empty on the GUI journal path. A reusable generator exists in the S3 console benchmark but is not yet wired into the GUI path. Record it as "unimplemented/unconnected", not as a successful identity proof.
+> - CLI `--benchmark` stays `rejected` until S5.
+
 ---
+
+*The body below is kept as the original S4 design (pre-registered) text. The 2026-10-03 implementation is governed by the correction above.*
 
 ## 1. Purpose
 
