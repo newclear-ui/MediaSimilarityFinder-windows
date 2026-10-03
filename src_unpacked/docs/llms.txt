@@ -13,7 +13,9 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 - docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — staged Node B implementation contract.
 - docs/implementation-briefs/C-calibration-profile.ko.md / .en.md — Node C partial reuse/extension of profile and benchmark concepts.
 - docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — new Node D pipeline/queue implementation contract.
-- docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — S4 GUI benchmark integration contract: mode checkbox is execution selection, one Runner call with the selected subset, per-mode GUI snapshots under Benchmark/GUI, GUI/Console isolation, Cancel only (no Pause).
+- docs/architecture/gui-diagnostic-logging.ko.md / .en.md — authoritative GUI Detailed Logs vs CLI Benchmark semantic boundary.
+- docs/implementation-briefs/S4-gui-diagnostic-logging.ko.md / .en.md — current S4 GUI detailed-logging implementation contract.
+- docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — historical/superseded GUI benchmark execution design, retained for provenance.
 - docs/build-history/S4-phase3-4-verification.ko.md / .en.md — S4 Phase 3-4 regression and judgement record: real-engine GUI E2E results plus the unresolved Resource Policy delivery and datasetFingerprint gaps.
 - docs/implementation-briefs/S5-console-benchmark-execution.ko.md / .en.md - S5 Console benchmark contract: --benchmark entry, Console renderer, Ctrl+C cancellation, and the five confirmed decisions.
 - docs/build-history/S5-verification.ko.md / .en.md - S5 verification record: S5-1/2/3 scope, the Scanner FileState.kind media-scope defect and its one-line fix reusing isVideoPath(), the traced no-impact finding for production indexing/search, real --media/mode/suite/log-dir/log/non-TTY E2E values, CPU 96/96 and GPU 97/97 CTest, two NOT RUN items (real TTY ANSI repaint, real Ctrl+C trigger), and the unfixed S3 localtime-with-Z timestamp mismatch.
@@ -30,7 +32,7 @@ The top-level architecture uses GPU as the generic accelerator term. NVIDIA CUDA
 
 ## Benchmark / telemetry direction
 
-0.9.4.x treats benchmark/telemetry as a first-class architecture layer. It records scheduler decisions, calibration, backend/decoder selection, fallback reasons, decoded-vs-sampled frames, queue/transfer costs, and explicit measurement states. Unmeasured values must not be written as numeric zero. Detailed design: docs/architecture/benchmark-telemetry-roadmap.ko.md and docs/architecture/benchmark-telemetry-roadmap.en.md.
+0.9.4.x treats instrumentation as a first-class architecture layer, but GUI Detailed Logs and CLI Benchmark have different purposes. GUI [상세 로그] is user-workload diagnostic telemetry; CLI --benchmark is controlled development comparison of AUTO / CPU-only / GPU-max. The shared instrumentation boundary is TelemetryRecorder with UserDiagnostic or Benchmark purpose. Unmeasured values must not be written as numeric zero. Detailed design: docs/architecture/benchmark-telemetry-roadmap.ko.md / .en.md and docs/architecture/gui-diagnostic-logging.ko.md / .en.md.
 
 ## CPU + GPU execution model
 

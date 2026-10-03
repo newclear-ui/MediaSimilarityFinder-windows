@@ -350,95 +350,31 @@ OpenCode는 Roadmap과 Progress를 먼저 확인한 후 현재 단계의 상세 
 방향을 바꾸어야 할 정도의 문제가 생기면 Progress에 원인을 기록하고 Roadmap과 KO/EN 문서를 함께 수정합니다.
 
 
-## Benchmark / Console CLI 교차 인프라 트랙
+## 2026-10-03 설계 정정 — GUI 상세 로그 / CLI Benchmark
 
-Benchmark/Telemetry는 새로운 Roadmap Node를 추가하지 않고 공통 인프라 트랙으로 관리한다. 특히 현재 F-1에서 NVDEC production adoption이 금지된 상태이므로, Benchmark/Console CLI의 정리는 F-2 통합을 의미하지 않는다.
+GUI 상세 로그와 CLI 개발 Benchmark는 서로 다른 목적의 기능이다.
 
-확정 계약:
+GUI:
+- 사용자 우선 Search/Update
+- [상세 로그] = 실제 사용자 작업의 diagnostic telemetry
+- Benchmark Run/Stop/Pause UI 없음
+- AUTO / CPU / GPU-max = 사용자 실행 전략, 하나 선택
+- Maximum / High / Balanced / Gaming / Manual = 별도 CPU Resource Policy
 
-- benchmark mode: AUTO / CPU 단독 / GPU 최대화
-- media scope: images / videos / all
-- Console canonical selector: --media images|videos|all
-- Run / Suite 분리
-- GUI는 source folder당 최신 mode 3개만 보존
-- Console은 장기 누적 보존
-- normal Search Index와 benchmark index/cache 분리
-- source folder는 human-readable label + short stable id로 저장
-- Run은 source identity, dataset fingerprint, media scope, scheduler 설정, 환경, 실패/fallback 상태를 저장
-- GPU 최대화는 GPU-only가 아니며 필수 CPU 작업과 fallback을 유지
+CLI:
+- --benchmark = controlled development benchmark
+- AUTO / CPU / GPU-max = 비교 실험군
+- 기본 Suite = AUTO → CPU → GPU-max 파일 단위 실행
+- pipeline / decoder / scheduler 개선을 동일 조건에서 비교
 
-### 빌드 / 구현 스케줄 정책
+공통:
+TelemetryRecorder
+- UserDiagnostic ← GUI
+- Benchmark ← CLI
 
-버전 번호는 미리 배정하지 않는다.
+Benchmark는 Telemetry를 사용할 수 있지만 Telemetry가 Benchmark는 아니다.
 
-S0 설계/pre-register
-→ S1 Console entry foundation
-
-**S2 구현 상태 (0.9.4.43)**: Run/Suite benchmark core **완료**. Case=파일 1개, modeResults[]에 requested/effective 분리, aggregate precedence Cancelled > Failed > Success > Skipped. 실행 주입 경계(BenchmarkExecutor)로 production scan 경로를 재사용하며 별도 검색 엔진 없음. 단위 테스트 59 checks, CPU CTest 87/87, GPU CTest 88/88.
-per-file 측정은 ignoredPaths 로 구현하며 scan() 이 매 호출 폴더를 walk 하므로 **O(N²)** 이다(S2 는 correctness 우선으로 허용, 대규모 최적화는 후속). process 격리·OS filesystem cache 는 **통제 불가**.
-아직 미구현: terminal renderer(S5), public benchmark CLI 옵션, AUTO/CPU/GPU-max 최종 정책, NVDEC 통합.
-(JSONL durable journal 과 storage isolation 은 S3 에서 구현되어 S2 runner 에 실제 연결되었다.)
-**S3 구현 상태 (0.9.4.43)**: Benchmark storage isolation **완료 (runner 연결 + recovery/summary E2E 검증)**. journal schema 1 은 legacy `kBenchmarkSchemaVersion`(9) 와 **분리**되어 있고, 둘은 함께 버전이 올라가지 않는다.
-배선: `onRunStarted → run_started`, `onCaseComplete → mode_result xN + case_complete(commit marker)`, `onRunFinished → run_finished / run_cancelled`, 그리고 summary 재생성. `BenchmarkRequest::runId` 로 run 을 **실행 전에** 식별할 수 있게 하여 suite lock → runtime 준비 → journal open → run_started 순서를 지킨다.
-검증: journal 51 checks, store 51 checks, 통합 137 checks(E2E 정상/취소/실패/recovery/lock/격리 + 실제 엔진 1회). CPU CTest 90/90, GPU CTest 91/91.
-확인된 사실: 취소된 case 도 commit marker 를 남긴다(S2 가 그 case 를 callback 으로 전달하고 실제 commit 지점에 도달했으므로). 취소 전에 시작되지 않은 파일은 case 자체가 없어 journal 에 기록도 없다.
-recovery: 마지막 개행 없는 tail 은 폐기, commit 없는 mode 기록은 incomplete 로 분류, 동일 recordId 중복은 무시, payload 불일치 중복은 anomaly 로 보고 **첫 record 유지**, **중간 record 손상은 fatal 이며 이후를 추측 복구하지 않는다**. `summary.json` 은 journal replay 결과일 뿐 authoritative 가 아니며 삭제 후 journal 에서 재생성된다.
-**통제 불가**: durability 는 append+flush 이며 fsync/power-loss 보장은 아니다. process 격리·OS filesystem cache·O(N²) scan 은 그대로다.
-**S4 구현 상태 (0.9.4.43)**: GUI benchmark integration **구현 완료 / 검증 완료, 단 CLOSED 아님**.
-> **2026-10-03 정정**: GUI consolidation(commit `030aaf2`)으로 `[벤치마크]` 진입점만 남기고 별도 run/stop/status 툴바는 제거됨. `AUTO/CPU/GPU`는 벤치마크 mode 선택이 아니라 단일 선택 자원 정책으로 통합됨. `benchTgl_` 경로는 legacy telemetry(legacy JSON)이며 S3 저널/`datasetFingerprint`/S6 수용은 미연결 상태로 명시됨. 정확한 현재 동작은 `docs/implementation-briefs/S4-gui-benchmark-integration.ko.md` 상단 "현재 상태 정정"을 기준으로 하고, 아래 본문의 run 버튼·다중 mode 실행 선택·`Benchmark/GUI` snapshot 산출 표현은 역사적 S4 설명으로 유지됨.
-Phase 3-1 저장 계층(`src/benchmark_gui_store.*`), Phase 3-2 worker(`gui/benchmark_worker.*`),
-Phase 3-3 MainWindow 배선(mode checkbox 3개 + 실행 버튼 + 중지 + 상태 표시 + 직렬 실행 게이트) 구현.
-**모드 checkbox 는 실행 선택**이며 유효 조합 7개, 최소 1개 필수. `BenchmarkRunner::run(request, selectedModes)` 를 **단일 호출**하고 mode 별 분리 실행은 하지 않는다. 파일별 mode 순서 유지.
-**`benchTgl_` 은 기존 legacy telemetry checkbox 로 유지**되었고 mode selector 로 재사용되지 않았으며, benchmark 실행은 별도 실행 버튼으로 제공된다(스캔 중 benchmark / benchmark 중 스캔 상호 배적, §4-13). Pause/Resume 은 benchmark 에 없고 Cancel/Stop 만 존재한다.
-저장: `Benchmark/GUI/<label>_<shortid>/{auto.json,cpu.json,gpu-max.json}` + `runtime/run-<id>/<mode>/`. atomic replace, **실행된 mode 만 갱신**하고 미선택 mode snapshot 은 보존한다. mode 별 aggregate 는 `modeResults[]` 로 재계산하며 Case aggregate 를 복사하지 않는다.
-인스턴스 간 상호 배제는 **S3 `BenchmarkSuiteLock` 재사용**이며 별도 locking system 을 만들지 않는다. 이미 실행 중이면 실행을 시작하지 않고 기존 snapshot 을 변경하지 않는다.
-진행 표시는 **"완료 k/N · 마지막 <파일>"** 이다. S2 가 case 완료를hook 으로만 주므로 **진행 중인 파일/mode 는 알 수 없어 추측 표시하지 않는다.**
-검증: storage 110, worker 35, UI 34, **실제 엔진 GUI E2E 40** checks. CPU CTest 94/94, GPU CTest 95/95.
-실제 E2E 관측값: CPU 빌드 `gpu-max` = **SKIPPED**, GPU 빌드 `gpu-max` = **SUCCESS**. production Index 오염 0건(전후 내용 비교), 스캔 폴더 오염 0건.
-**Resource Policy 전달 해결**: `BenchmarkRequest::resourcePolicy`(optional, additive)를 추가하고 executor 가 전달된 policy 에서 출발한다. 미지정 시 기존 S2 동작(엔진 기본 policy + mode 별 gpuEnabled) 그대로 유지되어 기존 호출자 무영향. GUI 는 MainWindow 가 `make_policy()` 로 이미 해석한 `policy_` 를 그대로 전달한다. 실제 E2E 에서 toolbar preset "Maximum 90%" → snapshot `cpuPercent: 90` 기록 확인. **남는 제약**: `gpuEnabled` 는 mode 가 결정하므로 GUI `gpuEnabled_` 는 AUTO/GPU-max 실행에 영향 없음(S2 규칙 유지).
-**datasetFingerprint 해결**: worker 가 fingerprint 미지정 시 기존 `msf::computeDatasetFingerprint(root).fingerprint` 를 verbatim 사용. 새 해시·새 직렬화 형식 없음, `DatasetFingerprint` 가 공개 멤버 구조체라 accessor 추가 불필요. worker 스레드에서 계산해 UI 비차단. 실제 E2E 에서 64자 hex 값이 기록되고 `computeDatasetFingerprint(root).fingerprint` 와 완전히 동일함을 확인(`3793e510…`).
-**S4 상태: CLOSED.** 남는 것은 구현 결함이 아닌 제품 결정 3가지다: ① O(N²) walk 감수 여부 ② CPU 빌드 `SKIPPED` 표현의 UX 적정성 ③ GUI GPU 토글을 benchmark 에 반영할지 여부. 그 밖에 `selectedBenchModes()` 는 private 유지(간접 검증).
-자세한 판정과 S5 진입 조건: `docs/build-history/S4-phase3-4-verification.ko.md` / `.en.md`
-
-**S1 구현 상태 (0.9.4.43)**: Console Entry Foundation **완료**. 파서 단위 테스트 40 checks, CPU CTest 86/86, GPU CTest 87/87.
-CLI 는 --help / --version / --smoke / --scan <folder> [--media images|videos|all] 만 지원하며, 인자 없음 실행은 기존 GUI를 그대로 연다. CLI 경로는 MainWindow 를 만들지 않는다.
-
-**S5 구현 상태 (0.9.4.43)**: Console benchmark execution **기능 구현 완료, 자동/비대화형 E2E 검증 완료**.
-- S5-1 `f4c3fdd`: `--benchmark <folder>` + `--mode/--suite/--log-dir/--log` 파싱, canonical 정규화(`AUTO → CPU → GPU-max`). `command_line_test` 40 → **95** checks.
-- S5-2 `fcace68`: Qt-free 표시 전용 renderer. presentation model, S2 enum 재사용, optional 관측 필드, TTY/non-TTY 분리, 폭 처리(no-wrap). **100** checks.
-- S5-3 `842ba01`: `runConsoleBenchmark()` orchestration → S3 `BenchmarkSession` → S2 `BenchmarkRunner` → 제품 scan 경로. `MSF_BUILD_GIT` 추가. `SetConsoleCtrlHandler` → atomic flag → `BenchmarkRequest::isCancelled`. **32** checks.
-- **E2E 중 발견한 결함 수정**: `src/scanner.cpp` 의 `Scanner::scan_stream()` 이 `FileState.kind` 를 설정하지 않아 `Unknown` 으로 남았고, benchmark media filter 가 무력화되었다. 기존 `isVideoPath()` 규칙을 그대로 재사용해 1줄로 복구(새 classifier 없음). 영향 추적 결과 **production indexing/search 영향 없음**(`MediaSearchEngine` 이 `kindOf(path)` 로 자체 재계산). 초기 "제품 전체 구분 손상" 추정은 오류였으며 정정함.
-- 실제 `--media` (dataset Image 8 / Video 2 / Total 10): images → **8** case `Image=8`, videos → **2** case `Video=2`, all → **10** case `Image=8, Video=2`. 옵션 순서 독립성 확인.
-- 실제 E2E: 기본 3-mode exit 0 / Cases 10 / Records 42, journal sequence `run_started → (mode_result+case_complete)×N → run_finished`, suite.json·journal·summary 3곳 suiteId 일치, `--log-dir` 격리, `--log` text 산출물(ANSI 없음), non-TTY ESC 없음, `--suite ..\..\evil` exit 2 거부.
-- CPU CTest **96/96**, GPU CTest **97/97**, 양쪽 build exit 0, stale object 없음.
-- **NOT RUN**: 실제 TTY ANSI repaint, 실제 Windows Ctrl+C trigger. 검증 환경에 Windows console 이 없었음(`GetConsoleWindow() == NULL`). 프로세스 kill 로 대체하지 않음. `SetConsoleCtrlHandler` 등록·atomic flag wiring·`isCancelled` 연결과 deterministic cancellation 테스트(137 checks)는 확인됨.
-- A1 보존(live callback 미추가, CURRENT FILE = 완료 case 만, ETA 미사용), A2 보존(CPU FB 미구현).
-- S3 `benchmarkNowStamp()` 가 `localtime_s` 결과에 literal `Z` 를 붙이는 기존 timestamp 표기 불일치는 **이번 S5 에서 수정하지 않음** → S3 후속 부채.
-자세한 판정과 실제 측정값: `docs/build-history/S5-verification.ko.md` / `.en.md`
-
-**S6 설계 상태 (0.9.4.43)**: Data-mining Automation brief **작성 완료, 구현 착수 전**. CLOSED 가 아니다.
-- brief: `docs/implementation-briefs/S6-data-mining-automation.ko.md` / `.en.md`
-- roadmap 이 S6 에 부여한 정의(§28/§30)는 3축이다: suite 자동 실행 / fingerprint 검증 / 비교 요약. 이 brief 는 **2·3번(검증·비교/마이닝)** 만 다루고, 1번(자동 실행)은 별도 brief 분리 를 권고하며 정의하지 않는다.
-- **설계 조사에서 확인된 최대 제약**: journal 에 `git` / `resourcePolicy` / `distance` 가 **실측 0건**이다(29개 journal / 862 line 전수 키 스캔). 원인은 S5-3 가 `MSF_BUILD_GIT` 를 generated header 에만 추가하고 journal(S3 schema)에는 쓰지 않았기 때문이다. 결과적으로 `buildVersion` 만으로는 **같은 버전의 다른 커밋을 구분할 수 없으며**, roadmap §25(저장 요구)와 §28/§30(S6 핵심 정의)이 요구하는 "build 간 비교" 를 현 상태로는 완수할 수 없다. 이를 S6 최대 리스크로 entry condition ① 에 명시했다.
-- 지금 가능한 분석(8-1)과 **불가능한** 분석(8-2)을 분리해 기록했다. 없는 필드를 추정으로 채우지 않았다.
-- S3 journal 파싱을 다시 만들지 않고 `replayJournal()` 을 재사용하기로 했다. PowerShell/Python 으로 재파싱하면 S3 recovery 규칙이 이중화되기 때문이다.
-- **Python 은 이 프로젝트에 존재하지 않으므로**(`.py` 0개, packaging 파일 0개, CI `pwsh`) 분석 도구 후보에서 제외했다. 스크립트 관례는 PowerShell 이나 journal 파싱에는 사용할 수 없다.
-- 회귀 판정 threshold 는 **정하지 않았다**(DEFERRED). `AGENTS.md` 9항(측정 오차 범위 밖의 차이는 개선 선언 금지, 5회 이상 권장)이 이미 기준이며, `worklog` `E-3B-BUG` 에 임의 threshold 를 제거한 선례가 있다.
-- 회귀 분석의 근본 한계: `S2-PERF` 가 OS filesystem cache 와 process isolation 을 **uncontrolled** 로 accepted 했다. S6 산출물은 회귀 판정이 아니라 회귀 후보 + 측정 조건 경고다.
-- S3 timestamp(`localtime_s` + literal `Z`) 문제는 S6 prerequisite 가 아니라 **별도 S3 follow-up** 으로 분류했다. 정렬 키를 `suiteId`(진짜 UTC)로 바꾸고 duration 은 `completedAt - startedAt` 만 쓰면 우회 가능하기 때문이다.
-- suite 자동 실행, 출력 포맷 최종 선택(JSON vs CSV), p95 알고리즘, `run_cancelled` 분석 세분화도 **DEFERRED** 로 기록했다.
-
-→ S2 Run/Suite benchmark core
-→ S3 Benchmark storage isolation
-→ S4 GUI benchmark integration
-→ S5 Console benchmark execution
-→ S6 Data-mining automation
-→ S7 Help/usability
-→ S8 Full verification/release gate
-
-각 단계는 소스 변경 → CPU/GPU 빌드 → CTest → CLI/GUI 실행 검증 → 문서 갱신 → 필요 시 Build History → commit 순으로 닫는다.
-
-세부 계약과 저장 레이아웃은 docs/architecture/benchmark-telemetry-roadmap.*를 기준으로 한다.
+S0 → S1 → S2 → S3 → S4 GUI Detailed Logging → S5 Console Benchmark → S6 → S7 → S8
 
 ## Benchmark Console 최종 설계 보완 — 2026-09-30
 

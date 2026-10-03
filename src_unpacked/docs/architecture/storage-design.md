@@ -57,75 +57,41 @@ This document describes the current storage design. Version-specific changes are
 recorded separately under `docs/build-history/`.
 
 
-## Benchmark storage separation
+## Detailed Log and Benchmark Storage Separation
 
-Benchmark artifacts are not part of normal search index storage.
+GUI detailed logs belong to the real user workload. They are not a separate benchmark run.
 
-Conceptual layout:
+The GUI must not create Benchmark Run/Stop/Pause UI merely to collect diagnostics.
 
-~~~text
+The final durable GUI log path is an S4 implementation decision. The semantic rule is fixed: GUI logs are diagnostic evidence from real user work.
+
+### Console benchmark
+
 Application data root
-├─ Index/
-│  └─ <root-id>/
-│     ├─ metadata.json
-│     ├─ index.sqlite
-│     └─ video_cache.sqlite
 └─ Benchmark/
-   ├─ GUI/
-   │  └─ <source-label>_<root-id-short>/
-   │     ├─ auto.json
-   │     ├─ cpu.json
-   │     └─ gpu-max.json
    └─ Console/
       └─ suite-<suite-id>/
          ├─ suite.json
-         ├─ auto.json
-         ├─ cpu.json
-         └─ gpu-max.json
-~~~
+         ├─ runs.jsonl
+         └─ summary.json
 
-- Benchmark storage remains physically/logically separate from Index.
-- GUI retains only the latest result for each of the three modes.
-- Console retains results cumulatively.
-- The exact application-data base directory continues to follow the existing portable-aware path policy; this design does not create a second unrelated root policy.
-- Benchmark folder names are human-identifiable but never use the raw full source path. Use a sanitized basename plus a short stable root id, while storing the canonical full sourceRoot in JSON.
-- Benchmark-specific index/cache state must never be treated as the normal Search Index.
-- GUI must never automatically load Console benchmark files.
-- A benchmark must not leave DB/cache artifacts inside the scanned source folder.
+- runs.jsonl is the recovery source for per-file/per-mode evidence.
+- summary.json is derived and never authoritative.
+- Console benchmark results are retained for long-term comparison.
+- Benchmark runtime/index/cache is isolated from the normal Search Index.
+- GUI does not automatically read Console benchmark history.
+- Console does not automatically ingest GUI detailed logs as benchmark history.
 
-## Benchmark Console storage/UI finalization — 2026-09-30
+### Semantic boundary
 
-The benchmark storage layer is finalized around **per-file immediate persistence** and a terminal UI that is only a view over persisted records.
+GUI
+  Search/Update
+    └─ [상세 로그]
+         └─ TelemetryRecorder / UserDiagnostic
 
-### Canonical Console layout
+CLI
+  --benchmark
+    └─ BenchmarkSession / BenchmarkRunner
+         └─ TelemetryRecorder / Benchmark
 
-~~~text
-Benchmark/Console/suite-<suite-id>/
-    suite.json
-    runs.jsonl
-    summary.json
-~~~
-
-Each completed file/mode result is appended to runs.jsonl. The recommended logical sequence is AUTO, CPU-only, GPU-max for each file, followed by the next file.
-
-The JSONL journal is the recovery source for interrupted runs. summary.json is generated/updated from the journal and must never be the only copy of per-file evidence.
-
-### Terminal rendering contract
-
-Interactive output is divided into:
-
-1. fixed three-row execution header,
-2. CURRENT FILE detail view,
-3. compact completed-file history,
-4. final or partial summary.
-
-The fixed header never wraps. Long paths use middle ellipsis on screen only. Full values remain in JSON. Non-interactive output is line-oriented and uses the same persisted data model.
-
-### GUI/Console retention
-
-GUI keeps the latest result for each of AUTO / CPU-only / GPU-max per source folder. Console retains cumulative Suites and does not automatically delete prior benchmark evidence.
-
-### Legacy preservation
-
-Existing benchmark source/schema and the v0.9.4.43 baseline backup/tag are historical baselines. New storage/telemetry work must remain traceable to that legacy benchmark rather than deleting or silently rewriting its history.
-
+Benchmark and Telemetry are not synonyms.

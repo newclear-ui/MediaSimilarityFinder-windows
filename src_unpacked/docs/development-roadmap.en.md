@@ -396,94 +396,31 @@ When that happens:
 This document is not a complete implementation prompt; it is the anchor that prevents loss of development direction.
 
 
-## Benchmark / Console CLI Cross-Cutting Track
+## 2026-10-03 Design Correction — GUI Detailed Logs / CLI Benchmark
 
-Benchmark/Telemetry remains a cross-cutting infrastructure track rather than a new roadmap node. Because F-1 currently forbids NVDEC production adoption, organizing Benchmark/Console CLI does not authorize F-2 integration.
+GUI Detailed Logs and the CLI developer Benchmark have different purposes.
 
-Fixed contract:
+GUI:
+- user-first Search/Update
+- [Detailed Logs] = diagnostic telemetry from real user work
+- no Benchmark Run/Stop/Pause UI
+- AUTO / CPU-only / GPU-max = user execution strategy, one selected
+- Maximum / High / Balanced / Gaming / Manual = separate CPU Resource Policy
 
-- benchmark mode: AUTO / CPU-only / GPU-max
-- media scope: images / videos / all
-- Console canonical selector: --media images|videos|all
-- Run / Suite separation
-- GUI keeps only the latest three mode results per source folder
-- Console keeps cumulative long-term results
-- normal Search Index and benchmark index/cache isolation
-- human-readable source-folder label + short stable id
-- Run stores source identity, dataset fingerprint, media scope, scheduler configuration, environment, and failure/fallback state
-- GPU-max is not GPU-only; mandatory CPU work and fallback remain enabled
+CLI:
+- --benchmark = controlled development benchmark
+- AUTO / CPU-only / GPU-max = comparison groups
+- default Suite = AUTO → CPU → GPU-max per file
+- compare pipeline / decoder / scheduler improvements under the same conditions
 
-### Build / implementation schedule policy
+Shared:
+TelemetryRecorder
+- UserDiagnostic ← GUI
+- Benchmark ← CLI
 
-Version numbers are not pre-assigned.
+Benchmark may use Telemetry, but Telemetry is not Benchmark.
 
-S0 design/pre-register
-→ S1 Console entry foundation
-
-**S2 implementation status (0.9.4.43)**: Run/Suite benchmark core **complete**. A case is one file, requested/effective are recorded separately in modeResults[], and the aggregate precedence is Cancelled > Failed > Success > Skipped. Execution goes through an injected BenchmarkExecutor boundary that reuses the production scan path, with no second search engine. 59 unit checks, CPU CTest 87/87, GPU CTest 88/88.
-The per-file measurement is implemented with ignoredPaths, and because scan() walks the folder on every call the cost is **O(N²)**. S2 accepts this in favour of correctness and defers the large-scale optimisation. Process isolation and the OS filesystem cache are **uncontrolled**.
-Still not implemented: terminal renderer (S5), public benchmark CLI options, the final AUTO/CPU/GPU-max policy, and NVDEC integration.
-(The durable JSONL journal and storage isolation are implemented in S3 and wired into the S2 runner.)
-**S3 implementation status (0.9.4.43)**: Benchmark storage isolation **complete (wired to the runner, recovery/summary verified end to end)**. Journal schema 1 is **separate** from the legacy `kBenchmarkSchemaVersion` (9), and the two are not versioned together.
-Wiring: `onRunStarted → run_started`, `onCaseComplete → mode_result xN + case_complete (commit marker)`, `onRunFinished → run_finished / run_cancelled`, then summary regeneration. `BenchmarkRequest::runId` makes a run identifiable **before execution**, which is what preserves the order suite lock → runtime ready → journal open → run_started.
-Verified: journal 51 checks, store 51 checks, integration 137 checks (E2E normal/cancellation/failure/recovery/lock/isolation, plus one run through the real engine). CPU CTest 90/90, GPU CTest 91/91.
-Established facts: a cancelled case still gets a commit marker, because S2 delivers that case through the callback and it did reach its commit point. A file that never started before cancellation has no case at all, so nothing is recorded for it.
-Recovery: a final line without a newline is discarded; mode records without a commit become incomplete cases; a duplicate recordId with identical payload is ignored; a duplicate with a different payload is reported as an anomaly and the **first record is kept**; **mid-file corruption is fatal and nothing after it is guessed**. `summary.json` is a replay result and never authoritative, and it can be deleted and regenerated from the journal.
-**Uncontrolled**: durability is append + flush, with no fsync/power-loss guarantee. Process isolation, the OS filesystem cache and the O(N²) scan are unchanged.
-**S4 implementation status (0.9.4.43)**: GUI benchmark integration **implemented and verified, but NOT closed**.
-> **Correction 2026-10-03**: the GUI consolidation (commit `030aaf2`) leaves only the `[Benchmark]` entry point; the separate run/stop/status toolbar was removed. `AUTO/CPU/GPU` is a single-select resource policy, no longer a benchmark-mode selection. The `benchTgl_` path is legacy telemetry (legacy JSON); S3 journal / `datasetFingerprint` / S6 ingestibility are recorded as not-yet-wired. The precise current behaviour is governed by the "Actual state, corrected" block at the top of `docs/implementation-briefs/S4-gui-benchmark-integration.en.md`; the body below that describes the historical S4 (run button, multi-mode execution selection, `Benchmark/GUI` snapshots) is kept for history. Phase 3-1 storage (`src/benchmark_gui_store.*`), Phase 3-2 worker (`gui/benchmark_worker.*`), Phase 3-3 MainWindow wiring (three mode checkboxes + run button + stop + status display + serial-execution gate).
-**The mode checkboxes are execution selection** with 7 valid combinations and at least one required. `BenchmarkRunner::run(request, selectedModes)` is invoked **once**; there are no separate per-mode runs, and the file-level mode order is preserved.
-**`benchTgl_` remains the existing legacy telemetry checkbox**, is not reused as a mode selector, and benchmark execution is provided by a separate run button (scan blocks benchmark, benchmark blocks scan — §4-13). Benchmark has no Pause/Resume, only Cancel/Stop.
-Storage: `Benchmark/GUI/<label>_<shortid>/{auto.json,cpu.json,gpu-max.json}` plus `runtime/run-<id>/<mode>/`. Atomic replace, **only executed modes are updated**, and an unselected mode's snapshot is preserved. Per-mode aggregates are recomputed from `modeResults[]`; the Case aggregate is never copied.
-Cross-instance exclusion **reuses S3's `BenchmarkSuiteLock`**; no separate locking system. If a run is already active, execution does not start and the existing snapshot is left unchanged.
-Progress shows **"Completed k/N · last <file>"**. S2 only hooks a completed case, so the in-flight file/mode is unknowable and **is not guessed**.
-Verified: storage 110, worker 35, UI 34, **real-engine GUI E2E 40** checks. CPU CTest 94/94, GPU CTest 95/95.
-Observed in the real E2E: CPU build `gpu-max` = **SKIPPED**, GPU build `gpu-max` = **SUCCESS**. Production Index pollution 0 entries (verified by before/after content diff), scanned folder pollution 0 entries.
-**Resource Policy delivery resolved**: `BenchmarkRequest::resourcePolicy` (optional, additive) was added and the executor now starts from the supplied policy. When unset the existing S2 behaviour (engine default policy + mode-derived gpuEnabled) is preserved exactly, so existing callers are unaffected. The GUI passes the `policy_` MainWindow already resolved through `make_policy()`. The real E2E shows choosing "Maximum 90%" in the toolbar recording `cpuPercent: 90` in the snapshot. **Remaining constraint**: `gpuEnabled` is decided by the mode, so the GUI `gpuEnabled_` does not affect AUTO/GPU-max runs (the S2 rule was kept).
-**datasetFingerprint resolved**: when no fingerprint is supplied the worker uses the existing `msf::computeDatasetFingerprint(root).fingerprint` verbatim. No new hash and no new serialisation format, and `DatasetFingerprint` is a public-member struct so no accessor was needed. It is computed on the worker thread so the GUI is not blocked. The real E2E records a 64-character hex value **exactly equal** to `computeDatasetFingerprint(root).fingerprint` (`3793e510…`).
-**S4 status: CLOSED.** What remains are three product decisions rather than implementation defects: ① whether the O(N²) walk is accepted ② whether SKIPPED is adequate wording on a CPU build ③ whether the GUI GPU toggle should apply to benchmark. `selectedBenchModes()` also stays private (verified indirectly).
-Detailed judgements and S5 entry conditions: `docs/build-history/S4-phase3-4-verification.ko.md` / `.en.md`
-
-**S1 implementation status (0.9.4.43)**: Console Entry Foundation **complete**. 40 parser unit checks, CPU CTest 86/86, GPU CTest 87/87.
-
-**S5 implementation status (0.9.4.43)**: Console benchmark execution **feature implementation complete, automated/non-interactive E2E verification complete**.
-- S5-1 `f4c3fdd`: parses `--benchmark <folder>` plus `--mode/--suite/--log-dir/--log`, canonical normalization (`AUTO -> CPU -> GPU-max`). `command_line_test` 40 -> **95** checks.
-- S5-2 `fcace68`: Qt-free display-only renderer. Presentation model, S2 enum reuse, optional observable fields, TTY/non-TTY split, width handling (no wrap). **100** checks.
-- S5-3 `842ba01`: `runConsoleBenchmark()` orchestration -> S3 `BenchmarkSession` -> S2 `BenchmarkRunner` -> product scan path. `MSF_BUILD_GIT` added. `SetConsoleCtrlHandler` -> atomic flag -> `BenchmarkRequest::isCancelled`. **32** checks.
-- **Defect found during E2E and fixed**: `Scanner::scan_stream()` in `src/scanner.cpp` never set `FileState.kind`, so it stayed `Unknown` and the benchmark media filter never fired. Restored in one line by reusing the existing `isVideoPath()` rule (no new classifier). Impact trace: **no impact on production indexing/search**, because `MediaSearchEngine` recomputes the kind itself via `kindOf(path)`. The initial "product-wide classification broken" estimate was wrong and is corrected here.
-- Actual `--media` (dataset Image 8 / Video 2 / Total 10): images -> **8** cases `Image=8`, videos -> **2** cases `Video=2`, all -> **10** cases `Image=8, Video=2`. Option order independence confirmed.
-- Real E2E: default 3-mode exit 0 / Cases 10 / Records 42, journal sequence `run_started -> (mode_result+case_complete)xN -> run_finished`, matching suiteId across suite.json/journal/summary, `--log-dir` isolation, `--log` text artifact (no ANSI), non-TTY no ESC, `--suite ..\..\evil` refused with exit 2.
-- CPU CTest **96/96**, GPU CTest **97/97**, both builds exit 0, no stale objects.
-- **NOT RUN**: real TTY ANSI repaint, real Windows Ctrl+C trigger. The verification environment had no Windows console (`GetConsoleWindow() == NULL`). A process kill was not substituted. `SetConsoleCtrlHandler` registration, the atomic flag wiring, the `isCancelled` connection and the deterministic cancellation test (137 checks) were confirmed.
-- A1 preserved (no live callback added, CURRENT FILE = completed case only, no ETA), A2 preserved (CPU FB not implemented).
-- The existing S3 `benchmarkNowStamp()` labelling mismatch, which formats `localtime_s` output with a literal `Z`, was **not fixed in this S5** -> separate S3 follow-up.
-Detailed judgements and actual measured values: `docs/build-history/S5-verification.ko.md` / `.en.md`
-
-**S6 design status (0.9.4.43)**: Data-mining Automation brief **written, not yet started for implementation.** Not CLOSED.
-- brief: `docs/implementation-briefs/S6-data-mining-automation.ko.md` / `.en.md`
-- The roadmap gives S6 three axes (§28/§30): automated suite execution / fingerprint validation / comparison summary. This brief covers **only axes 2 and 3** (validation, comparison/mining) and recommends splitting axis 1 (automation) into a separate brief without defining it.
-- **Largest constraint found during the design investigation**: `git`, `resourcePolicy` and `distance` are **measured at 0 occurrences** in the journal (full key scan over 29 journals / 862 lines). The cause is that S5-3 added `MSF_BUILD_GIT` only to the generated header and did not write it to the journal (which is the S3 schema). As a result `buildVersion` alone **cannot distinguish two commits of the same version**, and the "cross-build comparison" required by roadmap §25 (storage requirement) and defined as S6's core in §28/§30 **cannot be completed in the current state**. This is recorded as S6's largest risk at entry condition ①.
-- Analysis possible today (8-1) and analysis **impossible** today (8-2) are recorded separately. No missing field was filled in by guess.
-- The S3 journal parser will not be rewritten; `replayJournal()` is reused. Re-parsing in PowerShell or Python would duplicate the S3 recovery rules.
-- **Python does not exist in this project** (zero `.py` files, zero packaging files, CI is `pwsh`), so it is excluded as an analysis tool candidate. The scripting convention is PowerShell, which cannot be used for journal parsing.
-- The regression verdict threshold is **not decided** (DEFERRED). `AGENTS.md` item 9 already governs it (never declare a difference outside the measurement error range an improvement, 5 or more runs recommended), and `worklog` `E-3B-BUG` is a precedent of an arbitrary threshold being removed.
-- Fundamental limit of regression analysis: `S2-PERF` accepted the OS filesystem cache and process isolation as **uncontrolled**. S6 output is therefore a regression candidate plus a measurement condition warning, not a regression verdict.
-- The S3 timestamp issue (`localtime_s` plus a literal `Z`) is classified as a **separate S3 follow-up, not an S6 prerequisite**, because it can be worked around by using `suiteId` (real UTC) as the ordering key and computing duration only as `completedAt - startedAt`.
-- Automated suite execution, the final output format choice (JSON vs CSV), the p95 algorithm, and `run_cancelled` analysis refinement are also recorded as **DEFERRED**.
-
-The CLI supports only help, version, smoke and scan with a media selector; running with no arguments still opens the existing GUI, and the CLI path never constructs a MainWindow.
-Still not implemented: Benchmark Engine, per-file AUTO/CPU/GPU-max, JSONL Journal, Cancellation persistence, Terminal Renderer (S2 onward).
-→ S2 Run/Suite benchmark core
-→ S3 Benchmark storage isolation
-→ S4 GUI benchmark integration
-→ S5 Console benchmark execution
-→ S6 Data-mining automation
-→ S7 Help/usability
-→ S8 Full verification/release gate
-
-Every stage closes with source change → CPU/GPU build → CTest → CLI/GUI execution verification → documentation → Build History when applicable → commit.
-
-Detailed contracts and storage layout are maintained in docs/architecture/benchmark-telemetry-roadmap.*.
+S0 → S1 → S2 → S3 → S4 GUI Detailed Logging → S5 Console Benchmark → S6 → S7 → S8
 
 ## Final Benchmark Console Design Amendment — 2026-09-30
 

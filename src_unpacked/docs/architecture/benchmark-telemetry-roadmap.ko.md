@@ -389,212 +389,106 @@ H Validation
 - JSON schema가 변경되면 schemaVersion을 올린다.
 
 
-## 20. Benchmark 실행 모델 — Run / Suite / Media Scope
+## 20. 최상위 Semantic 분리 — GUI 상세 로그 / CLI Benchmark
 
-벤치마크는 Run과 Suite를 분리한다.
+### GUI
+- GUI는 controlled benchmark를 실행하지 않는다.
+- 검색/업데이트 시작이 실제 실행 진입점이다.
+- [상세 로그]는 실제 사용자 작업에 diagnostic telemetry를 연결한다.
+- GUI에는 Benchmark Run / Stop / Pause UI가 없다.
+- AUTO / CPU 단독 / GPU 최대 활용은 사용자 실행 자원 전략이며 정확히 하나를 선택한다.
+- Maximum / High / Balanced / Gaming / Manual은 CPU Resource Policy의 별도 축이다.
 
-- Run: 하나의 benchmark mode를 한 번 측정한 결과
-- Suite: 같은 source dataset, media scope, 실행 조건에서 AUTO / CPU 단독 / GPU 최대화를 묶은 논리적 실행군
-- GUI는 각 JSON에 동일한 suiteId를 저장하면 되며 별도 suite.json은 필수가 아니다.
-- Console은 장기 분석을 위해 suite.json과 개별 Run JSON을 함께 보관할 수 있다.
+### CLI
+- --benchmark는 개발/검증용 controlled benchmark다.
+- AUTO / CPU 단독 / GPU 최대 활용이 비교 실험군이다.
+- 기본 Suite는 세 mode를 비교하며 파일 단위 AUTO → CPU → GPU-max 순서를 유지한다.
+- 동일 dataset/media scope/build 조건으로 pipeline / decoder / scheduler 개선을 추적한다.
 
-### Benchmark mode
+## 21. 공통 Telemetry 계층
 
-- AUTO: 현재 Adaptive Scheduler 사용
-- CPU 단독: GPU backend를 사용하지 않는 CPU 기준선
-- GPU 최대화: GPU가 처리할 수 있는 작업은 최대한 GPU로 보내되 필수 CPU 작업과 fallback은 유지
+TelemetryRecorder를 공통 계측 계층으로 사용하고 상위 호출자가 목적을 전달한다.
 
-GPU 최대화는 GPU-only 또는 CPU 0%를 의미하지 않는다.
+TelemetryPurpose
+- UserDiagnostic ← GUI
+- Benchmark ← CLI
 
-### Media Scope
+Benchmark는 Telemetry를 사용할 수 있지만 Telemetry가 Benchmark는 아니다.
 
-현재 GUI의 이미지/동영상 선택 범위를 Console에서도 동일하게 제공한다.
+GUI 경로:
+Search/Update → ScanWorker → TelemetryRecorder(UserDiagnostic) → 상세 로그
 
-~~~text
---media images
---media videos
---media all
-~~~
+CLI 경로:
+--benchmark → BenchmarkSession → BenchmarkRunner → ProductionBenchmarkExecutor → TelemetryRecorder(Benchmark)
 
-- images: 이미지 only
-- videos: 동영상 only
-- all: 이미지 + 동영상
-- 기본값: all
-- 일반 검색과 benchmark에서 동일한 의미를 사용한다.
+## 22. CLI Benchmark Run / Suite / Media Scope
 
-mode와 media scope는 독립 축이다. 따라서 AUTO+images, CPU+images, GPU-max+images를 하나의 Suite로 실행할 수 있고, 다른 Suite에서는 videos만 실행할 수 있다.
+Benchmark mode:
+- AUTO
+- CPU 단독
+- GPU 최대 활용
 
-각 Run JSON에는 최소한 다음을 저장한다.
+GPU 최대 활용은 GPU-only가 아니며 필수 CPU 작업과 fallback을 유지한다.
 
-~~~text
-suiteId
-runId
-mode
-mediaScope
-scanImages
-scanVideos
-sourceRoot
-sourceRootLabel
-sourceRootId
-datasetFingerprint
-~~~
+Media Scope:
+- --media images
+- --media videos
+- --media all
 
-## 21. GUI Benchmark 보존 정책
+mode와 media scope는 독립 축이다.
 
-GUI는 최신 결과 표시 목적이므로 source folder마다 다음 세 mode의 최신 결과만 자동 유지한다.
+## 23. GUI 상세 로그 보존 / Console Benchmark 보존
 
-~~~text
-Benchmark/GUI/<source-label>_<root-id-short>/
-    auto.json
-    cpu.json
-    gpu-max.json
-~~~
+GUI 상세 로그는 실제 사용자 작업의 diagnostic evidence다. 최종 durable path는 S4 구현에서 확정한다.
 
-- AUTO / CPU 단독 / GPU 최대화는 기본 모두 선택
-- 기존 GUI의 이미지/동영상 선택은 선택된 모든 benchmark mode에 공통 적용
-- 같은 source + 같은 mode의 새 결과는 이전 결과를 교체
-- media scope가 달라져도 해당 mode 파일은 최신 실행으로 교체되고 JSON의 mediaScope가 실제 범위를 식별
-- 과거 이미지 only와 동영상 only 결과를 동시에 보존하려면 Console benchmark 사용
-- 기존 수동 Save JSON은 export 기능으로 유지할 수 있으나 자동 저장이 기본 보존 경로
-- GUI는 Console benchmark 저장소를 자동으로 읽지 않는다.
-
-## 22. Console Benchmark 보존 정책
-
-Console은 장기 비교와 데이터 마이닝용이며 결과를 자동 삭제하지 않는다.
-
-~~~text
+Console:
 Benchmark/Console/suite-<suite-id>/
-    suite.json
-    auto.json
-    cpu.json
-    gpu-max.json
-~~~
+  suite.json
+  runs.jsonl
+  summary.json
 
-- 기본 누적 보관
-- --log-dir로 출력 root 변경
-- --log으로 개별 JSON 경로 지정
-- GUI와 Console의 저장 경로와 loading path를 분리
-- 장기 image/video/all 비교는 별도 Suite로 보관
+runs.jsonl은 recovery source이며 summary.json은 파생 결과다. GUI와 Console은 서로의 결과를 자동으로 history로 편입하지 않는다.
 
-## 23. Console CLI 설계
+## 24. CLI Benchmark 격리와 공정성
 
-일반 검색과 benchmark가 모두 동일한 media scope를 사용한다.
+- Benchmark runtime/index/cache는 normal Search Index와 분리한다.
+- mode 간 분석용 중간 결과를 공유하지 않는다.
+- 동일 Suite의 비교 Run은 dataset fingerprint, sourceRoot, mediaScope 및 관련 execution condition이 일치해야 한다.
+- OS filesystem cache와 process isolation은 완전 통제되지 않으며 명시적인 측정 한계로 남긴다.
+- GUI 상세 로그는 Console benchmark population에 자동 편입하지 않는다.
 
-~~~text
-MediaSimilarityFinder.exe --scan <folder> --media all
+## 25. Resource Policy 경계
 
-MediaSimilarityFinder.exe --benchmark <folder> --mode auto --media all
-MediaSimilarityFinder.exe --benchmark <folder> --mode cpu --media images
-MediaSimilarityFinder.exe --benchmark <folder> --mode gpu-max --media videos
-MediaSimilarityFinder.exe --benchmark <folder> --suite auto,cpu,gpu-max --media all
-~~~
+CLI benchmark mode와 CPU Resource Policy는 서로 다른 축이다. 현재 S5는 Balanced를 기본 실행 조건으로 사용한다. 향후 CLI에서 resource option을 추가하더라도 mode와 합치지 않는다.
 
-주요 benchmark 저장 옵션:
-
-~~~text
---log-dir <dir>
---log <file>
-~~~
-
-기계 판독의 canonical 결과는 JSON이며 표준 출력은 진행 상태와 최종 요약 중심으로 유지한다.
-
-## 24. Benchmark 격리와 공정성
-
-일반 Search Index/Video Cache를 benchmark가 재사용하면 CPU / AUTO / GPU 최대화 비교가 오염될 수 있다.
-
-따라서 benchmark Run은 전용 index/cache 상태를 사용한다.
-
-~~~text
-normal search
-    └─ Index/<root-id>/...
-
-benchmark
-    └─ Benchmark/<GUI|Console>/...
-        └─ isolated index/cache state
-~~~
-
-- benchmark가 일반 GUI 검색 DB를 변경하지 않는다.
-- Run 사이 index/cache 오염을 방지한다.
-- CPU → GPU → AUTO를 한 프로세스에서 연속 실행하는 것보다 Run별 독립 프로세스를 우선 검토한다.
-- OS filesystem cache는 완전 통제가 불가능하므로 uncontrolled 상태를 명시한다.
-- fresh benchmark index/cache와 cold OS filesystem cache를 같은 의미로 취급하지 않는다.
-- 동일 Suite의 비교 Run은 dataset fingerprint, sourceRoot, mediaScope와 relevant execution conditions가 일치해야 한다.
-
-## 25. Benchmark 환경 / 스케줄 기록
-
-각 Run은 결과와 함께 실행 조건을 저장한다.
-
-### 환경
-- Windows/OS build
-- appVersion / build configuration / gitCommit
-- CPU model / logical threads / RAM
-- GPU model / VRAM / driver
-- CUDA/runtime 및 FFmpeg 정보
-- selected/available backend
-
-### 실행 설정
-- benchmark mode
-- mediaScope
-- distance
-- image/video enable state
-- CPU Resource Mode
-- normalized CPU percentage 10–90
-- worker count
-- GPU ON/OFF policy
-- GPU batch
-- scheduler initial estimate / live adjustments
-- decoder policy
-- benchmark index/cache state
-- process isolation state
-
-### 결과 식별
-- suiteId / runId / runIndex
-- sourceRoot / sourceRootLabel / rootIdShort
-- datasetFingerprint / fileCount / byteCount
-- startedAt / completedAt
-- completion status
-
-개발 **빌드 스케줄 자체도 문서에 저장하되 버전 번호는 사전 배정하지 않는다.** 검증된 코드 상태가 만들어질 때만 다음 0.9.4.x 번호를 부여한다.
+GUI Resource Policy는 사용자가 다른 PC 작업과 병행하기 위해 CPU 점유를 제어하는 사용자 기능이며 CLI benchmark mode와 동일 개념이 아니다.
 
 ## 26. GUI / Console 기능 대응
 
 | 항목 | GUI | Console |
 | --- | --- | --- |
-| 일반 검색 | 지원 | 지원 |
-| 이미지 only | 기존 선택값 | --media images |
-| 동영상 only | 기존 선택값 | --media videos |
-| 모두 | 기존 선택값 | --media all |
-| AUTO | 지원 | 지원 |
-| CPU 단독 | 지원 | 지원 |
-| GPU 최대화 | 지원 | 지원 |
-| 최신 3개만 유지 | 지원 | 하지 않음 |
-| 장기 누적 | 기본 아님 | 기본 |
-| 사용자 log dir | export 중심 | 지원 |
+| 실제 사용자 검색 | 핵심 | headless scan 지원 |
+| 상세 로그 | 핵심 옵션 | benchmark telemetry 일부 |
+| AUTO / CPU / GPU-max | 사용자 실행 전략, 하나 선택 | 비교 benchmark mode |
+| CPU Resource Policy | 지원 | benchmark 조건 축 |
+| 독립 Benchmark 실행 버튼 | 없음 | --benchmark |
+| 장기 journal | 아님 | 기본 |
+| 사용자 작업 진단 | 핵심 목적 | 부차적 |
+| 개발 regression 비교 | 수동 분석 자료 | 핵심 목적 |
 
 ## 27. QuickLook 도움말
 
---help에는 Windows Store QuickLook을 선택적 편의 도구로 안내한다.
+기존 설계를 유지하며 benchmark semantic과 무관하다.
 
-확인된 Microsoft Store 주소:
-https://www.microsoft.com/store/apps/9nv4bs3l1h4s
+## 28. S4~S8 구현 책임
 
-QuickLook은 MediaSimilarityFinder의 필수 종속성이 아니다.
+- S4 GUI Detailed Logging: 상세 로그 명칭/semantic, TelemetryRecorder 경계, UserDiagnostic purpose, legacy compatibility, real GUI validation
+- S5 Console Benchmark Execution: --benchmark, --mode, --suite, Console renderer/journal, Benchmark purpose
+- S6 Data-mining Automation: Console benchmark journal 분석 및 build comparison
+- S7 help/usability
+- S8 full verification
 
-## 28. Benchmark 구현 / 빌드 스케줄
-
-버전 번호를 미리 고정하지 않고 다음 순서로 진행한다.
-
-- S0 설계/pre-register: Run/Suite, mode, media scope, 저장/격리/JSON/CLI 계약 확정
-- S1 Console entry foundation: --help, --version, headless scan, --media 연결
-- S2 Run/Suite benchmark core: BenchmarkConfig/Recorder/JSON/environment 연결
-- S3 storage isolation: GUI/Console root, benchmark index/cache, atomic/crash-safe 저장
-- S4 GUI integration: 세 mode checkbox, 기본 모두 선택, 기존 media 선택 결합, 최신 3개 보존
-- S5 Console benchmark execution: --benchmark / --mode / --suite / --media / --log-dir / --log
-- S6 data-mining automation: suite 자동 실행, dataset fingerprint 검증, 비교 요약
-- S7 help/usability: 명령 예제, media 선택 예제, QuickLook 안내, exit code
-- S8 full verification: CPU build → GPU build → CTest → CLI 실행 → GUI 검증 → JSON 검사 → 문서 → 필요 시 Build History → commit
-
-실제 benchmark 성능 실험이 시작되는 시점부터는 기존 pre-register-first 규칙을 적용하고 성공/실패/기각을 Build History와 Performance / Tuning Experiment Index에 남긴다.
+S4와 S5는 공통 계측을 사용할 수 있지만 동일 기능으로 간주하지 않는다.
 
 ## 29. Console Benchmark 최종 실행/터미널 UI 확정안 — 2026-09-30
 

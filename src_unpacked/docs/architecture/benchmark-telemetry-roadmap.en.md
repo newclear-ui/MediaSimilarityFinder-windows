@@ -370,212 +370,106 @@ Benchmarking is not decoration.
 - Increment schemaVersion when the JSON schema changes.
 
 
-## 20. Benchmark Execution Model — Run / Suite / Media Scope
+## 20. Top-Level Semantic Split — GUI Detailed Logs / CLI Benchmark
 
-Benchmark execution is separated into Run and Suite.
+### GUI
+- The GUI does not run a controlled benchmark.
+- Search/Update start is the real execution entry.
+- [Detailed Logs] attaches diagnostic telemetry to the real user workload.
+- The GUI has no Benchmark Run / Stop / Pause UI.
+- AUTO / CPU-only / GPU-max is the user execution resource strategy; exactly one is selected.
+- Maximum / High / Balanced / Gaming / Manual is a separate CPU Resource Policy axis.
 
-- Run: one measurement under one benchmark mode.
-- Suite: a logical group of AUTO / CPU-only / GPU-max Runs using the same source dataset, media scope, and execution conditions.
-- GUI can store the same suiteId in each retained JSON without requiring a separate suite.json.
-- Console may store suite.json plus individual Run JSON files for long-term analysis.
+### CLI
+- --benchmark는 a controlled development/verification benchmark.
+- AUTO / CPU-only / GPU-max are the comparison groups.
+- The default Suite compares all three and preserves file-level AUTO → CPU → GPU-max order.
+- The same dataset/media scope/build conditions are used to track pipeline / decoder / scheduler improvements.
 
-### Benchmark modes
+## 21. Shared Telemetry Layer
 
-- AUTO: use the current Adaptive Scheduler.
-- CPU-only: disable the GPU backend and measure the CPU baseline.
-- GPU-max: send capable work to the GPU while retaining mandatory CPU work and CPU fallback.
+TelemetryRecorder를 for shared instrumentation, with the purpose supplied by the upper layer.
 
-GPU-max does not mean GPU-only or CPU 0%.
+TelemetryPurpose
+- UserDiagnostic ← GUI
+- Benchmark ← CLI
 
-### Media scope
+Benchmark may use Telemetry, but Telemetry is not Benchmark.
 
-Console exposes the same image/video selection scope as the GUI.
+GUI 경로:
+Search/Update → ScanWorker → TelemetryRecorder(UserDiagnostic) → Detailed Logs
 
-~~~text
---media images
---media videos
---media all
-~~~
+CLI 경로:
+--benchmark → BenchmarkSession → BenchmarkRunner → ProductionBenchmarkExecutor → TelemetryRecorder(Benchmark)
 
-- images: image only
-- videos: video only
-- all: image + video
-- default: all
-- normal scan and benchmark use the same semantics.
+## 22. CLI Benchmark Run / Suite / Media Scope
 
-Mode and media scope are orthogonal. A Suite can therefore contain AUTO+images, CPU+images, and GPU-max+images, while another Suite can measure videos only.
+Benchmark mode:
+- AUTO
+- CPU 단독
+- GPU 최대 활용
 
-Each Run JSON stores at minimum:
+GPU 최대 활용은 GPU-only가 아니며 필수 CPU 작업과 fallback을 유지한다.
 
-~~~text
-suiteId
-runId
-mode
-mediaScope
-scanImages
-scanVideos
-sourceRoot
-sourceRootLabel
-sourceRootId
-datasetFingerprint
-~~~
+Media Scope:
+- --media images
+- --media videos
+- --media all
 
-## 21. GUI Benchmark Retention
+mode와 media scope는 독립 축이다.
 
-GUI retains only the latest result for each source + benchmark mode.
+## 23. GUI Detailed Log Retention / Console Benchmark Retention
 
-~~~text
-Benchmark/GUI/<source-label>_<root-id-short>/
-    auto.json
-    cpu.json
-    gpu-max.json
-~~~
+GUI 상세 로그는 diagnostic evidence from real user work. The final durable path is fixed in S4 implementation.
 
-- AUTO / CPU-only / GPU-max are selected by default.
-- Existing GUI image/video selection applies to every selected benchmark mode.
-- A new result for the same source + mode replaces the previous result.
-- If media scope changes, the same mode file is replaced and mediaScope identifies the latest measured scope.
-- Historical image-only and video-only comparisons should use Console benchmark storage.
-- Existing manual Save JSON can remain as an export function.
-- GUI never automatically loads Console benchmark logs.
-
-## 22. Console Benchmark Retention
-
-Console is the long-term comparison and data-mining path. Results are not automatically deleted.
-
-~~~text
+Console:
 Benchmark/Console/suite-<suite-id>/
-    suite.json
-    auto.json
-    cpu.json
-    gpu-max.json
-~~~
+  suite.json
+  runs.jsonl
+  summary.json
 
-- Retention is cumulative by default.
-- --log-dir overrides the output root.
-- --log specifies an individual JSON path.
-- GUI and Console storage and loading paths remain separate.
-- Long-term image/video/all comparisons should use separate Suites.
+runs.jsonl is the recovery source and summary.json is derived. GUI and Console do not automatically ingest each other's results as history.
 
-## 23. Console CLI Design
+## 24. CLI Benchmark Isolation and Fairness
 
-Normal scan and benchmark use the same media scope.
+- Benchmark runtime/index/cache는 normal Search Index와 분리한다.
+- mode 간 분석용 중간 결과를 공유하지 않는다.
+- 동일 Suite의 비교 Run은 dataset fingerprint, sourceRoot, mediaScope 및 관련 execution condition이 일치해야 한다.
+- OS filesystem cache와 process isolation은 완전 통제되지 않으며 명시적인 측정 한계로 남긴다.
+- GUI Detailed Logs are not automatically inserted into the Console benchmark population.
 
-~~~text
-MediaSimilarityFinder.exe --scan <folder> --media all
+## 25. Resource Policy Boundary
 
-MediaSimilarityFinder.exe --benchmark <folder> --mode auto --media all
-MediaSimilarityFinder.exe --benchmark <folder> --mode cpu --media images
-MediaSimilarityFinder.exe --benchmark <folder> --mode gpu-max --media videos
-MediaSimilarityFinder.exe --benchmark <folder> --suite auto,cpu,gpu-max --media all
-~~~
+CLI benchmark mode와 CPU Resource Policy는 서로 다른 축이다. Current S5 uses Balanced as the default execution condition. A future CLI resource option must remain separate from the mode concept.
 
-Benchmark storage options:
+GUI Resource Policy는 a user feature for controlling CPU occupancy while coexisting with other PC workloads; it is not the same concept as a CLI benchmark mode.
 
-~~~text
---log-dir <dir>
---log <file>
-~~~
+## 26. GUI / Console capability mapping
 
-JSON is the canonical machine-readable result. Standard output stays focused on progress and the final summary.
-
-## 24. Benchmark Isolation and Fairness
-
-Reusing the normal Search Index / Video Cache would bias CPU / AUTO / GPU-max comparisons.
-
-Benchmark Runs therefore use dedicated index/cache state.
-
-~~~text
-normal search
-    └─ Index/<root-id>/...
-
-benchmark
-    └─ Benchmark/<GUI|Console>/...
-        └─ isolated index/cache state
-~~~
-
-- A benchmark must not modify the normal GUI search database.
-- Index/cache state must not leak between benchmark Runs.
-- Prefer one independent process per Run over CPU → GPU → AUTO in one process.
-- OS filesystem cache is not fully controllable and should be recorded as uncontrolled.
-- Fresh benchmark index/cache is not the same as a cold OS filesystem cache.
-- Runs in one Suite must align on dataset fingerprint, sourceRoot, mediaScope, and relevant execution conditions.
-
-## 25. Benchmark Environment / Schedule Capture
-
-Each Run stores enough execution context to reconstruct how it was produced.
-
-### Environment
-- Windows/OS build
-- appVersion / build configuration / gitCommit
-- CPU model / logical threads / RAM
-- GPU model / VRAM / driver
-- CUDA/runtime and FFmpeg information
-- selected/available backend
-
-### Execution configuration
-- benchmark mode
-- mediaScope
-- distance
-- image/video enable state
-- CPU Resource Mode
-- normalized CPU percentage 10–90
-- worker count
-- GPU ON/OFF policy
-- GPU batch
-- scheduler initial estimate / live adjustments
-- decoder policy
-- benchmark index/cache state
-- process isolation state
-
-### Result identity
-- suiteId / runId / runIndex
-- sourceRoot / sourceRootLabel / rootIdShort
-- datasetFingerprint / fileCount / byteCount
-- startedAt / completedAt
-- completion status
-
-The development **build schedule** is also stored in the documents, but version numbers are not pre-assigned. A new 0.9.4.x version is assigned only when a validated code state exists.
-
-## 26. GUI / Console Capability Mapping
-
-| item | GUI | Console |
+| 항목 | GUI | Console |
 | --- | --- | --- |
-| normal scan | supported | supported |
-| image only | existing selection | --media images |
-| video only | existing selection | --media videos |
-| all | existing selection | --media all |
-| AUTO | supported | supported |
-| CPU-only | supported | supported |
-| GPU-max | supported | supported |
-| latest three only | yes | no automatic pruning |
-| long-term accumulation | not default | default |
-| custom log dir | export-oriented | supported |
+| Real user search | primary | headless scan supported |
+| Detailed Logs | primary option | part of benchmark telemetry |
+| AUTO / CPU / GPU-max | user execution strategy, one selected | comparison benchmark mode |
+| CPU Resource Policy | 지원 | benchmark 조건 축 |
+| Independent Benchmark run button | none | --benchmark |
+| Long-term journal | no | default |
+| User-workload diagnosis | primary purpose | secondary |
+| Development regression comparison | manual analysis input | primary purpose |
 
 ## 27. QuickLook Help
 
---help should mention Windows Store QuickLook as an optional convenience tool.
+Unchanged and unrelated to benchmark semantics.
 
-Verified Microsoft Store address:
-https://www.microsoft.com/store/apps/9nv4bs3l1h4s
+## 28. S4-S8 implementation responsibilities
 
-QuickLook is not a required MediaSimilarityFinder dependency.
+- S4 GUI Detailed Logging: detailed-log naming/semantics, TelemetryRecorder boundary, UserDiagnostic purpose, legacy compatibility and real GUI validation
+- S5 Console Benchmark Execution: --benchmark, --mode, --suite, Console renderer/journal and Benchmark purpose
+- S6 Data-mining Automation: Console benchmark journal analysis and build comparison
+- S7 help/usability
+- S8 full verification
 
-## 28. Benchmark Implementation / Build Schedule
-
-Do not pre-assign version numbers.
-
-- S0 Design/pre-register: finalize Run/Suite, mode, media scope, storage/isolation/JSON/CLI contracts
-- S1 Console entry foundation: --help, --version, headless scan, --media integration
-- S2 Run/Suite benchmark core: connect BenchmarkConfig/Recorder/JSON/environment
-- S3 Storage isolation: GUI/Console roots, dedicated benchmark index/cache, atomic/crash-safe persistence
-- S4 GUI integration: three mode checkboxes, all selected by default, existing media selection combined, latest-three retention
-- S5 Console benchmark execution: --benchmark / --mode / --suite / --media / --log-dir / --log
-- S6 Data-mining automation: automated Suites, dataset fingerprint checks, comparison summary
-- S7 Help/usability: command examples, media-scope examples, QuickLook guidance, exit codes
-- S8 Full verification: CPU build → GPU build → CTest → CLI execution → GUI verification → JSON inspection → documentation → Build History when applicable → commit
-
-Once actual benchmark performance experiments begin, apply the existing pre-register-first rule and record successful, failed, and rejected outcomes in Build History and the Performance / Tuning Experiment Index.
+S4 and S5 may share instrumentation but are not the same feature.
 
 ## 29. Final Console Benchmark Execution and Terminal UI Contract — 2026-09-30
 

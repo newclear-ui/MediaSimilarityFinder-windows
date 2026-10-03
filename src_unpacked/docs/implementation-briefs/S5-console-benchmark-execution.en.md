@@ -8,11 +8,9 @@ Version basis: v0.9.4.43
 
 ## 1. Purpose
 
-S1 to S4 are CLOSED. Up to S4 the benchmark execution path exists **only in the
-GUI**, and the Console still rejects `--benchmark`, so a terminal user cannot run a
-benchmark at all.
+S1-S3 benchmark infrastructure is established, and S4 has been redesigned as GUI Detailed Logging. The GUI is not a benchmark execution path.
 
-S5 adds two things.
+S5 implements and verifies controlled Console benchmark execution through `--benchmark` and its renderer.
 
 1. **Console benchmark execution** — connect `--benchmark` to a real execution path.
 2. **Console renderer** — show progress and results in the terminal.

@@ -7,11 +7,10 @@ Version 기준: v0.9.4.43
 
 ## 1. 목적
 
-S1~S4 가 CLOSED 다. S4 까지 benchmark 실행 경로는 **GUI 에만** 존재했고,
-Console 에서는 `--benchmark` 가 아직 거부 상태다. 따라서 사용자는 터미널에서
-benchmark 를 실행할 수 없다.
+S1~S3의 benchmark infrastructure가 확정되었고, 현재 S4는 GUI Detailed Logging으로 설계가 재정의된 상태다. GUI는 benchmark 실행 경로가 아니다.
+CLI에서는 `--benchmark` controlled execution을 구현/검증한다.
 
-S5 는 두 가지를 추가한다.
+S5는 Console benchmark 실행과 renderer를 담당한다.
 
 1. **Console benchmark execution** — `--benchmark` 를 실제 실행 경로에 연결한다.
 2. **Console renderer** — 실행 중/후 상황을 터미널에 표시한다.
