@@ -430,18 +430,14 @@ if(MSF_BUILD_TESTS)
                                ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
     set_target_properties(msf_ui_benchmark_test PROPERTIES AUTOMOC ON)
     add_test(NAME ui_benchmark_test COMMAND msf_ui_benchmark_test)
-    # S4 GUI benchmark END-TO-END: the real MainWindow + real engine over real
-    # generated media, covering subset selection, suite-lock refusal and cancel.
-    # Needs ffmpeg and drives a real scan, so it gets a generous timeout.
-    add_executable(msf_ui_benchmark_e2e_test tests/ui_benchmark_e2e_test.cpp
-                   gui/mainwindow.cpp gui/mainwindow.h
-                   gui/benchmark_worker.cpp gui/benchmark_worker.h)
-    target_link_libraries(msf_ui_benchmark_e2e_test PRIVATE msf_core Qt6::Widgets)
-    target_include_directories(msf_ui_benchmark_e2e_test PRIVATE
-                               ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
-    set_target_properties(msf_ui_benchmark_e2e_test PROPERTIES AUTOMOC ON)
-    add_test(NAME ui_benchmark_e2e_test COMMAND msf_ui_benchmark_e2e_test)
-    set_tests_properties(ui_benchmark_e2e_test PROPERTIES TIMEOUT 600)
+    # S4 GUI benchmark END-TO-END: removed with the GUI run/stop buttons. The GUI
+    # benchmark entry point no longer exists (benchTgl_ + run_level isolation via the
+    # console CLI is the sanctioned path), so this test asserted UI that was deleted.
+    # Kept as a comment rather than deleted so the removal is traceable.
+    # add_executable(msf_ui_benchmark_e2e_test tests/ui_benchmark_e2e_test.cpp
+    #                gui/mainwindow.cpp gui/mainwindow.h
+    #                gui/benchmark_worker.cpp gui/benchmark_worker.h)
+    # ...
     # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
     # and a scratch app dir, and it measures wall clock, so it is run manually
     # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in

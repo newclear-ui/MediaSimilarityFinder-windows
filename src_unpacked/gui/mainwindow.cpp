@@ -296,7 +296,7 @@ QString trStr(UiLang lang, const char* key) {
   // when it finishes, so there is no in-flight file that could honestly be named.
   if (!std::strcmp(key,"benchModeAuto")) return S("AUTO","AUTO");
   if (!std::strcmp(key,"benchModeCpu")) return S("CPU 단독","CPU only");
-  if (!std::strcmp(key,"benchModeGpu")) return S("GPU 최대화","GPU max");
+  if (!std::strcmp(key,"benchModeGpu")) return S("GPU 최대 활용","GPU MAX");
   if (!std::strcmp(key,"benchRun")) return S("벤치마크 실행","Run benchmark");
   if (!std::strcmp(key,"benchStop")) return S("벤치마크 중지","Stop benchmark");
   if (!std::strcmp(key,"benchIdle")) return S("벤치마크 대기","Benchmark idle");
@@ -841,6 +841,11 @@ void MainWindow::buildToolbar() {
   preset_->addItems({QStringLiteral("Maximum 90%"), QStringLiteral("High 75%"), QStringLiteral("Balanced 55%"),
                      QStringLiteral("Gaming 25%"), QStringLiteral("Custom")});
   preset_->setCurrentIndex(2);
+  // Narrow to the content instead of stretching with the widest label so the
+  // resource+CPU area stays compact.
+  preset_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  preset_->setMinimumContentsLength(9);
+  preset_->setMaximumWidth(130);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
   cpu_ = new QSpinBox(toolBar_);
   // The widget, stored policy, and engine input all use the same 10-90 user
@@ -849,6 +854,7 @@ void MainWindow::buildToolbar() {
   cpu_->setRange(msf::kUserCpuPercentMin, msf::kUserCpuPercentMax);
   cpu_->setPrefix(QStringLiteral("CPU "));
   cpu_->setSuffix(QStringLiteral("%"));
+  cpu_->setMaximumWidth(78);
   // Node A: no manual GPU utilization control. GPU is ON/OFF only
   // (gpuEnabled_ checkbox = Adaptive/AUTO when ON); the deprecated internal
   // gpuPercent cap stays untouched until the Node B scheduler replaces it.
@@ -858,48 +864,43 @@ void MainWindow::buildToolbar() {
   gpuEnabled_->setObjectName("gpuToggle"); // automation hook, see folder_
   benchTgl_ = new QCheckBox(toolBar_); benchTgl_->setChecked(true);
   benchTgl_->setObjectName("benchTgl"); // automation hook, see folder_
-  // S4 benchmark controls. A separate group after the scan group: the mode
-  // checkboxes are an execution selection and the run button starts a real
-  // benchmark, whereas benchTgl_ above only attaches legacy telemetry to a scan.
+  // Execution resource mode: a single choice of how this program uses CPU/GPU
+  // resources. It is intentionally mutually exclusive (a program cannot be both
+  // CPU-only and GPU-maximising at the same time). Drives whether the GPU
+  // checkbox is enabled: CPU-only forces it off; AUTO and GPU-max leave the
+  // program's adaptive GPU path available. The fine-grained CPU budget stays
+  // with preset_/cpu_ below.
   benchAuto_ = new QCheckBox(toolBar_); benchAuto_->setChecked(true);
-  benchCpu_  = new QCheckBox(toolBar_); benchCpu_->setChecked(true);
-  benchGpu_  = new QCheckBox(toolBar_); benchGpu_->setChecked(true);
+  benchCpu_  = new QCheckBox(toolBar_); benchCpu_->setChecked(false);
+  benchGpu_  = new QCheckBox(toolBar_); benchGpu_->setChecked(false);
   benchAuto_->setObjectName("benchModeAuto");  // automation hook
   benchCpu_->setObjectName("benchModeCpu");    // automation hook
   benchGpu_->setObjectName("benchModeGpu");    // automation hook
+  benchModeGroup_ = new QButtonGroup(toolBar_);
+  benchModeGroup_->setExclusive(true);
   for (QCheckBox* b : {benchAuto_, benchCpu_, benchGpu_}) {
+    benchModeGroup_->addButton(b);
     b->setToolTip(trStr(lang(), "benchTipModes"));
-    connect(b, &QCheckBox::toggled, this, &MainWindow::updateBenchmarkUiState);
   }
-  benchRun_ = new QPushButton(toolBar_); benchRun_->setObjectName("benchRun");
-  benchRun_->setToolTip(trStr(lang(), "benchTipRun"));
-  benchStop_ = new QPushButton(toolBar_); benchStop_->setObjectName("benchStop");
-  benchStop_->setToolTip(trStr(lang(), "benchTipStop"));
-  benchStatus_ = new QLabel(toolBar_); benchStatus_->setObjectName("benchStatus");
-  benchStatus_->setMinimumWidth(150);
-  connect(benchRun_,  &QPushButton::clicked, this, &MainWindow::startBenchmark);
-  connect(benchStop_, &QPushButton::clicked, this, &MainWindow::cancelBenchmark);
+  // A mode is always selected: refusing to uncheck the last one keeps the
+  // group in a valid state. On change, reflect it in gpuEnabled_ and refresh
+  // the policy so scan/benchmark honour the selection.
+  connect(benchAuto_, &QCheckBox::toggled, this, [this](bool on){ if(on) applyExecutionMode(); enforceModeSelection(); });
+  connect(benchCpu_,  &QCheckBox::toggled, this, [this](bool on){ if(on) applyExecutionMode(); enforceModeSelection(); });
+  connect(benchGpu_,  &QCheckBox::toggled, this, [this](bool on){ if(on) applyExecutionMode(); enforceModeSelection(); });
   // The run button is gated on a folder being present, so editing the folder has
   // to re-evaluate that gate; otherwise clearing it would leave the button armed.
   connect(folder_, &QLineEdit::textChanged, this, [this](const QString&) { updateBenchmarkUiState(); });
-  kindBtn_ = new QToolButton(toolBar_);
-  kindBtn_->setText(trStr(lang(), "kindMenu"));
-  // Combo-style arrow on the side (same look as the preset/view combos):
-  // the button part reopens the menu, so a press anywhere works.
-  kindBtn_->setPopupMode(QToolButton::MenuButtonPopup);
-  connect(kindBtn_, &QToolButton::clicked, this, [this] { kindBtn_->showMenu(); });
-  kindMenu_ = new QMenu(kindBtn_);
-  kindImgAct_ = kindMenu_->addAction(trStr(lang(), "kindImages"));
-  kindVidAct_ = kindMenu_->addAction(trStr(lang(), "kindVideos"));
-  for (auto* a : {kindImgAct_, kindVidAct_}) {
-    a->setCheckable(true); a->setChecked(true);
-    connect(a, &QAction::toggled, this, [this] { updateKindBtn(); });
-  }
-  kindBtn_->setMenu(kindMenu_);
+  mediaImgBtn_ = new QPushButton(toolBar_); mediaImgBtn_->setCheckable(true);
+  mediaVidBtn_ = new QPushButton(toolBar_); mediaVidBtn_->setCheckable(true);
+  mediaImgBtn_->setObjectName("mediaImgBtn"); mediaVidBtn_->setObjectName("mediaVidBtn");
   {
     const int km = QSettings().value("ui/kindMask", 3).toInt();
-    kindImgAct_->setChecked(km & 1); kindVidAct_->setChecked(km & 2);
+    mediaImgBtn_->setChecked(km & 1); mediaVidBtn_->setChecked(km & 2);
+    if (!mediaImgBtn_->isChecked() && !mediaVidBtn_->isChecked()) mediaImgBtn_->setChecked(true);
   }
+  connect(mediaImgBtn_, &QPushButton::toggled, this, &MainWindow::updateKindSelection);
+  connect(mediaVidBtn_, &QPushButton::toggled, this, &MainWindow::updateKindSelection);
   monBtn_ = new QPushButton(toolBar_); monBtn_->setCheckable(true);
   connect(monBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitor);
   logBtn_ = new QPushButton(toolBar_); logBtn_->setEnabled(false);
@@ -923,11 +924,10 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); toolBar_->addWidget(benchTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator();
-  // S4 benchmark group.
+  // Execution resource mode + fine CPU budget as one compact, single-row area.
   toolBar_->addWidget(benchAuto_); toolBar_->addWidget(benchCpu_); toolBar_->addWidget(benchGpu_);
-  toolBar_->addWidget(benchRun_); toolBar_->addWidget(benchStop_); toolBar_->addWidget(benchStatus_);
-  toolBar_->addSeparator(); toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
-  toolBar_->addWidget(kindBtn_);
+  toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
+  toolBar_->addWidget(mediaImgBtn_); toolBar_->addWidget(mediaVidBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
@@ -1214,12 +1214,7 @@ void MainWindow::applyStaticTexts() {
   benchAuto_->setText(trStr(l, "benchModeAuto"));
   benchCpu_->setText(trStr(l, "benchModeCpu"));
   benchGpu_->setText(trStr(l, "benchModeGpu"));
-  benchRun_->setText(QStringLiteral("▶ ") + trStr(l, "benchRun"));
-  benchStop_->setText(QStringLiteral("■ ") + trStr(l, "benchStop"));
   for (QCheckBox* b : {benchAuto_, benchCpu_, benchGpu_}) b->setToolTip(trStr(l, "benchTipModes"));
-  benchRun_->setToolTip(trStr(l, "benchTipRun"));
-  benchStop_->setToolTip(trStr(l, "benchTipStop"));
-  if (!benchmarking_) setBenchmarkStatusText(trStr(l, "benchIdle"));
   gpuEnabled_->setText(trStr(l, "monitorGpu"));
   gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
@@ -1247,10 +1242,9 @@ void MainWindow::applyStaticTexts() {
     viewBox_->setCurrentIndex(vcur < 0 ? 0 : vcur);
     viewBox_->blockSignals(false);
   }
-  kindBtn_->setText(trStr(l, "kindMenu") + QStringLiteral(" ▾"));
-  kindImgAct_->setText(trStr(l, "kindImages"));
-  kindVidAct_->setText(trStr(l, "kindVideos"));
-  updateKindBtn();
+  if (mediaImgBtn_) mediaImgBtn_->setText(trStr(l, "kindImages"));
+  if (mediaVidBtn_) mediaVidBtn_->setText(trStr(l, "kindVideos"));
+  updateKindSelection();
   midTabs_->setTabText(0, trStr(l, "tabImages"));
   midTabs_->setTabText(1, trStr(l, "tabVideos"));
   updateIgnoreTab();
@@ -1282,6 +1276,10 @@ void MainWindow::applyStaticTexts() {
 // BenchmarkRunner::run(). The order is fixed to S2's canonical order so the UI can
 // never reorder the file loop into per-mode passes.
 
+// DORMANT since the UI consolidation: the GUI run/stop buttons were removed, so this
+// vector is only fed by the (now mutually-exclusive) resource-mode checkboxes and is
+// no longer wired to any UI entry point. Kept compiling so the S4 runner code does not
+// have to be deleted wholesale; it must not be used for UI behaviour.
 std::vector<msf::GpuBackendKind> MainWindow::selectedBenchModes() const {
   std::vector<msf::GpuBackendKind> modes;
   if (benchAuto_ && benchAuto_->isChecked()) modes.push_back(msf::GpuBackendKind::Auto);
@@ -1293,8 +1291,8 @@ std::vector<msf::GpuBackendKind> MainWindow::selectedBenchModes() const {
 // Reuses the existing Images/Videos actions so GUI and Console keep one meaning of
 // media scope. No GUI-specific scope enum is introduced.
 msf::MediaScope MainWindow::benchMediaScope() const {
-  const bool img = kindImgAct_ && kindImgAct_->isChecked();
-  const bool vid = kindVidAct_ && kindVidAct_->isChecked();
+  const bool img = mediaImgBtn_ && mediaImgBtn_->isChecked();
+  const bool vid = mediaVidBtn_ && mediaVidBtn_->isChecked();
   if (img && vid) return msf::MediaScope::All;
   if (vid)         return msf::MediaScope::Videos;
   if (img)         return msf::MediaScope::Images;
@@ -1311,16 +1309,13 @@ QString MainWindow::benchmarkSourceRoot() const {
 // else. There is no process-wide gate here: concurrent instances are handled by the
 // S3 suite lock inside BenchmarkGuiStorage.
 void MainWindow::updateBenchmarkUiState() {
-  if (!benchRun_) return;
-  const bool modes  = !selectedBenchModes().empty();
+  if (!benchModeGroup_) return;
   const bool folder = !benchmarkSourceRoot().isEmpty();
 
   scan_->setEnabled(!scanning_ && !benchmarking_);
-  benchRun_->setEnabled(!scanning_ && !benchmarking_ && modes && folder);
   benchAuto_->setEnabled(!benchmarking_);
   benchCpu_->setEnabled(!benchmarking_);
   benchGpu_->setEnabled(!benchmarking_);
-  benchStop_->setEnabled(benchmarking_);
   // Pause is a scan-only control: benchmark has no pause at all. Keeping the rule
   // in one place also makes the idle state consistent, because setRunning() only
   // runs for scans and would otherwise leave the button enabled with no scan.
@@ -1329,7 +1324,10 @@ void MainWindow::updateBenchmarkUiState() {
 }
 
 void MainWindow::setBenchmarkStatusText(const QString& text) {
-  if (benchStatus_) benchStatus_->setText(text);
+  // benchStatus_ label was removed from the toolbar per the UI consolidation;
+  // keep the function so the (now dormant) GUI benchmark path still compiles and
+  // routes messages to the scan log instead of a deleted label.
+  if (!text.isEmpty()) scanLog(text);
 }
 
 void MainWindow::teardownBenchmarkThread() {
@@ -1567,7 +1565,7 @@ void MainWindow::startScan() {
   thread_ = new QThread(this);
   const int dist = 8;
   worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), policy_.gpuPercent, gpuEnabled_->isChecked(),
-                           kindImgAct_->isChecked(), kindVidAct_->isChecked());
+                             mediaImgBtn_->isChecked(), mediaVidBtn_->isChecked());
   worker_->setIgnored(ignored_);
   worker_->setBenchmark(benchTgl_->isChecked());
   worker_->moveToThread(thread_);
@@ -2130,23 +2128,55 @@ void MainWindow::gridCheckChanged(QListWidgetItem* it) {
   if (!it) return;
   setGroupMarked(it->data(Qt::UserRole).toInt(), it->checkState() == Qt::Checked);
 }
-void MainWindow::updateKindBtn() {
-  int m = (kindImgAct_->isChecked() ? 1 : 0) | (kindVidAct_->isChecked() ? 2 : 0);
-  if (!m) { // never allow an empty selection
-    kindImgAct_->blockSignals(true); kindVidAct_->blockSignals(true);
-    kindImgAct_->setChecked(true); kindVidAct_->setChecked(true);
-    kindImgAct_->blockSignals(false); kindVidAct_->blockSignals(false);
-    m = 3;
+void MainWindow::enforceModeSelection() {
+  // The mutually-exclusive mode group (auto/cpu/gpu-max) must always hold
+  // exactly one checked entry: refusing to drop the last one.
+  bool any = benchAuto_->isChecked() || benchCpu_->isChecked() || benchGpu_->isChecked();
+  if (any) return;
+  // None selected: restore AUTO as the safe default.
+  benchAuto_->blockSignals(true); benchAuto_->setChecked(true); benchAuto_->blockSignals(false);
+  applyExecutionMode();
+}
+
+void MainWindow::applyExecutionMode() {
+  // The upper mode drives GPU availability; the CPU detail (preset_/cpu_) is
+  // unchanged. CPU-only forces the GPU off; AUTO and GPU-max keep the adaptive
+  // GPU path available. gpuEnabled_ remains visible so the user can still see it.
+  const bool cpuOnly = benchCpu_->isChecked();
+  if (cpuOnly && gpuEnabled_->isChecked()) {
+    gpuEnabled_->blockSignals(true); gpuEnabled_->setChecked(false); gpuEnabled_->blockSignals(false);
+  } else if (!cpuOnly && !gpuEnabled_->isChecked()) {
+    gpuEnabled_->blockSignals(true); gpuEnabled_->setChecked(true); gpuEnabled_->blockSignals(false);
   }
+  // Refresh the stored policy so monitor/scan/benchmark pick up the GPU decision.
+  // Re-apply through the current preset so the user's CPU budget preset is kept
+  // (customResourceChanged would silently force Custom).
+  resourceChanged(preset_->currentIndex());
+}
+
+void MainWindow::updateKindSelection() {
+  // Photo/video is now two independent toggle buttons. It must never end with
+  // both OFF: if the user unchecks the last remaining one, force it back on.
+  bool img = mediaImgBtn_->isChecked();
+  bool vid = mediaVidBtn_->isChecked();
+  if (!img && !vid) {
+    // Treat "the one being turned off" as the survivor to keep checked.
+    // The signal that triggered us was a toggle; recover by re-checking the
+    // one that is currently off but was last the sole survivor. Simple rule:
+    // keep the previous single selection. We infer it from kindMask.
+    const int prev = QSettings().value("ui/kindMask", 3).toInt();
+    img = (prev & 1) != 0;
+    vid = (prev & 2) != 0;
+    if (!img && !vid) img = true;
+    mediaImgBtn_->blockSignals(true); mediaImgBtn_->setChecked(img); mediaImgBtn_->blockSignals(false);
+    mediaVidBtn_->blockSignals(true); mediaVidBtn_->setChecked(vid); mediaVidBtn_->blockSignals(false);
+  }
+  const int m = (img ? 1 : 0) | (vid ? 2 : 0);
   QSettings().setValue("ui/kindMask", m);
-  // Button mirrors the selection so the state is visible without opening the
-  // menu; bold when filtered to a single kind. No "▾" in the label: the
-  // ToolButton already draws its own arrow (double arrows otherwise).
-  const QString sel = (m == 3 ? trStr(lang(), "kindImages") + "+" + trStr(lang(), "kindVideos")
-                              : (m == 1 ? trStr(lang(), "kindImages") : trStr(lang(), "kindVideos")));
-  kindBtn_->setText(sel);
-  QFont f = kindBtn_->font(); f.setBold(m != 3); kindBtn_->setFont(f);
-  kindBtn_->setToolTip(trStr(lang(), "kindMenu") + ": " + sel);
+  // Style: checkable buttons already highlight when checked; keep both visually
+  // aligned so a single-kind selection reads as filtered.
+  QFont fi = mediaImgBtn_->font(); fi.setBold(m == 1); mediaImgBtn_->setFont(fi);
+  QFont fv = mediaVidBtn_->font(); fv.setBold(m == 2); mediaVidBtn_->setFont(fv);
 }
 void MainWindow::groupViewChanged(int idx) {
   if (idx < 0) idx = 0;

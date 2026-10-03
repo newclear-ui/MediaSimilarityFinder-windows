@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QThread>
 #include <QMutex>
+#include <QButtonGroup>
 #include <QIcon>
 #include <QStringList>
 #include <QVector>
@@ -144,7 +145,8 @@ private slots:
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
-  void groupViewChanged(int); void updateKindBtn();
+  void groupViewChanged(int);
+  void applyExecutionMode(); void enforceModeSelection(); void updateKindSelection();
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
   void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
@@ -173,8 +175,8 @@ private:
   // This is the exact vector handed to BenchmarkRunner::run(); there is no
   // per-mode Runner pass and therefore no reordering of the file loop.
   std::vector<msf::GpuBackendKind> selectedBenchModes() const;
-  // Maps the existing Images/Videos GUI selection onto S1's MediaScope. The
-  // existing kindImgAct_/kindVidAct_ semantics are reused; no new scope enum.
+  // Maps the existing photo/video selection onto S1's MediaScope. The toggle-button
+  // semantics mirror the former kind-image/kind-video actions; no new scope enum.
   msf::MediaScope benchMediaScope() const;
   // Single gate for every benchmark-related enable state (S4 §4-13). A scan in
   // progress blocks the benchmark, and a running benchmark blocks the scan.
@@ -270,8 +272,7 @@ private:
   // toggle and is deliberately NOT reused as a mode selector: it decides whether
   // the ordinary scan records legacy telemetry, not which modes are measured.
   QCheckBox *benchAuto_=nullptr,*benchCpu_=nullptr,*benchGpu_=nullptr;
-  QPushButton *benchRun_=nullptr,*benchStop_=nullptr;
-  QLabel* benchStatus_=nullptr;
+  QButtonGroup* benchModeGroup_=nullptr;   // enforces single resource-mode select
   QThread* benchThread_=nullptr;
   BenchmarkWorker* benchWorker_=nullptr;
   std::unique_ptr<msf::BenchmarkGuiStorage> benchStorage_;
@@ -291,7 +292,7 @@ private:
   QStyledItemDelegate* tileDelegate_=nullptr; // Explorer-style Tiles renderer for the group grid
   QStyledItemDelegate* defaultDelegate_=nullptr; // plain delegate restored for icon/list modes
   // (setItemDelegate(nullptr) does NOT restore painting; probed null visuals)
-  QToolButton* kindBtn_=nullptr; QMenu* kindMenu_=nullptr; QAction *kindImgAct_=nullptr, *kindVidAct_=nullptr;
+  QPushButton *mediaImgBtn_=nullptr, *mediaVidBtn_=nullptr;   // toggle photo/video scope
   QListWidget* ignoreList_=nullptr; QPushButton *unignoreBtn_=nullptr, *clearIgnoreBtn_=nullptr;
   QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
   QSplitter* split_=nullptr;
