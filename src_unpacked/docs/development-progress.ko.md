@@ -1309,7 +1309,7 @@ S2  Run / Suite benchmark core
  ↓
 S3  Benchmark storage isolation
  ↓
-S4  GUI benchmark integration
+S4  GUI Detailed Logging
  ↓
 S5  Console benchmark execution
  ↓

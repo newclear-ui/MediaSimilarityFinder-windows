@@ -319,7 +319,7 @@ The `CPU FB` display item the Console mockup placed on every mode result row
 - The summary is a journal replay result
 - Ctrl+C preserves partial results
 - A non-interactive (piped) environment does not corrupt results
-- GUI benchmark is not broken (existing S4 tests regress cleanly)
+- GUI detailed logging remains a separate S4 user-workload path; S5 does not require GUI Benchmark UI
 
 ### Regression
 
@@ -340,7 +340,7 @@ S5 is not declared CLOSED until all of the following hold.
 - Cancellation and partial preservation work
 - Both TTY and non-interactive output are correct
 - The Console renderer displays the defined information
-- GUI benchmark behaviour is not broken
+- GUI detailed logging remains a separate user-workload path
 - S1/S2/S3 test semantics are unchanged
 - Full CPU CTest PASS / full GPU CTest PASS
 - `git diff --check` PASS, no stale objects, no leftover build artifacts
@@ -359,7 +359,7 @@ S5 is not declared CLOSED until all of the following hold.
 - All S2 execution semantics (ordering, aggregate precedence, cancellation state
   model, executor boundary, no progress hook additions)
 - The S3 journal / suite lock / summary contract and its JSON schema
-- S4 GUI benchmark behaviour and the `Benchmark/GUI` storage layer
+- S4 GUI detailed-logging design and the `TelemetryRecorder/UserDiagnostic` boundary
 - Existing S1 CLI behaviour (`--help`/`--version`/`--smoke`/`--scan`/no arguments)
 - The legacy `BenchmarkRecorder` schema
 - The F/NVDEC state (stays `NO`)

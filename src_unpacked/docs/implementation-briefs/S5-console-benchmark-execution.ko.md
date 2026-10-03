@@ -309,7 +309,7 @@ Console mockup 이 mode 결과 행마다 두던 `CPU FB`(CPU fallback 발생 여
 - summary 가 journal 재생성 결과인지 확인
 - Ctrl+C 시 partial result 보존 확인
 - non-interactive(파이프) 환경에서 결과 손상 없음 확인
-- GUI benchmark 이 깨지지 않았는지 확인 (기존 S4 테스트 회귀)
+- GUI 상세 로그는 별도 S4 사용자 작업 경로이며 S5가 GUI Benchmark UI를 요구하지 않는지 확인
 
 ### 회귀
 
@@ -349,7 +349,7 @@ Console mockup 이 mode 결과 행마다 두던 `CPU FB`(CPU fallback 발생 여
 - S2 execution semantics 전체 (ordering, aggregate precedence, 취소 상태 모델,
   executor 경계, 진행 hook 추가 금지)
 - S3 journal / suite lock / summary 계약과 JSON schema
-- S4 GUI benchmark 동작과 `Benchmark/GUI` 저장 계층
+- S4 GUI 상세 로그 설계와 `TelemetryRecorder/UserDiagnostic` 경계
 - S1 CLI 기존 동작 (`--help`/`--version`/`--smoke`/`--scan`/인자 없음 GUI)
 - legacy `BenchmarkRecorder` schema
 - F/NVDEC 상태 (`NO` 유지)
