@@ -255,7 +255,7 @@ int main(int argc, char** argv) {
     const auto t0 = std::chrono::steady_clock::now();
     const msf::SearchReport rep = engine.scan(root, 8, &control);
     const double wallMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    const std::string js = engine.benchmarkJson();
+    const std::string js = engine.telemetryJson();
     lastJson = js;
     std::filesystem::remove_all(msf::path_from_utf8(runApp), ec);
 

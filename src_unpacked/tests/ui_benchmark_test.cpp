@@ -1,5 +1,5 @@
 // S4 GUI benchmark integration test: mode selection, serial-execution gating,
-// suite-lock busy handling, and the fact that the legacy benchTgl_ path is
+// suite-lock busy handling, and the fact that the legacy logTgl_ path is
 // untouched.
 //
 // The state machine is driven through the real MainWindow, found by objectName
@@ -76,19 +76,19 @@ int main(int argc, char** argv) {
     QPushButton* run = pb(*w, "benchRun");
     QPushButton* stop = pb(*w, "benchStop");
     QLabel* statusLbl = w->findChild<QLabel*>("benchStatus");
-    QCheckBox* legacy = cb(*w, "benchTgl");     // must survive untouched
+    QCheckBox* legacy = cb(*w, "logTgl");     // must survive untouched
 
     std::printf("-- controls --\n");
     chk(auto_ && cpu && gpu, "the three resource-mode checkboxes exist");
     chk(run == nullptr && stop == nullptr && statusLbl == nullptr,
         "the legacy benchRun/benchStop/benchStatus widgets are removed");
-    chk(legacy != nullptr, "the legacy benchTgl_ checkbox still exists");
+    chk(legacy != nullptr, "the legacy logTgl_ checkbox still exists");
     chk(scanBtn != nullptr, "the existing scan button still exists");
     if (!auto_ || !cpu || !gpu || !legacy || !scanBtn) {
         std::printf("\nbenchmark_ui_selfcheck=FAIL checks=%d\n", gChecks);
         return 1;
     }
-    chk(auto_->objectName() != legacy->objectName(), "the new controls are distinct from benchTgl_");
+    chk(auto_->objectName() != legacy->objectName(), "the new controls are distinct from logTgl_");
 
     // ---- single-select resource mode, AUTO default -------------------------
     std::printf("-- resource mode --\n");
@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // ---- legacy benchTgl_ is untouched by all of this -----------------------
+    // ---- legacy logTgl_ is untouched by all of this -----------------------
     chk(legacy->isEnabled(), "the legacy telemetry checkbox stays enabled");
     chk(legacy->isChecked(), "  and keeps its checked state");
     chk(legacy->parent() != nullptr, "  and is still parented in the toolbar");

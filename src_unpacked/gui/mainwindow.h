@@ -63,7 +63,7 @@ public:
 public slots:
   void run(); void pause(); void resume(); void cancel();
   void setIgnored(const QSet<QString>& s);
-  void setBenchmark(bool b) { benchmark_ = b; }
+  void setDetailedLog(bool b) { detailedLogEnabled_ = b; }
   // D3-Minimal test hook: walker-queue capacity override (0 = production
   // default). Lets regression tests force the bounded path with small file
   // sets. Never set by production UI code.
@@ -103,7 +103,7 @@ private:
   qint64 lastWalkedMs_=0; std::size_t lastWalkedN_=0;
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction
-  bool benchmark_=true;
+  bool detailedLogEnabled_=true;
   std::size_t walkerCapOverride_=0; // see setWalkerQueueCapacity
 };
 
@@ -134,7 +134,8 @@ private slots:
   void onRevalidated(int,int);
     void onBenchmark(QString);
     void showBenchmarkDialog(const QString& json);
-    // S4 GUI benchmark: mode selection is execution selection, one Runner call.
+    // DORMANT GUI benchmark-runner wiring: the detailed-log path never calls
+    // BenchmarkRunner. Kept compiling only; no UI entry point reaches it.
     void startBenchmark(); void cancelBenchmark();
     void onBenchmarkStarted(int caseTotal);
     void onBenchmarkCase(BenchmarkGuiProgress progress);
@@ -170,21 +171,22 @@ private:
   UiLang lang() const;
   void closeEvent(QCloseEvent*) override;
 
-  // --- S4 GUI benchmark ---------------------------------------------------
-  // The selected checkboxes, in S2's canonical order (AUTO, CPU-only, GPU-max).
-  // This is the exact vector handed to BenchmarkRunner::run(); there is no
-  // per-mode Runner pass and therefore no reordering of the file loop.
+  // --- S4 GUI execution strategy (DORMANT benchmark-runner wiring) ---------
+  // The selected checkboxes of the GUI execution strategy, in S2's canonical
+  // order (AUTO, CPU-only, GPU-max). Fed only by the dormant startBenchmark()
+  // path below; the detailed-log path never reads benchmark modes.
   std::vector<msf::GpuBackendKind> selectedBenchModes() const;
   // Maps the existing photo/video selection onto S1's MediaScope. The toggle-button
   // semantics mirror the former kind-image/kind-video actions; no new scope enum.
   msf::MediaScope benchMediaScope() const;
-  // Single gate for every benchmark-related enable state (S4 §4-13). A scan in
-  // progress blocks the benchmark, and a running benchmark blocks the scan.
-  // Pause stays a scan-only control: benchmark has Cancel/Stop and nothing else.
+  // Single gate for the scan/detailed-log enable state. A scan in progress
+  // blocks starting detailed logging, and Pause stays a scan-only control
+  // (the detailed-log path has no Pause).
   void updateBenchmarkUiState();
   void setBenchmarkStatusText(const QString&);
   void teardownBenchmarkThread();
-  // The raw source string a benchmark runs against, mirroring what startScan uses.
+  // The raw source string the dormant benchmark path would run against,
+  // mirroring what startScan uses.
   QString benchmarkSourceRoot() const;
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
@@ -267,8 +269,8 @@ private:
     *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr;
   QString lastBenchJson_;
   QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
-  QCheckBox* benchTgl_=nullptr;
-  // S4 benchmark controls. benchTgl_ above is the pre-existing legacy telemetry
+  QCheckBox* logTgl_=nullptr;
+  // S4 benchmark controls. logTgl_ above is the pre-existing legacy telemetry
   // toggle and is deliberately NOT reused as a mode selector: it decides whether
   // the ordinary scan records legacy telemetry, not which modes are measured.
   QCheckBox *benchAuto_=nullptr,*benchCpu_=nullptr,*benchGpu_=nullptr;

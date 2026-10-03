@@ -7,7 +7,7 @@
 namespace msf {
 // Node A (0.9.4 line): GPU is the generic accelerator term; CUDA is one
 // concrete backend, not the generic name. Future backends (Vulkan,
-// HIP/ROCm, Level Zero) register here without touching the engine — until
+// HIP/ROCm, Level Zero) register here without touching the engine ??until
 // then only CUDA and CPU-fallback resolve. Unimplemented backends are never
 // reported as available.
 enum class GpuBackendKind { Auto, Cuda, Cpu };

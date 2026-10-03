@@ -1,5 +1,5 @@
 #pragma once
-// S3 Benchmark Journal — append-only JSONL evidence and recovery.
+// S3 Benchmark Journal ??append-only JSONL evidence and recovery.
 //
 // SCOPE. The journal is the durable, recoverable record of a benchmark run. The
 // terminal UI and summary.json are views over it; neither is ever the source.

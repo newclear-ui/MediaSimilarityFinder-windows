@@ -11,12 +11,12 @@
 namespace msf {
 // Run cmd, capture stdout, and never flash a console window on Windows
 // (CREATE_NO_WINDOW). Plain _popen/popen lets console-subsystem children
-// (ffmpeg/ffprobe) pop a visible console on GUI apps — one flash + ~100ms
+// (ffmpeg/ffprobe) pop a visible console on GUI apps ??one flash + ~100ms
 // stall per call, directly on the GUI thread in thumbnail paths.
 // Binary-safe (NUL bytes preserved).
 //
 // Bounded lifecycle (no INFINITE wait). Every call carries an explicit
-// timeoutMs chosen by the CALLER for its own class — there is intentionally
+// timeoutMs chosen by the CALLER for its own class ??there is intentionally
 // no global default, so a telemetry probe can never inherit a decode-sized
 // budget and a decode can never inherit a telemetry-sized one:
 //   telemetry (nvidia-smi):            10000 ms (normally < 1 s)

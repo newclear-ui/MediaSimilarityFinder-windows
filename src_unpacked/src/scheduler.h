@@ -1,6 +1,6 @@
 #pragma once
 // Node B1: Minimal Adaptive Allocation. B2: recent-throughput feedback.
-// B4: Stability Control — SMA smoothing, kill-band hysteresis, minimum
+// B4: Stability Control ??SMA smoothing, kill-band hysteresis, minimum
 // hold on published decisions. All scheduler-internal; the engine keeps
 // calling decide()/maybeReevaluate() and gating on lastDecision().
 //

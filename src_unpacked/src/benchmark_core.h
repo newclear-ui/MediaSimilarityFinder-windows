@@ -1,5 +1,5 @@
 #pragma once
-// S2 Run/Suite Benchmark Core — execution model and result model.
+// S2 Run/Suite Benchmark Core ??execution model and result model.
 //
 // SCOPE. This is the core only: how a benchmark run is described, how files are
 // executed under each requested mode, and how per-file results are recorded and
@@ -15,13 +15,13 @@
 // Relationship to the existing product (no duplicated logic):
 //
 //   BenchmarkRunner
-//        ↓  BenchmarkExecutor  (boundary, injectable)
+//        ?? BenchmarkExecutor  (boundary, injectable)
 //   MediaSearchEngine / Index / VideoCache / ResourcePolicy
 //
 // The production adapter reuses the ordinary product scan path. There is no
 // second search engine anywhere in this file.
 //
-// Relationship to BenchmarkRecorder (src/benchmark.*): the legacy recorder is
+// Relationship to TelemetryRecorder (src/benchmark.*): the legacy recorder is
 // left completely untouched and keeps its own meaning. The structured state
 // below is the source of truth; only a minimum of progress is mirrored into the
 // recorder when a run finishes, and the recorder is never read back into the

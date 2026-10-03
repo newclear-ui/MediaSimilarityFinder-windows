@@ -130,29 +130,29 @@ std::string buildBenchmarkGuiSnapshotJson(const BenchmarkRun& run,
 
     std::ostringstream o;
     o << "{\"snapshotSchemaVersion\":" << kBenchmarkGuiSnapshotSchemaVersion
-      << ",\"appVersion\":" << benchmarkJsonString(buildVersion.empty() ? run.buildVersion
+      << ",\"appVersion\":" << telemetryJsonString(buildVersion.empty() ? run.buildVersion
                                                                         : buildVersion)
       // One GUI suite per source folder: identical across the three mode files.
-      << ",\"suiteId\":" << benchmarkJsonString(run.suiteId.empty() ? shortRootId(run.sourceRoot)
+      << ",\"suiteId\":" << telemetryJsonString(run.suiteId.empty() ? shortRootId(run.sourceRoot)
                                                                     : run.suiteId)
-      << ",\"runId\":" << benchmarkJsonString(run.runId)
-      << ",\"mode\":" << benchmarkJsonString(benchmarkModeDirName(mode))
-      << ",\"mediaScope\":" << benchmarkJsonString(mediaScopeName(run.mediaScope))
-      << ",\"sourceRoot\":" << benchmarkJsonString(run.sourceRoot)
-      << ",\"sourceRootLabel\":" << benchmarkJsonString(run.sourceRootLabel)
-      << ",\"sourceRootId\":" << benchmarkJsonString(run.sourceRootId)
-      << ",\"datasetFingerprint\":" << benchmarkJsonString(run.datasetFingerprint)
-      << ",\"startedAt\":" << benchmarkJsonString(run.startedAt)
-      << ",\"completedAt\":" << benchmarkJsonString(run.completedAt)
-      << ",\"writtenAt\":" << benchmarkJsonString(benchmarkNowStamp())
-      << ",\"status\":" << benchmarkJsonString(benchmarkStatusName(status))
+      << ",\"runId\":" << telemetryJsonString(run.runId)
+      << ",\"mode\":" << telemetryJsonString(benchmarkModeDirName(mode))
+      << ",\"mediaScope\":" << telemetryJsonString(mediaScopeName(run.mediaScope))
+      << ",\"sourceRoot\":" << telemetryJsonString(run.sourceRoot)
+      << ",\"sourceRootLabel\":" << telemetryJsonString(run.sourceRootLabel)
+      << ",\"sourceRootId\":" << telemetryJsonString(run.sourceRootId)
+      << ",\"datasetFingerprint\":" << telemetryJsonString(run.datasetFingerprint)
+      << ",\"startedAt\":" << telemetryJsonString(run.startedAt)
+      << ",\"completedAt\":" << telemetryJsonString(run.completedAt)
+      << ",\"writtenAt\":" << telemetryJsonString(benchmarkNowStamp())
+      << ",\"status\":" << telemetryJsonString(benchmarkStatusName(status))
       << ",\"casesWithMode\":" << forMode.size()
       << ",\"casesCompleted\":" << success
       << ",\"casesFailed\":" << failed
       << ",\"casesCancelled\":" << cancelled
       << ",\"casesSkipped\":" << skipped
       << ",\"elapsedMs\":" << elapsedMs
-      << ",\"errorMessage\":" << benchmarkJsonString(firstError)
+      << ",\"errorMessage\":" << telemetryJsonString(firstError)
       << ",\"summary\":{"
       << "\"scanned\":" << sum.scanned
       << ",\"added\":" << sum.added
@@ -171,9 +171,9 @@ std::string buildBenchmarkGuiSnapshotJson(const BenchmarkRun& run,
                             std::to_string(static_cast<int>(resourcePolicy->mode)) +
                             ",\"cpuPercent\":" + std::to_string(resourcePolicy->cpuPercent) +
                             ",\"gpuPercent\":" + std::to_string(resourcePolicy->gpuPercent) +
-                            ",\"gpuEnabled\":" + benchmarkJsonBool(resourcePolicy->gpuEnabled) + "}")
+                            ",\"gpuEnabled\":" + telemetryJsonBool(resourcePolicy->gpuEnabled) + "}")
                            : std::string())
-      << ",\"note\":" << benchmarkJsonString(
+      << ",\"note\":" << telemetryJsonString(
              "per-mode projection of a single GUI benchmark run; the aggregate is computed from this "
              "mode's own results and the normal Search Index is never involved")
       << ",\"cases\":[";
@@ -183,11 +183,11 @@ std::string buildBenchmarkGuiSnapshotJson(const BenchmarkRun& run,
             if (m.requestedMode != mode) continue;
             if (!first) o << ",";
             first = false;
-            o << "{\"caseId\":" << benchmarkJsonString(c.caseId)
-              << ",\"path\":" << benchmarkJsonString(c.path)
-              << ",\"effectiveMode\":" << benchmarkJsonString(gpuBackendKindName(m.effectiveMode))
-              << ",\"status\":" << benchmarkJsonString(benchmarkStatusName(m.status))
-              << ",\"started\":" << benchmarkJsonBool(m.started)
+            o << "{\"caseId\":" << telemetryJsonString(c.caseId)
+              << ",\"path\":" << telemetryJsonString(c.path)
+              << ",\"effectiveMode\":" << telemetryJsonString(gpuBackendKindName(m.effectiveMode))
+              << ",\"status\":" << telemetryJsonString(benchmarkStatusName(m.status))
+              << ",\"started\":" << telemetryJsonBool(m.started)
               << ",\"elapsedMs\":" << m.elapsedMs
               << "}";
         }

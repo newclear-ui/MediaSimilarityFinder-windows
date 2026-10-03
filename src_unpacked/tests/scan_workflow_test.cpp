@@ -9,7 +9,7 @@
 // - QSettings is redirected to a temp dir via initAppSettings (same pattern
 //   as ui_settings_test), so the real user config is never touched. The
 //   folder is pre-seeded through "ui/lastFolder", which the MainWindow ctor
-//   reads into the folder box — no private-member access.
+//   reads into the folder box ??no private-member access.
 // - GPU and benchmark checkboxes are left at their defaults (both on):
 //   pure user workflow on both trees. CPU fallback on the CPU tree and the
 //   CUDA path on the GPU tree must agree (engine parity suites prove the
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
   if (folder->text().isEmpty()) { std::cerr << "lastFolder not loaded\n"; return 2; }
   // Default configuration is used as-is (GPU checkbox on, benchmark on):
   // this is exactly what a user launch does. The end-of-scan benchmark
-  // summary is modal (dlg.exec()), so a closer timer dismisses it — timers
+  // summary is modal (dlg.exec()), so a closer timer dismisses it ??timers
   // fire inside modal loops on the same thread. Seeing the dialog also
   // proves the summary path ran.
   bool dialogSeen = false;

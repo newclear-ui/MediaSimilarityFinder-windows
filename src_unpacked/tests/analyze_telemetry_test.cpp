@@ -71,8 +71,8 @@ std::string objStr(const std::string& js, const std::string& obj, const std::str
 int main() {
   // --- C: a recorder that never ran analyze must not fake zeros ---
   {
-    msf::BenchmarkRecorder rec;
-    msf::BenchmarkConfig cfg;
+    msf::TelemetryRecorder rec;
+    msf::TelemetryConfig cfg;
     cfg.root = "C:/media"; cfg.build = "0.9.4.23"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
     rec.start(cfg);
     rec.addAnalyzeMs(1234.5);
@@ -298,8 +298,8 @@ int main() {
       pipe.add(f);
     }
     const msf::ScanStats st = pipe.analyze(8);
-    msf::BenchmarkRecorder rec;
-    msf::BenchmarkConfig cfg;
+    msf::TelemetryRecorder rec;
+    msf::TelemetryConfig cfg;
     cfg.root = "C:/media"; cfg.build = "0.9.4.23"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
     rec.start(cfg);
     rec.setAnalyzeTelemetry(st.analyze);

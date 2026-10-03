@@ -31,7 +31,7 @@ static void parallelFor(std::size_t n, F&& fn){
  for(auto& f:futs) f.get();
 }
 bool MediaPipeline::image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint) const { ImageDecoder d; GrayImage img; if(!d.decode(path,32,32,img)) return false; const auto h=perceptual_hash_pair(img.pixels,img.width,img.height); fingerprint=h.normal; if(mirrorFingerprint) *mirrorFingerprint=h.mirrored; return true; }
-std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<std::string>& paths,bool preferGpu,std::size_t gpuBatchSize,std::atomic<bool>* activity,BenchmarkRecorder* bench) const {
+std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<std::string>& paths,bool preferGpu,std::size_t gpuBatchSize,std::atomic<bool>* activity,TelemetryRecorder* bench) const {
     auto msSince=[](const std::chrono::steady_clock::time_point& t0){
         return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); };
     struct ActivityGuard { std::atomic<bool>* p; ~ActivityGuard(){ if(p) p->store(false,std::memory_order_relaxed); } } guard{activity};

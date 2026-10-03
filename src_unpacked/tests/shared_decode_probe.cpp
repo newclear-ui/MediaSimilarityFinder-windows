@@ -79,7 +79,7 @@ void aspectDims(int sw, int sh, int maxDim, int& w, int& h) {
 enum class PixParity { kIdentical, kDifferent };
 // Compares two same-geometry buffers. Callers check geometry first; comparing
 // across geometries would conflate the two failure classes. sumAbs enables the
-// mean-absolute-delta statistic (§12 of the stability brief).
+// mean-absolute-delta statistic (짠12 of the stability brief).
 PixParity comparePixels(const msf::GrayImage& a, const msf::GrayImage& b,
                         std::uint64_t& diffCount, std::uint64_t& maxAbs, std::uint64_t& sumAbs) {
   diffCount = 0; maxAbs = 0; sumAbs = 0;
@@ -391,7 +391,7 @@ int main(int argc, char** argv) {
                     (unsigned long long)telS.orientApplied, (unsigned long long)telS.pgmFallbacks);
       }
       if (!okAll) { std::printf("R=%d candidate derivation failed\n", R); continue; }
-      // f/a pixel stats with mean (§12).
+      // f/a pixel stats with mean (짠12).
       for (int i = 0; i < 4; ++i) {
         std::uint64_t dc = 0, ma = 0, sa = 0;
         comparePixels(base[i].f0, f1[i], dc, ma, sa);
@@ -407,7 +407,7 @@ int main(int argc, char** argv) {
                     R, ff[i].name.c_str(), (unsigned long long)dc, (unsigned long long)ma, mean,
                     ageo, (unsigned long long)dc2, (unsigned long long)ma2, amean);
       }
-      // Per-window score decomposition (§6), self-validated bit-exact.
+      // Per-window score decomposition (짠6), self-validated bit-exact.
       for (int p = 0; p < 2; ++p) {
         const int A = kPairs[p][0], B = kPairs[p][1];
         WindowScore wb[10], wc[10];
@@ -417,7 +417,7 @@ int main(int argc, char** argv) {
         const double planC = msf::verifyScorePlan(f1[A], a1[A], f1[B], a1[B], 90.0, nullptr);
         const double repB = repTotal(wb, nb), repC = repTotal(wc, nc);
         // verifyScorePlan blends hammingSim with the window max (:167), so the
-        // validation must apply the same blend — comparing raw maxima against
+        // validation must apply the same blend ??comparing raw maxima against
         // the blended total would false-alarm on every pair.
         const double blendB = 0.5 * 90.0 + 0.5 * 100.0 * repB;
         const double blendC = 0.5 * 90.0 + 0.5 * 100.0 * repC;
@@ -435,7 +435,7 @@ int main(int argc, char** argv) {
                       wb[w].name, wb[w].v, wc[w].v, wc[w].v - wb[w].v);
           if (std::fabs(wc[w].v - wb[w].v) > std::fabs(wc[wmax].v - wb[wmax].v)) wmax = w;
         }
-        // Spatial localization of the largest window delta (§13): quadrant
+        // Spatial localization of the largest window delta (짠13): quadrant
         // means of |baseline crop - candidate crop| for both sides of the max
         // window, plus the argmax pixel. Evidence only, no causal claim.
         {
@@ -452,7 +452,7 @@ int main(int argc, char** argv) {
         }
       }
     }
-    // Cache hit/miss split (§15): public verifyImagePair twice on one flip
+    // Cache hit/miss split (짠15): public verifyImagePair twice on one flip
     // pair. First call misses, second hits (process-global cache).
     {
       msf::AnalyzeTelemetry t1, t2;
@@ -531,7 +531,7 @@ int main(int argc, char** argv) {
   }
   std::printf("baseline_ok=%d baseline_fail=%d\n", (int)base.size(), baseFail);
 
-  // Baseline cost anatomy per format (R-independent; the comparator for §9).
+  // Baseline cost anatomy per format (R-independent; the comparator for 짠9).
   {
     std::map<std::string, std::vector<double>> fMs, aMs, bMs, fOpen, aOpen, fCopy, aCopy;
     for (const FileBase& b : base) {
@@ -696,7 +696,7 @@ int main(int argc, char** argv) {
                   g.scoreMaxPair.empty() ? "-" : g.scoreMaxPair.c_str(), g.verdictFlip);
     }
     {
-      // Cross-format totals for the §9-style summary line.
+      // Cross-format totals for the 짠9-style summary line.
       long long n = 0, sf = 0, df = 0, fi = 0, fd = 0, ag = 0, ad = 0, pi = 0, pd = 0;
       long long cm = 0, ct = 0, se = 0, sp = 0, vf = 0;
       double sm = 0, fm = 0, am = 0, cmn = 0, mx = 0;

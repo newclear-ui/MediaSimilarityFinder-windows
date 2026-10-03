@@ -207,7 +207,10 @@ void ProductionBenchmarkExecutor::runMode(const BenchmarkRequest& request,
     control.ignoredPaths = std::move(ignored);
     control.scanImages = request.mediaScope != MediaScope::Videos;
     control.scanVideos = request.mediaScope != MediaScope::Images;
-    control.benchmarkEnabled = true;
+    control.telemetryEnabled = true;
+    // This is the controlled-benchmark execution path, so its scan telemetry
+    // is recorded with the Benchmark purpose (distinct from GUI diagnostics).
+    control.telemetryPurpose = TelemetryPurpose::Benchmark;
     control.buildVersion = request.buildVersion;
     if (request.isCancelled) control.cancel.store(request.isCancelled());
 

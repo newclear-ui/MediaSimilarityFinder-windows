@@ -1,8 +1,8 @@
-// F-1 Random-Access Safety Contract — selfcheck.
+// F-1 Random-Access Safety Contract ??selfcheck.
 //
 // PROBE ONLY. Nothing in production includes this file, and no production decode
 // decision reads it. It exists so the F-1 contract is executable and testable
-// before any NVDEC path is wired in (directive §32).
+// before any NVDEC path is wired in (directive 짠32).
 //
 // The contract answers one question per stream: may this stream be decoded by the
 // hardware backend, or must it fall back to CPU?
@@ -11,7 +11,7 @@
 // starting at an IDR is NOT sufficient for safety. Two IDR-start H.264 fixtures
 // mismatched NVDEC, one of them at every frame. So structural properties classify
 // a stream as Unknown, and only a recorded exactness proof can make it Safe.
-// Anything not proven is CPU — never "probably fine".
+// Anything not proven is CPU ??never "probably fine".
 
 #include <cstdio>
 #include <string>
@@ -19,7 +19,7 @@
 namespace f1 {
 
 // ---------------------------------------------------------------------------
-// Contract states (brief §3-1)
+// Contract states (brief 짠3-1)
 // ---------------------------------------------------------------------------
 enum class RandomAccessSafety {
     Safe,      // safety established: random access is self-contained AND exactness proven
@@ -29,7 +29,7 @@ enum class RandomAccessSafety {
 
 // ---------------------------------------------------------------------------
 // Evidence available WITHOUT parsing SPS/PPS or writing a new parser
-// (brief §3-2 forbids new parsers, so only values FFmpeg already exposes count)
+// (brief 짠3-2 forbids new parsers, so only values FFmpeg already exposes count)
 // ---------------------------------------------------------------------------
 struct RandomAccessEvidence {
     // Condition A: is the decode start point self-contained?
@@ -47,10 +47,10 @@ struct RandomAccessEvidence {
     bool samplingPredicateReproducible = true;
 
     // Hardware capability: can this build decode the codec in hardware at all?
-    // Kept deliberately separate from safety (brief §7).
+    // Kept deliberately separate from safety (brief 짠7).
     bool hardwareCapability = false;
 
-    // Condition D / brief §4: has a production-parity exactness proof been
+    // Condition D / brief 짠4: has a production-parity exactness proof been
     // recorded for this stream class (codec + container structure)?
     bool exactnessVerified = false;
 };
@@ -70,9 +70,9 @@ inline const char* toString(RandomAccessSafety s) {
 //
 // Order is deliberate and must not be reordered:
 //
-//   1. capability   — no hardware decode at all, so the question is moot
-//   2. random access — a non-self-contained start is a known-unsafe fact
-//   3. exactness    — self-contained start is NECESSARY but NOT SUFFICIENT
+//   1. capability   ??no hardware decode at all, so the question is moot
+//   2. random access ??a non-self-contained start is a known-unsafe fact
+//   3. exactness    ??self-contained start is NECESSARY but NOT SUFFICIENT
 //
 // Step 3 is the part that measurement forced. The first assumption was that
 // "starts at a keyframe" implied "safe", and the 1360x808 H.264 fixture
@@ -89,7 +89,7 @@ inline RandomAccessSafety classify(const RandomAccessEvidence& e) {
 }
 
 // ---------------------------------------------------------------------------
-// Backend policy (brief §5, §24, §25)
+// Backend policy (brief 짠5, 짠24, 짠25)
 // ---------------------------------------------------------------------------
 //
 // Unsafe and Unknown are collapsed on purpose: both go to CPU. A stream whose
@@ -102,7 +102,7 @@ inline bool useHardwareDecode(RandomAccessSafety s) {
 } // namespace f1
 
 // ---------------------------------------------------------------------------
-// Selfcheck (brief §30)
+// Selfcheck (brief 짠30)
 // ---------------------------------------------------------------------------
 namespace {
 int gChecks = 0, gFails = 0;
@@ -187,7 +187,7 @@ int main() {
         chk(s == f1::RandomAccessSafety::Unsafe, "firstDecodedPts > request point -> Unsafe -> CPU fallback");
     }
 
-    // --- capability and safety are separate axes (brief §7, §29) -------------
+    // --- capability and safety are separate axes (brief 짠7, 짠29) -------------
     {
         auto capable = verifiedH264();
         auto incapable = verifiedH264();

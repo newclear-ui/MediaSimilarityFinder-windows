@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
   // recorded its scheduler decision (measured, with a resolved backend).
   // GPU OFF here -> gpu_off 100/0; ON trees assert the same shape.
   {
-    const std::string bj = w.scanEngine().benchmarkJson();
+    const std::string bj = w.scanEngine().telemetryJson();
     if (bj.find("\"scheduler\":{\"state\":\"measured\"") == std::string::npos) {
       std::cerr << "scheduler not measured\n"; return 6;
     }

@@ -232,7 +232,7 @@ std::string resolveConsoleSuiteId(const std::string& requested,
         return std::string();
     }
 
-    // Brief §9-E: uniqueness is the S3 identity rule's call, so a generated id
+    // Brief 짠9-E: uniqueness is the S3 identity rule's call, so a generated id
     // walks to the next free "-2", "-3", ... variant instead of overwriting an
     // existing suite. The chosen id is returned, so the journal records exactly
     // the directory that is used.
@@ -370,7 +370,7 @@ int runConsoleBenchmark(const ConsoleBenchmarkOptions& opt) {
     // never disagree, and no second git lookup exists: nothing is executed here,
     // the binary's own build provenance is simply recorded.
     request.gitCommit = MSF_BUILD_GIT;
-    // Brief §13: the console default is the same Balanced policy the product uses,
+    // Brief 짠13: the console default is the same Balanced policy the product uses,
     // produced by the one existing policy factory. No console-only policy engine
     // and no second reading of a preset.
     request.resourcePolicy = make_policy(ResourceMode::Balanced);

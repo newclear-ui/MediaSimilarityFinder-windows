@@ -1,6 +1,6 @@
 // End-to-end video duplicate regression: original + exact copy + libx264
 // re-encode (+ a total-stranger control), all through MediaSearchEngine::scan()
-// — i.e. through the full XOR -> CandidateIndex (incl. L1 anchors) ->
+// ??i.e. through the full XOR -> CandidateIndex (incl. L1 anchors) ->
 // temporal path, not the direct video_similarity() call. Asserts the copy and
 // the re-encode are found as matches of the original, and the stranger is not.
 // Also asserts the videoStats counters flow through the report.

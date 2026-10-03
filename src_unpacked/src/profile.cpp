@@ -233,9 +233,9 @@ bool ProfileStore::save(const std::string& path) {
     o << "id=" << escapeIni(profile_.id) << "\n";
     o << "confidence=" << profile_.confidence << "\n";
     o << "createdAt=" << profile_.createdAt << "\nupdatedAt=" << profile_.updatedAt << "\n";
-    // Informational provenance (brief §5 meta). Not identity inputs: version
+    // Informational provenance (brief 짠5 meta). Not identity inputs: version
     // drift is judged on app/engineVersion inside [identity] instead.
-    o << "benchmarkSchemaVersion=" << BenchmarkRecorder::kBenchmarkSchemaVersion << "\n";
+    o << "benchmarkSchemaVersion=" << TelemetryRecorder::kBenchmarkSchemaVersion << "\n";
     o << "[identity]\n";
     o << "cpuModel=" << escapeIni(profile_.identity.cpuModel) << "\n";
     o << "cpuThreads=" << profile_.identity.cpuThreads << "\n";

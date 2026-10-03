@@ -32,13 +32,13 @@ std::string localTimeStr() {
   return buf;
 }
 void appendSlow(std::vector<SlowFile>& v, SlowFile item) {
-  if (v.size() >= BenchmarkRecorder::kSlowTop && item.ms <= v.back().ms) return;
+  if (v.size() >= TelemetryRecorder::kSlowTop && item.ms <= v.back().ms) return;
   v.push_back(std::move(item));
   std::sort(v.begin(), v.end(), [](const SlowFile& a, const SlowFile& b) { return a.ms > b.ms; });
-  if (v.size() > BenchmarkRecorder::kSlowTop) v.pop_back();
+  if (v.size() > TelemetryRecorder::kSlowTop) v.pop_back();
 }
 } // namespace
-std::string BenchmarkRecorder::escapeJson(const std::string& s) {
+std::string TelemetryRecorder::escapeJson(const std::string& s) {
   std::string o;
   o.reserve(s.size() + 8);
   for (unsigned char c : s) {
@@ -62,7 +62,7 @@ std::string BenchmarkRecorder::escapeJson(const std::string& s) {
   }
   return o;
 }
-void BenchmarkRecorder::openDiskCounters() {
+void TelemetryRecorder::openDiskCounters() {
 #ifdef _WIN32
   closeDiskCounters();
   diskVolume_.clear();
@@ -103,7 +103,7 @@ void BenchmarkRecorder::openDiskCounters() {
   diskAvailable_ = false;
 #endif
 }
-void BenchmarkRecorder::closeDiskCounters() {
+void TelemetryRecorder::closeDiskCounters() {
 #ifdef _WIN32
   if (diskQuery_) {
     PdhCloseQuery(static_cast<PDH_HQUERY>(diskQuery_));
@@ -114,37 +114,37 @@ void BenchmarkRecorder::closeDiskCounters() {
 #endif
   diskAvailable_ = false;
 }
-void BenchmarkRecorder::reset() {
+void TelemetryRecorder::reset() {
   stopSampler();
   started_ = false;
   finished_ = false;
 }
-void BenchmarkRecorder::setCancelled(const std::string& reason) {
+void TelemetryRecorder::setCancelled(const std::string& reason) {
   cancelled_ = true;
   if (!reason.empty()) completionReason_ = reason;
 }
-void BenchmarkRecorder::setPaused(bool paused) { paused_ = paused; }
-void BenchmarkRecorder::setFailed(const std::string& stage, const std::string& reason) {
+void TelemetryRecorder::setPaused(bool paused) { paused_ = paused; }
+void TelemetryRecorder::setFailed(const std::string& stage, const std::string& reason) {
   failed_ = true;
   failedStage_ = stage;
   if (!reason.empty()) completionReason_ = reason;
 }
-void BenchmarkRecorder::setCompletionReason(const std::string& reason) { completionReason_ = reason; }
-void BenchmarkRecorder::setFileProgress(std::size_t started, std::size_t completed, std::size_t remaining) {
+void TelemetryRecorder::setCompletionReason(const std::string& reason) { completionReason_ = reason; }
+void TelemetryRecorder::setFileProgress(std::size_t started, std::size_t completed, std::size_t remaining) {
   filesStarted_ = started; filesCompleted_ = completed; filesRemaining_ = remaining;
   fileProgressRecorded_ = true;
 }
-void BenchmarkRecorder::abortUnfinished() {
+void TelemetryRecorder::abortUnfinished() {
   if (started_ && !finished_) {
     setCancelled("aborted");
     finalize(false, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
   }
 }
-void BenchmarkRecorder::setDatasetFingerprint(const DatasetFingerprint& fp) {
+void TelemetryRecorder::setDatasetFingerprint(const DatasetFingerprint& fp) {
   datasetFp_ = fp;
 }
 
-void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
+void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   stopSampler();
   cfg_ = cfg;
   // Each run starts from an unmeasured dataset identity. The caller attaches
@@ -219,21 +219,21 @@ void BenchmarkRecorder::start(const BenchmarkConfig& cfg) {
   finished_ = false;
   started_ = true;
 }
-void BenchmarkRecorder::addImageStageMs(double ms) { imageStageMs_ += ms; imageStageRecorded_ = true; }
-void BenchmarkRecorder::addVideoStageMs(double ms) { videoStageMs_ += ms; videoStageRecorded_ = true; }
-void BenchmarkRecorder::setAnalyzeTelemetry(const AnalyzeTelemetry& t) {
+void TelemetryRecorder::addImageStageMs(double ms) { imageStageMs_ += ms; imageStageRecorded_ = true; }
+void TelemetryRecorder::addVideoStageMs(double ms) { videoStageMs_ += ms; videoStageRecorded_ = true; }
+void TelemetryRecorder::setAnalyzeTelemetry(const AnalyzeTelemetry& t) {
   analyzeTel_ = t;
   analyzeTelRecorded_ = true;
 }
 
-void BenchmarkRecorder::addAnalyzeMs(double ms) { analyzeMs_ += ms; analyzeRecorded_ = true; }
-void BenchmarkRecorder::addWalkMs(double ms) { walkMs_ += ms; walkRecorded_ = true; }
-void BenchmarkRecorder::addRevalidateMs(double ms) { revalidateMs_ += ms; revalidateRecorded_ = true; }
-void BenchmarkRecorder::addIncrementalMs(double ms) { incrementalMs_ += ms; incrementalRecorded_ = true; }
-void BenchmarkRecorder::addCandidateIndexMs(double ms) { candidateIndexMs_ += ms; candidateIndexRecorded_ = true; }
-void BenchmarkRecorder::addSimilarityMs(double ms) { similarityMs_ += ms; similarityRecorded_ = true; }
-void BenchmarkRecorder::addPersistenceMs(double ms) { persistenceMs_ += ms; persistenceRecorded_ = true; }
-void BenchmarkRecorder::addImage(std::uint64_t bytes, double decodeMs, double hashMs, double cropMs, bool usedGpu, const std::string& path) {
+void TelemetryRecorder::addAnalyzeMs(double ms) { analyzeMs_ += ms; analyzeRecorded_ = true; }
+void TelemetryRecorder::addWalkMs(double ms) { walkMs_ += ms; walkRecorded_ = true; }
+void TelemetryRecorder::addRevalidateMs(double ms) { revalidateMs_ += ms; revalidateRecorded_ = true; }
+void TelemetryRecorder::addIncrementalMs(double ms) { incrementalMs_ += ms; incrementalRecorded_ = true; }
+void TelemetryRecorder::addCandidateIndexMs(double ms) { candidateIndexMs_ += ms; candidateIndexRecorded_ = true; }
+void TelemetryRecorder::addSimilarityMs(double ms) { similarityMs_ += ms; similarityRecorded_ = true; }
+void TelemetryRecorder::addPersistenceMs(double ms) { persistenceMs_ += ms; persistenceRecorded_ = true; }
+void TelemetryRecorder::addImage(std::uint64_t bytes, double decodeMs, double hashMs, double cropMs, bool usedGpu, const std::string& path) {
   imgCount_.fetch_add(1, std::memory_order_relaxed);
   imgBytes_.fetch_add(bytes, std::memory_order_relaxed);
   if (usedGpu) imgGpu_.fetch_add(1, std::memory_order_relaxed);
@@ -245,34 +245,34 @@ void BenchmarkRecorder::addImage(std::uint64_t bytes, double decodeMs, double ha
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowImages_, std::move(item));
 }
-void BenchmarkRecorder::beginImageBatch(std::size_t items) {
+void TelemetryRecorder::beginImageBatch(std::size_t items) {
   imgBatchCount_.fetch_add(1, std::memory_order_relaxed);
   imgBatchItems_.fetch_add(items, std::memory_order_relaxed);
   imgBatchMaxDepth_.store(1, std::memory_order_relaxed);
 }
-void BenchmarkRecorder::endImageBatch() {}
-void BenchmarkRecorder::addImagePackMs(double ms) { imgPackNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed); }
-void BenchmarkRecorder::addImageCpuHashMs(double ms) { imgCpuHashNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed); }
-void BenchmarkRecorder::addGpuBatchMs(double ms) {
+void TelemetryRecorder::endImageBatch() {}
+void TelemetryRecorder::addImagePackMs(double ms) { imgPackNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed); }
+void TelemetryRecorder::addImageCpuHashMs(double ms) { imgCpuHashNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed); }
+void TelemetryRecorder::addGpuBatchMs(double ms) {
   imgGpuNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
   imgGpuRecorded_ = true;
 }
-void BenchmarkRecorder::addImageGpuQueueMs(double ms) {
+void TelemetryRecorder::addImageGpuQueueMs(double ms) {
   imgQueueWaitNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
   imgQueueWaitRecorded_ = true;
 }
-void BenchmarkRecorder::addImageTransferMs(double ms) {
+void TelemetryRecorder::addImageTransferMs(double ms) {
   imgTransferNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
   imgTransferRecorded_ = true;
 }
-void BenchmarkRecorder::addImageExecMs(double ms) {
+void TelemetryRecorder::addImageExecMs(double ms) {
   imgExecNs_.fetch_add((long long)(ms * 1e6), std::memory_order_relaxed);
   imgExecRecorded_ = true;
 }
 // D4a: one call per GPU batch that the backend could actually time. The
 // recorded flags are set only here, so a backend that cannot time anything
 // leaves every D4a metric at not_measured.
-void BenchmarkRecorder::addImageGpuDeviceTiming(double h2dDeviceMs, double kernelDeviceMs,
+void TelemetryRecorder::addImageGpuDeviceTiming(double h2dDeviceMs, double kernelDeviceMs,
                                                 double d2hDeviceMs, double syncHostMs,
                                                 double hostTotalMs, bool usedGpu) {
   if (usedGpu) {
@@ -286,34 +286,34 @@ void BenchmarkRecorder::addImageGpuDeviceTiming(double h2dDeviceMs, double kerne
     imgSyncRecorded_ = imgGpuTotalRecorded_ = true;
   }
 }
-void BenchmarkRecorder::recordWalkerEnqueue(std::size_t depthAfterPush) {
+void TelemetryRecorder::recordWalkerEnqueue(std::size_t depthAfterPush) {
   walkQueued_.fetch_add(1, std::memory_order_relaxed);
   std::uint64_t prev = walkMaxDepth_.load(std::memory_order_relaxed);
   while ((std::uint64_t)depthAfterPush > prev &&
          !walkMaxDepth_.compare_exchange_weak(prev, (std::uint64_t)depthAfterPush,
                                               std::memory_order_relaxed)) {}
 }
-void BenchmarkRecorder::recordWalkerDequeue(std::size_t depthAfterPop) {
+void TelemetryRecorder::recordWalkerDequeue(std::size_t depthAfterPop) {
   (void)depthAfterPop;
   walkDequeued_.fetch_add(1, std::memory_order_relaxed);
 }
-void BenchmarkRecorder::noteWalkerStarved() {
+void TelemetryRecorder::noteWalkerStarved() {
   walkStarved_.fetch_add(1, std::memory_order_relaxed);
 }
-void BenchmarkRecorder::setWalkerCapacity(std::size_t capacity) {
+void TelemetryRecorder::setWalkerCapacity(std::size_t capacity) {
   walkCapacity_.store((std::uint64_t)capacity, std::memory_order_relaxed);
 }
-void BenchmarkRecorder::noteWalkerBlocked() {
+void TelemetryRecorder::noteWalkerBlocked() {
   walkBlocked_.fetch_add(1, std::memory_order_relaxed);
 }
-void BenchmarkRecorder::recordVideoRange(std::size_t files, double maxFileMs) {
+void TelemetryRecorder::recordVideoRange(std::size_t files, double maxFileMs) {
   vidRangeCount_.fetch_add(1, std::memory_order_relaxed);
   vidRangeFiles_.fetch_add((std::uint64_t)files, std::memory_order_relaxed);
   const long long ns = (long long)(maxFileMs * 1e6);
   long long prev = vidRangeMaxNs_.load(std::memory_order_relaxed);
   while (ns > prev && !vidRangeMaxNs_.compare_exchange_weak(prev, ns, std::memory_order_relaxed)) {}
 }
-void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
+void TelemetryRecorder::addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
                                  std::size_t decodedFrames, std::size_t sampledFrames) {
   vidCount_.fetch_add(1, std::memory_order_relaxed);
   vidBytes_.fetch_add(bytes, std::memory_order_relaxed);
@@ -336,7 +336,7 @@ void BenchmarkRecorder::addVideo(std::uint64_t bytes, double durationSec, double
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowVideos_, std::move(item));
 }
-void BenchmarkRecorder::addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseRejected,
+void TelemetryRecorder::addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseRejected,
                                      long long sparseSeeks, long long sparseDecoded, long long landingViolations) {
     vidPlanTotal_.fetch_add(1, std::memory_order_relaxed);
     // decision 0 = SequentialPreferred, 1 = SparseSeekCandidate, 2 = SparseSeekUnavailable
@@ -352,12 +352,12 @@ void BenchmarkRecorder::addVideoPlan(int decision, int reason, bool sparseAccept
         vidPlanReason_[reason].fetch_add(1, std::memory_order_relaxed);
 }
 
-void BenchmarkRecorder::addVideoGpu(bool used, bool fallback, double gpuMs) {
+void TelemetryRecorder::addVideoGpu(bool used, bool fallback, double gpuMs) {
   if (used) vidGpu_.fetch_add(1, std::memory_order_relaxed);
   if (fallback) vidGpuFallback_.fetch_add(1, std::memory_order_relaxed);
   vidGpuNs_.fetch_add((long long)(gpuMs * 1e6), std::memory_order_relaxed);
 }
-void BenchmarkRecorder::sampleOnce(double tMs) {
+void TelemetryRecorder::sampleOnce(double tMs) {
   ResourceSample s;
   s.tMs = tMs;
   s.gpu = gpuActiveFn_ ? gpuActiveFn_() : false;
@@ -414,7 +414,7 @@ void BenchmarkRecorder::sampleOnce(double tMs) {
   if (samples_.size() < kMaxSamples) samples_.push_back(s);
   else samplesTruncated_ = true;
 }
-void BenchmarkRecorder::startSampler(std::function<bool()> gpuActive) {
+void TelemetryRecorder::startSampler(std::function<bool()> gpuActive) {
   stopSampler();
   gpuActiveFn_ = std::move(gpuActive);
   sampling_.store(true, std::memory_order_relaxed);
@@ -431,13 +431,13 @@ void BenchmarkRecorder::startSampler(std::function<bool()> gpuActive) {
     }
   });
 }
-void BenchmarkRecorder::stopSampler() {
+void TelemetryRecorder::stopSampler() {
   sampling_.store(false, std::memory_order_relaxed);
   if (sampler_.joinable()) sampler_.join();
   gpuActiveFn_ = nullptr;
   closeDiskCounters();
 }
-void BenchmarkRecorder::finalize(bool completed, std::size_t scanned, std::size_t analyzed, std::size_t unchanged,
+void TelemetryRecorder::finalize(bool completed, std::size_t scanned, std::size_t analyzed, std::size_t unchanged,
                                  std::size_t candidates, std::size_t matches, std::size_t groups, double reductionPct,
                                  std::uint64_t gpuImages, std::uint64_t gpuFallback) {
   if (finished_) return;
@@ -462,7 +462,7 @@ std::string SchedulerTelemetry::toJson() const {
     << ",\"cpuQueueWaitMs\":" << cpuQueueWaitMs << ",\"gpuQueueWaitMs\":" << gpuQueueWaitMs
     << ",\"adjustmentCount\":" << adjustmentCount << ",\"throttlingEvents\":" << throttlingEvents
     << ",\"externalLoadThrottling\":" << externalLoadThrottling
-    << ",\"selectedBackend\":\"" << BenchmarkRecorder::escapeJson(selectedBackend) << "\""
+    << ",\"selectedBackend\":\"" << TelemetryRecorder::escapeJson(selectedBackend) << "\""
     << ",\"backendFallbacks\":" << backendFallbacks << "}";
   return o.str();
 }
@@ -481,11 +481,11 @@ std::string CalibrationTelemetry::toJson() const {
     << ",\"decodeState\":\"" << measureStateName(decodeState) << "\""
     << ",\"transferState\":\"" << measureStateName(transferState) << "\""
     << ",\"queueState\":\"" << measureStateName(queueState) << "\""
-    << ",\"profileId\":\"" << BenchmarkRecorder::escapeJson(profileId) << "\""
-    << ",\"profileVersion\":\"" << BenchmarkRecorder::escapeJson(profileVersion) << "\"}";
+    << ",\"profileId\":\"" << TelemetryRecorder::escapeJson(profileId) << "\""
+    << ",\"profileVersion\":\"" << TelemetryRecorder::escapeJson(profileVersion) << "\"}";
   return o.str();
 }
-std::string BenchmarkRecorder::toJson() const {
+std::string TelemetryRecorder::toJson() const {
   const auto imgN = imgCount_.load(), vidN = vidCount_.load();
   const double imgDecodeMs = (double)imgDecodeNs_.load() / 1e6;
   const double imgHashMs = (double)imgHashNs_.load() / 1e6;
@@ -525,7 +525,7 @@ std::string BenchmarkRecorder::toJson() const {
   std::ostringstream o;
   o << std::fixed << std::setprecision(3);
   o << "{\"meta\":{\"app\":\"MediaSimilarityFinder\",\"build\":\"" << escapeJson(cfg_.build) << "\","
-    << "\"engine\":\"" << escapeJson(cfg_.engine) << "\",\"db\":\"" << escapeJson(cfg_.db) << "\","
+    << "\"engine\":\"" << escapeJson(cfg_.engine) << "\",\"db\":\"" << escapeJson(cfg_.db) << "\",\"purpose\":\"" << telemetryPurposeName(cfg_.purpose) << "\","
     << "\"startedAt\":\"" << startedAt_ << "\",\"completed\":" << (completed_ ? "true" : "false") << ","
     // root is a location. dataset is the identity of the bytes under it, so
     // two runs can prove they used the same input. Fingerprint is null unless

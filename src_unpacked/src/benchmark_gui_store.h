@@ -1,5 +1,5 @@
 #pragma once
-// S4 GUI Benchmark Storage — per-mode latest-result snapshots for the GUI.
+// S4 GUI Benchmark Storage ??per-mode latest-result snapshots for the GUI.
 //
 // SCOPE. Storage only. This layer decides WHERE the GUI's benchmark artifacts
 // live, keeps them separate from the normal Search Index and from the Console
@@ -7,7 +7,7 @@
 // mode. It executes nothing: the GUI drives S2's BenchmarkRunner, which this
 // layer only receives the result of.
 //
-// Layout (S4 brief §4-5, §4-6, storage-design.md):
+// Layout (S4 brief 짠4-5, 짠4-6, storage-design.md):
 //
 //   <application root>/Benchmark/GUI/<source-label>_<root-id-short>/
 //       auto.json          latest AUTO result

@@ -81,10 +81,10 @@ long long CpuGpuScheduler::effectiveHoldMs(long long explicitHold, ResourceMode 
 // B3 headroom rule (B6: floors and band edges now come from the mode).
 // Base capacities come from the B2 branch (observed rates when both known,
 // else baselines); live load scales them:
-//   cpuAvail = (100 - sysCpu)/100 floored at the mode floor — the floor
+//   cpuAvail = (100 - sysCpu)/100 floored at the mode floor ??the floor
 //     keeps us from fully zeroing our own share on self-loaded systems
 //     (coarse rule; self-attribution is future runtime-accounting work).
-//   gpuAvail = (100 - sysGpu)/100 with no floor — system GPU% is
+//   gpuAvail = (100 - sysGpu)/100 with no floor ??system GPU% is
 //     external-dominated (our batches are sub-ms), so full contention may
 //     legitimately converge to CPU. memPressure is recorded, not scaled.
 void CpuGpuScheduler::baseCapacities(const SchedulerHardware& hw, double& cpu, double& gpu) {

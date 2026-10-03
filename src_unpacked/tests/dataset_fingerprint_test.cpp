@@ -215,8 +215,8 @@ int main() {
 
   // --- F: benchmark JSON ---------------------------------------------
   {
-    msf::BenchmarkRecorder rec;
-    msf::BenchmarkConfig cfg;
+    msf::TelemetryRecorder rec;
+    msf::TelemetryConfig cfg;
     cfg.root = baseRoot; cfg.build = "0.9.4.21"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
     rec.start(cfg);
     rec.setDatasetFingerprint(a1);
@@ -225,7 +225,7 @@ int main() {
     // The dataset keys are additive, so assert against the recorder's own
     // constant rather than pinning this step's schema number.
     expect(js.find("\"schemaVersion\":" +
-                   std::to_string(msf::BenchmarkRecorder::kBenchmarkSchemaVersion)) !=
+                   std::to_string(msf::TelemetryRecorder::kBenchmarkSchemaVersion)) !=
                std::string::npos,
            "F: schemaVersion matches the recorder constant");
     expect(js.find("\"dataset\":{") != std::string::npos, "F: dataset object present");
@@ -238,7 +238,7 @@ int main() {
     // root must remain untouched: it is a location, not an identity. It is
     // compared through escapeJson because the recorder escapes backslashes
     // on Windows paths.
-    expect(js.find("\"root\":\"" + msf::BenchmarkRecorder::escapeJson(baseRoot) + "\"") !=
+    expect(js.find("\"root\":\"" + msf::TelemetryRecorder::escapeJson(baseRoot) + "\"") !=
                std::string::npos,
            "F: root key preserved");
   }
@@ -246,8 +246,8 @@ int main() {
   {
     // A recorder that was never told the dataset must say so, and must not
     // carry a value forward from an earlier run.
-    msf::BenchmarkRecorder rec;
-    msf::BenchmarkConfig cfg;
+    msf::TelemetryRecorder rec;
+    msf::TelemetryConfig cfg;
     cfg.root = baseRoot; cfg.build = "0.9.4.21"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
     rec.start(cfg);
     rec.setDatasetFingerprint(a1);

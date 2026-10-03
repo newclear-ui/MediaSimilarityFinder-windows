@@ -1,5 +1,5 @@
 #pragma once
-// S3 Benchmark Storage — path policy, suite lock, and runtime isolation.
+// S3 Benchmark Storage ??path policy, suite lock, and runtime isolation.
 //
 // SCOPE. This layer decides WHERE benchmark artifacts live and guarantees that
 // only one run owns a suite at a time. It does not write results; the durable
@@ -30,7 +30,7 @@
 namespace msf {
 
 // Journal/record schema version for the benchmark journal. Deliberately SEPARATE
-// from BenchmarkRecorder::kBenchmarkSchemaVersion (9): that number versions the
+// from TelemetryRecorder::kBenchmarkSchemaVersion (9): that number versions the
 // legacy recorder's JSON document, while this versions the journal's record
 // contract. They are not the same thing and must not drift together.
 constexpr int kBenchmarkJournalSchemaVersion = 1;
@@ -157,10 +157,10 @@ bool writeSummaryJson(const BenchmarkSuitePaths& suite, const std::string& summa
 // writers cannot drift into three different escaping or timestamp formats.
 //
 // The escaping itself is delegated to the product's existing
-// BenchmarkRecorder::escapeJson, so no second escaper is introduced. Reusing a
+// TelemetryRecorder::escapeJson, so no second escaper is introduced. Reusing a
 // function here does not reuse the legacy recorder's schema or meaning.
-std::string benchmarkJsonString(const std::string& value); // quoted + escaped
-std::string benchmarkJsonBool(bool value);                // true / false
+std::string telemetryJsonString(const std::string& value); // quoted + escaped
+std::string telemetryJsonBool(bool value);                // true / false
 std::string benchmarkNowStamp();                          // %Y-%m-%dT%H:%M:%SZ
 
 } // namespace msf

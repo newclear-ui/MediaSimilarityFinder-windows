@@ -7,7 +7,7 @@ namespace msf {
 // D9a: telemetry sink for the analyze stage.
 //
 // This is a plain data carrier on purpose. It has no dependency on
-// BenchmarkRecorder, ScanPipeline, or image_verify, which is what keeps the
+// TelemetryRecorder, ScanPipeline, or image_verify, which is what keeps the
 // hot path from taking a new dependency back up into engine telemetry:
 // image_verify and scan_pipeline only fill this struct, the engine copies it
 // into the recorder, and the recorder renders it. No recorder pointer is ever

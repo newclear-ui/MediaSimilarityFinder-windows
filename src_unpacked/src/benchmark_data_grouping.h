@@ -7,7 +7,7 @@
 //
 // It deliberately computes no mean, median, percentile, delta, speedup, failure
 // rate or regression figure, and it reaches no verdict about whether two groups
-// are actually comparable. Those are later stages, and §15 of the S6 brief
+// are actually comparable. Those are later stages, and 짠15 of the S6 brief
 // records why: the journal still lacks distance, resourcePolicy and GPU backend,
 // no controlled environment has been defined, and repeated runs do not exist yet.
 //

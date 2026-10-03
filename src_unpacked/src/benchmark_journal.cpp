@@ -5,7 +5,7 @@
 #include <cstring>
 #include <sstream>
 
-#include "benchmark.h"    // BenchmarkRecorder::escapeJson
+#include "benchmark.h"    // TelemetryRecorder::escapeJson
 #include "path_utils.h"
 
 namespace msf {
@@ -14,8 +14,8 @@ namespace {
 // Both delegate to the shared helpers in benchmark_store, so the Console journal,
 // the Console suite.json and the GUI snapshots cannot drift into three different
 // escaping or timestamp implementations. These wrappers only shorten call sites.
-std::string jstr(const std::string& s) { return benchmarkJsonString(s); }
-std::string jbool(bool b) { return benchmarkJsonBool(b); }
+std::string jstr(const std::string& s) { return telemetryJsonString(s); }
+std::string jbool(bool b) { return telemetryJsonBool(b); }
 
 // Deterministic record ids. Determinism is what makes a repeated commit
 // idempotent instead of duplicated.

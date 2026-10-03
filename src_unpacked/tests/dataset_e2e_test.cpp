@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
   msf::ScanControl control;
   control.buildVersion = "0.9.4.21";
   const msf::SearchReport report = engine.scan(root, 8, &control);
-  const msf::DatasetFingerprint& recorded = engine.lastBenchmarkDataset();
+  const msf::DatasetFingerprint& recorded = engine.lastTelemetryDataset();
 
   int rc = 0;
   if (recorded.state != "measured") {

@@ -34,7 +34,7 @@ struct ProfileMetric {
   double value = 0;
   MeasureState state = MeasureState::NotMeasured;
 };
-// C3: last profile update record (brief §5 [lastUpdate]). Written on every
+// C3: last profile update record (brief 짠5 [lastUpdate]). Written on every
 // recalibration decision (consistent update or inconsistent keep); absent
 // means "never updated since creation". Old/new ids are usually equal
 // (identity-based ids); they are kept to show continuity, not change.
@@ -60,10 +60,10 @@ struct PerformanceProfile {
   long long updatedAt = 0; // epoch seconds, refreshed on every save
   ProfileMetric cpuThroughput;    // images/sec (C2 measures)
   ProfileMetric gpuThroughput;    // images/sec (C2 measures)
-  ProfileMetric gpuBatchThroughput; // batches/sec (C2 measures; brief §5)
+  ProfileMetric gpuBatchThroughput; // batches/sec (C2 measures; brief 짠5)
   ProfileMetric resizeThroughput; // px/sec (C2 measures)
   ProfileMetric decodeThroughput; // frames/sec (C2 measures)
-  // Transfer is stored as measured BANDWIDTH (brief §5 concept). The
+  // Transfer is stored as measured BANDWIDTH (brief 짠5 concept). The
   // scheduler's cost term converts with bytes-per-unit at use time.
   ProfileMetric transferBandwidthMBps; // MB/s (C2 measures)
   ProfileMetric queueLatencyMs;   // ms (D1 instruments; C1: not_measured)

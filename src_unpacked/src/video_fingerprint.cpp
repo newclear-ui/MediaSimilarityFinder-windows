@@ -88,7 +88,7 @@ bool VideoFingerprintEngine::loadPersistent(const std::string&p,std::uint64_t sz
       std::uint32_t sceneCount=0;std::memcpy(&sceneCount,cur,sizeof(std::uint32_t));cur+=sizeof(std::uint32_t);
       if(sceneCount<=count&&(std::size_t)bytes>=headNeed+sceneCount*sizeof(double)){o.sceneChanges.resize(sceneCount);for(std::uint32_t i=0;i<sceneCount;++i){std::memcpy(&o.sceneChanges[i],cur,sizeof(double));cur+=sizeof(double);}}
       // Thumbs are optional-but-strict: absent (thumbCount 0, e.g. rows written
-      // before thumbs existed — none in practice since v5 bumps the version)
+      // before thumbs existed ??none in practice since v5 bumps the version)
       // means Hamming-only scoring; present must match the frame count 1:1.
       o.thumb48.clear();
       std::uint32_t thumbCount=0;

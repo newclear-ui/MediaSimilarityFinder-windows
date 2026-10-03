@@ -57,7 +57,7 @@ struct ConsoleBenchmarkOptions {
 // ---------------------------------------------------------------------------
 
 // "YYYYMMDD-HHMM-SS" from an already-fetched UTC timestamp, per the S5 brief's
-// §9-E format. Split out from the resolution step so the format is testable
+// 짠9-E format. Split out from the resolution step so the format is testable
 // without touching the filesystem or the clock.
 std::string consoleSuiteIdStamp(int year, int month, int day,
                                 int hour, int minute, int second);

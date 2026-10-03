@@ -1,7 +1,7 @@
 // Regression: non-ASCII (non-ANSI-codepage) filenames must not throw or crash.
 // On Windows, constructing std::filesystem::path from a narrow UTF-8 string
 // throws filesystem_error when the name holds characters outside the process
-// ANSI code page — even when an error_code is supplied (the conversion itself
+// ANSI code page ??even when an error_code is supplied (the conversion itself
 // throws). All such boundaries must go through path_from_utf8()/wide APIs.
 // Filenames below spell "test" in Korean via explicit UTF-8 byte escapes so
 // the test is independent of the compiler's source-file encoding.

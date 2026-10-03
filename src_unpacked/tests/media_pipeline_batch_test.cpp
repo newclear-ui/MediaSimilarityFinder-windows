@@ -14,8 +14,8 @@ int main(){
   }
 
   msf::MediaPipeline p;
-  msf::BenchmarkRecorder bench;
-  msf::BenchmarkConfig cfg;
+  msf::TelemetryRecorder bench;
+  msf::TelemetryConfig cfg;
   cfg.root=std::filesystem::temp_directory_path().string();
   cfg.build="0.9.4.15"; cfg.engine="1.5.0"; cfg.db="1.0.3";
   bench.start(cfg);

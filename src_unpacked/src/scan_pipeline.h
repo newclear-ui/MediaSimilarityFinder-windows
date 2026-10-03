@@ -41,7 +41,7 @@ public:
   // Optional cache-backed engine for the expensive video temporal stage.
   // Without it analyze() decodes every video pair from scratch (its local
   // engine has no cache open); with it, cache hits skip the decode entirely.
-  // Same verdicts either way — build() output is content-determined. The
+  // Same verdicts either way ??build() output is content-determined. The
   // pointed engine must outlive the analyze() call; not owned.
   void setSharedTemporalEngine(const VideoFingerprintEngine* e) { temporalEngine_ = e; }
   void setVideoGpuBackend(GpuBackend* g) { videoGpu_ = g; }

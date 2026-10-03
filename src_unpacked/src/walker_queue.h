@@ -34,7 +34,7 @@ public:
   enum class PushResult { Pushed, Cancelled, Shutdown };
   // Blocks while full. Returns false-equivalents WITHOUT taking the item
   // on cancel/shutdown (a dropped walked file was never analyzed, so the
-  // next scan simply sees it as new — same as an unwalked file on cancel).
+  // next scan simply sees it as new ??same as an unwalked file on cancel).
   // `waited` reports whether this call blocked at least once.
   PushResult push(FileState item, const std::atomic_bool* cancel, bool* waited = nullptr);
   bool tryPop(FileState& out);

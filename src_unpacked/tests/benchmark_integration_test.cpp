@@ -205,7 +205,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part A1 — normal run through the real runner
+    // Part A1 ??normal run through the real runner
     // =====================================================================
     std::printf("-- Part A1: normal run --\n");
     std::string suitePath;
@@ -382,7 +382,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part A2 — cancellation
+    // Part A2 ??cancellation
     // =====================================================================
     std::printf("-- Part A2: cancellation --\n");
     {
@@ -473,7 +473,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part A3 — failure of one mode only
+    // Part A3 ??failure of one mode only
     // =====================================================================
     std::printf("-- Part A3: single-mode failure --\n");
     {
@@ -530,7 +530,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part A4 — recovery against a journal a real run produced
+    // Part A4 ??recovery against a journal a real run produced
     // =====================================================================
     std::printf("-- Part A4: recovery --\n");
     {
@@ -637,7 +637,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part A5 — suite lock behaviour around a real session
+    // Part A5 ??suite lock behaviour around a real session
     // =====================================================================
     std::printf("-- Part A5: suite lock --\n");
     {
@@ -671,7 +671,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part A6 — S2 fallback preserved when no provider is injected
+    // Part A6 ??S2 fallback preserved when no provider is injected
     // =====================================================================
     std::printf("-- Part A6: S2 fallback --\n");
     {
@@ -695,7 +695,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part A7 — source folder contamination
+    // Part A7 ??source folder contamination
     // =====================================================================
     std::printf("-- Part A7: source contamination --\n");
     {
@@ -742,7 +742,7 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Part B — one run through the real engine
+    // Part B ??one run through the real engine
     // =====================================================================
     std::printf("-- Part B: real engine --\n");
     {

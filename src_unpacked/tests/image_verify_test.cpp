@@ -46,7 +46,7 @@ int main() {
   if (msf::verifyImagePair(red, red2, true, 90.0, kThr) < kThr) return 3;
   // 3. Grey zone, different content (inverse checkers: same mean, anti-
   //    correlated structure -> SSIM ~0): must drop below the scan line.
-  //    (Flat-vs-flat would NOT separate — luminance term stays high — so the
+  //    (Flat-vs-flat would NOT separate ??luminance term stays high ??so the
   //    fixtures are textured, like real reported photos.)
   if (msf::verifyImagePair(chkA, chkB, true, 90.0, kThr) >= kThr) return 4;
   // 4. Decode-failure fallback keeps the Hamming verdict (legacy behavior).

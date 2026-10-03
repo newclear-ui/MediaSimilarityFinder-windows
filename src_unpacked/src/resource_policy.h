@@ -4,7 +4,7 @@ namespace msf {
 enum class ResourceMode { Maximum=1, High=2, Balanced=3, Gaming=4, Light=4, Custom=5 };
 // Node A: cpuPercent keeps its preset semantics (policy upper bound; Custom
 // is the only user-editable CPU limit). gpuPercent is a deprecated internal
-// cap kept for compatibility — the UI no longer exposes it and Node B
+// cap kept for compatibility ??the UI no longer exposes it and Node B
 // replaces it with the Adaptive Scheduler (GPU ON = AUTO). CPU fallback and
 // preset CPU values are unchanged.
 // The user-visible CPU control and the stored policy use the same 10-90 range.

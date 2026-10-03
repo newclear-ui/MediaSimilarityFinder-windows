@@ -155,7 +155,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   // Cooperative cancellation: candidate-pair loops can run into the millions
   // (plus a video re-decode per video pair), so poll periodically. Without
   // this, stop/pause during the final analyze phase did nothing and users had
-  // to force-quit — losing every match streamed so far. The throw is caught
+  // to force-quit ??losing every match streamed so far. The throw is caught
   // below; analyze() always returns partial stats, never propagates.
   struct LocalCancel {};
   struct VideoTask { std::size_t i=0, j=0; };

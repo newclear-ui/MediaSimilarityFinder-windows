@@ -34,8 +34,8 @@ bool ok(bool cond, const char* what) {
 }  // namespace
 
 static int recorderUnmeasured() {
-  msf::BenchmarkRecorder rec;
-  msf::BenchmarkConfig cfg;
+  msf::TelemetryRecorder rec;
+  msf::TelemetryConfig cfg;
   cfg.root = "C:/media";
   cfg.build = "0.9.4.20"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
   cfg.scanImages = true; cfg.cudaAvailable = true;
@@ -57,7 +57,7 @@ static int recorderUnmeasured() {
   // D8a bumped the schema for the dataset section; the D4a keys are additive,
   // so this tracks the current schema rather than pinning D4a's own number.
   if (!ok(js.find("\"schemaVersion\":" +
-                  std::to_string(msf::BenchmarkRecorder::kBenchmarkSchemaVersion)) !=
+                  std::to_string(msf::TelemetryRecorder::kBenchmarkSchemaVersion)) !=
               std::string::npos,
           "schemaVersion matches the recorder constant")) return 13;
   // A batch counted as GPU work but never timed must not flip a state.
@@ -69,8 +69,8 @@ static int recorderUnmeasured() {
 }
 
 static int recorderMeasured() {
-  msf::BenchmarkRecorder rec;
-  msf::BenchmarkConfig cfg;
+  msf::TelemetryRecorder rec;
+  msf::TelemetryConfig cfg;
   cfg.root = "C:/media";
   cfg.build = "0.9.4.20"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
   cfg.scanImages = true; cfg.cudaAvailable = true;

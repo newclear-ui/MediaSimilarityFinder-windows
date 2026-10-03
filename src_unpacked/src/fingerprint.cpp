@@ -50,8 +50,8 @@ void dct8x8(const std::uint8_t* px,double d[K][K]){
 }
 
 // 63 AC coefficients vs their median, bit order u-major/v-minor (bit 63 unused).
-// flipOdd=true evaluates the horizontally mirrored image: cos((2(N-1-x)+1)uπ/2N)
-// = (-1)^u * cos((2x+1)uπ/2N), so odd u flips sign.
+// flipOdd=true evaluates the horizontally mirrored image: cos((2(N-1-x)+1)u?/2N)
+// = (-1)^u * cos((2x+1)u?/2N), so odd u flips sign.
 std::uint64_t bits_from(const double d[K][K],bool flipOdd){
     double vals[K*K-1]; int n=0;
     for(int u=0;u<K;++u) for(int v=0;v<K;++v) if(u||v) { double c=(flipOdd&&(u&1))?-d[u][v]:d[u][v]; vals[n++]=(std::abs(c)<1e-7)?0.0:c; }

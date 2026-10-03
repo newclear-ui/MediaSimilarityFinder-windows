@@ -256,7 +256,7 @@ bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& second
     //
     // This is not defensive padding. A read that runs out of packets before a
     // target is reached leaves out96 short, and an earlier version returned
-    // success for that truncated set — which would have silently fingerprinted a
+    // success for that truncated set ??which would have silently fingerprinted a
     // file with fewer samples than production and changed search results.
     if(local.landingViolations>0) { out96.clear(); out32.clear(); return false; }
     if(out96.size()!=seconds.size()){ out96.clear(); out32.clear(); return false; }

@@ -98,8 +98,8 @@ int main() {
     hw.cpuThreads = 8; hw.gpuEnabled = true;
     hw.gpuAvailable = true; hw.gpuComputeUnits = 24; hw.backendName = "CUDA";
     const auto d = s.decide(hw);
-    msf::BenchmarkRecorder rec;
-    msf::BenchmarkConfig cfg;
+    msf::TelemetryRecorder rec;
+    msf::TelemetryConfig cfg;
     cfg.root = "C:/media"; cfg.build = "t"; cfg.engine = "t"; cfg.db = "t";
     rec.start(cfg);
     auto& st = rec.scheduler();

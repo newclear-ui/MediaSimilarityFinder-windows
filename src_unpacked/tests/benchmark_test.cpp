@@ -4,9 +4,9 @@
 #include <iostream>
 #include <thread>
 int main() {
-  msf::BenchmarkRecorder rec;
+  msf::TelemetryRecorder rec;
   if (rec.hasData()) return 1;
-  msf::BenchmarkConfig cfg;
+  msf::TelemetryConfig cfg;
   cfg.root = "C:/media";
    cfg.build = "0.9.4.35"; cfg.engine = "1.5.0"; cfg.db = "1.0.3";
   cfg.distance = 8; cfg.cpuWorkers = 4; cfg.gpuBatch = 64; cfg.gpuBackend = "CUDA";
@@ -79,7 +79,7 @@ int main() {
    if (!need("\"gpuBackend\":\"CUDA\"")) return 34;
   // Node D1a: batch telemetry JSON regression.
   {
-    msf::BenchmarkRecorder rD; msf::BenchmarkConfig cD; cD.root = "C:/media"; cD.build = "0.9.4.35";
+    msf::TelemetryRecorder rD; msf::TelemetryConfig cD; cD.root = "C:/media"; cD.build = "0.9.4.35";
     rD.start(cD); rD.beginImageBatch(4); rD.addImagePackMs(2.5); rD.addImageCpuHashMs(1.25); rD.endImageBatch();
     rD.finalize(true, 4, 4, 0, 0, 0, 0, 0.0, 0, 0);
     const std::string jd = rD.toJson();
@@ -117,8 +117,8 @@ int main() {
    if (!need("\"gpuState\":\"not_measured\"")) return 61;
    // Node D1b: walker queue and video ranges stay honest when idle.
    {
-    msf::BenchmarkRecorder r4;
-    msf::BenchmarkConfig c4;
+    msf::TelemetryRecorder r4;
+    msf::TelemetryConfig c4;
     c4.root = "C:/media"; c4.build = "0.9.4.35"; c4.engine = "1.5.0"; c4.db = "1.0.3";
     r4.start(c4);
     for (int i = 0; i < 5; ++i) r4.recordWalkerEnqueue((std::size_t)(i + 1));
@@ -149,8 +149,8 @@ int main() {
   // Node A measured path: explicit frame counts, file progress, scheduler and
   // calibration records, and a sampler-free run whose zeros are not_measured.
   {
-    msf::BenchmarkRecorder r2;
-    msf::BenchmarkConfig c2;
+    msf::TelemetryRecorder r2;
+    msf::TelemetryConfig c2;
     c2.root = "C:/media"; c2.build = "0.9.4.35"; c2.engine = "1.5.0"; c2.db = "1.0.3";
     c2.distance = 8; c2.cpuWorkers = 2; c2.gpuBatch = 32; c2.gpuBackend = "CPU";
     r2.start(c2);
@@ -184,8 +184,8 @@ int main() {
   }
   // Node A: a root without a drive letter leaves disk not_available (not 0).
   {
-    msf::BenchmarkRecorder r3;
-    msf::BenchmarkConfig c3;
+    msf::TelemetryRecorder r3;
+    msf::TelemetryConfig c3;
     c3.root = "relative/path"; c3.build = "0.9.4.35"; c3.engine = "1.5.0"; c3.db = "1.0.3";
     r3.start(c3);
     r3.finalize(true, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);

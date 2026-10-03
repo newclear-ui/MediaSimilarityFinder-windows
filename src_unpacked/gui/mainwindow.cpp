@@ -269,11 +269,11 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"renameFail")) return S("이름을 바꿀 수 없습니다.","Could not rename the file.");
   if (!std::strcmp(key,"csvSaved")) return S("CSV 저장됨: ","CSV saved: ");
   if (!std::strcmp(key,"csvFail")) return S("CSV 저장 실패","CSV save failed");
-  if (!std::strcmp(key,"benchTitle")) return S("검색 벤치마크","Search Benchmark");
+  if (!std::strcmp(key,"benchTitle")) return S("상세 로그","Detailed Logs");
   if (!std::strcmp(key,"benchSave")) return S("JSON 저장…","Save JSON…");
   if (!std::strcmp(key,"benchClose")) return S("닫기","Close");
-  if (!std::strcmp(key,"benchSaved")) return S("벤치마크 저장됨: ","Benchmark saved: ");
-  if (!std::strcmp(key,"benchSaveFail")) return S("벤치마크 저장 실패","Benchmark save failed");
+  if (!std::strcmp(key,"benchSaved")) return S("상세 로그 저장됨: ","Detailed log saved: ");
+  if (!std::strcmp(key,"benchSaveFail")) return S("상세 로그 저장 실패","Detailed log save failed");
   if (!std::strcmp(key,"benchDone")) return S("완료","Completed");
   if (!std::strcmp(key,"benchStopped")) return S("중단","Stopped");
   if (!std::strcmp(key,"benchState")) return S("상태","Status");
@@ -287,11 +287,13 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchIo")) return S("디스크 I/O","Disk I/O");
   if (!std::strcmp(key,"benchMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"benchSlow")) return S("느린 파일","Slowest files");
-  if (!std::strcmp(key,"benchToggle")) return S("벤치마크","Benchmark");
+  if (!std::strcmp(key,"benchToggle")) return S("상세 로그","Detailed Logs");
   if (!std::strcmp(key,"benchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"benchDetailOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
-  // S4 GUI benchmark. Kept apart from the legacy "bench*" keys above: those render
-  // the legacy recorder's JSON dialog, these drive the S2/S3 benchmark run.
+  // S4 execution-strategy keys. Kept apart from the legacy "bench*" keys above:
+  // those render the legacy telemetry JSON dialog, these label the GUI
+  // execution-resource strategy (AUTO / CPU-only / GPU-max) and the dormant
+  // benchmark status strings (kept only so the dormant path still compiles).
   // Progress wording deliberately says "completed"/"last": S2 reports a case only
   // when it finishes, so there is no in-flight file that could honestly be named.
   if (!std::strcmp(key,"benchModeAuto")) return S("AUTO","AUTO");
@@ -313,9 +315,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"benchNeedFolder")) return S("폴더를 선택하세요","Select a folder");
   if (!std::strcmp(key,"benchBlockedScan")) return S("검색 중에는 벤치마크를 실행할 수 없습니다","Benchmark cannot start while a scan is running");
   if (!std::strcmp(key,"benchTipRun")) return S("선택한 모드로 벤치마크 실행","Run a benchmark over the selected modes");
-  if (!std::strcmp(key,"benchTipModes")) return S("실행할 모드 선택 (최소 1개)","Modes to execute (at least one)");
+  if (!std::strcmp(key,"benchTipModes")) return S("실행 자원 전략 선택 (1개만)","Execution strategy (select one)");
   if (!std::strcmp(key,"benchTipStop")) return S("벤치마크 중지 (일시정지 없음)","Stop the benchmark (there is no pause)");
-  if (!std::strcmp(key,"benchTipTgl")) return S("검색에 기존 벤치마크 기록 연결 (실행 아님)","Attach legacy benchmark telemetry to the scan (not an execution)");
+  if (!std::strcmp(key,"benchTipTgl")) return S("실제 검색에 상세 로그 연결 (별도 벤치마크 실행 아님)","Attach detailed logging to the actual search (not a separate benchmark run)");
   if (!std::strcmp(key,"repWaitTitle")) return S("검색 리포트 작성 중","Writing search report");
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
   if (!std::strcmp(key,"repWaitClose")) return S("검색 리포트를 작성 중입니다. 종료하시겠습니까?","The search report is being written. Exit anyway?");
@@ -416,7 +418,7 @@ void ScanWorker::run() {
     engine_.setResourcePolicy(msf::make_policy(msf::ResourceMode::Custom, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
-    control_.benchmarkEnabled = benchmark_;
+    control_.telemetryEnabled = detailedLogEnabled_;
     control_.walkerQueueCapacity = walkerCapOverride_;
     control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
@@ -438,20 +440,20 @@ void ScanWorker::run() {
     // Cancelled here means: stop before touching results.
     {
       int kept = 0, dropped = 0;
-      msf::BenchmarkConfig bcfg;
+      msf::TelemetryConfig bcfg;
       bcfg.root = root_.toStdString();
       bcfg.build = QCoreApplication::applicationVersion().toStdString();
       bcfg.engine = msf::MediaSearchEngine::kEngineVersion;
       bcfg.db = msf::Database::kDatabaseVersion;
       bcfg.distance = (unsigned)distance_;
       bcfg.scanImages = scanImages_; bcfg.scanVideos = scanVideos_;
-      bcfg.gpuEnabled = gpuEnabled_; bcfg.detail = benchmark_;
-      engine_.beginBenchmark(bcfg, benchmark_);
+      bcfg.gpuEnabled = gpuEnabled_; bcfg.detail = detailedLogEnabled_;
+      engine_.beginTelemetry(bcfg, detailedLogEnabled_);
       const qint64 revT0 = QDateTime::currentMSecsSinceEpoch();
       if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
-        engine_.abortBenchmark();
-        if (benchmark_ && engine_.hasBenchmark())
-          emit benchmarkReady(QString::fromStdString(engine_.benchmarkJson()));
+        engine_.abortTelemetry();
+        if (detailedLogEnabled_ && engine_.hasTelemetry())
+          emit benchmarkReady(QString::fromStdString(engine_.telemetryJson()));
         emit finished(QString("CANCELLED|0|0")); return;
       }
       control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
@@ -530,7 +532,7 @@ void ScanWorker::run() {
     // groups incrementally from onMatch and needs no retained vector.
     control_.retainMatches = false;
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
-    const QString benchJson = engine_.hasBenchmark() ? QString::fromStdString(engine_.benchmarkJson()) : QString();
+    const QString benchJson = engine_.hasTelemetry() ? QString::fromStdString(engine_.telemetryJson()) : QString();
     gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
     // Flush the throttled progress display with the final counts.
     {
@@ -829,8 +831,9 @@ void MainWindow::buildToolbar() {
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
   scan_->setDefault(true);
   pause_ = new QPushButton(toolBar_); pause_->setCheckable(true); cancel_ = new QPushButton(toolBar_);
-  // Automation hooks, same purpose as "scan": S4 has to assert that the scan pause
-  // control is disabled while a benchmark runs, which needs a stable lookup name.
+  // Automation hooks, same purpose as "scan": these stable lookup names let
+  // tests assert scan lifecycle control states (pause is scan-only: the GUI
+  // detailed-log path has no pause of its own).
   pause_->setObjectName("pause"); cancel_->setObjectName("cancel");
   connect(scan_, &QPushButton::clicked, this, &MainWindow::startScan);
   connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
@@ -862,8 +865,8 @@ void MainWindow::buildToolbar() {
   connect(cpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
   gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
   gpuEnabled_->setObjectName("gpuToggle"); // automation hook, see folder_
-  benchTgl_ = new QCheckBox(toolBar_); benchTgl_->setChecked(true);
-  benchTgl_->setObjectName("benchTgl"); // automation hook, see folder_
+  logTgl_ = new QCheckBox(toolBar_); logTgl_->setChecked(true);
+  logTgl_->setObjectName("logTgl"); // automation hook, see folder_
   // Execution resource mode: a single choice of how this program uses CPU/GPU
   // resources. It is intentionally mutually exclusive (a program cannot be both
   // CPU-only and GPU-maximising at the same time). Drives whether the GPU
@@ -922,7 +925,7 @@ void MainWindow::buildToolbar() {
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
-  toolBar_->addWidget(scan_); toolBar_->addWidget(benchTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
+  toolBar_->addWidget(scan_); toolBar_->addWidget(logTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator();
   // Execution resource mode + fine CPU budget as one compact, single-row area.
   toolBar_->addWidget(benchAuto_); toolBar_->addWidget(benchCpu_); toolBar_->addWidget(benchGpu_);
@@ -1206,11 +1209,12 @@ void MainWindow::applyStaticTexts() {
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
   pause_->setChecked(scanPaused_);
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
-  benchTgl_->setText(trStr(l, "benchToggle"));
-  benchTgl_->setToolTip(trStr(l, "benchTipTgl"));
-  // S4 benchmark group. The run button is an execution entry point and is labelled
-  // as such; benchTgl_ keeps its own legacy label and only gained a tooltip that
-  // says what it does, so the two are not mistaken for the same feature.
+  logTgl_->setText(trStr(l, "benchToggle"));
+  logTgl_->setToolTip(trStr(l, "benchTipTgl"));
+  // Detailed-log toggle plus the execution-strategy checkboxes. logTgl_
+  // enables diagnostic telemetry on the real search; the three checkboxes
+  // below are the single-select execution resource strategy, so their labels
+  // and tooltips describe a resource choice, not a benchmark-mode execution.
   benchAuto_->setText(trStr(l, "benchModeAuto"));
   benchCpu_->setText(trStr(l, "benchModeCpu"));
   benchGpu_->setText(trStr(l, "benchModeGpu"));
@@ -1269,17 +1273,16 @@ void MainWindow::applyStaticTexts() {
 }
 
 // ---------------------------------------------------------------------------
-// S4 GUI benchmark
+// S4 GUI execution strategy (dormant benchmark-runner wiring below)
 // ---------------------------------------------------------------------------
 //
-// The checkboxes are an execution selection, and this is the only vector handed to
-// BenchmarkRunner::run(). The order is fixed to S2's canonical order so the UI can
-// never reorder the file loop into per-mode passes.
-
+// The checkboxes are the GUI execution strategy (single-select). The runner
+// wiring below is DORMANT: the GUI detailed-log path never calls
+// BenchmarkRunner; it runs the real search with the recorder attached.
 // DORMANT since the UI consolidation: the GUI run/stop buttons were removed, so this
 // vector is only fed by the (now mutually-exclusive) resource-mode checkboxes and is
-// no longer wired to any UI entry point. Kept compiling so the S4 runner code does not
-// have to be deleted wholesale; it must not be used for UI behaviour.
+// no longer wired to any UI entry point. Kept compiling so the dormant path is not
+// deleted wholesale; it must not be used for UI behaviour.
 std::vector<msf::GpuBackendKind> MainWindow::selectedBenchModes() const {
   std::vector<msf::GpuBackendKind> modes;
   if (benchAuto_ && benchAuto_->isChecked()) modes.push_back(msf::GpuBackendKind::Auto);
@@ -1303,10 +1306,11 @@ QString MainWindow::benchmarkSourceRoot() const {
   return folder_ ? folder_->text().trimmed() : QString();
 }
 
-// S4 §4-13 serial execution: a scan and a benchmark never run at the same time, so
-// CPU/GPU contention, index lifecycle and progress reporting stay unambiguous.
-// Pause remains a scan-only control, because benchmark has Cancel/Stop and nothing
-// else. There is no process-wide gate here: concurrent instances are handled by the
+// Serial execution (inherited from the S4 benchmark gate): a scan and the
+// dormant benchmark path never run at the same time, so CPU/GPU contention,
+// index lifecycle and progress reporting stay unambiguous. Pause remains a
+// scan-only control, because the detailed-log path has no pause of its own.
+// There is no process-wide gate here: concurrent instances are handled by the
 // S3 suite lock inside BenchmarkGuiStorage.
 void MainWindow::updateBenchmarkUiState() {
   if (!benchModeGroup_) return;
@@ -1567,7 +1571,7 @@ void MainWindow::startScan() {
   worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), policy_.gpuPercent, gpuEnabled_->isChecked(),
                              mediaImgBtn_->isChecked(), mediaVidBtn_->isChecked());
   worker_->setIgnored(ignored_);
-  worker_->setBenchmark(benchTgl_->isChecked());
+  worker_->setDetailedLog(logTgl_->isChecked());
   worker_->moveToThread(thread_);
   connect(thread_, &QThread::started, worker_, &ScanWorker::run);
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);

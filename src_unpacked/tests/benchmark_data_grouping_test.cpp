@@ -214,7 +214,7 @@ msf::NormalizedBenchmarkData makeDataset() {
 int main(int argc, char** argv) {
     std::printf("S6-3 benchmark grouping\n");
 
-    // §23 of the brief: analyse a real journal tree read-only. Ingestion is
+    // 짠23 of the brief: analyse a real journal tree read-only. Ingestion is
     // delegated to S6-1/S6-2 rather than reimplemented, and grouping is applied to
     // exactly the normalized dataset the unit checks above use.
     if (argc > 1) {
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
         }
         std::printf("LIVE  case cohorts spanning >1 run=%zu maxRunsPerCase=%zu\n", recurring, maxRuns);
 
-        // §13 deterministic repeat, on real data.
+        // 짠13 deterministic repeat, on real data.
         bool same = g.datasetCohorts.size() == g2.datasetCohorts.size() &&
                     g.scopeCohorts.size() == g2.scopeCohorts.size() &&
                     g.buildCohorts.size() == g2.buildCohorts.size() &&

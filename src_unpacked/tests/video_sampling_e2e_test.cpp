@@ -68,7 +68,7 @@ RunResult runScan(const std::string& root, const std::string& app) {
     const auto t0 = std::chrono::steady_clock::now();
     const msf::SearchReport rep = engine.scan(root, 8, &control);
     r.wallMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    r.json = engine.benchmarkJson();
+    r.json = engine.telemetryJson();
     r.analyzed = rep.analyzed;
     for (const auto& f : engine.files()) {
         if (f.kind != msf::MediaKind::Video) continue;

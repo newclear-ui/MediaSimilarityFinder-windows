@@ -25,7 +25,9 @@ inline const char* measureStateName(MeasureState s) {
     default: return "not_measured";
   }
 }
-struct BenchmarkConfig {
+enum class TelemetryPurpose { UserDiagnostic, Benchmark };
+inline const char* telemetryPurposeName(TelemetryPurpose p) { return p == TelemetryPurpose::Benchmark ? "Benchmark" : "UserDiagnostic"; }
+struct TelemetryConfig {
   std::string root;
   std::string build;
   std::string engine;
@@ -41,6 +43,7 @@ struct BenchmarkConfig {
   bool scanImages = true;
   bool scanVideos = true;
   bool cudaAvailable = false;
+  TelemetryPurpose purpose = TelemetryPurpose::UserDiagnostic;
 };
 struct SlowFile {
   std::string path;
@@ -58,7 +61,7 @@ struct ResourceSample {
   double ioReadBps = 0;
   double ioWriteBps = 0;
 };
-// Node A: scheduler-decision record. Structure only — the Node B Adaptive
+// Node A: scheduler-decision record. Structure only ??the Node B Adaptive
 // Scheduler fills it; until then it stays NotMeasured and must not be read
 // as "zero work share".
 struct SchedulerTelemetry {
@@ -74,7 +77,7 @@ struct SchedulerTelemetry {
   void markMeasured() { state = MeasureState::Measured; }
   std::string toJson() const;
 };
-// Node A: calibration record. Structure only — Node C implements calibration.
+// Node A: calibration record. Structure only ??Node C implements calibration.
 struct CalibrationTelemetry {
   MeasureState state = MeasureState::NotMeasured;
   bool started = false, completed = false;
@@ -94,7 +97,7 @@ struct CalibrationTelemetry {
   void markMeasured() { state = MeasureState::Measured; }
   std::string toJson() const;
 };
-class BenchmarkRecorder {
+class TelemetryRecorder {
 public:
   static constexpr std::size_t kSlowTop = 20;
   static constexpr int kSampleMs = 250;
@@ -115,7 +118,7 @@ public:
   static constexpr int kBenchmarkSchemaVersion = 9;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
-  void start(const BenchmarkConfig& cfg);
+  void start(const TelemetryConfig& cfg);
   void reset();
   // D8a: attaches dataset identity. Called by the engine right after start()
   // so every run carries proof of which input data produced it. A
@@ -203,7 +206,7 @@ void addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseReje
 private:
   void sampleOnce(double tMs);
   bool started_ = false;
-  BenchmarkConfig cfg_;
+  TelemetryConfig cfg_;
   DatasetFingerprint datasetFp_{};
   AnalyzeTelemetry analyzeTel_{};
   bool analyzeTelRecorded_ = false;

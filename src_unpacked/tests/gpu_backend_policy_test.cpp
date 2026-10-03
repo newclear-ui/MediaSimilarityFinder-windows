@@ -5,7 +5,7 @@ int main(){
     msf::GpuBackend g; const auto info=g.detect();
     const auto b=g.recommendedBatchSize(256);
     // Node A: GPU is the generic term; the resolved backend name reports what
-    // actually executes (CUDA device or CPU fallback) — never an
+    // actually executes (CUDA device or CPU fallback) ??never an
     // unimplemented backend.
     if(g.kind()!=msf::GpuBackendKind::Auto){std::cerr<<"default kind must be Auto\n";return 3;}
     const std::string name=g.backendName();

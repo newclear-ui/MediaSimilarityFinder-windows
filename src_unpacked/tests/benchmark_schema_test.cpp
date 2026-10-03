@@ -72,7 +72,7 @@ void readPreD9cAnalyzeFields(const QJsonObject& analyze, double* v) {
 }  // namespace
 
 int main() {
-  msf::BenchmarkRecorder rec;
+  msf::TelemetryRecorder rec;
   msf::AnalyzeTelemetry tel;
   // D9a fields.
   tel.analyzeRan = true;
@@ -118,7 +118,7 @@ int main() {
   // build/engine/db and the dataset identity block -- not at the document root
   // and not under "config".
   const QJsonObject meta = root["meta"].toObject();
-  expect(meta["schemaVersion"].toInt() == msf::BenchmarkRecorder::kBenchmarkSchemaVersion,
+  expect(meta["schemaVersion"].toInt() == msf::TelemetryRecorder::kBenchmarkSchemaVersion,
          "meta.schemaVersion equals the recorder constant");
   expect(meta["schemaVersion"].toInt() == 9,
          "meta.schemaVersion is still 9 (additive fields did not force a bump)");
@@ -163,7 +163,7 @@ int main() {
   // A record whose analyze block carries ONLY the pre-D9c fields must be read
   // identically by the same access code. If adding fields changed any read, or
   // if any consumer required an exact field set, this would diverge.
-  msf::BenchmarkRecorder oldRec;
+  msf::TelemetryRecorder oldRec;
   msf::AnalyzeTelemetry oldTel;
   oldTel.analyzeRan = true;
   oldTel.indexMs = tel.indexMs;

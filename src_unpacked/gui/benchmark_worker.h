@@ -1,5 +1,5 @@
 #pragma once
-// S4 GUI Benchmark Worker — runs BenchmarkRunner on a worker thread.
+// S4 GUI Benchmark Worker ??runs BenchmarkRunner on a worker thread.
 //
 // SCOPE. Execution glue only. This worker owns no benchmark logic and no
 // storage policy: it calls S2's BenchmarkRunner exactly once with the modes the
@@ -27,9 +27,9 @@
 //   * No second execution engine. BenchmarkRunner is the only path.
 //   * No scheduling against ScanWorker. The worker never starts a scan and never
 //     inspects one; it only reports busyChanged so the UI can keep the scan and
-//     benchmark starts mutually exclusive (S4 §4-13).
+//     benchmark starts mutually exclusive (S4 짠4-13).
 //
-// Progress granularity — an honest limitation
+// Progress granularity ??an honest limitation
 // -------------------------------------------
 // S2 reports a case only when it is COMPLETE, and exposes no intra-case hook.
 // There is therefore no way to know which file or which mode is executing right

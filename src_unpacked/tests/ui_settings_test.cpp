@@ -322,7 +322,7 @@ int main(int argc, char** argv) {
     // Height is asserted exactly. Width is deliberately NOT asserted: the
     // offscreen test screen is 800x800 while the window's layout minimum is
     // wider, so Qt legitimately forces the width up (and would clamp a wider
-    // window down) — a test-environment artifact, not an app bug. On a real
+    // window down) ??a test-environment artifact, not an app bug. On a real
     // screen both dimensions round-trip via restoreGeometry (verified: a
     // no-op restore would leave the 880 default height).
     if (sz.height() != H) {

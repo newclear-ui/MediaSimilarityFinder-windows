@@ -55,7 +55,7 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
   const auto states=db_.all();
   std::unordered_map<std::string,const FileState*> byPath; byPath.reserve(states.size()*2+1);
   for(const auto& x:states) byPath.emplace(x.path,&x);
-  // Disk freshness in the scanner's own unit (milliseconds — raw counts differ
+  // Disk freshness in the scanner's own unit (milliseconds ??raw counts differ
   // by clock granularity). Missing or changed files cannot safely retain an old
   // verdict; the next scan will recreate a current pair if it still matches.
   auto fresh=[&](const FileState& x)->bool{
@@ -169,7 +169,7 @@ std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fin
  std::sort(out.begin(),out.end(),[](const SearchMatch&a,const SearchMatch&b){return a.percent>b.percent;}); return out;
 }
 // L1 temporal anchors: per-frame hashes loaded read-only from the persistent
-// video cache (never decoded here — cache misses simply yield no anchors and
+// video cache (never decoded here ??cache misses simply yield no anchors and
 // the video falls back to XOR-only candidacy). Strided to at most 16 so very
 // long videos cannot flood the candidate index.
 static constexpr std::size_t kMaxAnchors = 16;
@@ -182,7 +182,7 @@ static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf
   for(std::size_t i = 0; i < n && mf.anchors.size() < kMaxAnchors; i += stride)
     if(vf.hashes[i]) mf.anchors.push_back(vf.hashes[i]);
 }
-void MediaSearchEngine::beginBenchmark(const BenchmarkConfig& cfg, bool withSampler) {
+void MediaSearchEngine::beginTelemetry(const TelemetryConfig& cfg, bool withSampler) {
   bench_.start(cfg);
   if (withSampler) bench_.startSampler([this]() { return gpuActive_.load(std::memory_order_relaxed); });
 }
@@ -225,7 +225,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const auto benchT0=std::chrono::steady_clock::now();
   auto benchMsSince=[&](){ return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchT0).count(); };
   MediaPipeline imagePipeline;
-  BenchmarkConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.gpuBackend=imagePipeline.gpuBackendName(); bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable();
+  TelemetryConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.gpuBackend=imagePipeline.gpuBackendName(); bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable(); bcfg.purpose=control?control->telemetryPurpose:TelemetryPurpose::UserDiagnostic;
   // B1 Minimal Adaptive Allocation: baseline capacities only. The decision
   // gates backend use exactly where policy_.gpuEnabled gated before, so
   // verdict behavior is unchanged; the shares + decision are recorded.
@@ -342,7 +342,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // scheduler (stability-guaranteed by B4 hold + B6 kill band). A cached
   // bool here would silently pin the scan-start verdict (review finding).
   auto schedUseGpuNow = [&]() { return scheduler_.lastDecision().gpuUsed; };
-  const bool benchOn = !control || control->benchmarkEnabled;
+  const bool benchOn = !control || control->telemetryEnabled;
   bcfg.detail = benchOn;
   bench_.start(bcfg);
   // D8a: attach the identity of the bytes under this root so a later reader
@@ -532,12 +532,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::BenchmarkRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; bench_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); bench_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
+       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::TelemetryRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; bench_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); bench_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
      return j;
     }));
   }
    bool stopSeen=false;
-   // D2: completion order (was index order). Same threads, same joins —
+   // D2: completion order (was index order). Same threads, same joins ??
    // only the harvest sequence changes, so a straggler stops blocking
    // finished siblings. 5 ms idle bound per range, negligible against
    // seconds-long builds. Cancel semantics preserved: post-stop
@@ -610,7 +610,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    cb.onFile=[&](FileState&& f){
     // D3-Minimal: bounded push with cancel-aware backpressure. A dropped
     // file (cancel/shutdown) was never analyzed, so the next scan sees it
-    // as new — identical to an unwalked file on cancel.
+    // as new ??identical to an unwalked file on cancel.
     bool waited=false;
     const auto pr=queue.push(std::move(f), control?&control->cancel:nullptr, &waited);
     if(waited) bench_.noteWalkerBlocked();
@@ -675,7 +675,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); pipe.setVideoGpuBackend(&videoGpu_); pipe.setVideoGpuActivity(&gpuActive_); for(auto&f:files_)pipe.add(f);
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause
-  // during this phase did nothing until it finished — the force-quit path
+  // during this phase did nothing until it finished ??the force-quit path
   // that lost every streamed match. Poll pause-aware, like stopped().
   auto stopCheck=[&]()->bool{
     if(!control) return false;

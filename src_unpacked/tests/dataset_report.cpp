@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
 
   // Written as a SIBLING of the dataset, never inside it. A file placed
   // under the root would join the next manifest walk and change the
-  // fingerprint it is supposed to describe — a self-reference that would
+  // fingerprint it is supposed to describe ??a self-reference that would
   // silently break reproducibility on the very next run.
   const msf::fs::path rootPath = msf::path_from_utf8(root);
   const msf::fs::path outPath =

@@ -1,5 +1,5 @@
 #pragma once
-// E-3B Adaptive Sampling Planner — CLASSIFICATION ONLY.
+// E-3B Adaptive Sampling Planner ??CLASSIFICATION ONLY.
 //
 // This header deliberately contains no decoding, no FFmpeg calls and no I/O.
 // It answers exactly one question from measured inputs: which sampling strategy

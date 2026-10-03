@@ -14,7 +14,7 @@
 //   additionally reproduced by an instrumented mirror and compared byte for byte,
 //   so a measurement always states whether it is describing the shipping path.
 //
-// GOP — MEASURED TWICE, INDEPENDENTLY
+// GOP ??MEASURED TWICE, INDEPENDENTLY
 //   E-1 measured ffv1, which is intra-only, at 63 key packets out of 750, so
 //   AV_PKT_FLAG_KEY alone is not trustworthy. This probe therefore collects
 //     A. AV_PKT_FLAG_KEY packet positions
@@ -275,7 +275,7 @@ static std::vector<Sample> sparseSeekSweep(const std::string& path,
     for (double target : targets) {
         const int64_t tpts = av_rescale_q((int64_t)(target * 1000000.0), AV_TIME_BASE_Q, st->time_base);
 
-        // EXACT SPARSE SEEK — the whole point of E-2B.
+        // EXACT SPARSE SEEK ??the whole point of E-2B.
         //
         // The product's predicate is `ft + 0.05 >= target`, i.e. it selects the
         // FIRST frame with pts >= target - 0.05. Seeking to `target` itself

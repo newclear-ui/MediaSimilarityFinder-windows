@@ -1,5 +1,5 @@
 #pragma once
-// S1 Console Entry Foundation — command line parsing.
+// S1 Console Entry Foundation ??command line parsing.
 // S5 extends this with the benchmark entry point; the parsing rules stay here so
 // they can be unit tested without launching the application. This file performs
 // no I/O and includes no Qt headers: the GUI executable stays the only thing that

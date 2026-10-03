@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
     w.run();
     const auto pending = w.takePending();
     check(pending.size() == 60 * 59 / 2, "int-pairs");
-    const std::string bj = w.scanEngine().benchmarkJson();
+    const std::string bj = w.scanEngine().telemetryJson();
     check(jsonHas(bj, "\"capacity\":16"), "int-capacity");
     const std::uint64_t maxDepth = jsonUint(bj, "maxDepth");
     check(maxDepth <= 16, "int-bounded");

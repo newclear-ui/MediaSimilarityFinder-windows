@@ -6,7 +6,7 @@
 #include <sstream>
 #include <system_error>
 
-#include "benchmark.h"          // BenchmarkRecorder::escapeJson
+#include "benchmark.h"          // TelemetryRecorder::escapeJson
 #include "index_manager.h"      // folderId / canonicalRoot
 #include "path_utils.h"
 
@@ -219,11 +219,11 @@ std::string readFileIfExists(const std::string& path) {
     return ss.str();
 }
 
-std::string benchmarkJsonString(const std::string& s) {
-    return "\"" + BenchmarkRecorder::escapeJson(s) + "\"";
+std::string telemetryJsonString(const std::string& s) {
+    return "\"" + TelemetryRecorder::escapeJson(s) + "\"";
 }
 
-std::string benchmarkJsonBool(bool b) { return b ? "true" : "false"; }
+std::string telemetryJsonBool(bool b) { return b ? "true" : "false"; }
 
 std::string benchmarkNowStamp() {
     const std::time_t t = std::time(nullptr);
@@ -249,16 +249,16 @@ bool writeSuiteJson(const BenchmarkSuitePaths& suite,
     if (!ensureBenchmarkSuiteDir(suite)) return false;
     std::ostringstream o;
     o << "{\"journalSchemaVersion\":" << kBenchmarkJournalSchemaVersion
-      << ",\"suiteId\":" << benchmarkJsonString(suiteId)
-      << ",\"label\":" << benchmarkJsonString(label)
-      << ",\"sourceRoot\":" << benchmarkJsonString(sourceRoot)
-      << ",\"sourceRootLabel\":" << benchmarkJsonString(sourceRootLabel)
-      << ",\"sourceRootId\":" << benchmarkJsonString(sourceRootId)
-      << ",\"datasetFingerprint\":" << benchmarkJsonString(datasetFingerprint)
-      << ",\"buildVersion\":" << benchmarkJsonString(buildVersion)
-      << ",\"createdAt\":" << benchmarkJsonString(benchmarkNowStamp())
+      << ",\"suiteId\":" << telemetryJsonString(suiteId)
+      << ",\"label\":" << telemetryJsonString(label)
+      << ",\"sourceRoot\":" << telemetryJsonString(sourceRoot)
+      << ",\"sourceRootLabel\":" << telemetryJsonString(sourceRootLabel)
+      << ",\"sourceRootId\":" << telemetryJsonString(sourceRootId)
+      << ",\"datasetFingerprint\":" << telemetryJsonString(datasetFingerprint)
+      << ",\"buildVersion\":" << telemetryJsonString(buildVersion)
+      << ",\"createdAt\":" << telemetryJsonString(benchmarkNowStamp())
       << ",\"storageFormat\":1"
-      << ",\"note\":" << benchmarkJsonString("runs.jsonl is the durable evidence; summary.json is regenerated from it")
+      << ",\"note\":" << telemetryJsonString("runs.jsonl is the durable evidence; summary.json is regenerated from it")
       << "}\n";
     return writeFileAtomic(suite.suiteJson, o.str());
 }
