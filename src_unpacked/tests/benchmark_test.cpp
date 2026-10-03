@@ -193,6 +193,27 @@ int main() {
     if (j3.find("\"diskState\":\"not_available\"") == std::string::npos) { std::cerr << "missing3: diskState\n"; return 57; }
     if (j3.find("\"diskAvailable\":false") == std::string::npos) { std::cerr << "missing3: diskAvailable\n"; return 58; }
   }
+  // S4 semantic reset: the recorder carries its caller's purpose. The default
+  // config is UserDiagnostic (GUI); an explicit Benchmark purpose (CLI) must
+  // serialize as-is. Additive key: schemaVersion stays 9 either way.
+  {
+    msf::TelemetryRecorder rU;
+    msf::TelemetryConfig cU;
+    cU.root = "C:/media"; cU.build = "0.9.4.43"; cU.engine = "1.5.0"; cU.db = "1.0.3";
+    if (cU.purpose != msf::TelemetryPurpose::UserDiagnostic) { std::cerr << "purpose default\n"; return 59; }
+    rU.start(cU);
+    rU.finalize(true, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
+    const std::string jU = rU.toJson();
+    if (jU.find("\"purpose\":\"UserDiagnostic\"") == std::string::npos) { std::cerr << "missingU: purpose\n"; return 60; }
+    msf::TelemetryRecorder rB;
+    msf::TelemetryConfig cB = cU;
+    cB.purpose = msf::TelemetryPurpose::Benchmark;
+    rB.start(cB);
+    rB.finalize(true, 0, 0, 0, 0, 0, 0, 0.0, 0, 0);
+    const std::string jB = rB.toJson();
+    if (jB.find("\"purpose\":\"Benchmark\"") == std::string::npos) { std::cerr << "missingB: purpose\n"; return 61; }
+    if (jU.find("\"schemaVersion\":9") == std::string::npos) { std::cerr << "missingU: schema9\n"; return 62; }
+  }
   rec.reset();
    if (rec.hasData()) return 29;
   std::cout << "benchmark=ok\n";

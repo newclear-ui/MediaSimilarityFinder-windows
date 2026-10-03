@@ -13,7 +13,7 @@ struct ImageFingerprintResult { std::string path; std::uint64_t fingerprint=0, m
 class MediaPipeline {
 public:
  bool image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint=nullptr) const;
- std::vector<ImageFingerprintResult> imageBatch(const std::vector<std::string>& paths,bool preferGpu=true,std::size_t gpuBatchSize=256,std::atomic<bool>* activity=nullptr,TelemetryRecorder* bench=nullptr) const;
+ std::vector<ImageFingerprintResult> imageBatch(const std::vector<std::string>& paths,bool preferGpu=true,std::size_t gpuBatchSize=256,std::atomic<bool>* activity=nullptr,TelemetryRecorder* telemetry=nullptr) const;
   bool gpuAvailable() const { return gpu_.available(); }
   std::string gpuBackendName() const { return gpu_.backendName(); }
   std::string gpuDriverVersion() const { return gpu_.driverVersion(); }

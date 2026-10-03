@@ -31,7 +31,7 @@ static void parallelFor(std::size_t n, F&& fn){
  for(auto& f:futs) f.get();
 }
 bool MediaPipeline::image(const std::string& path,std::uint64_t& fingerprint, std::uint64_t* mirrorFingerprint) const { ImageDecoder d; GrayImage img; if(!d.decode(path,32,32,img)) return false; const auto h=perceptual_hash_pair(img.pixels,img.width,img.height); fingerprint=h.normal; if(mirrorFingerprint) *mirrorFingerprint=h.mirrored; return true; }
-std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<std::string>& paths,bool preferGpu,std::size_t gpuBatchSize,std::atomic<bool>* activity,TelemetryRecorder* bench) const {
+std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<std::string>& paths,bool preferGpu,std::size_t gpuBatchSize,std::atomic<bool>* activity,TelemetryRecorder* telemetry) const {
     auto msSince=[](const std::chrono::steady_clock::time_point& t0){
         return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); };
     struct ActivityGuard { std::atomic<bool>* p; ~ActivityGuard(){ if(p) p->store(false,std::memory_order_relaxed); } } guard{activity};
@@ -47,17 +47,17 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
         std::error_code ec; dec[i].bytes=(unsigned long long)std::filesystem::file_size(path_from_utf8(paths[i]),ec);
     });
     std::vector<std::uint8_t> packed; std::vector<std::size_t> map;
-    if(bench) bench->beginImageBatch(paths.size());
+    if(telemetry) telemetry->beginImageBatch(paths.size());
     for(std::size_t i=0;i<paths.size();++i){
         out[i].path=paths[i];
         if(!dec[i].ok) continue;
         map.push_back(i);
     }
-    if(map.empty()){ if(bench) bench->endImageBatch(); return out; }
+    if(map.empty()){ if(telemetry) telemetry->endImageBatch(); return out; }
     const auto packT0 = std::chrono::steady_clock::now();
     for(const auto oi : map)
         packed.insert(packed.end(),dec[oi].img.pixels.begin(),dec[oi].img.pixels.end());
-    if(bench) bench->addImagePackMs(msSince(packT0));
+    if(telemetry) telemetry->addImagePackMs(msSince(packT0));
     gpuBatchSize=std::max<std::size_t>(1,gpuBatchSize);
     const bool gpuReady = preferGpu && gpu_.available();
     if(preferGpu){
@@ -77,12 +77,12 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
             GpuBackend::HashTiming timing;
             used=gpu_.hashBatch(block,n,hashes.data(),&timing);
             const double gpuMs=msSince(gt0);
-            if(bench){
-                bench->addGpuBatchMs(gpuMs);
+            if(telemetry){
+                telemetry->addGpuBatchMs(gpuMs);
                 // D4a: only recorded when the backend actually timed the call.
                 // An untimed (or failed) batch leaves the metrics not_measured.
                 if(timing.measured)
-                    bench->addImageGpuDeviceTiming(timing.h2dDeviceMs,timing.kernelDeviceMs,
+                    telemetry->addImageGpuDeviceTiming(timing.h2dDeviceMs,timing.kernelDeviceMs,
                                                   timing.d2hDeviceMs,timing.syncHostMs,
                                                   timing.hostTotalMs,true);
             }
@@ -94,7 +94,7 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
             const auto h=perceptual_hash_pair_32(block+k*1024);
             const double cpuHashMs = msSince(t0);
             if(!used){ hashes[k]=h.normal; hMs[base+k]=cpuHashMs; }
-            if(bench) bench->addImageCpuHashMs(cpuHashMs);
+            if(telemetry) telemetry->addImageCpuHashMs(cpuHashMs);
             mirrors[k]=h.mirrored;
         });
         for(std::size_t k=0;k<n;++k){ auto oi=map[base+k]; out[oi].fingerprint=hashes[k];
@@ -113,9 +113,9 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
            && color.bgra.size()==(std::size_t)color.width*color.height*4){
           out[oi].colorThumb=std::move(color); out[oi].hasColorThumb=true;
         }
-        if(bench) bench->addImage(dec[oi].bytes, dec[oi].decodeMs, hMs[m], msSince(t0), usedF[m]!=0, paths[oi]);
+        if(telemetry) telemetry->addImage(dec[oi].bytes, dec[oi].decodeMs, hMs[m], msSince(t0), usedF[m]!=0, paths[oi]);
     });
-    if(bench) bench->endImageBatch();
+    if(telemetry) telemetry->endImageBatch();
     return out;
 }
 }

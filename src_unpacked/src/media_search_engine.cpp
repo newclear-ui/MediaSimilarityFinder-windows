@@ -183,8 +183,8 @@ static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf
     if(vf.hashes[i]) mf.anchors.push_back(vf.hashes[i]);
 }
 void MediaSearchEngine::beginTelemetry(const TelemetryConfig& cfg, bool withSampler) {
-  bench_.start(cfg);
-  if (withSampler) bench_.startSampler([this]() { return gpuActive_.load(std::memory_order_relaxed); });
+  telemetry_.start(cfg);
+  if (withSampler) telemetry_.startSampler([this]() { return gpuActive_.load(std::memory_order_relaxed); });
 }
 void MediaSearchEngine::putColorThumb(const std::string& path, int w, int h, std::vector<unsigned char>&& bgra) const {
   if (w <= 0 || h <= 0 || bgra.size() != (std::size_t)w * h * 4) return;
@@ -222,8 +222,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  const bool hasIgnored=control && !control->ignoredPaths.empty();
   const int workers=recommended_worker_count(policy_,static_cast<int>(std::thread::hardware_concurrency()));
   const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
-  const auto benchT0=std::chrono::steady_clock::now();
-  auto benchMsSince=[&](){ return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchT0).count(); };
+  const auto telemetryT0=std::chrono::steady_clock::now();
+  auto telemetryMsSince=[&](){ return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-telemetryT0).count(); };
   MediaPipeline imagePipeline;
   TelemetryConfig bcfg; bcfg.root=root; bcfg.build=(control&&!control->buildVersion.empty()?control->buildVersion:"?"); bcfg.engine=kEngineVersion; bcfg.db=Database::kDatabaseVersion; bcfg.distance=maxDistance; bcfg.cpuWorkers=workers; bcfg.gpuBatch=gpuBatch; bcfg.gpuBackend=imagePipeline.gpuBackendName(); bcfg.scanImages=!control||control->scanImages; bcfg.scanVideos=!control||control->scanVideos; bcfg.cudaAvailable=imagePipeline.gpuAvailable(); bcfg.purpose=control?control->telemetryPurpose:TelemetryPurpose::UserDiagnostic;
   // B1 Minimal Adaptive Allocation: baseline capacities only. The decision
@@ -342,25 +342,25 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // scheduler (stability-guaranteed by B4 hold + B6 kill band). A cached
   // bool here would silently pin the scan-start verdict (review finding).
   auto schedUseGpuNow = [&]() { return scheduler_.lastDecision().gpuUsed; };
-  const bool benchOn = !control || control->telemetryEnabled;
-  bcfg.detail = benchOn;
-  bench_.start(bcfg);
+  const bool telemetryOn = !control || control->telemetryEnabled;
+  bcfg.detail = telemetryOn;
+  telemetry_.start(bcfg);
   // D8a: attach the identity of the bytes under this root so a later reader
   // can tell "same data" from "same path". A missing or unreadable root
   // records not_available/failed instead of a zero. This is telemetry only
   // and never influences scan behavior.
-  bench_.setDatasetFingerprint(msf::computeDatasetFingerprint(root));
-  if(benchOn) bench_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
-  if(control) bench_.addRevalidateMs(control->revalidateMs);
+  telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(root));
+  if(telemetryOn) telemetry_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
+  if(control) telemetry_.addRevalidateMs(control->revalidateMs);
   // C2: record the calibration run that fed this scan (if any). Skipped
   // runs leave the section not_measured, which is the honest record.
-  if (profCalibrated) bench_.calibration() = profCalib.telemetry;
+  if (profCalibrated) telemetry_.calibration() = profCalib.telemetry;
   auto finishScan=[&](bool completed)->SearchReport{
     // Node A: cancelled/partial benchmarks stay distinguishable from clean
     // completions; file progress separates started/completed/remaining.
     if(!completed){
-      if(control && control->cancel.load(std::memory_order_relaxed)) bench_.setCancelled("cancelled");
-      else bench_.setFailed("", "failed");
+      if(control && control->cancel.load(std::memory_order_relaxed)) telemetry_.setCancelled("cancelled");
+      else telemetry_.setFailed("", "failed");
     }
     // C3: opportunistic recalibration. Only on completed scans fed by a
     // profile, only after K consecutive deviating scans, only with a
@@ -414,7 +414,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
         // Recalibration must never fail a scan.
       }
     }
-    bench_.setFileProgress(r.scanned, r.analyzed, r.scanned > r.analyzed ? r.scanned - r.analyzed : 0);
+    telemetry_.setFileProgress(r.scanned, r.analyzed, r.scanned > r.analyzed ? r.scanned - r.analyzed : 0);
     // B1: record the scheduler decision (initial == current; live adjustment
     // arrives in B2+). Fallbacks accumulate image + video backend fallbacks.
     // B2: current capacities are the observed image/sec rates when both
@@ -423,7 +423,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // when a usable profile fed this scan, else hardware proxies).
     {
       const SchedulerDecision sd = scheduler_.lastDecision();
-      SchedulerTelemetry& st = bench_.scheduler();
+      SchedulerTelemetry& st = telemetry_.scheduler();
       st.markMeasured();
       CpuGpuScheduler::baseCapacities(schedHw, st.initialCpuCapacity, st.initialGpuCapacity);
       scheduler_.currentCapacities(st.currentCpuCapacity, st.currentGpuCapacity);
@@ -433,12 +433,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       st.throttlingEvents = 0; // B4+: hysteresis/policy events
       st.externalLoadThrottling = scheduler_.throttles();
       st.selectedBackend = sd.backend;
-      st.backendFallbacks = (std::uint64_t)r.gpuFallbackImages + bench_.videoGpuFallbacks();
+      st.backendFallbacks = (std::uint64_t)r.gpuFallbackImages + telemetry_.videoGpuFallbacks();
     }
-    bench_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
+    telemetry_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
     return r;
   };
-  bool benchWalkTimed=false;
+  bool telemetryWalkTimed=false;
  const std::string excl = managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{};
  std::size_t done=0, scanned=0, nAdded=0, nModified=0, nUnchanged=0, nRemoved=0;
  std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
@@ -458,7 +458,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // D3-Minimal: bounded walker queue (test override or production default).
   WalkerQueue queue(control && control->walkerQueueCapacity ? control->walkerQueueCapacity
                                                             : WalkerQueue::kDefaultCapacity);
-  bench_.setWalkerCapacity(queue.capacity());
+  telemetry_.setWalkerCapacity(queue.capacity());
   std::atomic_bool walkDone{false};
  bool failed=false, cancelled=false, walkCompleted=false;
  std::size_t lastCommitDone=0, lastCommitScanned=0;
@@ -488,8 +488,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      schedHw.gpuRateKnown = gpuR >= 0; schedHw.gpuRate = gpuR >= 0 ? gpuR : 0;
    }
    scheduler_.maybeReevaluate(schedHw, (long long)schedTickMs());
-   auto results=imagePipeline.imageBatch(batch,schedUseGpuNow(),gpuBatch,&gpuActive_,benchOn?&bench_:nullptr);
-   bench_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
+   auto results=imagePipeline.imageBatch(batch,schedUseGpuNow(),gpuBatch,&gpuActive_,telemetryOn?&telemetry_:nullptr);
+   telemetry_.addImageStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bt0).count());
    // B2: attribute completed images to the backend that hashed them.
    // Coarse by design (batch wall includes shared CPU work); video-side
    // throughput belongs to Node C/E. Feeds the next re-evaluation.
@@ -528,11 +528,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){
    FileState x=changedVideos[k];
-    futs.emplace_back(std::async(std::launch::async,[x,this,benchOn,useGpu,&rangeFileMs,slot = k - from](){
+    futs.emplace_back(std::async(std::launch::async,[x,this,telemetryOn,useGpu,&rangeFileMs,slot = k - from](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(benchOn){ const std::size_t sampled = videoStats.cacheHit ? msf::TelemetryRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; bench_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); bench_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); bench_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
+       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(telemetryOn){ const std::size_t sampled = videoStats.cacheHit ? msf::TelemetryRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; telemetry_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); telemetry_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); telemetry_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
      return j;
     }));
   }
@@ -557,7 +557,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    {
     double rangeMax = 0;
     for (double v : rangeFileMs) rangeMax = std::max(rangeMax, v);
-    bench_.recordVideoRange(to > from ? to - from : 0, rangeMax);
+    telemetry_.recordVideoRange(to > from ? to - from : 0, rangeMax);
    }
    // Prompt stop: in-flight analyses must still join, but their results are
    // discarded and no new range starts, so the scan winds down instead of
@@ -594,7 +594,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      const auto vt0=std::chrono::steady_clock::now();
      if(!processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers))) failed=true;
      else videoBase+=static_cast<std::size_t>(workers);
-     bench_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
+     telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
     }
    }
    if(!failed && scanned-lastCommitScanned>=1000){ if(!checkpoint()) failed=true; }
@@ -613,8 +613,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // as new ??identical to an unwalked file on cancel.
     bool waited=false;
     const auto pr=queue.push(std::move(f), control?&control->cancel:nullptr, &waited);
-    if(waited) bench_.noteWalkerBlocked();
-    if(pr==WalkerQueue::PushResult::Pushed) bench_.recordWalkerEnqueue(queue.size());
+    if(waited) telemetry_.noteWalkerBlocked();
+    if(pr==WalkerQueue::PushResult::Pushed) telemetry_.recordWalkerEnqueue(queue.size());
    };
    s.scan_stream(root, excl, cb);
    walkDone.store(true); queue.shutdown();
@@ -626,11 +626,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // a genuine consumer-idle poll (starved tick). Spurious wakeups and the
     // drained exit are not counted.
     const bool dataReady = queue.waitForData(50);
-    if(queue.tryPop(x)){ bench_.recordWalkerDequeue(queue.size()); have=true; }
-    else if(!dataReady && !walkDone.load()) bench_.noteWalkerStarved(); }
+    if(queue.tryPop(x)){ telemetry_.recordWalkerDequeue(queue.size()); have=true; }
+    else if(!dataReady && !walkDone.load()) telemetry_.noteWalkerStarved(); }
    if(have) processOne(std::move(x));
   if(stopped(control)) cancelled=true;
-  else if(walkDone.load() && queue.empty()){ if(!benchWalkTimed){ benchWalkTimed=true; bench_.addWalkMs(benchMsSince()); } walkCompleted=true; break; }
+  else if(walkDone.load() && queue.empty()){ if(!telemetryWalkTimed){ telemetryWalkTimed=true; telemetry_.addWalkMs(telemetryMsSince()); } walkCompleted=true; break; }
  }
  if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
   while(!failed && !cancelled && videoBase<changedVideos.size()){
@@ -638,7 +638,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(stopped(control)){ cancelled=true; break; }
    const auto vt0=std::chrono::steady_clock::now();
    if(!processVideoRange(videoBase,videoBase+n)) failed=true; else videoBase+=n;
-   bench_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
+   telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
   }
   // D3-Minimal: wake any producer blocked at this point on every exit
   // path (failed/cancelled/normal). Idempotent; join cannot hang on it.
@@ -685,7 +685,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   ScanStats st;
   const auto benchAT0=std::chrono::steady_clock::now();
   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
-   if(benchOn) bench_.addStreamedMatch();
+   if(telemetryOn) telemetry_.addStreamedMatch();
    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
    if(control && control->onMatch) {
@@ -700,11 +700,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       }
     }
   }, stopCheck);
-  bench_.addAnalyzeMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchAT0).count());
+  telemetry_.addAnalyzeMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchAT0).count());
   // D9a: hand the analyze stage split to the recorder. Copy only -- the
   // pipeline fills a plain struct and no recorder pointer ever travels down
   // into ScanPipeline or the verification code.
-  if(benchOn) bench_.setAnalyzeTelemetry(st.analyze);
+  if(telemetryOn) telemetry_.setAnalyzeTelemetry(st.analyze);
   // A stop during analyze() aborts the pair loops above (partial matches were
   // already streamed via onMatch); mark the report incomplete like every
   // other stop path. analyze() itself never propagates. Only completed scans

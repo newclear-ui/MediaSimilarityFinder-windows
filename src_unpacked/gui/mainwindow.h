@@ -21,7 +21,11 @@
 #include "../src/database.h"
 #include "../src/resource_policy.h"
 #include "../src/monitor.h"
-#include "benchmark_worker.h"   // S4: QThread worker that drives BenchmarkRunner
+
+// GUI execution resource strategy (user's real-search resource choice, exactly
+// one selected). This is intentionally NOT the CLI benchmark comparison mode:
+// the names coincide (AUTO / CPU-only / GPU-max) but the semantics differ.
+enum class ExecutionResourceStrategy { Auto, CpuOnly, GpuMax };
 
 class QLineEdit; class QSystemTrayIcon; class QTreeWidget; class QTreeWidgetItem;
 class QListWidget; class QListWidgetItem; class QPushButton; class QProgressBar;
@@ -77,7 +81,7 @@ signals:
   void progress(int,QString);
   void progressCount(qulonglong,qulonglong);
   void walkedCount(qulonglong);
-  void benchmarkReady(QString);
+  void telemetryReady(QString);
   void listingProgress(std::size_t);
   void matchesArrived();            // throttled; call takePending()
   void quickLoaded(int);            // stored matches reloaded from the index
@@ -132,22 +136,14 @@ private slots:
   void onResults(QVector<GuiFile> files, QStringList matchRows);
   void onQuickLoaded(int);
   void onRevalidated(int,int);
-    void onBenchmark(QString);
-    void showBenchmarkDialog(const QString& json);
-    // DORMANT GUI benchmark-runner wiring: the detailed-log path never calls
-    // BenchmarkRunner. Kept compiling only; no UI entry point reaches it.
-    void startBenchmark(); void cancelBenchmark();
-    void onBenchmarkStarted(int caseTotal);
-    void onBenchmarkCase(BenchmarkGuiProgress progress);
-    void onBenchmarkFinished(BenchmarkGuiOutcome outcome);
-    void onBenchmarkFailed(QString message);
-    void onBenchmarkBusy(bool busy);
+    void onDetailedLog(QString);
+    void showDetailedLogDialog(const QString& json);
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
   void groupViewChanged(int);
-  void applyExecutionMode(); void enforceModeSelection(); void updateKindSelection();
+  void applyExecutionMode(); void enforceStrategySelection(); void updateKindSelection();
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
   void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
@@ -171,23 +167,14 @@ private:
   UiLang lang() const;
   void closeEvent(QCloseEvent*) override;
 
-  // --- S4 GUI execution strategy (DORMANT benchmark-runner wiring) ---------
-  // The selected checkboxes of the GUI execution strategy, in S2's canonical
-  // order (AUTO, CPU-only, GPU-max). Fed only by the dormant startBenchmark()
-  // path below; the detailed-log path never reads benchmark modes.
-  std::vector<msf::GpuBackendKind> selectedBenchModes() const;
-  // Maps the existing photo/video selection onto S1's MediaScope. The toggle-button
-  // semantics mirror the former kind-image/kind-video actions; no new scope enum.
-  msf::MediaScope benchMediaScope() const;
-  // Single gate for the scan/detailed-log enable state. A scan in progress
-  // blocks starting detailed logging, and Pause stays a scan-only control
+  // --- GUI execution resource strategy --------------------------------------
+  // The single-select strategy checkboxes. Read through executionStrategy();
+  // never handed to any benchmark runner.
+  ExecutionResourceStrategy executionStrategy() const;
+  // Single gate for the scan/execution enable state. A scan in progress
+  // disables starting another run, and Pause stays a scan-only control
   // (the detailed-log path has no Pause).
-  void updateBenchmarkUiState();
-  void setBenchmarkStatusText(const QString&);
-  void teardownBenchmarkThread();
-  // The raw source string the dormant benchmark path would run against,
-  // mirroring what startScan uses.
-  QString benchmarkSourceRoot() const;
+  void updateExecutionUiState();
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
   void rebuildGroups();          // union-find over accumulated matches
@@ -267,19 +254,13 @@ private:
   QToolBar* toolBar_=nullptr;
   QLineEdit* folder_=nullptr;   QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
     *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr;
-  QString lastBenchJson_;
+  QString lastTelemetryJson_;
   QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* logTgl_=nullptr;
-  // S4 benchmark controls. logTgl_ above is the pre-existing legacy telemetry
-  // toggle and is deliberately NOT reused as a mode selector: it decides whether
-  // the ordinary scan records legacy telemetry, not which modes are measured.
-  QCheckBox *benchAuto_=nullptr,*benchCpu_=nullptr,*benchGpu_=nullptr;
-  QButtonGroup* benchModeGroup_=nullptr;   // enforces single resource-mode select
-  QThread* benchThread_=nullptr;
-  BenchmarkWorker* benchWorker_=nullptr;
-  std::unique_ptr<msf::BenchmarkGuiStorage> benchStorage_;
-  bool benchmarking_=false;
-  int benchCaseTotal_=0, benchCaseDone_=0;
+  // Execution resource strategy (single-select): the user's real-search
+  // resource choice. logTgl_ enables diagnostic telemetry on the scan.
+  QCheckBox *strategyAuto_=nullptr,*strategyCpu_=nullptr,*strategyGpu_=nullptr;
+  QButtonGroup* strategyGroup_=nullptr;   // enforces single strategy select
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
     *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;

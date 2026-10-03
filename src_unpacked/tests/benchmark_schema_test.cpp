@@ -13,7 +13,7 @@
 // assumes:
 //
 //  * The only structured reader of benchmark JSON is
-//    MainWindow::showBenchmarkDialog (gui/mainwindow.cpp), which uses
+//    MainWindow::showDetailedLogDialog (gui/mainwindow.cpp), which uses
 //    QJsonDocument::fromJson and then does key lookups: root["analyze"] style
 //    access via toObject(), and scalar access via toDouble()/toBool().
 //  * Nothing iterates the object's keys, compares a field count, or requires
@@ -44,7 +44,7 @@ void expect(bool ok, const char* what) {
   if (!ok) { ++failures; std::cerr << "FAIL: " << what << "\n"; }
 }
 
-// Exactly the access pattern MainWindow::showBenchmarkDialog uses.
+// Exactly the access pattern MainWindow::showDetailedLogDialog uses.
 QJsonObject parseLikeTheGui(const std::string& json, bool* parsedOk) {
   QJsonParseError perr;
   const QJsonDocument doc = QJsonDocument::fromJson(

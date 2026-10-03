@@ -150,6 +150,17 @@ int main(int argc, char** argv) {
       "group", "files", "pairs",
       // view-mode combo entries
       "viewXL", "viewL", "viewM", "viewS", "viewDetails", "viewTiles",
+      // S4 detailed logging + execution strategy (renamed off the bench* keys;
+      // a missing entry would render the raw key in the toolbar/dialog)
+      "detailLogToggle", "detailLogTip", "detailLogTitle", "detailLogSaved",
+      "detailLogSaveFail", "detailLogSave", "detailLogClose", "detailLogState",
+      "detailLogDone", "detailLogStopped", "detailLogOff",
+      "strategyModeAuto", "strategyModeCpu", "strategyModeGpu", "strategyModeTip",
+      "searchLog",
+      // detailed-log result dialog rows
+      "detailLogWall", "detailLogFiles", "detailLogImages", "detailLogVideos",
+      "detailLogCpuUse", "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",
+      "detailLogMatches", "detailLogSlow",
     };
     int missing = 0;
     for (const char* k : kKeys) {

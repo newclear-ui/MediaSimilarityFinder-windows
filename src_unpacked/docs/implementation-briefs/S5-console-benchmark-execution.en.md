@@ -1,7 +1,10 @@
 # Implementation Brief — S5 Console Benchmark Execution (Design Baseline)
 
-Status: **PRE-REGISTERED** — this document is the confirmed contract and the
-investigation results before S5 starts. S5 implementation code must not land before it.
+Status: **REVALIDATED 2026-10-03** — CLI `--benchmark` re-verified against the
+S4 semantic-reset tree: real `--benchmark` execution exit=0 with
+`suite.json`/`runs.jsonl`/`summary.json` written, S2 executor + S3
+journal/storage contracts unchanged, CPU CTest 100/100 and GPU CTest 101/101.
+S5 is still not declared CLOSED (see §16).
 Version basis: v0.9.4.43
 
 ---
@@ -322,8 +325,9 @@ The `CPU FB` display item the Console mockup placed on every mode result row
 
 ### Regression
 
-- benchmark_core / journal / store / integration / gui_store / worker /
-  ui_benchmark / ui_benchmark_e2e all pass
+- benchmark_core / journal / store / integration tests pass
+  (the retired GUI benchmark worker/storage tests live under
+  docs/architecture/legacy/ and are not part of the active suite)
 - Full CPU CTest and full GPU CTest
 - Confirm `--benchmark` is wired to a real benchmark execution
 - `git diff --check`, no stale objects, no leftover benchmark build artifacts

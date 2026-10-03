@@ -107,16 +107,16 @@ const std::vector<MediaFile>& files() const { return files_; }
   // batches. Reset to 0 at the start of every scan().
   std::uint64_t gpuImagesProcessed() const { return gpuImagesProcessed_.load(); }
   bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
-  bool hasTelemetry() const { return bench_.hasData(); }
-  std::string telemetryJson() const { return bench_.toJson(); }
+  bool hasTelemetry() const { return telemetry_.hasData(); }
+  std::string telemetryJson() const { return telemetry_.toJson(); }
   // B1: last scheduler decision for this engine (valid after scan()).
   SchedulerDecision lastSchedulerDecision() const { return scheduler_.lastDecision(); }
   bool hasSchedulerDecision() const { return scheduler_.hasDecision(); }
   void beginTelemetry(const TelemetryConfig& cfg, bool withSampler);
-  void abortTelemetry() { bench_.abortUnfinished(); }
+  void abortTelemetry() { telemetry_.abortUnfinished(); }
   // D8a: the dataset identity recorded by the last scan. Lets a caller (and
   // a test) confirm which input bytes produced the telemetry it is reading.
-  const DatasetFingerprint& lastTelemetryDataset() const { return bench_.datasetFingerprint(); }
+  const DatasetFingerprint& lastTelemetryDataset() const { return telemetry_.datasetFingerprint(); }
   bool getColorThumb(const std::string& path, int& w, int& h, std::vector<unsigned char>& bgra) const;
   bool getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const;
   private:
@@ -124,7 +124,7 @@ const std::vector<MediaFile>& files() const { return files_; }
   mutable GpuBackend videoGpu_;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
   mutable std::atomic<bool> gpuActive_{false};
-  TelemetryRecorder bench_;
+  TelemetryRecorder telemetry_;
   // B1 Minimal Adaptive Allocation: decided per scan, re-evaluated at
   // existing phase points. Gates backend use; never touches workers/queues.
   // B2: image-path recent-throughput windows feed observed rates in.

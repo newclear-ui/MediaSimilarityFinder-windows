@@ -1,6 +1,6 @@
 # Implementation Brief — S5 Console Benchmark Execution (Pre-register)
 
-Status: **DESIGN BASELINE / REVALIDATION REQUIRED 2026-10-03** — CLI 개발 Benchmark의 현재 설계 계약이다. 기존 S5 구현은 역사적 구현 상태로 존재하지만, GUI 상세 로그 semantic reset 이후 S4 코드 정리와 함께 재검증해야 한다.
+Status: **2026-10-03 REVALIDATED** — S4 semantic-reset 트리에서 CLI `--benchmark` 재검증 완료: 실제 `--benchmark` 실행 exit=0, `suite.json`/`runs.jsonl`/`summary.json` 생성, S2 executor + S3 journal/storage 계약 유지, CPU CTest 100/100·GPU CTest 101/101. S5 CLOSED 선언은 아니다(§16 조건 유지).
 Version 기준: v0.9.4.43
 
 ---
@@ -312,8 +312,8 @@ Console mockup 이 mode 결과 행마다 두던 `CPU FB`(CPU fallback 발생 여
 
 ### 회귀
 
-- benchmark_core / journal / store / integration / gui_store / worker /
-  ui_benchmark / ui_benchmark_e2e 전부 통과
+- benchmark_core / journal / store / integration 테스트 통과
+  (GUI benchmark worker/storage 테스트는 `docs/architecture/legacy/` 로 이동되어 active suite 에 없음)
 - CPU 전체 CTest, GPU 전체 CTest
 - `--benchmark` 가 실제 benchmark 실행으로 연결되었는지 확인
 - `git diff --check`, stale object 없음, benchmark build artifact 잔여 없음

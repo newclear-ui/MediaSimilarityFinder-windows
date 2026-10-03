@@ -117,10 +117,6 @@ add_library(msf_core STATIC
     # S6-6 comparison metrics. Numeric deltas over the S6-5 candidates, consuming the
     # S6-4 aggregates. A computed number is not a verdict: no threshold or direction.
     src/benchmark_data_comparison_metrics.cpp
-  # S4: GUI benchmark storage. Per-mode latest snapshots under Benchmark/GUI,
-  # reusing S3's atomic write and suite lock. It executes nothing and writes no
-  # journal; the GUI drives BenchmarkRunner and hands the result here.
-  src/benchmark_gui_store.cpp
     src/media_search_engine.cpp
     src/monitor.cpp
     src/benchmark.cpp
@@ -403,41 +399,16 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_integration_test tests/benchmark_integration_test.cpp)
     target_link_libraries(msf_benchmark_integration_test PRIVATE msf_core Qt6::Core)
     add_test(NAME benchmark_integration_test COMMAND msf_benchmark_integration_test)
-    # S4 GUI storage: per-mode snapshot projection, preservation of unselected
-    # modes, atomic replacement, and instance exclusion via the S3 suite lock.
-    add_executable(msf_benchmark_gui_store_test tests/benchmark_gui_store_test.cpp)
-    target_link_libraries(msf_benchmark_gui_store_test PRIVATE msf_core)
-    add_test(NAME benchmark_gui_store_test COMMAND msf_benchmark_gui_store_test)
-    # S4 benchmark worker: single BenchmarkRunner invocation, selected-mode subset,
-    # file-level ordering, and S2 cancellation semantics behind Qt signals.
-    add_executable(msf_benchmark_worker_test tests/benchmark_worker_test.cpp
-                   gui/benchmark_worker.cpp gui/benchmark_worker.h)
-    target_link_libraries(msf_benchmark_worker_test PRIVATE msf_core Qt6::Core)
-    target_include_directories(msf_benchmark_worker_test PRIVATE
+    # S4 GUI detailed logging: the execution-strategy controls in the real
+    # MainWindow, the single-select gate, the [Detailed Logs] toggle, and the
+    # absence of any benchmark run/stop/status workflow.
+    add_executable(msf_ui_detailed_log_test tests/ui_detailed_log_test.cpp
+                   gui/mainwindow.cpp gui/mainwindow.h)
+    target_link_libraries(msf_ui_detailed_log_test PRIVATE msf_core Qt6::Widgets)
+    target_include_directories(msf_ui_detailed_log_test PRIVATE
                                ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
-    # This target is declared before qt_standard_project_setup(), which is what
-    # turns AUTOMOC on for the project, so BenchmarkWorker's signals would not be
-    # generated otherwise.
-    set_target_properties(msf_benchmark_worker_test PROPERTIES AUTOMOC ON)
-    add_test(NAME benchmark_worker_test COMMAND msf_benchmark_worker_test)
-    # S4 GUI integration: the benchmark controls in the real MainWindow, the
-    # execution-selection gate, and the legacy benchTgl_ path staying intact.
-    add_executable(msf_ui_benchmark_test tests/ui_benchmark_test.cpp
-                   gui/mainwindow.cpp gui/mainwindow.h
-                   gui/benchmark_worker.cpp gui/benchmark_worker.h)
-    target_link_libraries(msf_ui_benchmark_test PRIVATE msf_core Qt6::Widgets)
-    target_include_directories(msf_ui_benchmark_test PRIVATE
-                               ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
-    set_target_properties(msf_ui_benchmark_test PROPERTIES AUTOMOC ON)
-    add_test(NAME ui_benchmark_test COMMAND msf_ui_benchmark_test)
-    # S4 GUI benchmark END-TO-END: removed with the GUI run/stop buttons. The GUI
-    # benchmark entry point no longer exists (benchTgl_ + run_level isolation via the
-    # console CLI is the sanctioned path), so this test asserted UI that was deleted.
-    # Kept as a comment rather than deleted so the removal is traceable.
-    # add_executable(msf_ui_benchmark_e2e_test tests/ui_benchmark_e2e_test.cpp
-    #                gui/mainwindow.cpp gui/mainwindow.h
-    #                gui/benchmark_worker.cpp gui/benchmark_worker.h)
-    # ...
+    set_target_properties(msf_ui_detailed_log_test PROPERTIES AUTOMOC ON)
+    add_test(NAME ui_detailed_log_test COMMAND msf_ui_detailed_log_test)
     # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
     # and a scratch app dir, and it measures wall clock, so it is run manually
     # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in
@@ -627,7 +598,7 @@ if(MSF_BUILD_GUI)
       gui/main.cpp gui/mainwindow.cpp gui/mainwindow.h
       # S4 benchmark worker. Listed for AUTOMOC; MainWindow does not use it yet,
       # which is why no layout or control was touched in this stage.
-      gui/benchmark_worker.cpp gui/benchmark_worker.h)
+     )
     # GUI subsystem: no console window on double-click. The --version/--help/
     # --smoke flags attach to the parent console explicitly (see main.cpp).
     set_target_properties(MediaSimilarityFinder PROPERTIES WIN32_EXECUTABLE TRUE)
@@ -665,7 +636,7 @@ if(MSF_BUILD_GUI)
     # Same-process read-back would hit QSettings' in-memory cache, so the two
     # phases run as separate processes to genuinely prove disk persistence.
     if(MSF_BUILD_TESTS)
-      add_executable(msf_ui_settings_test tests/ui_settings_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+      add_executable(msf_ui_settings_test tests/ui_settings_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_ui_settings_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_ui_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       set(MSF_UI_SETTINGS_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-probe")
@@ -698,12 +669,12 @@ if(MSF_BUILD_GUI)
       add_test(NAME ui_settings_migrate_none_verify COMMAND msf_ui_settings_test --migrate-none-verify "${MSF_MIGRATE_NONE_DIR}")
       # Worker streaming + persistence probe: real scan over identical BMPs,
       # asserts live matches stream AND survive in a fresh engine handle.
-      add_executable(msf_scan_streaming_test tests/scan_streaming_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+      add_executable(msf_scan_streaming_test tests/scan_streaming_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_scan_streaming_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_streaming_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_streaming_test COMMAND msf_scan_streaming_test)
       # D3-Minimal: bounded walker queue (unit mechanism + live integration).
-      add_executable(msf_walker_queue_test tests/walker_queue_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+      add_executable(msf_walker_queue_test tests/walker_queue_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_walker_queue_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_walker_queue_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME walker_queue_test COMMAND msf_walker_queue_test)
@@ -711,13 +682,13 @@ if(MSF_BUILD_GUI)
       # (folder -> startScan -> worker -> drainMatches -> group render),
       # offscreen with isolated QSettings. Covers what --smoke (window only)
       # and ScanWorker-level tests leave open.
-      add_executable(msf_scan_workflow_test tests/scan_workflow_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+      add_executable(msf_scan_workflow_test tests/scan_workflow_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_scan_workflow_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_workflow_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_workflow_test COMMAND msf_scan_workflow_test)
       # E2E video probe: copy + libx264 re-encode + trim + stranger through a
       # real scan (full XOR -> CandidateIndex incl. L1 anchors -> temporal).
-      add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+      add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_video_scan_e2e_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_video_scan_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME video_scan_e2e_test COMMAND msf_video_scan_e2e_test)
@@ -726,17 +697,17 @@ if(MSF_BUILD_GUI)
       add_executable(msf_view_mode_probe tests/view_mode_probe.cpp)
       target_link_libraries(msf_view_mode_probe PRIVATE Qt6::Widgets)
       add_test(NAME view_mode_probe COMMAND msf_view_mode_probe)
-      add_executable(msf_thumb_layout_test tests/thumb_layout_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+      add_executable(msf_thumb_layout_test tests/thumb_layout_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_thumb_layout_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_thumb_layout_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME thumb_layout_test COMMAND msf_thumb_layout_test)
       # QuickLook pipe protocol probe (fake in-process server, exact-bytes check).
-      add_executable(msf_quicklook_test tests/quicklook_pipe_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+      add_executable(msf_quicklook_test tests/quicklook_pipe_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_quicklook_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_quicklook_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME quicklook_pipe_test COMMAND msf_quicklook_test)
       if(WIN32)
-        add_executable(msf_reveal_window_test tests/reveal_window_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/benchmark_worker.cpp gui/benchmark_worker.h)
+        add_executable(msf_reveal_window_test tests/reveal_window_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
         target_link_libraries(msf_reveal_window_test PRIVATE msf_core Qt6::Widgets)
         target_include_directories(msf_reveal_window_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
         add_test(NAME reveal_window_test COMMAND msf_reveal_window_test)

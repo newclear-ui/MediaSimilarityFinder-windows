@@ -21,8 +21,8 @@
 // The production adapter reuses the ordinary product scan path. There is no
 // second search engine anywhere in this file.
 //
-// Relationship to TelemetryRecorder (src/benchmark.*): the legacy recorder is
-// left completely untouched and keeps its own meaning. The structured state
+// Relationship to TelemetryRecorder (src/benchmark.*): the shared recorder
+// keeps its own meaning as observation only. The structured state
 // below is the source of truth; only a minimum of progress is mirrored into the
 // recorder when a run finishes, and the recorder is never read back into the
 // structured state.
@@ -282,7 +282,7 @@ public:
                          GpuBackendKind requested,
                          BenchmarkModeResult& out) = 0;
 
-    // Optional hook so a legacy recorder can mirror minimal progress. The
+    // Optional hook so shared telemetry can mirror minimal progress. The
     // recorder is never read back.
     virtual void onRunFinished(const BenchmarkRun&) {}
 };

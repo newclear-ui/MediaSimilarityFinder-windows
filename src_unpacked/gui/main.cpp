@@ -158,7 +158,7 @@ static int runHeadlessScan(const msf::CommandLineOptions& opt, int argc, char** 
 }
 
 // S5 Console benchmark. Reuses S2's BenchmarkRunner/ProductionBenchmarkExecutor and
-// S3's BenchmarkSession exactly as the GUI does; this only supplies the environment
+// S3's BenchmarkSession; this only supplies the environment
 // those layers need. No MainWindow is constructed, and the platform plugin is not
 // required, so a benchmark run never needs a display.
 static int runConsoleBenchmark(const msf::CommandLineOptions& opt, int argc, char** argv) {

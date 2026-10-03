@@ -11,9 +11,12 @@
 #include <thread>
 #include <vector>
 namespace msf {
-// Node A (0.9.4 development line): benchmark is the instrumentation layer for
-// the Adaptive Scheduler and video-decode work, not just a result display.
-// A measured zero and "never measured" must never share one representation.
+// Node A (0.9.4 development line): TelemetryRecorder is the shared runtime
+// instrumentation layer for the Adaptive Scheduler and video-decode work,
+// not just a result display. Callers declare their purpose explicitly:
+// UserDiagnostic (GUI real-search diagnostics) or Benchmark (CLI controlled
+// comparison). A measured zero and "never measured" must never share one
+// representation.
 enum class MeasureState { NotMeasured, Measured, NotAvailable, Partial, Failed, Fallback };
 inline const char* measureStateName(MeasureState s) {
   switch (s) {
@@ -102,7 +105,10 @@ public:
   static constexpr std::size_t kSlowTop = 20;
   static constexpr int kSampleMs = 250;
   static constexpr std::size_t kMaxSamples = 50000;
-  // Independent of app/engine/db versions; bump only on benchmark schema change.
+  // Independent of app/engine/db versions; bump only on telemetry JSON
+  // document change. NOTE: this number versions the telemetry document's
+  // compatibility, not the CLI benchmark workflow; "benchmark" in the name
+  // is legacy schema identity and is kept so existing readers keep working.
   // v2: calibration metric states (C2 first fills CalibrationTelemetry).
   // v3: D1a image-batch observability keys (packMs, cpuHashMs, batchCount,
   // batchItems, batchMaxDepth, batchState).
