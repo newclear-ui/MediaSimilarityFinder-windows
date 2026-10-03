@@ -1,4 +1,4 @@
-# Implementation Brief — S5 Console Benchmark Execution (Pre-register)
+# Implementation Brief — S5 Console Benchmark Execution (Design Baseline)
 
 Status: **PRE-REGISTERED** — this document is the confirmed contract and the
 investigation results before S5 starts. S5 implementation code must not land before it.
@@ -26,8 +26,7 @@ Console.
   per-mode result model, aggregate precedence, the cancellation state model
 - S3 CLOSED: `BenchmarkSession` (suite lock + journal + summary regeneration),
   `BenchmarkStorePaths`, replay/recovery, 137 E2E checks
-- S4 CLOSED: `BenchmarkGuiStorage`, `gui/benchmark_worker.*`, MainWindow wiring,
-  `BenchmarkRequest::resourcePolicy` (optional), the datasetFingerprint path
+- S4 current design: GUI Detailed Logging with `TelemetryRecorder/UserDiagnostic`; S5 does not depend on GUI benchmark execution UI or `BenchmarkGuiStorage`
 
 ## 3. Reuse decision (no new engine)
 
@@ -364,10 +363,9 @@ S5 is not declared CLOSED until all of the following hold.
 - The legacy `BenchmarkRecorder` schema
 - The F/NVDEC state (stays `NO`)
 
-## 19. Implementation status and verification reference
+## 19. Current status and verification reference
 
-This is the **design baseline document**. The A1 / A2 / B / C / D / E decisions above
-are preserved as written and are not adjusted to match the implementation. The actual
+This is the **CLI developer Benchmark design baseline**. Historical S5 implementation and verification evidence remains recorded, but S5 must be revalidated when development resumes after the S4 semantic reset. The actual
 implementation and verification results are kept separate, in the documents below.
 
 ```text

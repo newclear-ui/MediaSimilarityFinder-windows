@@ -1,6 +1,6 @@
 # Implementation Brief — S5 Console Benchmark Execution (Pre-register)
 
-Status: **PRE-REGISTERED** — 이 문서는 S5 착수 전 확정 계약과 조사 결과다. S5 구현 코드는 이 문서보다 먼저 들어가면 안 된다.
+Status: **DESIGN BASELINE / REVALIDATION REQUIRED 2026-10-03** — CLI 개발 Benchmark의 현재 설계 계약이다. 기존 S5 구현은 역사적 구현 상태로 존재하지만, GUI 상세 로그 semantic reset 이후 S4 코드 정리와 함께 재검증해야 한다.
 Version 기준: v0.9.4.43
 
 ---
@@ -25,8 +25,7 @@ S5는 Console benchmark 실행과 renderer를 담당한다.
   aggregate precedence, 취소 상태 모델
 - S3 CLOSED: `BenchmarkSession`(suite lock + journal + summary 재생성),
   `BenchmarkStorePaths`, replay/recovery, E2E 137 checks
-- S4 CLOSED: `BenchmarkGuiStorage`, `gui/benchmark_worker.*`, MainWindow 배선,
-  `BenchmarkRequest::resourcePolicy`(optional), datasetFingerprint 경로
+- S4 current design: GUI Detailed Logging with `TelemetryRecorder/UserDiagnostic`; S5 does not depend on GUI benchmark execution UI or `BenchmarkGuiStorage`
 
 ## 3. 재사용 결정 (새 engine 없음)
 
@@ -330,7 +329,7 @@ Console mockup 이 mode 결과 행마다 두던 `CPU FB`(CPU fallback 발생 여
 - cancellation 과 partial preservation 이 동작한다
 - TTY / non-interactive 출력이 모두 정상이다
 - Console renderer 가 정의된 정보를 표시한다
-- GUI benchmark 동작이 깨지지 않는다
+- GUI 상세 로그는 독립된 S4 사용자 작업 경로로 유지된다
 - S1/S2/S3 테스트 semantics 가 변경되지 않는다
 - CPU 전체 CTest PASS / GPU 전체 CTest PASS
 - `git diff --check` PASS / stale object 없음 / build artifact 잔여 없음
@@ -354,10 +353,9 @@ Console mockup 이 mode 결과 행마다 두던 `CPU FB`(CPU fallback 발생 여
 - legacy `BenchmarkRecorder` schema
 - F/NVDEC 상태 (`NO` 유지)
 
-## 19. 구현 상태와 verification reference
+## 19. 현재 상태와 verification reference
 
-이 문서는 **설계 기준 문서**이며 위 A1 / A2 / B / C / D / E 결정은 구현 결과와 무관하게
-그대로 유지된다. 실제 구현·검증 결과는 아래 문서에 분리되어 있다.
+이 문서는 **CLI 개발 Benchmark의 설계 기준 문서**다. 기존 S5 구현과 검증 결과는 역사적 증거로 보존하지만, S4 semantic reset 이후 실제 S5 재개 시 다시 검증한다. 실제 구현·검증 결과는 아래 문서에 분리되어 있다.
 
 ```text
 f4c3fdd  S5: add benchmark CLI parsing
