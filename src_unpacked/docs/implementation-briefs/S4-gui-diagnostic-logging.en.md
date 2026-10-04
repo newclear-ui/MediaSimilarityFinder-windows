@@ -1,6 +1,6 @@
 # Implementation Brief — S4 GUI Detailed Logging
 
-Status: DESIGN RESET / PRE-IMPLEMENTATION — current baseline as of 2026-10-03. Code implementation starts only after this design is accepted and a separate instruction is issued.
+Status: IMPLEMENTED / VERIFICATION IN PROGRESS — current baseline 0.9.4.44 (`6ada90f`). The design reset remains the semantic contract; this brief records the implemented state.
 
 Related architecture: docs/architecture/gui-diagnostic-logging.ko.md / .en.md
 
@@ -135,5 +135,5 @@ S4 is not CLOSED until the documents and code agree, [Detailed Logs] works on th
 ## Current status (2026-10-03, at cf126c4)
 
 - S4 implementation: PASS. GUI visible UI verified directly by the user: PASS.
-- Functional Detailed Logs verification is DEFERRED: generating Detailed Logs on the real Search/Update path cannot be validated end to end yet because the product search/index/image-video comparison algorithms are not final.
+- Functional Detailed Logs acceptance is DEFERRED: the real Search/Update -> Detailed Logs generation/display/save path is code-connected and regression-covered, but the final product acceptance audit has not yet been completed.
 - S4 status: verification in progress (not CLOSED). The section 10 exit condition above stands as the design contract.

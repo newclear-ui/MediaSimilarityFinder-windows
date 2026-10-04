@@ -2,7 +2,7 @@
 
 ## Current development version
 
-0.9.4.34 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, EXIF Orientation query path defect corrected; I-2 passed all gates, production integration is the next step)
+0.9.4.44 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4; S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL)
 
 Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing (currently NVIDIA CUDA backend), incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 
@@ -56,6 +56,15 @@ The project is explicitly a CPU+GPU cooperative application.
 Detailed target architecture: docs/architecture/resource-scheduling.ko.md and docs/architecture/resource-scheduling.en.md. Multi-vendor backend roadmap: docs/architecture/gpu-backend-roadmap.ko.md and docs/architecture/gpu-backend-roadmap.en.md.
 
 Important status: 0.9.4.26 implements Nodes A–C plus D1a/D1b observability, D2 completion-order harvest, the D3-Minimal bounded walker queue, D4a CUDA backend internal timing, D8a/D8b the reproducible and scaled dataset (benchmark schemaVersion 8), D9a the analyze internal stage split (schemaVersion 9), the 0.9.4.24 QSettings identity change, 0.9.4.25 D9b Candidate B which is NOT ACCEPTED, and 0.9.4.26 D9c and D9d which are both instrumentation builds. D9c measured where the 8.564 ms expensive verify goes: decode 94.90%, the stat+64 KiB quick-hash key 3.76%, frame_ssim 0.55%, crop/aspect 0.17%, mirror flip 0.16%, other 0.41%, with the seven exclusive stages plus the remainder summing to verifyMs exactly. D9d then decomposed that decode region across 25,898 calls (12,949 decode + 12,949 decodePreserveAspect) at 4.4654 ms per call: open (CreateDecoderFromFilename) 62.15%, factory (per-call WIC COM CoCreateInstance) 27.39%, copy (CopyPixels, which is where WIC actually decompresses) 5.15%, comInit 0.43%, resize/Fant 0.32%, convert 0.27%, EXIF metadata 0.17%, orient 0.01%. So open+factory is 89.54% of decode and 84.9% of the entire expensive verify, while the actual image decompression is a twentieth of it. Three plausible targets were refuted by measurement: WICBitmapInterpolationModeFant (0.32%), EXIF skip (0.17%), and the decompression itself. D9d also settled the question D9c could not: the verify cache's global mutex is NOT a bottleneck, with 40,417 acquires at 0.0002 ms wait and 0.0018 ms hold, i.e. 80.8 ms total or 0.07% of decode, so D9c's `other` bucket holds no hidden contention. decodeSubSumMs trails decodeTotalMs by 4.1% and that gap is reported as unmeasured inter-call code rather than attributed to a stage. All verify counters and groups 156,152 stayed identical to 0.9.4.24 D9a across 5 runs, and D9c's exclusive sum still holds exactly. Two non-measurement items shipped in the same version: the GUI translation keys colFile/colDate/viewGrid were missing from trStr() and rendered as literal "colFile"/"colDate" in the file list header, now fixed with a regression gate; and benchmark schema v9 was confirmed additive-read with a test rather than assumed, which is why kBenchmarkSchemaVersion stayed at 9. Measured on the 2700-file D8b dataset, fingerprint 9b113848…4253c, AMD Ryzen 7 5800X3D / RTX 3080 Ti, cold index, 5 runs, 6.3% spread. Because D9c/D9d are instrumented builds, read their stage shares rather than absolute milliseconds. Next is Candidate D1 (decoder construction and file open), which must first decompose the 2.77 ms open and the 1.22 ms factory, and check whether the CLSID_WICImagingFactory2 attempt is falling back. Candidate A stays deferred and frame_ssim stays low priority.
+
+## Current state (2026-10-04)
+
+- `0.9.4.44 / 6ada90f` is the current regression baseline.
+- GUI is user-first: Search/Update remains the real execution path; [상세 로그] / [Detailed Logs] is diagnostic telemetry, not a benchmark workflow.
+- S4 implementation and visible UI are PASS; functional Detailed Logs acceptance remains DEFERRED.
+- S5 infrastructure is REVALIDATED; final product benchmark validation is DEFERRED until the product Search/Index/Comparison acceptance audit is complete.
+- The implemented production path is already present: `MainWindow/ScanWorker -> MediaSearchEngine::scan() -> CandidateIndex/ScanPipeline -> image/video verification -> matches/database`.
+- Current next gate: product Search/Index/Comparison acceptance audit, followed by S4 functional acceptance and then meaningful S5 benchmark measurement.
 
 ## Repository layout
 

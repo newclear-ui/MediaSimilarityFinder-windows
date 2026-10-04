@@ -10,15 +10,27 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.43 |
+| 기준 코드 | 0.9.4.44 (`6ada90f`) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **S1 Console Entry Foundation 완료 · S2 Run/Suite Benchmark Core 완료 · S3 Benchmark Storage Isolation 완료 · S4 GUI Detailed Logging 구현됨 (implementation PASS · visible UI 사용자 확인 PASS · functional Detailed Logs 검증 DEFERRED · CLOSED 아님)** — GUI는 사용자 우선이며 [상세 로그]는 실제 사용자 작업의 diagnostic telemetry이다. CLI Benchmark는 AUTO/CPU/GPU-max controlled comparison track으로 분리한다. · F — Hardware Video Decode Backend (F-1 CONDITIONAL, NVDEC 미채택) 유지 |
-| 현재 단계 | **F-1 완료(0.9.4.43, `CONDITIONAL`).** NVDEC production adoption 은 `NO` 이며 **F-2 production integration 은 금지**다(지시 §41). 핵심 반전: dataset 14개 중 13개가 file-start IDR 인데 **1360x0808 가 20/20 mismatch**였고 **확인된 IDR 에서 재시작해도 20/20** 이었다(1080x1920 도 1/20). 즉 **mid-GOP 은 실패 모드 중 하나일 뿐**이며, NVDEC exactness 는 4K 에서도 IDR-start 에서도 성립하지 않는다. 계약에 `exactnessVerified` 를 `Safe` 의 필수조건으로 도입했고(structure 는 필요조건일 뿐), `Unsafe`/`Unknown` 은 CPU fallback 으로 collapse 된다. 성능도 **frame당 2.1배 느림**(CPU 4.438 s vs NVDEC 9.397 s, 870f)이라 **근거 없음**. 1360x808 의 root cause 는 `INCONCLUSIVE`. 이전 Node E **종결**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
-| 현재 버전 | 0.9.4.43 |
+| 현재 노드 | **S4 GUI Detailed Logging verification in progress + product Search/Index/Comparison acceptance audit 준비** — S1/S2/S3 완료, S4 implementation PASS 및 visible UI 사용자 확인 PASS, functional Detailed Logs acceptance DEFERRED. S5 infrastructure는 REVALIDATED 상태이며 product benchmark는 DEFERRED. F-1은 CONDITIONAL/NVDEC production adoption NO 유지 |
+| 현재 단계 | **0.9.4.44 regression baseline 위에서 제품 Search/Index/Comparison acceptance audit을 먼저 수행한다.** F-1은 0.9.4.43에서 `CONDITIONAL`이며 NVDEC production adoption 은 `NO` 이며 **F-2 production integration 은 금지**다(지시 §41). 핵심 반전: dataset 14개 중 13개가 file-start IDR 인데 **1360x0808 가 20/20 mismatch**였고 **확인된 IDR 에서 재시작해도 20/20** 이었다(1080x1920 도 1/20). 즉 **mid-GOP 은 실패 모드 중 하나일 뿐**이며, NVDEC exactness 는 4K 에서도 IDR-start 에서도 성립하지 않는다. 계약에 `exactnessVerified` 를 `Safe` 의 필수조건으로 도입했고(structure 는 필요조건일 뿐), `Unsafe`/`Unknown` 은 CPU fallback 으로 collapse 된다. 성능도 **frame당 2.1배 느림**(CPU 4.438 s vs NVDEC 9.397 s, 870f)이라 **근거 없음**. 1360x808 의 root cause 는 `INCONCLUSIVE`. 이전 Node E **종결**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
+| 현재 버전 | 0.9.4.44 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
+
+## 2026-10-04 — Current-State Audit and Next Gate
+
+이번 재검토에서는 0.9.4.44 `6ada90f`의 코드와 현재 문서를 다시 대조했다.
+
+- 검색 엔진은 미구현 상태가 아니다. 실제 production path는 `MainWindow/ScanWorker -> MediaSearchEngine::scan() -> CandidateIndex/ScanPipeline -> image/video verification -> database/matches`로 연결되어 있다.
+- `search_engine_test`, `scan_workflow_test`, `video_scan_e2e_test`, `match_revalidate_test`, `ui_detailed_log_test`가 관련 경로를 각각 회귀검증한다.
+- 따라서 현재 blocker를 "검색 알고리즘이 아직 구현되지 않음"으로 정의하지 않는다.
+- 남은 핵심은 구현된 Search/Index/Comparison semantics의 제품 acceptance와 실제 GUI Search/Update -> Detailed Logs 결과/저장 경로의 최종 acceptance다.
+- S4는 위 acceptance 전까지 CLOSED로 올리지 않는다.
+- S5 product benchmark는 acceptance가 끝난 뒤 실제 dataset에서 수행한다.
+- F-1/F-2 및 S6의 기존 경계와 deferred 조건은 변경하지 않는다.
 
 ### Node E 종결 기록 (0.9.4.42 기준)
 

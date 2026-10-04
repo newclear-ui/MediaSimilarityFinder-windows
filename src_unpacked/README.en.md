@@ -1,8 +1,8 @@
 # MediaSimilarityFinder
 
-## Current development version: 0.9.4.34 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4, D3 follow-up stability investigation complete — candidate `DEFERRED`, not adopted in production)
+## Current development version: 0.9.4.44 (engine 1.5.0, DB 1.0.3; official baseline 0.9.2.32; development line 0.9.4; S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL)
 
-Windows 11 x64 media duplicate/similarity search engine under active CPU/CUDA development.
+Windows 11 x64 media duplicate/similarity search engine under active CPU + GPU development; the current concrete GPU backend is NVIDIA CUDA.
 
 ### Current capabilities
 - Incremental SQLite index with program-owned Index storage.
@@ -47,7 +47,7 @@ See [CPU/GPU Adaptive Resource Scheduling](docs/architecture/resource-scheduling
 - 0.9.4.x: current development line covering Node A → B → C → D → I analysis/measurement
 - 1.0.0: CPU + GPU complete target
 
-Build history is maintained under docs/build-history/ in Korean and English (77 GPU / 76 CPU CTest tests). Architecture documents are under docs/architecture/.
+Build history is maintained under docs/build-history/ in Korean and English; the 0.9.4.44 baseline has 101 GPU / 100 CPU CTest tests. Architecture documents are under docs/architecture/.
 
 
 ### Benchmark / Telemetry direction

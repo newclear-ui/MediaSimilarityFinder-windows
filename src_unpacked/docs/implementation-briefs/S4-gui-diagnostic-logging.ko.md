@@ -1,6 +1,6 @@
 # Implementation Brief — S4 GUI 상세 로그
 
-Status: DESIGN RESET / PRE-IMPLEMENTATION — 2026-10-03 현재 기준 문서. 코드 구현은 이 설계가 확정된 뒤 별도 지시로 수행한다.
+Status: IMPLEMENTED / VERIFICATION IN PROGRESS — current baseline 0.9.4.44 (`6ada90f`). The design reset remains the semantic contract; this brief records the implemented state.
 
 관련 상위 설계: docs/architecture/gui-diagnostic-logging.ko.md / .en.md
 
@@ -135,5 +135,5 @@ GUI 상세 로그의 최종 durable path와 report UI는 코드 구현 단계에
 ## 현재 상태 (2026-10-03, cf126c4 기준)
 
 - S4 implementation: PASS. GUI visible UI는 사용자가 직접 확인하여 PASS.
-- Functional Detailed Logs 검증은 DEFERRED: 실제 Search/Update 경로의 Detailed Logs 생성은 제품 search/index/이미지·영상 비교 알고리즘이 최종이 아니므로 전체 경로 기능 검증을 유보한다.
+- Functional Detailed Logs acceptance는 DEFERRED: 실제 Search/Update -> Detailed Logs 생성/표시/저장 경로는 코드와 회귀 테스트가 연결되어 있으나, 최종 제품 acceptance audit이 아직 완료되지 않았다.
 - S4 상태: verification in progress (CLOSED 아님). 위 §10 종료 조건은 설계 계약으로 유지된다.

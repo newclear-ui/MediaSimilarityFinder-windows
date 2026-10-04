@@ -1,11 +1,11 @@
 # Implementation Brief — S5 Console Benchmark Execution (Design Baseline)
 
-Status: **REVALIDATED 2026-10-03** — CLI `--benchmark` re-verified against the
+Status: **REVALIDATED against the 0.9.4.44 baseline on 2026-10-04** — CLI `--benchmark` re-verified against the
 S4 semantic-reset tree: real `--benchmark` execution exit=0 with
 `suite.json`/`runs.jsonl`/`summary.json` written, S2 executor + S3
 journal/storage contracts unchanged, CPU CTest 100/100 and GPU CTest 101/101.
 S5 is still not declared CLOSED (see §16).
-Version basis: v0.9.4.43
+Current baseline: v0.9.4.44
 
 ---
 
@@ -397,4 +397,4 @@ The design was not changed for either.
 ## Current status (2026-10-03, at cf126c4)
 
 - S5 infrastructure: PASS / REVALIDATED (parser, renderer, BenchmarkRunner/BenchmarkSession wiring, journal/storage, cancellation, live --benchmark wiring, S2/S3 contract reuse).
-- S5 product benchmark validation: DEFERRED. Image/video comparison algorithms and search/index semantics are not final, so current numbers must not be treated as final performance/correctness evidence. A working --benchmark does not mean S5 CLOSED.
+- S5 product benchmark validation: DEFERRED. The implemented Search/Index/Comparison path still requires final product acceptance, so pre-acceptance benchmark numbers must not be treated as final performance/correctness evidence. A working `--benchmark` does not mean S5 CLOSED.

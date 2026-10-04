@@ -422,6 +422,23 @@ Benchmark may use Telemetry, but Telemetry is not Benchmark.
 
 S0 → S1 → S2 → S3 → S4 GUI Detailed Logging → S5 Console Benchmark → S6 → S7 → S8
 
+## 2026-10-04 — Current active work
+
+0.9.4.44 is a regression baseline; it does not declare S4 CLOSED or S5 complete.
+
+Current order:
+
+1. Product acceptance audit of the implemented Search / Index / Comparison production path
+2. S4 functional acceptance of the real GUI Search/Update -> [Detailed Logs] generation, display, and save path
+3. After acceptance, real-dataset S5 AUTO / CPU / GPU-max benchmark measurement
+4. Then the S6 controlled measurement gate
+
+Important boundaries:
+- Do not describe the current search engine as unimplemented.
+- Do not use pre-acceptance benchmark numbers as final performance/correctness evidence.
+- F-2 NVDEC production integration remains forbidden.
+- Do not silently change S6's pre-registered measurement conditions or deferred items.
+
 ## Final Benchmark Console Design Amendment — 2026-09-30
 
 The existing benchmark S0-S8 schedule is finalized with the following contract:

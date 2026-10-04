@@ -291,7 +291,7 @@ backend 의 실제 조사와 검증은 이번 F 범위에 포함하지 않습니
 향후 Intel/AMD 등 hardware decode backend 를 추가할 수 있는 방향을 고려합니다.
 그 구현·검증은 **이번 F 의 범위가 아닙니다.**
 
-### F 진행 상태 (0.9.4.43)
+### F 진행 상태 (0.9.4.44 기준, F-1 결과는 0.9.4.43에서 확정)
 
 - **F-1 Random-Access Safety Contract: `CONDITIONAL` / `PRODUCTION ADOPTION = NO`**
 - **F-2 production integration 은 금지.** F-1 에서 **정상 조건(IDR-start fixture)에서도
@@ -375,6 +375,23 @@ TelemetryRecorder
 Benchmark는 Telemetry를 사용할 수 있지만 Telemetry가 Benchmark는 아니다.
 
 S0 → S1 → S2 → S3 → S4 GUI Detailed Logging → S5 Console Benchmark → S6 → S7 → S8
+
+## 2026-10-04 — 현재 활성 작업
+
+0.9.4.44는 회귀 기준선이며, S4 CLOSED 또는 S5 완료를 의미하지 않는다.
+
+현재 작업 순서는 다음과 같다.
+
+1. 구현된 Search / Index / Comparison production path의 제품 acceptance audit
+2. 실제 GUI Search/Update -> [상세 로그] 생성·표시·저장 경로의 S4 functional acceptance
+3. acceptance 통과 후 실제 dataset 기반 S5 AUTO / CPU / GPU-max benchmark
+4. 이후 S6 controlled measurement gate
+
+중요 경계:
+- 현재 검색 엔진을 "미구현"으로 취급하지 않는다.
+- acceptance 전에는 benchmark 수치를 최종 성능/정확성 근거로 사용하지 않는다.
+- F-2 NVDEC production integration은 계속 금지한다.
+- S6의 기존 측정 조건과 deferred 항목은 새 측정 전에 임의로 변경하지 않는다.
 
 ## Benchmark Console 최종 설계 보완 — 2026-09-30
 

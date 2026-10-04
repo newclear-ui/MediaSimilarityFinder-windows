@@ -1,8 +1,8 @@
 # MediaSimilarityFinder
 
-## 현재 개발 버전: 0.9.4.35 (엔진 1.5.0, DB 1.0.3, 공식 기준선 0.9.2.32, 개발선 0.9.4 EXIF Orientation query path 결함 수정 — I-2 모든 gate 통과, production 통합은 다음 단계)
+## 현재 개발 버전: 0.9.4.44 (엔진 1.5.0, DB 1.0.3, 공식 기준선 0.9.2.32, 개발선 0.9.4, S4 verification in progress, S5 product benchmark DEFERRED, F-1 CONDITIONAL)
 
-Windows 11 x64 미디어 중복/유사 검색 엔진. CPU/CUDA 병행 개발 중.
+Windows 11 x64 미디어 중복/유사 검색 엔진. CPU + GPU 공동 실행 구조로 개발 중이며 현재 concrete GPU backend는 NVIDIA CUDA입니다.
 
 ### 현재 기능
 - 프로그램 소유 Index 저장소를 쓰는 증분 SQLite 인덱스.
@@ -47,7 +47,7 @@ MediaSimilarityFinder는 CPU와 GPU를 함께 활용하는 프로그램이며, G
 - 0.9.4.x: Node A → B → C → D → I 분석/계측까지의 현재 개발선
 - 1.0.0: CPU + GPU 완성 목표
 
-빌드 기록은 docs/build-history/에 한글/영문으로 관리(CTest GPU 77개 / CPU 76개). 아키텍처 문서는 docs/architecture/ 참조.
+빌드 기록은 docs/build-history/에 한글/영문으로 관리하며 현재 0.9.4.44 기준 CTest는 GPU 101개 / CPU 100개입니다. 아키텍처 문서는 docs/architecture/ 참조.
 
 
 ### Benchmark / Telemetry 방향

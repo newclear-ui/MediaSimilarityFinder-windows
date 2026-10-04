@@ -1,7 +1,7 @@
 # Implementation Brief — S5 Console Benchmark Execution (Pre-register)
 
-Status: **2026-10-03 REVALIDATED** — S4 semantic-reset 트리에서 CLI `--benchmark` 재검증 완료: 실제 `--benchmark` 실행 exit=0, `suite.json`/`runs.jsonl`/`summary.json` 생성, S2 executor + S3 journal/storage 계약 유지, CPU CTest 100/100·GPU CTest 101/101. S5 CLOSED 선언은 아니다(§16 조건 유지).
-Version 기준: v0.9.4.43
+Status: **REVALIDATED on 2026-10-04 baseline 0.9.4.44** — S4 semantic-reset 트리에서 CLI `--benchmark` 재검증 완료: 실제 `--benchmark` 실행 exit=0, `suite.json`/`runs.jsonl`/`summary.json` 생성, S2 executor + S3 journal/storage 계약 유지, CPU CTest 100/100·GPU CTest 101/101. S5 CLOSED 선언은 아니다(§16 조건 유지).
+Current baseline: v0.9.4.44
 
 ---
 
@@ -380,4 +380,4 @@ Windows Ctrl+C trigger 검증은 **NOT RUN** 이다(검증 환경에 Windows con
 ## 현재 상태 (2026-10-03, cf126c4 기준)
 
 - S5 infrastructure: PASS / REVALIDATED (parser, renderer, BenchmarkRunner/BenchmarkSession 연결, journal/storage, cancellation, 실제 --benchmark 연결, S2/S3 계약 재사용).
-- S5 product benchmark validation: DEFERRED. image/video comparison 알고리즘과 search/index semantics가 최종이 아니므로 현재 수치를 최종 성능/정확성 근거로 취급하지 않는다. --benchmark 동작 사실이 S5 CLOSED를 의미하지 않는다.
+- S5 product benchmark validation: DEFERRED. The implemented Search/Index/Comparison path still requires final product acceptance, so pre-acceptance benchmark numbers are not treated as final performance/correctness evidence. A working `--benchmark` does not mean S5 CLOSED.
