@@ -84,14 +84,7 @@ int main(int argc, char** argv) {
     MainWindow w;
     w.show();
     QApplication::processEvents();
-    QSpinBox* cpu = nullptr;
-    const QList<QSpinBox*> spins = w.findChildren<QSpinBox*>();
-    for (QSpinBox* spin : spins) {
-      if (spin && spin->prefix() == QStringLiteral("CPU ")) {
-        cpu = spin;
-        break;
-      }
-    }
+    QSpinBox* cpu = w.findChild<QSpinBox*>("cpuSpin");
     if (!cpu) { std::cerr << "CPU spin box not found\n"; return 1; }
     if (cpu->minimum() != msf::kUserCpuPercentMin || cpu->maximum() != msf::kUserCpuPercentMax) {
       std::cerr << "CPU range is not 10-90\n";

@@ -171,6 +171,8 @@ private:
   // The single-select strategy checkboxes. Read through executionStrategy();
   // never handed to any benchmark runner.
   ExecutionResourceStrategy executionStrategy() const;
+  // Sizes the strategy dropdown to its widest item text (no slack).
+  void fitStrategyBoxWidth();
   // Single gate for the scan/execution enable state. A scan in progress
   // disables starting another run, and Pause stays a scan-only control
   // (the detailed-log path has no Pause).
@@ -257,7 +259,7 @@ private:
   QAction *monSettingsAct_=nullptr, *helpAct_=nullptr; // retexted on language change
   QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;
-  QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
+  QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QLabel* cpuPrefix_=nullptr; QLabel* cpuSuffix_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* logTgl_=nullptr;
   // Execution resource strategy (single-select dropdown): the user's
   // real-search resource choice. logTgl_ enables diagnostic telemetry

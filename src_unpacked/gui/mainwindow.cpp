@@ -829,13 +829,14 @@ void MainWindow::buildToolbar() {
   // CPU range. QSpinBox enforces the range, while the policy helper below also
   // normalizes values arriving through make_policy.
   cpu_->setRange(msf::kUserCpuPercentMin, msf::kUserCpuPercentMax);
-  cpu_->setPrefix(QStringLiteral("CPU "));
-  cpu_->setSuffix(QStringLiteral("%"));
-  // "CPU 90%" (the widest value) must fit: text width + spin buttons + frame.
-  // At the default 9pt font that is ~52px text + ~30px chrome ~= 82px minimum;
-  // the cap lands near +30% over the old 78px so nothing clips.
+  cpu_->setObjectName("cpuSpin"); // automation hook
+  // "CPU" and "%" are plain labels beside the box (not prefix/suffix), so
+  // only the digits are selectable/editable inside the spinbox.
+  cpuPrefix_ = new QLabel(QStringLiteral("CPU"), toolBar_);
+  cpuSuffix_ = new QLabel(QStringLiteral("%"), toolBar_);
+  // "90" (the widest value) must fit: text width + spin buttons + frame.
   {
-    const int cpuTextW = cpu_->fontMetrics().horizontalAdvance(QStringLiteral("CPU 90%"));
+    const int cpuTextW = cpu_->fontMetrics().horizontalAdvance(QStringLiteral("90"));
     cpu_->setMinimumWidth(cpuTextW + 30);
     cpu_->setMaximumWidth(cpuTextW + 54);
   }
@@ -862,6 +863,7 @@ void MainWindow::buildToolbar() {
   strategyBox_->setCurrentIndex(0);
   strategyBox_->setToolTip(trStr(lang(), "strategyModeTip"));
   strategyBox_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  fitStrategyBoxWidth();
   // On change, reflect it in gpuEnabled_ and refresh
   // the policy so the scan honours the selection.
   connect(strategyBox_, qOverload<int>(&QComboBox::currentIndexChanged),
@@ -895,7 +897,7 @@ void MainWindow::buildToolbar() {
   utilBtn_->setPopupMode(QToolButton::MenuButtonPopup);
   connect(utilBtn_, &QToolButton::clicked, this, [this] { utilBtn_->showMenu(); });
   auto* utilMenu_ = new QMenu(utilBtn_);
-  monSettingsAct_ = utilMenu_->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
+  monSettingsAct_ = utilMenu_->addAction(trStr(lang(), "settings"), this, &MainWindow::configureMonitor);
   helpAct_ = utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_);
@@ -904,7 +906,7 @@ void MainWindow::buildToolbar() {
   toolBar_->addSeparator();
   // Execution resource strategy + fine CPU budget as one compact area.
   toolBar_->addWidget(strategyBox_);
-  toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
+  toolBar_->addWidget(preset_); toolBar_->addWidget(cpuPrefix_); toolBar_->addWidget(cpu_); toolBar_->addWidget(cpuSuffix_);
   toolBar_->addSeparator();
   toolBar_->addWidget(mediaImgBtn_); toolBar_->addWidget(mediaVidBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
@@ -1204,16 +1206,29 @@ void MainWindow::applyStaticTexts() {
     strategyBox_->setCurrentIndex(cur);
     strategyBox_->blockSignals(false);
     strategyBox_->setToolTip(trStr(l, "strategyModeTip"));
+    fitStrategyBoxWidth();
   }
   gpuEnabled_->setText(trStr(l, "monitorGpu"));
   gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
   monBtn_->setChecked(monitorEnabled_);
-  if (monSettingsAct_) monSettingsAct_->setText(trStr(l, "monSettings"));
+  if (monSettingsAct_) monSettingsAct_->setText(trStr(l, "settings"));
   if (helpAct_) helpAct_->setText(trStr(l, "help"));
   if (utilBtn_) utilBtn_->setToolTip(trStr(l, "settings") + "/" + trStr(l, "help"));
   logBtn_->setText(trStr(l, "searchLog"));
   auto* leftTitle = findChild<QLabel*>("leftTitle"); if (leftTitle) leftTitle->setText(trStr(l, "explorer"));
+  // The explorer tree is built once at startup, so retext its language-bound
+  // headers here: three roots plus the six fixed Favorites children (keys in
+  // build order; MRU paths and drive entries are language-neutral).
+  if (folders_ && folders_->topLevelItemCount() >= 3) {
+    static const char* favKeys[6] = {"desktop", "downloads", "documents", "pictures", "videos", "music"};
+    QTreeWidgetItem* fav = folders_->topLevelItem(0);
+    fav->setText(0, trStr(l, "favorites"));
+    for (int i = 0; i < 6 && i < fav->childCount(); ++i)
+      fav->child(i)->setText(0, trStr(l, favKeys[i]));
+    folders_->topLevelItem(1)->setText(0, trStr(l, "thispc"));
+    folders_->topLevelItem(2)->setText(0, trStr(l, "network"));
+  }
   auto* sumTitle = findChild<QLabel*>("sumTitle"); if (sumTitle) sumTitle->setText(trStr(l, "summary"));
   sumTotal_->setText(trStr(l, "total")); sumDone_->setText(trStr(l, "scanned")); sumGroups_->setText(trStr(l, "groups"));
   sumDup_->setText(trStr(l, "dups")); sumTime_->setText(trStr(l, "elapsed")); sumGpu_->setText(trStr(l, "gpu"));
@@ -1276,6 +1291,22 @@ ExecutionResourceStrategy MainWindow::executionStrategy() const {
     if (strategyBox_->currentIndex() == 2) return ExecutionResourceStrategy::GpuMax;
   }
   return ExecutionResourceStrategy::Auto;
+}
+
+void MainWindow::fitStrategyBoxWidth() {
+  if (!strategyBox_) return;
+  // Widest item text + drop arrow + frame, nothing more: the box hugs the
+  // text instead of reserving layout slack. The popup list still sizes itself
+  // to the full item text independently.
+  const QFontMetrics fm(strategyBox_->font());
+  int textW = 0;
+  for (int i = 0; i < strategyBox_->count(); ++i)
+    textW = std::max(textW, fm.horizontalAdvance(strategyBox_->itemText(i)));
+  int arrow = style()->pixelMetric(QStyle::PM_MenuButtonIndicator, nullptr, strategyBox_);
+  if (arrow <= 0) arrow = 20;
+  int frame = style()->pixelMetric(QStyle::PM_ComboBoxFrameWidth, nullptr, strategyBox_);
+  if (frame <= 0) frame = 2;
+  strategyBox_->setFixedWidth(textW + arrow + 2 * frame + 8);
 }
 
 // Enable gate for the scan/execution controls: a scan in progress disables
