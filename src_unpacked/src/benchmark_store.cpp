@@ -226,12 +226,15 @@ std::string telemetryJsonString(const std::string& s) {
 std::string telemetryJsonBool(bool b) { return b ? "true" : "false"; }
 
 std::string benchmarkNowStamp() {
+    // The format carries a literal `Z`, so the instant must actually be UTC.
+    // localtime was recorded here before, mislabelling local time as UTC
+    // (suite ids already use real UTC, ~9h apart). gmtime keeps the label true.
     const std::time_t t = std::time(nullptr);
     std::tm tm{};
 #ifdef _WIN32
-    localtime_s(&tm, &t);
+    gmtime_s(&tm, &t);
 #else
-    localtime_r(&t, &tm);
+    gmtime_r(&t, &tm);
 #endif
     char buf[32];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);

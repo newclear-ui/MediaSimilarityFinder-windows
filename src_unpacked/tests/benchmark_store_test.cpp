@@ -4,6 +4,7 @@
 // scanned source folder, and that separation is itself asserted.
 
 #include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <string>
 
@@ -189,6 +190,35 @@ int main() {
 
     std::error_code ec0;
     fs::remove_all(root, ec0);
+
+    // ---- UTC stamp honesty --------------------------------------------------
+    // benchmarkNowStamp() carries a literal `Z`, so it must read real UTC, not
+    // local time mislabelled as UTC. Compare against time()/gmtime directly.
+    {
+        const std::time_t before = std::time(nullptr);
+        const std::string stamp = msf::benchmarkNowStamp();
+        const std::time_t after = std::time(nullptr);
+        std::tm tm{};
+#ifdef _WIN32
+        gmtime_s(&tm, &before);
+#else
+        gmtime_r(&before, &tm);
+#endif
+        char expect[32];
+        std::strftime(expect, sizeof(expect), "%Y-%m-%dT%H:%M:%SZ", &tm);
+        // One-second rollover tolerance at the boundary.
+        bool ok = (stamp == expect);
+        if (!ok) {
+#ifdef _WIN32
+            gmtime_s(&tm, &after);
+#else
+            gmtime_r(&after, &tm);
+#endif
+            std::strftime(expect, sizeof(expect), "%Y-%m-%dT%H:%M:%SZ", &tm);
+            ok = (stamp == expect);
+        }
+        chk(ok, "benchmarkNowStamp is real UTC (Z label is true)");
+    }
     std::printf("\nbenchmark_store_selfcheck=%s checks=%d\n", gFails ? "FAIL" : "ok", gChecks);
     return gFails ? 1 : 0;
 }
