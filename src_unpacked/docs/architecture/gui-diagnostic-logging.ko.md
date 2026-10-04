@@ -30,7 +30,7 @@ GUI에는 다음을 추가하지 않는다:
 
 ## 3. GUI Resource Control
 
-AUTO / CPU 단독 / GPU 최대 활용은 사용자 실행 자원 전략이며 정확히 하나만 선택한다.
+AUTO / CPU 단독 / GPU 최대 활용은 사용자 실행 자원 전략이며 정확히 하나만 선택한다. 구현: 실행 전략 선택 UI는 단일 선택 드롭다운이다.
 
 - AUTO: Adaptive Scheduler가 CPU/GPU 작업 배분을 판단한다.
 - CPU 단독: GPU 작업을 사용하지 않는 CPU 중심 실행이다.

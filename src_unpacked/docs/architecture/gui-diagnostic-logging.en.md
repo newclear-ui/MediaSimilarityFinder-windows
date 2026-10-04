@@ -25,7 +25,7 @@ The GUI does not add Benchmark Run, Benchmark Stop, Benchmark Pause, multi-selec
 
 ## 3. GUI Resource Control
 
-Exactly one of AUTO / CPU-only / GPU-max is selected.
+Exactly one of AUTO / CPU-only / GPU-max is selected. Implementation: the strategy selector is a single-select dropdown.
 
 - AUTO: Adaptive Scheduler decides CPU/GPU work allocation.
 - CPU-only: GPU work is disabled and execution is CPU-centric.

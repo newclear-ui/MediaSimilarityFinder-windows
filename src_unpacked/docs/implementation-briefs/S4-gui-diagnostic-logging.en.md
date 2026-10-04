@@ -26,7 +26,7 @@ CLI:
 
 ## 3. GUI Resource Control
 
-AUTO / CPU-only / GPU-max is not a benchmark mode; it is the user's execution resource strategy. Exactly one is selected.
+AUTO / CPU-only / GPU-max is not a benchmark mode; it is the user's execution resource strategy. Exactly one is selected. Implementation: the strategy selector is a single-select dropdown.
 
 - AUTO: Adaptive Scheduler가 CPU/GPU 배분을 판단한다.
 - CPU 단독: GPU 작업을 사용하지 않는 CPU 중심 실행이다.
