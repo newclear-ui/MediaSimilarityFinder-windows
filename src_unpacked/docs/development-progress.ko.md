@@ -2087,3 +2087,53 @@ S6 read-only diagnostic 4종으로 기계적 확인(`known>=2`, `eligibleCandida
 코드 변경 없음. S2 실행 · S3 journal schema · S6 전 계층 · Scanner/GUI/renderer/CLI 미변경.
 benchmark 실행 자동화 · 측정 engine · threshold/regression/anomaly code · report formatter
 미구현.
+
+---
+
+## 2026-10-04 — 0.9.4.45 XMP 검수 정정 + color_thumb audit / pre-register
+
+기준: `0.9.4.45` / `97db24f` · CPU CTest 102/102 · GPU CTest 103/103
+상세: `docs/worklog/0.9.4.ko.md` 마지막 항목
+
+### XMP 현재 상태 (판정 정정)
+
+| 축 | 상태 |
+|---|---|
+| code implementation (1..8 + precedence + invalid fallback) | PASS |
+| fixture (mapping 2/4/5/7 포함 38 checks) | PASS |
+| real-dataset coverage | NOT_AVAILABLE (표준 dataset XMP 0건, reported only) |
+| full Search/Scan regression | DEFERRED (S4/S5 의존) |
+| **production acceptance** | **CONDITIONAL** |
+
+구현 정합성은 fixture 로 입증되지만 full scan regression 과 real-dataset coverage 가
+없으므로 acceptance 는 CONDITIONAL 이다. build-history 0.9.4.45 는 소급하지 않는다.
+
+### 살아 있는 후보 (신규 pre-register)
+
+`docs/implementation-briefs/I-color-thumb-no-ffmpeg-classification.ko.md` / `.en.md`
+— audit 만 완료, production 수정 없음.
+
+핵심 결론: **classification 은 확장자 단일 규칙이며 세 FFmpeg 상태에서 동일하다.**
+디코더 capability 부재가 media type 을 바꾸지 않는 것이 계약 후보다.
+
+확인된 risk:
+
+- **R1 (높음)** `color_thumb_test` 가 no-FFmpeg 빌드에서 항상 실패 (CMake 무조건 등록 +
+  skip 없음 + `frameAtColor` 무조건 `false`). worklog 082 의 `exit 5` 미분류 항목을 확정 분류.
+- **R2 (중간)** `kindOf()`(확장자) 와 DB `x.kind` 이 이중 진실원. 대조 코드 없음.
+- **R3 (중간)** 확장자 목록 4중 중복 (`scanner` / `monitor` 3곳 / GUI).
+- **R4 (중간)** 셸 썸네일이 엔진 색상 썸네일을 `isNull()` 가드 없이 덮어써 통계 오염.
+- **R5/R6 (낮음)** configure 메시지 과장 / `MediaKind` 정수 매직넘버.
+
+다음 단계는 R1 fixture + skip/pass 이다. R2~R6 은 별도 결정으로 남긴다.
+
+### 경계
+
+```text
+color_thumb production correction = NOT PERFORMED
+color_thumb fixture               = NOT PERFORMED
+S4 최종 GUI visual/save acceptance = DEFERRED
+S5 product benchmark               = DEFERRED
+S6                                = DEFERRED
+NVDEC production adoption          = DEFERRED
+```

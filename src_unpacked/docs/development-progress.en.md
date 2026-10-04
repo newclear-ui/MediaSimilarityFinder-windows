@@ -2228,3 +2228,59 @@ four read-only diagnostics (`known>=2`, `eligibleCandidates>0`,
 No code change. S2 execution, the S3 journal schema, all S6 layers, Scanner, GUI, renderer
 and CLI were not touched. Benchmark execution automation, a measurement engine,
 threshold/regression/anomaly code and a report formatter were not implemented.
+
+---
+
+## 2026-10-04 — 0.9.4.45 XMP review correction + color_thumb audit / pre-register
+
+Baseline: `0.9.4.45` / `97db24f` - CPU CTest 102/102 - GPU CTest 103/103
+Detail: the last entry of `docs/worklog/0.9.4.en.md`
+
+### Current XMP status (verdict corrected)
+
+| Axis | Status |
+|---|---|
+| code implementation (1..8 + precedence + invalid fallback) | PASS |
+| fixture (mapping 2/4/5/7 included, 38 checks) | PASS |
+| real-dataset coverage | NOT_AVAILABLE (standard dataset has 0 XMP files, reported only) |
+| full Search/Scan regression | DEFERRED (depends on S4/S5) |
+| **production acceptance** | **CONDITIONAL** |
+
+Implementation correctness is proven by fixtures, but without full scan regression
+and real-dataset coverage the acceptance is CONDITIONAL. build-history 0.9.4.45 is
+not rewritten retroactively.
+
+### Live candidate (newly pre-registered)
+
+`docs/implementation-briefs/I-color-thumb-no-ffmpeg-classification.ko.md` / `.en.md`
+- audit only, no production correction.
+
+Core conclusion: **classification is a single extension rule and is identical across
+all three FFmpeg states.** The absence of decoder capability must not change the media
+type; that is the contract candidate.
+
+Confirmed risks:
+
+- **R1 (high)** `color_thumb_test` always fails in a no-FFmpeg build (unconditional
+  CMake registration + no skip handling + `frameAtColor` unconditionally `false`).
+  This classifies the previously unclassified `exit 5` from worklog run 082.
+- **R2 (medium)** `kindOf()` (extension) and DB `x.kind` are dual sources of truth,
+  with no cross-check.
+- **R3 (medium)** the extension list is duplicated four times (`scanner`, three places
+  in `monitor`, GUI).
+- **R4 (medium)** the shell thumbnail overwrites the engine color thumbnail without an
+  `isNull()` guard, polluting `thumbStatEngine_`.
+- **R5/R6 (low)** overstated configure message / magic-number `MediaKind` mapping.
+
+Next step is the R1 fixture plus skip/pass handling. R2..R6 stay separate decisions.
+
+### Boundaries
+
+```text
+color_thumb production correction = NOT PERFORMED
+color_thumb fixture               = NOT PERFORMED
+S4 final GUI visual/save acceptance = DEFERRED
+S5 product benchmark               = DEFERRED
+S6                                = DEFERRED
+NVDEC production adoption          = DEFERRED
+```

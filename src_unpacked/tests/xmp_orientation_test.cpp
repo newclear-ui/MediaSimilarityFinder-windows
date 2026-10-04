@@ -56,8 +56,10 @@ std::wstring toWide(const std::string& s) {
   if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
   return w;
 }
-// 16x8 BMP, left half black / right half white plus one gray marker so the
-// content is asymmetric under rotation.
+// 16x8 BMP with four distinct quadrants. BMP rows are bottom-up, so the
+// y<4 values land at the image bottom: decoded top=(170,255), bottom=(0,85),
+// left=85, right=170. Every orientation in 1..8 is observable by quadrant
+// means (all assertions below use decoded-image coordinates).
 bool writeBmp(const std::string& path) {
   const int w = 16, h = 8, img = w * h * 3, fsz = 54 + img;
   unsigned char hd[54] = {0};
@@ -71,8 +73,9 @@ bool writeBmp(const std::string& path) {
   bool ok = fwrite(hd, 1, 54, f) == 54;
   for (int y = 0; ok && y < h; ++y)
     for (int x = 0; x < w; ++x) {
-      unsigned char v = (x < 8) ? 0 : 255;
-      if (x == 2 && y == 1) v = 128;
+      unsigned char v;
+      if (y < 4) v = (x < 8) ? 0 : 85;
+      else v = (x < 8) ? 170 : 255;
       ok = fputc(v, f) != EOF && fputc(v, f) != EOF && fputc(v, f) != EOF;
     }
   fclose(f);
@@ -133,15 +136,16 @@ done:
   return ok;
 }
 // Minimal little-endian EXIF APP1 carrying Orientation (same layout the
-// shared-WIC probe uses).
-std::vector<unsigned char> exifApp1(unsigned short orientation) {
+// shared-WIC probe uses). type is explicit so wrong-type fixtures are
+// expressible (3 = SHORT is the conforming form).
+std::vector<unsigned char> exifApp1Ex(unsigned short orientation, unsigned short type) {
   std::vector<unsigned char> tiff;
   tiff.push_back('I'); tiff.push_back('I');
   tiff.push_back(0x2A); tiff.push_back(0x00);
   tiff.push_back(0x08); tiff.push_back(0x00); tiff.push_back(0x00); tiff.push_back(0x00);
   tiff.push_back(0x01); tiff.push_back(0x00);
   tiff.push_back(0x12); tiff.push_back(0x01);
-  tiff.push_back(0x03); tiff.push_back(0x00);
+  tiff.push_back((unsigned char)(type & 0xFF)); tiff.push_back((unsigned char)((type >> 8) & 0xFF));
   tiff.push_back(0x01); tiff.push_back(0x00); tiff.push_back(0x00); tiff.push_back(0x00);
   tiff.push_back((unsigned char)(orientation & 0xFF));
   tiff.push_back((unsigned char)((orientation >> 8) & 0xFF));
@@ -157,6 +161,9 @@ std::vector<unsigned char> exifApp1(unsigned short orientation) {
   seg.push_back(0x00);
   seg.insert(seg.end(), tiff.begin(), tiff.end());
   return seg;
+}
+static std::vector<unsigned char> exifApp1(unsigned short orientation) {
+  return exifApp1Ex(orientation, 3);
 }
 // XMP APP1: FF E1 len "http://ns.adobe.com/xap/1.0/\0" + packet carrying
 // tiff:Orientation="<value>". value is inserted verbatim so invalid text
@@ -206,13 +213,14 @@ struct CaseResult {
   bool decoded = false;
   int aspectW = 0, aspectH = 0;
   std::uint64_t orientApplied = 0;
+  msf::GrayImage fixed;
 };
 CaseResult runCase(const std::string& jpg) {
   CaseResult r;
   msf::ImageDecoder dec;
-  msf::GrayImage fixed, aspect;
+  msf::GrayImage aspect;
   msf::DecodeTelemetry telF, telA;
-  r.decoded = dec.decodeBoth(jpg, 32, 32, 32, fixed, aspect, &telF, &telA);
+  r.decoded = dec.decodeBoth(jpg, 32, 32, 32, r.fixed, aspect, &telF, &telA);
   r.aspectW = aspect.width; r.aspectH = aspect.height;
   r.orientApplied = telF.orientApplied + telA.orientApplied;
   return r;
@@ -299,6 +307,22 @@ int main(int argc, char** argv) {
   auto expectDims = [&](const CaseResult& r, int w, int h, const char* what) {
     chk(r.decoded && r.aspectW == w && r.aspectH == h, what);
   };
+  // Mean of a fixed-output quadrant (fixed is always 32x32). JPEG is lossy,
+  // so bands are wide; the four quadrant levels (0/85/170/255) stay apart.
+  auto quadMean = [&](const CaseResult& r, int qx, int qy) {
+    if (!r.decoded || r.fixed.width != 32 || r.fixed.height != 32) return -1.0;
+    double sum = 0; int n = 0;
+    for (int y = qy * 16; y < qy * 16 + 16; ++y)
+      for (int x = qx * 16; x < qx * 16 + 16; ++x) {
+        sum += r.fixed.pixels[(size_t)y * 32 + x]; ++n;
+      }
+    return sum / n;
+  };
+  auto expectBand = [&](double v, double lo, double hi, const char* what) {
+    chk(v >= lo && v <= hi, what);
+  };
+  // Unrotated quadrant layout: TL=0 TR=85 BL=170 BR=255, i.e.
+  // left=85 right=170 top=42 bottom=212.
   {
     CaseResult r = runCase(g);
     expectDims(r, 32, 16, "G: no metadata -> unrotated 32x16");
@@ -313,16 +337,25 @@ int main(int argc, char** argv) {
     CaseResult r = runCase(b);
     expectDims(r, 16, 32, "B: XMP=6 -> rotated 16x32");
     chk(r.orientApplied > 0, "B: orientApplied incremented");
+    // 90CW: old left column (mean 85) becomes the new top half.
+    expectBand(quadMean(r, 0, 0) + quadMean(r, 1, 0), 120, 220, "B: top half dark (~85)");
+    expectBand(quadMean(r, 0, 1) + quadMean(r, 1, 1), 290, 390, "B: bottom half bright (~170)");
   }
   {
     CaseResult r = runCase(c);
     expectDims(r, 32, 16, "C: XMP=3 -> 32x16 (180 keeps geometry)");
     chk(r.orientApplied > 0, "C: orientApplied incremented");
+    // 180: left/right and top/bottom both swap (left=170 right=85).
+    expectBand(quadMean(r, 0, 0) + quadMean(r, 0, 1), 290, 390, "C: left half bright (~170)");
+    expectBand(quadMean(r, 1, 0) + quadMean(r, 1, 1), 120, 220, "C: right half dark (~85)");
   }
   {
     CaseResult r = runCase(dd);
     expectDims(r, 16, 32, "D: XMP=8 -> rotated 16x32");
     chk(r.orientApplied > 0, "D: orientApplied incremented");
+    // 270CW: old right column (mean 170) becomes the new top half.
+    expectBand(quadMean(r, 0, 0) + quadMean(r, 1, 0), 290, 390, "D: top half bright (~170)");
+    expectBand(quadMean(r, 0, 1) + quadMean(r, 1, 1), 120, 220, "D: bottom half dark (~85)");
   }
   {
     CaseResult r = runCase(e);
@@ -333,6 +366,64 @@ int main(int argc, char** argv) {
     CaseResult r = runCase(f);
     expectDims(r, 32, 16, "F: invalid XMP -> unrotated 32x16");
     chk(r.orientApplied == 0, "F: orientApplied stays 0");
+  }
+  // Flip family (previously unverified mappings 2/4/5/7).
+  const std::string h2 = make("caseH2.jpg", {xmpApp1("2")});
+  const std::string h4 = make("caseH4.jpg", {xmpApp1("4")});
+  const std::string h5 = make("caseH5.jpg", {xmpApp1("5")});
+  const std::string h7 = make("caseH7.jpg", {xmpApp1("7")});
+  {
+    CaseResult r = runCase(h2);
+    expectDims(r, 32, 16, "H2: XMP=2 flipH keeps 32x16");
+    chk(r.orientApplied > 0, "H2: orientApplied incremented");
+    // flipH: left/right swap (left=170 right=85).
+    expectBand(quadMean(r, 0, 0) + quadMean(r, 0, 1), 290, 390, "H2: left half bright");
+    expectBand(quadMean(r, 1, 0) + quadMean(r, 1, 1), 120, 220, "H2: right half dark");
+  }
+  {
+    CaseResult r = runCase(h4);
+    expectDims(r, 32, 16, "H4: XMP=4 flipV keeps 32x16");
+    chk(r.orientApplied > 0, "H4: orientApplied incremented");
+    // flipV: top/bottom swap. (BMP rows are bottom-up, so the decoded image
+    // top already holds the y>=4 values: top=212 bottom=42 unrotated.)
+    expectBand(quadMean(r, 0, 0) + quadMean(r, 1, 0), 34, 134, "H4: top half dark");
+    expectBand(quadMean(r, 0, 1) + quadMean(r, 1, 1), 374, 474, "H4: bottom half bright");
+  }
+  {
+    // 5/7 combine rotation with flip; the exact arrangement is pinned by
+    // byte-equality with the same transform through the EXIF path, since
+    // both share transformForOrientationValue.
+    CaseResult rx = runCase(h5);
+    expectDims(rx, 16, 32, "H5: XMP=5 -> 16x32");
+    chk(rx.orientApplied > 0, "H5: orientApplied incremented");
+    const std::string e5 = make("caseE5.jpg", {exifApp1(5)});
+    CaseResult re = runCase(e5);
+    chk(re.decoded && re.fixed.pixels == rx.fixed.pixels,
+        "H5: XMP=5 bytes equal EXIF=5");
+  }
+  {
+    CaseResult rx = runCase(h7);
+    expectDims(rx, 16, 32, "H7: XMP=7 -> 16x32");
+    chk(rx.orientApplied > 0, "H7: orientApplied incremented");
+    const std::string e7 = make("caseE7.jpg", {exifApp1(7)});
+    CaseResult re = runCase(e7);
+    chk(re.decoded && re.fixed.pixels == rx.fixed.pixels,
+        "H7: XMP=7 bytes equal EXIF=7");
+  }
+  // EXIF present-but-unusable falls through to XMP (contract fallback).
+  {
+    // Out-of-range SHORT value 9.
+    const std::string i9 = make("caseI9.jpg", {exifApp1Ex(9, 3), xmpApp1("6")});
+    CaseResult r = runCase(i9);
+    expectDims(r, 16, 32, "I9: EXIF=9 invalid -> XMP=6 applies");
+    chk(r.orientApplied > 0, "I9: orientApplied incremented");
+  }
+  {
+    // Wrong field type (ASCII "6" instead of SHORT): not a usable EXIF value.
+    const std::string it = make("caseIT.jpg", {exifApp1Ex(0, 2), xmpApp1("8")});
+    CaseResult r = runCase(it);
+    expectDims(r, 16, 32, "IT: EXIF wrong-type -> XMP=8 applies");
+    chk(r.orientApplied > 0, "IT: orientApplied incremented");
   }
   fs::remove_all(d, ec);
   std::cout << "\nxmp_orientation_selfcheck=" << (gFails ? "FAIL" : "ok")
