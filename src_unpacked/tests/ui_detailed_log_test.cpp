@@ -18,6 +18,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -63,8 +64,7 @@ int main(int argc, char** argv) {
     QApplication::processEvents();
 
     // ---- controls exist with stable automation names ------------------------
-    QCheckBox *auto_ = cb(*w, "strategyAuto"), *cpu = cb(*w, "strategyCpu"),
-             *gpu = cb(*w, "strategyGpu");
+    QComboBox* strategy = w->findChild<QComboBox*>("strategyBox");
     QPushButton* scanBtn = pb(*w, "scan");
     QPushButton* run = pb(*w, "benchRun");
     QPushButton* stop = pb(*w, "benchStop");
@@ -72,35 +72,29 @@ int main(int argc, char** argv) {
     QCheckBox* logTgl = cb(*w, "logTgl");
 
     std::printf("-- controls --\n");
-    chk(auto_ && cpu && gpu, "the three strategy checkboxes exist");
+    chk(strategy != nullptr, "the execution-strategy dropdown exists");
     chk(run == nullptr && stop == nullptr && statusLbl == nullptr,
         "no benchmark run/stop/status widgets exist");
     chk(logTgl != nullptr, "the [Detailed Logs] checkbox exists");
     chk(scanBtn != nullptr, "the existing scan button still exists");
-    if (!auto_ || !cpu || !gpu || !logTgl || !scanBtn) {
+    if (!strategy || !logTgl || !scanBtn) {
         std::printf("\ngui_detailed_log_selfcheck=FAIL checks=%d\n", gChecks);
         return 1;
     }
-    chk(auto_->objectName() != logTgl->objectName(), "the strategy controls are distinct from logTgl_");
+    chk(strategy->count() == 3, "the strategy dropdown holds three choices");
     chk(logTgl->text().contains(QStringLiteral("Benchmark")) == false,
         "the toggle label carries no Benchmark name");
 
     // ---- single-select execution strategy, AUTO default --------------------
+    // A dropdown holds exactly one selection by construction.
     std::printf("-- execution strategy --\n");
-    chk(auto_->isChecked() && !cpu->isChecked() && !gpu->isChecked(),
-        "default strategy is AUTO only");
-    cpu->setChecked(true); QApplication::processEvents();
-    chk(!auto_->isChecked() && cpu->isChecked() && !gpu->isChecked(),
-        "selecting CPU-only clears AUTO (mutually exclusive)");
-    gpu->setChecked(true); QApplication::processEvents();
-    chk(!cpu->isChecked() && gpu->isChecked(),
-        "selecting GPU-max clears CPU (mutually exclusive)");
-    auto_->setChecked(false); QApplication::processEvents();
-    chk(auto_->isChecked() || cpu->isChecked() || gpu->isChecked(),
-        "the last strategy cannot be unchecked (always one selected)");
-    auto_->setChecked(true); QApplication::processEvents();
-    chk(auto_->isChecked() && !cpu->isChecked() && !gpu->isChecked(),
-        "AUTO restored as the single default");
+    chk(strategy->currentIndex() == 0, "default strategy is AUTO");
+    strategy->setCurrentIndex(1); QApplication::processEvents();
+    chk(strategy->currentIndex() == 1, "CPU-only selects as the single strategy");
+    strategy->setCurrentIndex(2); QApplication::processEvents();
+    chk(strategy->currentIndex() == 2, "GPU-max selects as the single strategy");
+    strategy->setCurrentIndex(0); QApplication::processEvents();
+    chk(strategy->currentIndex() == 0, "AUTO restored");
     chk(logTgl->isChecked(), "the detailed-log checkbox keeps its own default");
 
     // ---- photo/video toggle, both-off forbidden ----------------------------

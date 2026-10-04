@@ -7,7 +7,7 @@
 #include <QObject>
 #include <QThread>
 #include <QMutex>
-#include <QButtonGroup>
+#include <QComboBox>
 #include <QIcon>
 #include <QStringList>
 #include <QVector>
@@ -29,7 +29,7 @@ enum class ExecutionResourceStrategy { Auto, CpuOnly, GpuMax };
 
 class QLineEdit; class QSystemTrayIcon; class QTreeWidget; class QTreeWidgetItem;
 class QListWidget; class QListWidgetItem; class QPushButton; class QProgressBar;
-class QLabel; class QComboBox; class QSpinBox; class QStackedWidget; class QSlider;
+class QLabel; class QSpinBox; class QStackedWidget; class QSlider;
 class QToolButton; class QSplitter; class QCheckBox; class QTimer; class QStatusBar;
 class QTabWidget; class QFormLayout; class QToolBar; class QMenu; class QAction;
 class QStyledItemDelegate; class QCloseEvent; class QDialog;
@@ -143,7 +143,7 @@ private slots:
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
   void groupViewChanged(int);
-  void applyExecutionMode(); void enforceStrategySelection(); void updateKindSelection();
+  void applyExecutionMode(); void updateKindSelection();
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
   void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
@@ -252,15 +252,15 @@ private:
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar
   QToolBar* toolBar_=nullptr;
-  QLineEdit* folder_=nullptr;   QPushButton *browse_=nullptr,*scan_=nullptr,*pause_=nullptr,
+  QLineEdit* folder_=nullptr;   QPushButton *scan_=nullptr,*pause_=nullptr,
     *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr;
   QString lastTelemetryJson_;
   QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* logTgl_=nullptr;
-  // Execution resource strategy (single-select): the user's real-search
-  // resource choice. logTgl_ enables diagnostic telemetry on the scan.
-  QCheckBox *strategyAuto_=nullptr,*strategyCpu_=nullptr,*strategyGpu_=nullptr;
-  QButtonGroup* strategyGroup_=nullptr;   // enforces single strategy select
+  // Execution resource strategy (single-select dropdown): the user's
+  // real-search resource choice. logTgl_ enables diagnostic telemetry
+  // on the scan.
+  QComboBox* strategyBox_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
     *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;

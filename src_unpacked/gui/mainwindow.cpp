@@ -799,8 +799,6 @@ void MainWindow::buildToolbar() {
   folder_->setPlaceholderText(QStringLiteral("D:\\MediaLibrary"));
   folder_->setMinimumWidth(200);
   QSettings st; folder_->setText(st.value("ui/lastFolder", "").toString());
-  browse_ = new QPushButton(QStringLiteral("…"), toolBar_); browse_->setFixedWidth(30);
-  connect(browse_, &QPushButton::clicked, this, &MainWindow::chooseFolder);
   refresh_ = new QPushButton(QStringLiteral("🔄 ") + trStr(lang(), "refresh"), toolBar_);
   refresh_->setToolTip(trStr(lang(), "refresh"));
   connect(refresh_, &QPushButton::clicked, this, &MainWindow::refreshFolders);
@@ -824,7 +822,7 @@ void MainWindow::buildToolbar() {
   // resource+CPU area stays compact.
   preset_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
   preset_->setMinimumContentsLength(9);
-  preset_->setMaximumWidth(130);
+  preset_->setMaximumWidth(110);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
   cpu_ = new QSpinBox(toolBar_);
   // The widget, stored policy, and engine input all use the same 10-90 user
@@ -833,7 +831,14 @@ void MainWindow::buildToolbar() {
   cpu_->setRange(msf::kUserCpuPercentMin, msf::kUserCpuPercentMax);
   cpu_->setPrefix(QStringLiteral("CPU "));
   cpu_->setSuffix(QStringLiteral("%"));
-  cpu_->setMaximumWidth(78);
+  // "CPU 90%" (the widest value) must fit: text width + spin buttons + frame.
+  // At the default 9pt font that is ~52px text + ~30px chrome ~= 82px minimum;
+  // the cap lands near +30% over the old 78px so nothing clips.
+  {
+    const int cpuTextW = cpu_->fontMetrics().horizontalAdvance(QStringLiteral("CPU 90%"));
+    cpu_->setMinimumWidth(cpuTextW + 30);
+    cpu_->setMaximumWidth(cpuTextW + 46);
+  }
   // Node A: no manual GPU utilization control. GPU is ON/OFF only
   // (gpuEnabled_ checkbox = Adaptive/AUTO when ON); the deprecated internal
   // gpuPercent cap stays untouched until the Node B scheduler replaces it.
@@ -843,30 +848,24 @@ void MainWindow::buildToolbar() {
   gpuEnabled_->setObjectName("gpuToggle"); // automation hook, see folder_
   logTgl_ = new QCheckBox(toolBar_); logTgl_->setChecked(true);
   logTgl_->setObjectName("logTgl"); // automation hook, see folder_
-  // Execution resource mode: a single choice of how this program uses CPU/GPU
-  // resources. It is intentionally mutually exclusive (a program cannot be both
-  // CPU-only and GPU-maximising at the same time). Drives whether the GPU
+  // Execution resource strategy: one dropdown choice of how this program uses
+  // CPU/GPU resources (a dropdown can only hold one selection, so the
+  // single-select rule is structural). Drives whether the GPU
   // checkbox is enabled: CPU-only forces it off; AUTO and GPU-max leave the
   // program's adaptive GPU path available. The fine-grained CPU budget stays
   // with preset_/cpu_ below.
-  strategyAuto_ = new QCheckBox(toolBar_); strategyAuto_->setChecked(true);
-  strategyCpu_  = new QCheckBox(toolBar_); strategyCpu_->setChecked(false);
-  strategyGpu_  = new QCheckBox(toolBar_); strategyGpu_->setChecked(false);
-  strategyAuto_->setObjectName("strategyAuto");  // automation hook
-  strategyCpu_->setObjectName("strategyCpu");    // automation hook
-  strategyGpu_->setObjectName("strategyGpu");    // automation hook
-  strategyGroup_ = new QButtonGroup(toolBar_);
-  strategyGroup_->setExclusive(true);
-  for (QCheckBox* b : {strategyAuto_, strategyCpu_, strategyGpu_}) {
-    strategyGroup_->addButton(b);
-    b->setToolTip(trStr(lang(), "strategyModeTip"));
-  }
-  // A strategy is always selected: refusing to uncheck the last one keeps the
-  // group in a valid state. On change, reflect it in gpuEnabled_ and refresh
+  strategyBox_ = new QComboBox(toolBar_);
+  strategyBox_->setObjectName("strategyBox");  // automation hook
+  strategyBox_->addItem(trStr(lang(), "strategyModeAuto"));
+  strategyBox_->addItem(trStr(lang(), "strategyModeCpu"));
+  strategyBox_->addItem(trStr(lang(), "strategyModeGpu"));
+  strategyBox_->setCurrentIndex(0);
+  strategyBox_->setToolTip(trStr(lang(), "strategyModeTip"));
+  strategyBox_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  // On change, reflect it in gpuEnabled_ and refresh
   // the policy so the scan honours the selection.
-  connect(strategyAuto_, &QCheckBox::toggled, this, [this](bool on){ if(on) applyExecutionMode(); enforceStrategySelection(); });
-  connect(strategyCpu_,  &QCheckBox::toggled, this, [this](bool on){ if(on) applyExecutionMode(); enforceStrategySelection(); });
-  connect(strategyGpu_,  &QCheckBox::toggled, this, [this](bool on){ if(on) applyExecutionMode(); enforceStrategySelection(); });
+  connect(strategyBox_, qOverload<int>(&QComboBox::currentIndexChanged),
+          this, [this](int){ applyExecutionMode(); });
   // The scan button is gated on a folder being present, so editing the folder has
   // to re-evaluate that gate; otherwise clearing it would leave the button armed.
   connect(folder_, &QLineEdit::textChanged, this, [this](const QString&) { updateExecutionUiState(); });
@@ -899,15 +898,18 @@ void MainWindow::buildToolbar() {
   utilMenu_->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
   utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
   utilBtn_->setMenu(utilMenu_);
-  toolBar_->addWidget(folder_); toolBar_->addWidget(browse_);
+  toolBar_->addWidget(folder_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); toolBar_->addWidget(logTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator();
-  // Execution resource mode + fine CPU budget as one compact, single-row area.
-  toolBar_->addWidget(strategyAuto_); toolBar_->addWidget(strategyCpu_); toolBar_->addWidget(strategyGpu_);
+  // Execution resource strategy + fine CPU budget as one compact area.
+  toolBar_->addWidget(strategyBox_);
   toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
+  toolBar_->addSeparator();
   toolBar_->addWidget(mediaImgBtn_); toolBar_->addWidget(mediaVidBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
+  // All toolbar separators share one clearly visible style (2px dark rule).
+  toolBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #5a5a5a; width: 2px; margin-top: 4px; margin-bottom: 4px; }"));
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
   toolBar_->addWidget(utilBtn_); // far-right menu
@@ -1187,14 +1189,20 @@ void MainWindow::applyStaticTexts() {
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
   logTgl_->setText(trStr(l, "detailLogToggle"));
   logTgl_->setToolTip(trStr(l, "detailLogTip"));
-  // Detailed-log toggle plus the execution-strategy checkboxes. logTgl_
-  // enables diagnostic telemetry on the real search; the three checkboxes
-  // below are the single-select execution resource strategy, so their labels
-  // and tooltips describe a resource choice, not a benchmark-mode execution.
-  strategyAuto_->setText(trStr(l, "strategyModeAuto"));
-  strategyCpu_->setText(trStr(l, "strategyModeCpu"));
-  strategyGpu_->setText(trStr(l, "strategyModeGpu"));
-  for (QCheckBox* b : {strategyAuto_, strategyCpu_, strategyGpu_}) b->setToolTip(trStr(l, "strategyModeTip"));
+  // Detailed-log toggle plus the execution-strategy dropdown. logTgl_
+  // enables diagnostic telemetry on the real search; the dropdown below is
+  // the single-select execution resource strategy, so its items describe
+  // a resource choice, not a benchmark-mode execution.
+  {
+    const int cur = strategyBox_->currentIndex();
+    strategyBox_->blockSignals(true);
+    strategyBox_->setItemText(0, trStr(l, "strategyModeAuto"));
+    strategyBox_->setItemText(1, trStr(l, "strategyModeCpu"));
+    strategyBox_->setItemText(2, trStr(l, "strategyModeGpu"));
+    strategyBox_->setCurrentIndex(cur);
+    strategyBox_->blockSignals(false);
+    strategyBox_->setToolTip(trStr(l, "strategyModeTip"));
+  }
   gpuEnabled_->setText(trStr(l, "monitorGpu"));
   gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
@@ -1253,13 +1261,15 @@ void MainWindow::applyStaticTexts() {
 // ---------------------------------------------------------------------------
 //
 // The three checkboxes are the user's real-search resource choice
-// (single-select, enforced by strategyGroup_ plus enforceStrategySelection).
+// (single-select by construction: a dropdown holds exactly one choice).
 // This is intentionally separate from the CLI benchmark comparison modes:
 // the same words (AUTO / CPU-only / GPU-max) mean different things in the
 // two contexts, so no GpuBackendKind vector is built here.
 ExecutionResourceStrategy MainWindow::executionStrategy() const {
-  if (strategyCpu_ && strategyCpu_->isChecked()) return ExecutionResourceStrategy::CpuOnly;
-  if (strategyGpu_ && strategyGpu_->isChecked()) return ExecutionResourceStrategy::GpuMax;
+  if (strategyBox_) {
+    if (strategyBox_->currentIndex() == 1) return ExecutionResourceStrategy::CpuOnly;
+    if (strategyBox_->currentIndex() == 2) return ExecutionResourceStrategy::GpuMax;
+  }
   return ExecutionResourceStrategy::Auto;
 }
 
@@ -1267,12 +1277,9 @@ ExecutionResourceStrategy MainWindow::executionStrategy() const {
 // starting another run. Pause remains a scan-only control.
 // There is no process-wide gate here.
 void MainWindow::updateExecutionUiState() {
-  if (!strategyGroup_) return;
+  if (!strategyBox_) return;
 
   scan_->setEnabled(!scanning_);
-  strategyAuto_->setEnabled(true);
-  strategyCpu_->setEnabled(true);
-  strategyGpu_->setEnabled(true);
   // Pause is a scan-only control. Keeping the rule
   // in one place also makes the idle state consistent, because setRunning() only
   // runs for scans and would otherwise leave the button enabled with no scan.
@@ -1301,7 +1308,7 @@ void MainWindow::setRunning(bool v) {
     scanPaused_ = false;
   }
   scanning_ = v;
-  scan_->setEnabled(!v); browse_->setEnabled(!v); refresh_->setEnabled(!v);
+  scan_->setEnabled(!v); refresh_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   if (!v) scan_->setFocus(); // return the highlight to Start, as at launch
@@ -1922,16 +1929,6 @@ void MainWindow::gridCheckChanged(QListWidgetItem* it) {
   if (!it) return;
   setGroupMarked(it->data(Qt::UserRole).toInt(), it->checkState() == Qt::Checked);
 }
-void MainWindow::enforceStrategySelection() {
-  // The mutually-exclusive strategy group (auto/cpu-only/gpu-max) must always
-  // hold exactly one checked entry: refusing to drop the last one.
-  bool any = strategyAuto_->isChecked() || strategyCpu_->isChecked() || strategyGpu_->isChecked();
-  if (any) return;
-  // None selected: restore AUTO as the safe default.
-  strategyAuto_->blockSignals(true); strategyAuto_->setChecked(true); strategyAuto_->blockSignals(false);
-  applyExecutionMode();
-}
-
 void MainWindow::applyExecutionMode() {
   // The upper mode drives GPU availability; the CPU detail (preset_/cpu_) is
   // unchanged. CPU-only forces the GPU off; AUTO and GPU-max keep the adaptive
