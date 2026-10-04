@@ -813,10 +813,10 @@ void MainWindow::buildToolbar() {
   connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
   connect(cancel_, &QPushButton::clicked, this, &MainWindow::cancelScan);
   preset_ = new QComboBox(toolBar_);
-  // Percentages in the label make each level self-explanatory (Maximum 90%,
-  // High 75%, Balanced 55%, Gaming 25%).
-  preset_->addItems({QStringLiteral("Maximum 90%"), QStringLiteral("High 75%"), QStringLiteral("Balanced 55%"),
-                     QStringLiteral("Gaming 25%"), QStringLiteral("Custom")});
+  // Text-only labels (no percentages): the CPU percent lives in the spinbox
+  // next to it. Mapping stays index-based in resourceChanged().
+  preset_->addItems({QStringLiteral("Maximum"), QStringLiteral("High"), QStringLiteral("Balanced"),
+                     QStringLiteral("Gaming"), QStringLiteral("Custom")});
   preset_->setCurrentIndex(2);
   // Narrow to the content instead of stretching with the widest label so the
   // resource+CPU area stays compact.
@@ -837,7 +837,7 @@ void MainWindow::buildToolbar() {
   {
     const int cpuTextW = cpu_->fontMetrics().horizontalAdvance(QStringLiteral("CPU 90%"));
     cpu_->setMinimumWidth(cpuTextW + 30);
-    cpu_->setMaximumWidth(cpuTextW + 46);
+    cpu_->setMaximumWidth(cpuTextW + 54);
   }
   // Node A: no manual GPU utilization control. GPU is ON/OFF only
   // (gpuEnabled_ checkbox = Adaptive/AUTO when ON); the deprecated internal
@@ -885,7 +885,7 @@ void MainWindow::buildToolbar() {
   connect(logBtn_, &QPushButton::clicked, this, [this] { if (!lastTelemetryJson_.isEmpty()) showDetailedLogDialog(lastTelemetryJson_); });
   // Merged settings/help menu, docked at the far right (after the spacer):
   // monitor detail settings + help in one place.
-  auto* utilBtn_ = new QToolButton(toolBar_);
+  utilBtn_ = new QToolButton(toolBar_);
   utilBtn_->setText(QStringLiteral("☰"));
   QFont uf = utilBtn_->font(); uf.setPointSize(uf.pointSize() + 4); uf.setBold(true);
   utilBtn_->setFont(uf);
@@ -893,10 +893,10 @@ void MainWindow::buildToolbar() {
   utilBtn_->setToolTip(trStr(lang(), "settings") + "/" + trStr(lang(), "help"));
   // Same combo-style side arrow as the preset/view/kind controls.
   utilBtn_->setPopupMode(QToolButton::MenuButtonPopup);
-  connect(utilBtn_, &QToolButton::clicked, this, [this, utilBtn_] { utilBtn_->showMenu(); });
+  connect(utilBtn_, &QToolButton::clicked, this, [this] { utilBtn_->showMenu(); });
   auto* utilMenu_ = new QMenu(utilBtn_);
-  utilMenu_->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
-  utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
+  monSettingsAct_ = utilMenu_->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
+  helpAct_ = utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
@@ -908,8 +908,10 @@ void MainWindow::buildToolbar() {
   toolBar_->addSeparator();
   toolBar_->addWidget(mediaImgBtn_); toolBar_->addWidget(mediaVidBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
-  // All toolbar separators share one clearly visible style (2px dark rule).
-  toolBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #5a5a5a; width: 2px; margin-top: 4px; margin-bottom: 4px; }"));
+  // All toolbar separators share one clearly visible style: a 1px rule in a
+  // mid grey, lighter than before but darker than the faint native etch, with
+  // margins matching the height of the existing native separators.
+  toolBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #8c8c8c; width: 1px; margin-top: 6px; margin-bottom: 6px; }"));
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
   toolBar_->addWidget(utilBtn_); // far-right menu
@@ -1207,6 +1209,9 @@ void MainWindow::applyStaticTexts() {
   gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
   monBtn_->setChecked(monitorEnabled_);
+  if (monSettingsAct_) monSettingsAct_->setText(trStr(l, "monSettings"));
+  if (helpAct_) helpAct_->setText(trStr(l, "help"));
+  if (utilBtn_) utilBtn_->setToolTip(trStr(l, "settings") + "/" + trStr(l, "help"));
   logBtn_->setText(trStr(l, "searchLog"));
   auto* leftTitle = findChild<QLabel*>("leftTitle"); if (leftTitle) leftTitle->setText(trStr(l, "explorer"));
   auto* sumTitle = findChild<QLabel*>("sumTitle"); if (sumTitle) sumTitle->setText(trStr(l, "summary"));

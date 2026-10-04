@@ -254,6 +254,8 @@ private:
   QToolBar* toolBar_=nullptr;
   QLineEdit* folder_=nullptr;   QPushButton *scan_=nullptr,*pause_=nullptr,
     *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr;
+  QAction *monSettingsAct_=nullptr, *helpAct_=nullptr; // retexted on language change
+  QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;
   QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* logTgl_=nullptr;
