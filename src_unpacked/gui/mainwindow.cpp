@@ -1313,10 +1313,10 @@ void MainWindow::fitStrategyBoxWidth() {
   int frame = style()->pixelMetric(QStyle::PM_ComboBoxFrameWidth, nullptr, strategyBox_);
   if (frame <= 0) frame = 3;
   // +30 covers item-delegate side padding and focus frame that fontMetrics
-  // alone does not include, minus one Korean glyph: the box was one glyph
-  // too wide on "GPU 최대 활용" (EN "GPU MAX" still keeps ~17px slack).
+  // alone does not include, minus half a Korean glyph: full-glyph cut
+  // clipped half of the last char on "GPU 최대 활용".
   const int koGlyph = fm.horizontalAdvance(QStringLiteral("한"));
-  strategyBox_->setFixedWidth(textW + arrow + 2 * frame + 30 - koGlyph);
+  strategyBox_->setFixedWidth(textW + arrow + 2 * frame + 30 - koGlyph / 2);
 }
 
 // Enable gate for the scan/execution controls: a scan in progress disables
