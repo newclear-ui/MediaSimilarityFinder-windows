@@ -824,7 +824,7 @@ void MainWindow::buildToolbar() {
   // resource+CPU area stays compact.
   preset_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
   preset_->setMinimumContentsLength(9);
-  preset_->setMaximumWidth(94);
+  preset_->setMaximumWidth(102);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
   cpu_ = new QSpinBox(toolBar_);
   // The widget, stored policy, and engine input all use the same 10-90 user
@@ -1309,10 +1309,13 @@ void MainWindow::fitStrategyBoxWidth() {
   for (int i = 0; i < strategyBox_->count(); ++i)
     textW = std::max(textW, fm.horizontalAdvance(strategyBox_->itemText(i)));
   int arrow = style()->pixelMetric(QStyle::PM_MenuButtonIndicator, nullptr, strategyBox_);
-  if (arrow <= 0) arrow = 20;
+  if (arrow <= 0) arrow = 24;
   int frame = style()->pixelMetric(QStyle::PM_ComboBoxFrameWidth, nullptr, strategyBox_);
-  if (frame <= 0) frame = 2;
-  strategyBox_->setFixedWidth(textW + arrow + 2 * frame + 8);
+  if (frame <= 0) frame = 3;
+  // +30 covers item-delegate side padding and focus frame that fontMetrics
+  // alone does not include (measured: "GPU MAX"/"GPU 최대 활용" clipped ~2
+  // chars without it).
+  strategyBox_->setFixedWidth(textW + arrow + 2 * frame + 30);
 }
 
 // Enable gate for the scan/execution controls: a scan in progress disables
