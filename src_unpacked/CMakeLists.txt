@@ -686,6 +686,13 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_scan_workflow_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_workflow_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_workflow_test COMMAND msf_scan_workflow_test)
+      # S4 functional Detailed Logs acceptance: real MainWindow scan with
+      # [Detailed Logs] on, asserting the produced telemetry (purpose,
+      # counts, fingerprint, dialog path) instead of only the dialog.
+      add_executable(msf_scan_detailed_log_acceptance_test tests/scan_detailed_log_acceptance_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
+      target_link_libraries(msf_scan_detailed_log_acceptance_test PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_scan_detailed_log_acceptance_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME scan_detailed_log_acceptance_test COMMAND msf_scan_detailed_log_acceptance_test)
       # E2E video probe: copy + libx264 re-encode + trim + stranger through a
       # real scan (full XOR -> CandidateIndex incl. L1 anchors -> temporal).
       add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h)

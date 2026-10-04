@@ -355,6 +355,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // C2: record the calibration run that fed this scan (if any). Skipped
   // runs leave the section not_measured, which is the honest record.
   if (profCalibrated) telemetry_.calibration() = profCalib.telemetry;
+  // Cluster count consumed by finishScan below (computed after analyze).
+  std::size_t clusterGroups = 0;
   auto finishScan=[&](bool completed)->SearchReport{
     // Node A: cancelled/partial benchmarks stay distinguishable from clean
     // completions; file progress separates started/completed/remaining.
@@ -435,7 +437,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       st.selectedBackend = sd.backend;
       st.backendFallbacks = (std::uint64_t)r.gpuFallbackImages + telemetry_.videoGpuFallbacks();
     }
-    telemetry_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), r.groups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
+    telemetry_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), clusterGroups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
     return r;
   };
   bool telemetryWalkTimed=false;
@@ -684,8 +686,23 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   };
   ScanStats st;
   const auto benchAT0=std::chrono::steady_clock::now();
+  // Cluster count for telemetry: union-find over every analyzed pair, the same
+  // linkage the GUI rebuilds from streamed matches. ScanStats.groups counts
+  // pairs (pinned by pipeline tests and the CLI journal), so telemetry's
+  // matches.groups carries the cluster count shown beside "pairs" instead.
+  std::vector<std::size_t> clusterParent(files_.size());
+  for (std::size_t i = 0; i < clusterParent.size(); ++i) clusterParent[i] = i;
+  std::vector<char> clusterTouched(files_.size(), 0);
   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
    if(telemetryOn) telemetry_.addStreamedMatch();
+   if (m.left < clusterParent.size() && m.right < clusterParent.size()) {
+     std::size_t a = m.left;
+     while (clusterParent[a] != a) { clusterParent[a] = clusterParent[clusterParent[a]]; a = clusterParent[a]; }
+     std::size_t b = m.right;
+     while (clusterParent[b] != b) { clusterParent[b] = clusterParent[clusterParent[b]]; b = clusterParent[b]; }
+     if (a != b) clusterParent[a] = b;
+     clusterTouched[m.left] = 1; clusterTouched[m.right] = 1;
+   }
    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
    if(control && control->onMatch) {
@@ -712,6 +729,19 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
   else if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_);
   if(r.completed) db_.setSamplingGeneration(kSamplingGeneration);
+  // Distinct linkage clusters among this scan's pairs. The GUI rebuilds the
+  // same union-find from streamed matches, so telemetry's matches.groups
+  // agrees with what the user sees (st.groups counts pairs instead).
+  {
+    std::unordered_set<std::size_t> roots;
+    for (std::size_t i = 0; i < files_.size() && i < clusterParent.size(); ++i) {
+      if (!clusterTouched[i]) continue;
+      std::size_t rt = i;
+      while (clusterParent[rt] != rt) rt = clusterParent[rt];
+      roots.insert(rt);
+    }
+    clusterGroups = roots.size();
+  }
   r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; return finishScan(r.completed);
 }
 }

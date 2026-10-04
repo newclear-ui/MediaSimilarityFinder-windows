@@ -123,6 +123,10 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 public:
   explicit MainWindow(QWidget* parent=nullptr); ~MainWindow();
+  // Test hook: last scan's telemetry JSON (empty when no scan ran or the
+  // worker is gone). Lets acceptance tests assert the detailed-log result
+  // of a real MainWindow scan without touching private state.
+  std::string telemetryJsonForTest() const;
   static void scanLog(const QString& line); // process-wide scan log file
   static void sortTiedReferencePaths(QStringList&, const QHash<QString,qulonglong>&, const QHash<QString,qulonglong>&);
 private slots:

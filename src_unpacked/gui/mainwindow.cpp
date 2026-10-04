@@ -1671,6 +1671,11 @@ void MainWindow::scanFailed(QString msg) {
   statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
   setRunning(false);
 }
+std::string MainWindow::telemetryJsonForTest() const {
+  if (!worker_) return {};
+  if (!worker_->scanEngine().hasTelemetry()) return {};
+  return worker_->scanEngine().telemetryJson();
+}
 void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
   QDialog* wait = cancelWait_;
   cancelWait_ = nullptr;
