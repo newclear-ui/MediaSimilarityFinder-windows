@@ -35,6 +35,10 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/generated/msf_build_version.h"
   @ONLY)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
+# CUDA host compiler needs /utf-8 too. nvcc does not accept /utf-8 directly; the
+# flag must be forwarded to the MSVC host compiler via -Xcompiler. Without this
+# the CUDA headers trip MSVC warning C4819 (code page 949) under CMAKE_CUDA_FLAGS.
+add_compile_options($<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>>:-Xcompiler=/utf-8>)
 option(MSF_ENABLE_CUDA "Enable NVIDIA CUDA when available (deprecated alias of MSF_ENABLE_GPU)" ON)
 # Node A: canonical internal concept is GPU. MSF_ENABLE_CUDA stays as a
 # deprecated compatibility alias; MSF_GPU_BACKEND selects the concrete

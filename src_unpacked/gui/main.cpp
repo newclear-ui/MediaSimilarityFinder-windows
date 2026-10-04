@@ -32,12 +32,19 @@ static bool attachParentConsole() {
     // Already running in a console: the inherited streams are already correct.
     if (GetConsoleWindow() != nullptr) return true;
 
+    // A stream is "redirected" only when it is a real, usable redirection target.
+    // An invalid descriptor, a missing OS handle, or FILE_TYPE_UNKNOWN means the
+    // stream cannot carry output at all. That is the PowerShell/GUI-subsystem case:
+    // reporting those as redirected skipped AttachConsole and left std::cout with
+    // nowhere to write, so --version printed nothing. They must report false so
+    // AttachConsole + CONOUT$ runs.
     const auto streamIsRedirected = [](FILE* f) {
         const int fd = _fileno(f);
-        if (fd < 0) return true;  // no descriptor: unusable
+        if (fd < 0) return false;  // no descriptor: unusable, not a redirection
         const intptr_t raw = _get_osfhandle(fd);
-        if (raw == -1 || raw == 0) return true;  // no usable OS handle
+        if (raw == -1 || raw == 0) return false;  // no usable OS handle
         const DWORD t = GetFileType(reinterpret_cast<HANDLE>(raw));
+        if (t == FILE_TYPE_UNKNOWN) return false;  // unusable handle
         return t == FILE_TYPE_DISK || t == FILE_TYPE_PIPE;
     };
 
