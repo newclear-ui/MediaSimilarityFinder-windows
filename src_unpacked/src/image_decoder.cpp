@@ -11,6 +11,8 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 #include <new>
+#include <cstdlib>
+#include <cwchar>
 #include <vector>
 #pragma comment(lib,"windowscodecs.lib")
 #pragma comment(lib,"ole32.lib")
@@ -95,34 +97,81 @@ inline void probeOsFileOpen(const wchar_t* wpath, DecodeTelemetry* tel) {
 // Query cost is unchanged in shape: one failed lookup on files whose container
 // uses the second path. It is inside the metadataMs bucket that D9c/D9d
 // already account for.
-inline WICBitmapTransformOptions exifOrientationToTransform(IWICMetadataQueryReader* meta) {
+inline WICBitmapTransformOptions transformForOrientationValue(unsigned o) {
+  switch (o) {
+    case 2: return WICBitmapTransformFlipHorizontal;
+    case 3: return WICBitmapTransformRotate180;
+    case 4: return WICBitmapTransformFlipVertical;
+    case 5: return (WICBitmapTransformOptions)(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal);
+    case 6: return WICBitmapTransformRotate90;
+    case 7: return (WICBitmapTransformOptions)(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal);
+    case 8: return WICBitmapTransformRotate270;
+    default: return WICBitmapTransformRotate0;  // 1, or a value we do not act on
+  }
+}
+// Orientation source precedence (I-XMP contract): a usable EXIF value wins and
+// the XMP packet is never even queried; EXIF absent / query failed / wrong
+// type / out-of-range value all count as unresolved and fall through to XMP.
+// XMP supports exactly one representation: the tiff:Orientation integer,
+// which WIC surfaces as a VT_LPWSTR string (measured). Anything else stays
+// unresolved and yields the identity transform.
+enum class OrientationSource { None, Exif, Xmp };
+struct ResolvedOrientation { WICBitmapTransformOptions transform; OrientationSource source; };
+inline bool parseOrientationText(const wchar_t* s, unsigned& o) {
+  if (!s) return false;
+  wchar_t* end = nullptr;
+  const long v = std::wcstol(s, &end, 10);
+  if (end == s || v < 1 || v > 8) return false;
+  while (*end == L' ' || *end == L'\t') ++end;
+  if (*end != L'\0') return false;
+  o = (unsigned)v;
+  return true;
+}
+inline ResolvedOrientation resolveOrientationToTransform(IWICMetadataQueryReader* meta) {
   static const wchar_t* const kPaths[] = {
       L"/app1/ifd/{ushort=274}",  // JPEG
       L"/ifd/{ushort=274}",       // TIFF
   };
-  if (!meta) return WICBitmapTransformRotate0;
-  // Only VT_UI2 values are consumed, so the first path that yields one wins and
-  // the loop stops there. A JPEG resolves on the first query and never pays the
-  // second, which is the common case for a photo corpus.
-  for (const wchar_t* path : kPaths) {
-    PROPVARIANT v; PropVariantInit(&v);
-    const HRESULT hr = meta->GetMetadataByName(path, &v);
-    const bool found = SUCCEEDED(hr) && v.vt == VT_UI2;
-    if (!found) { PropVariantClear(&v); continue; }
-    const unsigned short o = v.uiVal;
-    PropVariantClear(&v);
-    switch (o) {
-      case 2: return WICBitmapTransformFlipHorizontal;
-      case 3: return WICBitmapTransformRotate180;
-      case 4: return WICBitmapTransformFlipVertical;
-      case 5: return (WICBitmapTransformOptions)(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal);
-      case 6: return WICBitmapTransformRotate90;
-      case 7: return (WICBitmapTransformOptions)(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal);
-      case 8: return WICBitmapTransformRotate270;
-      default: return WICBitmapTransformRotate0;  // 1, or a value we do not act on
+  if (meta) {
+    // Only VT_UI2 values are consumed, so the first path that yields one wins and
+    // the loop stops there. A JPEG resolves on the first query and never pays the
+    // second, which is the common case for a photo corpus.
+    for (const wchar_t* path : kPaths) {
+      PROPVARIANT v; PropVariantInit(&v);
+      const HRESULT hr = meta->GetMetadataByName(path, &v);
+      const bool found = SUCCEEDED(hr) && v.vt == VT_UI2;
+      if (!found) { PropVariantClear(&v); continue; }
+      const unsigned short o = v.uiVal;
+      PropVariantClear(&v);
+      if (o >= 1 && o <= 8) return {transformForOrientationValue(o), OrientationSource::Exif};
+      break;  // present but unusable: fall through to XMP, do not try the other EXIF path
+    }
+    // XMP fallback, queried only when EXIF left nothing usable.
+    {
+      PROPVARIANT v; PropVariantInit(&v);
+      const HRESULT hr = meta->GetMetadataByName(L"/xmp/tiff:Orientation", &v);
+      if (SUCCEEDED(hr)) {
+        unsigned o = 0;
+        bool ok = false;
+        if (v.vt == VT_UI2) { o = v.uiVal; ok = (o >= 1 && o <= 8); }
+        else if (v.vt == VT_UI4) { ok = (v.ulVal >= 1 && v.ulVal <= 8); o = (unsigned)v.ulVal; }
+        else if (v.vt == VT_I4) { ok = (v.lVal >= 1 && v.lVal <= 8); o = (unsigned)v.lVal; }
+        else if (v.vt == VT_LPWSTR) { ok = parseOrientationText(v.pwszVal, o); }
+        else if (v.vt == VT_LPSTR && v.pszVal) {
+          wchar_t w[32]; const size_t n = std::mbstowcs(w, v.pszVal, 31);
+          if (n != (size_t)-1) { w[n] = L'\0'; ok = parseOrientationText(w, o); }
+        } else if (v.vt == VT_BSTR && v.bstrVal) { ok = parseOrientationText(v.bstrVal, o); }
+        PropVariantClear(&v);
+        if (ok) return {transformForOrientationValue(o), OrientationSource::Xmp};
+      } else {
+        PropVariantClear(&v);
+      }
     }
   }
-  return WICBitmapTransformRotate0;
+  return {WICBitmapTransformRotate0, OrientationSource::None};
+}
+inline WICBitmapTransformOptions exifOrientationToTransform(IWICMetadataQueryReader* meta) {
+  return resolveOrientationToTransform(meta).transform;
 }
 #endif
 // Minimal P5 grayscale reader shared by all platforms. On Windows it is the

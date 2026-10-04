@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.44 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.45 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -271,6 +271,11 @@ if(MSF_BUILD_TESTS)
     # silently never applied). The corpus/group modes stay unregistered because
     # they need a measured dataset root and take minutes.
     add_test(NAME shared_wic_source_probe COMMAND msf_shared_wic_source_probe --selfcheck)
+    # I-XMP orientation fallback: self-contained EXIF/XMP APP1 fixtures driving
+    # ImageDecoder::decodeBoth (geometry + orientApplied). No dataset needed.
+    add_executable(msf_xmp_orientation_test tests/xmp_orientation_test.cpp)
+    target_link_libraries(msf_xmp_orientation_test PRIVATE msf_core)
+    add_test(NAME xmp_orientation_test COMMAND msf_xmp_orientation_test)
     # D4a: backend-internal timing contract. Registered in both trees on
     # purpose — the recorder half must be proven where CUDA does not exist.
     add_executable(msf_gpu_timing_test tests/gpu_timing_test.cpp)
