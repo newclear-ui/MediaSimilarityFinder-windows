@@ -129,3 +129,11 @@ The final durable path and report UI for GUI detailed logs are fixed during impl
 ## 10. Exit condition
 
 S4 is not CLOSED until the documents and code agree, [Detailed Logs] works on the real GUI search path, and CPU/GPU builds and regression tests pass.
+
+---
+
+## Current status (2026-10-03, at cf126c4)
+
+- S4 implementation: PASS. GUI visible UI verified directly by the user: PASS.
+- Functional Detailed Logs verification is DEFERRED: generating Detailed Logs on the real Search/Update path cannot be validated end to end yet because the product search/index/image-video comparison algorithms are not final.
+- S4 status: verification in progress (not CLOSED). The section 10 exit condition above stands as the design contract.

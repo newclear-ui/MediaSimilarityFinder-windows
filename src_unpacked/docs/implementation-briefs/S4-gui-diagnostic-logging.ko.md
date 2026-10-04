@@ -129,3 +129,11 @@ GUI 상세 로그의 최종 durable path와 report UI는 코드 구현 단계에
 ## 10. 종료 조건
 
 문서와 실제 코드가 일치하고, GUI 실제 검색에서 [상세 로그]가 정상적으로 생성되며, CPU/GPU 빌드와 회귀 테스트가 모두 통과하기 전에는 S4를 CLOSED로 선언하지 않는다.
+
+---
+
+## 현재 상태 (2026-10-03, cf126c4 기준)
+
+- S4 implementation: PASS. GUI visible UI는 사용자가 직접 확인하여 PASS.
+- Functional Detailed Logs 검증은 DEFERRED: 실제 Search/Update 경로의 Detailed Logs 생성은 제품 search/index/이미지·영상 비교 알고리즘이 최종이 아니므로 전체 경로 기능 검증을 유보한다.
+- S4 상태: verification in progress (CLOSED 아님). 위 §10 종료 조건은 설계 계약으로 유지된다.

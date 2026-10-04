@@ -392,3 +392,9 @@ The design was not changed for either.
    reusing the `isVideoPath()` rule that already existed. No new classifier.
 2. S3 `benchmarkNowStamp()` appends a literal `Z` to `localtime_s` output. This is an
    S3 problem, was not fixed in this S5, and is recorded as separate debt.
+---
+
+## Current status (2026-10-03, at cf126c4)
+
+- S5 infrastructure: PASS / REVALIDATED (parser, renderer, BenchmarkRunner/BenchmarkSession wiring, journal/storage, cancellation, live --benchmark wiring, S2/S3 contract reuse).
+- S5 product benchmark validation: DEFERRED. Image/video comparison algorithms and search/index semantics are not final, so current numbers must not be treated as final performance/correctness evidence. A working --benchmark does not mean S5 CLOSED.

@@ -375,3 +375,9 @@ Windows Ctrl+C trigger 검증은 **NOT RUN** 이다(검증 환경에 Windows con
    제품에 이미 있던 `isVideoPath()` 규칙을 재사용했으며 새 classifier 는 없다.
 2. S3 `benchmarkNowStamp()` 가 `localtime_s` 결과에 literal `Z` 를 붙인다.
    S3 문제이므로 이번 S5 에서 수정하지 않고 별도 부채로 기록한다.
+---
+
+## 현재 상태 (2026-10-03, cf126c4 기준)
+
+- S5 infrastructure: PASS / REVALIDATED (parser, renderer, BenchmarkRunner/BenchmarkSession 연결, journal/storage, cancellation, 실제 --benchmark 연결, S2/S3 계약 재사용).
+- S5 product benchmark validation: DEFERRED. image/video comparison 알고리즘과 search/index semantics가 최종이 아니므로 현재 수치를 최종 성능/정확성 근거로 취급하지 않는다. --benchmark 동작 사실이 S5 CLOSED를 의미하지 않는다.
