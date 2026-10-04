@@ -173,6 +173,10 @@ private:
   ExecutionResourceStrategy executionStrategy() const;
   // Sizes the strategy dropdown to its widest item text (no slack).
   void fitStrategyBoxWidth();
+  // Keeps the CPU spinbox prefix/suffix ("CPU ", "%") visible but
+  // non-selectable: clamps selection and cursor into the digit range.
+  void clampCpuDigitSelection();
+  bool eventFilter(QObject* watched, QEvent* ev) override;
   // Single gate for the scan/execution enable state. A scan in progress
   // disables starting another run, and Pause stays a scan-only control
   // (the detailed-log path has no Pause).
@@ -259,7 +263,7 @@ private:
   QAction *monSettingsAct_=nullptr, *helpAct_=nullptr; // retexted on language change
   QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;
-  QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QLabel* cpuPrefix_=nullptr; QLabel* cpuSuffix_=nullptr; QCheckBox* gpuEnabled_=nullptr;
+  QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
   QCheckBox* logTgl_=nullptr;
   // Execution resource strategy (single-select dropdown): the user's
   // real-search resource choice. logTgl_ enables diagnostic telemetry

@@ -38,6 +38,8 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QKeyEvent>
+#include <algorithm>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
@@ -822,7 +824,7 @@ void MainWindow::buildToolbar() {
   // resource+CPU area stays compact.
   preset_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
   preset_->setMinimumContentsLength(9);
-  preset_->setMaximumWidth(110);
+  preset_->setMaximumWidth(94);
   connect(preset_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::resourceChanged);
   cpu_ = new QSpinBox(toolBar_);
   // The widget, stored policy, and engine input all use the same 10-90 user
@@ -830,16 +832,20 @@ void MainWindow::buildToolbar() {
   // normalizes values arriving through make_policy.
   cpu_->setRange(msf::kUserCpuPercentMin, msf::kUserCpuPercentMax);
   cpu_->setObjectName("cpuSpin"); // automation hook
-  // "CPU" and "%" are plain labels beside the box (not prefix/suffix), so
-  // only the digits are selectable/editable inside the spinbox.
-  cpuPrefix_ = new QLabel(QStringLiteral("CPU"), toolBar_);
-  cpuSuffix_ = new QLabel(QStringLiteral("%"), toolBar_);
-  // "90" (the widest value) must fit: text width + spin buttons + frame.
+  // Prefix/suffix stay inside the box for looks, but only the digits are
+  // selectable/editable (see clampCpuDigitSelection + the SelectAll filter).
+  cpu_->setPrefix(QStringLiteral("CPU "));
+  cpu_->setSuffix(QStringLiteral("%"));
+  // "CPU 90%" (the widest value) must fit: text width + spin buttons + frame.
   {
-    const int cpuTextW = cpu_->fontMetrics().horizontalAdvance(QStringLiteral("90"));
+    const int cpuTextW = cpu_->fontMetrics().horizontalAdvance(QStringLiteral("CPU 90%"));
     cpu_->setMinimumWidth(cpuTextW + 30);
     cpu_->setMaximumWidth(cpuTextW + 54);
   }
+  QLineEdit* cpuEdit = cpu_->findChild<QLineEdit*>();
+  connect(cpuEdit, &QLineEdit::selectionChanged, this, [this] { clampCpuDigitSelection(); });
+  connect(cpuEdit, &QLineEdit::cursorPositionChanged, this, [this] { clampCpuDigitSelection(); });
+  cpuEdit->installEventFilter(this);
   // Node A: no manual GPU utilization control. GPU is ON/OFF only
   // (gpuEnabled_ checkbox = Adaptive/AUTO when ON); the deprecated internal
   // gpuPercent cap stays untouched until the Node B scheduler replaces it.
@@ -906,14 +912,14 @@ void MainWindow::buildToolbar() {
   toolBar_->addSeparator();
   // Execution resource strategy + fine CPU budget as one compact area.
   toolBar_->addWidget(strategyBox_);
-  toolBar_->addWidget(preset_); toolBar_->addWidget(cpuPrefix_); toolBar_->addWidget(cpu_); toolBar_->addWidget(cpuSuffix_);
+  toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
   toolBar_->addSeparator();
   toolBar_->addWidget(mediaImgBtn_); toolBar_->addWidget(mediaVidBtn_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
   // All toolbar separators share one clearly visible style: a 1px rule in a
   // mid grey, lighter than before but darker than the faint native etch, with
   // margins matching the height of the existing native separators.
-  toolBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #8c8c8c; width: 1px; margin-top: 6px; margin-bottom: 6px; }"));
+  toolBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #8c8c8c; width: 2px; margin-top: 6px; margin-bottom: 6px; }"));
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
   toolBar_->addWidget(utilBtn_); // far-right menu
@@ -1701,6 +1707,41 @@ void MainWindow::resourceChanged(int i) {
   cpu_->setValue(policy_.cpuPercent);
   cpu_->blockSignals(false);
 }
+void MainWindow::clampCpuDigitSelection() {
+  if (!cpu_ || !cpu_->findChild<QLineEdit*>()) return;
+  QLineEdit* e = cpu_->findChild<QLineEdit*>();
+  const int pre = cpu_->prefix().size(), suf = cpu_->suffix().size();
+  const int n = e->text().size();
+  const int lo = std::min(pre, n), hi = std::max(lo, n - suf);
+  const int ss = e->selectionStart();
+  e->blockSignals(true);
+  if (ss < 0) {
+    e->setCursorPosition(std::clamp(e->cursorPosition(), lo, hi));
+  } else {
+    int s = std::clamp(ss, lo, hi);
+    int se = std::clamp(ss + (int)e->selectedText().size(), lo, hi);
+    if (s > se) std::swap(s, se);
+    e->setCursorPosition(se);
+    if (se > s) e->setSelection(s, se - s);
+  }
+  e->blockSignals(false);
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* ev) {
+  // Ctrl+A inside the CPU box selects the digits only, never prefix/suffix.
+  if (cpu_ && watched == cpu_->findChild<QLineEdit*>() && ev->type() == QEvent::KeyPress) {
+    const auto* k = static_cast<QKeyEvent*>(ev);
+    if (k->matches(QKeySequence::SelectAll)) {
+      QLineEdit* e = cpu_->findChild<QLineEdit*>();
+      if (!e) return true;
+      const int pre = cpu_->prefix().size();
+      e->setSelection(pre, std::max(0, (int)(e->text().size() - pre - cpu_->suffix().size())));
+      return true;
+    }
+  }
+  return QMainWindow::eventFilter(watched, ev);
+}
+
 void MainWindow::customResourceChanged() {
   // Show the same normalized value that make_policy will store. Updating the
   // widget before switching to Custom keeps the preset change and the later
