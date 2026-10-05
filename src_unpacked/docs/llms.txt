@@ -78,6 +78,7 @@ Important status: 0.9.4.26 implements Nodes A–C plus D1a/D1b observability, D2
 - src_unpacked/docs/build-history/0.9.4.25.ko.md / .en.md — D9b Candidate B recorded as NOT ACCEPTED: parity held and counters were identical, but the expensive verify cost did not drop because frame_ssim dominates.
 - src_unpacked/docs/build-history/0.9.4.24.ko.md / .en.md — QSettings organization renamed to MediaSimilarityFinder-ui with a safe one-time legacy settings migration.
 - src_unpacked/docs/worklog/0.9.4.ko.md / .en.md — cumulative 0.9.4 development-line work log: why D was closed on evidence, which hypothesis was refuted by measurement, what was deliberately left unimplemented, and the working rules learned.
+- src_unpacked/docs/recent-work-report.ko.md / .en.md — single-document summary report of the three most recent important changes: the --version console output fix (attachParentConsole stream misdetection), the CUDA C4819 encoding warning removal (-Xcompiler /utf-8 for the CUDA host compiler), and the XMP Orientation Fallback implementation plus its independent review correction and the color_thumb no-FFmpeg audit pre-register. Points at build-history/worklog for the underlying evidence.
 - src_unpacked/AGENTS.md - working rules (docs policy, build baseline 0.9.2.32, working validation line 0.9.4.25, CUDA invariance, release procedure).
 
 ## Key entry points

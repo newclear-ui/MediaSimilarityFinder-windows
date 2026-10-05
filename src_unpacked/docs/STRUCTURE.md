@@ -21,6 +21,7 @@
 - docs/development-progress.ko/.en.md — 현재 node/version/substep/blocker/validation 상태.
 - docs/document-naming.ko/.en.md — 문서 명명, 정식 위치, 역할 분리, rename 절차의 기준.
 - docs/worklog/0.9.4.ko/.en.md — 0.9.4 개발선의 누적 작업 내역(측정 근거, 기각된 가설, 보류 판단, 학습한 방식). **Performance / Tuning Experiment Index** 를 포함하며, 실험 계보와 살아 있는/기각된 후보를 상태와 재검토 조건으로 연결한다. 기각된 후보는 삭제하지 않는다.
+- docs/recent-work-report.ko/.en.md — 최근 중요 작업 3건의 결과 요약 보고(무엇을 했고 현재 상태가 어떤지). 상세 증거는 build-history/worklog에 있고, 이 문서는 한 곳에서 확인하기 위한 요약본이다.
 - docs/architecture/resource-scheduling.ko/.en.md — CPU 정책 + Adaptive GPU AUTO + INI calibration + 실시간 부하 기반 자원관리 목표 아키텍처.
 - docs/architecture/benchmark-telemetry-roadmap.ko/.en.md — benchmark/telemetry 상세 설계.
 
