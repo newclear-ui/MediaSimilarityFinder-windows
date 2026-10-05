@@ -10,12 +10,12 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.44 (`6ada90f`) |
+| Reference code | 0.9.4.45 (`619f74a` product fix; later commits are docs-only) |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **S4 GUI Detailed Logging verification in progress + product Search/Index/Comparison acceptance audit preparation** — S1/S2/S3 complete, S4 implementation and visible UI are PASS, functional Detailed Logs acceptance remains DEFERRED. S5 infrastructure is REVALIDATED and final product benchmark validation is DEFERRED. F-1 remains CONDITIONAL with NVDEC production adoption NO |
-| Current phase | **Run the product Search/Index/Comparison acceptance audit on the 0.9.4.44 regression baseline first.** F-1 remains `CONDITIONAL` from 0.9.4.43 and NVDEC production adoption is `NO` and **F-2 production integration is forbidden** (directive §41). Core reversal: 13 of 14 dataset files are IDR-start, yet **1360x0808 mismatched 20/20** and **still mismatched 20/20 when restarted from a confirmed IDR** (1080x1920 was 1/20). So **mid-GOP is only one failure mode** and NVDEC exactness holds neither at 4K nor merely because a stream is IDR-start. The contract makes `exactnessVerified` a necessary condition for `Safe` (structure is only necessary), and `Unsafe`/`Unknown` collapse onto CPU fallback. Performance is also **2.1x slower per frame** (CPU 4.438 s vs NVDEC 9.397 s, 870f), so **no case exists**. The 1360x808 root cause is `INCONCLUSIVE`. Previously Node E **closed**. E-3B (0.9.4.42) drove A/B/C through the real `MediaSearchEngine::scan()` production path to judge end-to-end exactness, and returned **`NOT ACCEPTED`**. **Central finding: the E-2A/E-2B "exact" figures were self-referential** — both experiments compared one seek-based implementation with another, and both call `av_seek_frame` + `avcodec_flush_buffers`, so they **shared the same decoder reference-state loss** and agreed for the wrong reason. The **first** measurement to include the production from-zero sweep found **one genuine divergence** on a 4K H.264 file (`reference count overflow` / `no frame!` / `concealing`). In the same runs sparse was **17.38 % slower end to end** (4K decode dominates), so **the performance argument is gone too**. Three corrections: ① the executor returned a truncated result as success → sample-count contract added ② container-index GOP reported as `Known` → downgraded to `Estimated` ③ a `0.5 × framesPerSample` threshold was removed (it contradicted measurement). **Outcome: `ExactnessPolicy::RefuseAll` as the default** — with no codec holding a production-parity proof, sparse is unreachable in production and every file is Sequential. **Production behaviour is identical to 0.9.4.41 (13/13 bit-identical, adaptive -0.02 %, neutral).** **Methodology lesson: an exactness baseline must be the production path.** Two reimplementations of the same family cannot validate each other, because a shared defect passes. **Next: sparse is not to be reopened without evidence. Revisit conditions are stated in the build history** |
-| Current version | 0.9.4.44 |
+| Current node | **S4 GUI Detailed Logging verification in progress + product Search/Index/Comparison acceptance audit preparation** — S1/S2/S3 complete, S4 implementation and visible UI are PASS, functional Detailed Logs acceptance remains DEFERRED. S5 infrastructure is REVALIDATED and final product benchmark validation is DEFERRED. F-1 remains CONDITIONAL with NVDEC production adoption NO. **I-XMP Orientation Fallback implementation is complete** (code implementation PASS, fixture 38 checks PASS, real-dataset coverage NOT_AVAILABLE, full scan regression DEFERRED) → **production acceptance CONDITIONAL**. The `color_thumb` no-FFmpeg classification is audit/pre-register only; the production correction is NOT PERFORMED. The `--version` console output predicate fix and the CUDA host compiler `/utf-8` forwarding are VERIFIED. |
+| Current phase | **Run the product Search/Index/Comparison acceptance audit on the 0.9.4.45 regression baseline first.** F-1 remains `CONDITIONAL` from 0.9.4.43 and NVDEC production adoption is `NO` and **F-2 production integration is forbidden** (directive §41). Core reversal: 13 of 14 dataset files are IDR-start, yet **1360x0808 mismatched 20/20** and **still mismatched 20/20 when restarted from a confirmed IDR** (1080x1920 was 1/20). So **mid-GOP is only one failure mode** and NVDEC exactness holds neither at 4K nor merely because a stream is IDR-start. The contract makes `exactnessVerified` a necessary condition for `Safe` (structure is only necessary), and `Unsafe`/`Unknown` collapse onto CPU fallback. Performance is also **2.1x slower per frame** (CPU 4.438 s vs NVDEC 9.397 s, 870f), so **no case exists**. The 1360x808 root cause is `INCONCLUSIVE`. Previously Node E **closed**. E-3B (0.9.4.42) drove A/B/C through the real `MediaSearchEngine::scan()` production path to judge end-to-end exactness, and returned **`NOT ACCEPTED`**. **Central finding: the E-2A/E-2B "exact" figures were self-referential** — both experiments compared one seek-based implementation with another, and both call `av_seek_frame` + `avcodec_flush_buffers`, so they **shared the same decoder reference-state loss** and agreed for the wrong reason. The **first** measurement to include the production from-zero sweep found **one genuine divergence** on a 4K H.264 file (`reference count overflow` / `no frame!` / `concealing`). In the same runs sparse was **17.38 % slower end to end** (4K decode dominates), so **the performance argument is gone too**. Three corrections: ① the executor returned a truncated result as success → sample-count contract added ② container-index GOP reported as `Known` → downgraded to `Estimated` ③ a `0.5 × framesPerSample` threshold was removed (it contradicted measurement). **Outcome: `ExactnessPolicy::RefuseAll` as the default** — with no codec holding a production-parity proof, sparse is unreachable in production and every file is Sequential. **Production behaviour is identical to 0.9.4.41 (13/13 bit-identical, adaptive -0.02 %, neutral).** **Methodology lesson: an exactness baseline must be the production path.** Two reimplementations of the same family cannot validate each other, because a shared defect passes. **Next: sparse is not to be reopened without evidence. Revisit conditions are stated in the build history** |
+| Current version | 0.9.4.45 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |
@@ -2233,7 +2233,7 @@ threshold/regression/anomaly code and a report formatter were not implemented.
 
 ## 2026-10-04 — 0.9.4.45 XMP review correction + color_thumb audit / pre-register
 
-Baseline: `0.9.4.45` / `97db24f` - CPU CTest 102/102 - GPU CTest 103/103
+Baseline: `0.9.4.45` / `97db24f` (implementation) + `392a4c2` (this review correction) - CPU CTest 102/102 - GPU CTest 103/103
 Detail: the last entry of `docs/worklog/0.9.4.en.md`
 
 ### Current XMP status (verdict corrected)
@@ -2283,4 +2283,107 @@ S4 final GUI visual/save acceptance = DEFERRED
 S5 product benchmark               = DEFERRED
 S6                                = DEFERRED
 NVDEC production adoption          = DEFERRED
+```
+
+---
+
+## 2026-10-04 — 0.9.4.45 CPU/GPU reproduction verification + progress baseline correction
+
+Baseline: `0.9.4.45` / `619f74a` (product fix) - CPU CTest 102/102 - GPU CTest 103/103
+Detail: the last entry of `docs/worklog/0.9.4.en.md`, `docs/build-history/0.9.4.45.en.md`
+
+### Two product fixes (`619f74a`) that progress had never recorded
+
+#### 1. `--version` console output predicate misdetection
+
+Reported by the user: `MediaSimilarityFinder.exe --version` printed nothing from
+PowerShell while CMD worked.
+
+The cause was `streamIsRedirected()` in `gui/main.cpp::attachParentConsole()`.
+Because the executable is GUI subsystem (`WIN32_EXECUTABLE TRUE`), a null
+`GetConsoleWindow()` leads to `AttachConsole(ATTACH_PARENT_PROCESS)`, and that path
+skips the `CONOUT$` reopen when it believes the streams are redirected. The
+predicate **mistook "the stream cannot be written to" for "the stream is
+redirected".**
+
+| Condition | Previous verdict | What it actually meant |
+|---|---|---|
+| `fd < 0` | `true` (wrong) | no descriptor = unusable |
+| `_get_osfhandle()` is `-1` or `0` | `true` (wrong) | no usable OS handle = unusable |
+| `GetFileType()` is `FILE_TYPE_UNKNOWN` | fell through the `FILE_TYPE_DISK`/`FILE_TYPE_PIPE` test, so `false` | invalid handle = unusable |
+
+So **two** cases were wrongly `true`; `FILE_TYPE_UNKNOWN` already resolved to
+`false`, but only implicitly. The fix makes **all three explicitly `false`**, which
+keeps the original design intent of preserving real redirection and removes only
+the misdetection.
+
+VERIFIED: `--version`, `--help`, an invalid option (stderr, EXIT=2), `--smoke`,
+`cmd /c`, OS-level separated stdout/stderr redirection, and `Start-Process -Wait`
+all correct. OS redirection records 45 bytes.
+
+#### 2. CUDA host compiler encoding warning C4819
+
+The `warning C4819` in the GPU build log was not a CUDA syntax or link error but an
+encoding warning: code page 949 cannot represent non-ASCII characters in the CUDA
+headers (`driver_types.h`, `cuda_runtime_api.h`). The cause was `/utf-8` being
+applied to `CXX` only, so it never reached the CUDA host compiler.
+
+`nvcc` does not accept `/utf-8` directly, so it is forwarded to the MSVC host
+compiler through `-Xcompiler`. The first attempt, `COMPILE_LANG_AND_ID:CUDA,MSVC`,
+**failed to match because CUDA reports compiler id `NVIDIA`**. The final form is
+`$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>>:-Xcompiler=/utf-8>`.
+
+VERIFIED: `-Xcompiler="/EHsc -Ob2 /utf-8"` present on the real nvcc command line;
+forced recompile of `cuda_backend.cu` reported C4819=0 / warning=0 / error=0 and
+produced `msf_cuda.lib`. CUDA architectures (`compute_75/86/89`) and runtime are
+unchanged.
+
+### Reproduction verification result (VERIFIED)
+
+| Item | Verdict |
+|---|---|
+| CPU CTest (`build-windows-cpu`, Release) | VERIFIED 102/102 |
+| GPU CTest (`build-windows-gpu`, Release) | VERIFIED 103/103 |
+| CUDA C4819 | VERIFIED 0 (real nvcc recompile confirmed) |
+| `/utf-8` forwarded via `-Xcompiler` | VERIFIED (real command line) |
+| Four CLI cases + OS redirection | VERIFIED |
+| PowerShell `>` 0-byte | REPORTED — not a regression |
+
+The first GPU build did not invoke nvcc at all, because the CUDA object was
+up-to-date (0 invocations), and **it was not recorded as PASS on that basis.** Only
+the mtime of `src/cuda_backend.cu` was changed to force a recompile; its content was
+left untouched (`hash-object` identical to HEAD).
+
+The PowerShell `>` 0-byte case reproduces identically on the pre-fix binary and
+leaves `$LASTEXITCODE` empty, because PowerShell does not wait for GUI-subsystem
+executables. Console output verification therefore uses **OS-level redirection** as
+the criterion from here on.
+
+### Progress baseline correction (why this document changed)
+
+During the review, the "Current Status" header of `development-progress.{ko,en}.md`
+still pointed at `0.9.4.44 (6ada90f)` while the lower part of the same document
+already documented `0.9.4.45` work — a **self-contradiction**. `AGENTS.md` clause 7
+names this document as the source of truth for the current state, so the header was
+brought in line with reality.
+
+- Reference code `0.9.4.44 (6ada90f)` → `0.9.4.45 (619f74a)`
+- Current version `0.9.4.44` → `0.9.4.45`
+- Current node now carries XMP CONDITIONAL, the `color_thumb` pre-register, and the
+  state of both fixes
+- The XMP entry baseline now names its own commit `392a4c2`
+- `docs/llms.txt` current-baseline references updated from `0.9.4.44` / `6ada90f`
+
+### Boundaries
+
+```text
+product code change                  none (this commit is docs-only)
+version bump                         none (stays 0.9.4.45)
+engine/DB/schema/cache version       unchanged (1.5.0 / 1.0.3 / 9 / 9)
+XMP semantics change                 none
+color_thumb R1 implementation        none (audit only)
+Search/Index/Comparison change       none
+vcpkg migration                      none
+dedicated console-output test        not added (recorded as a candidate)
+S4 / S5 / S6 / NVDEC                kept DEFERRED
 ```

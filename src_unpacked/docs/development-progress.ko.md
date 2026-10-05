@@ -10,12 +10,12 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.44 (`6ada90f`) |
+| 기준 코드 | 0.9.4.45 (`619f74a` 제품 수정, 이후 커밋은 문서 전용) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **S4 GUI Detailed Logging verification in progress + product Search/Index/Comparison acceptance audit 준비** — S1/S2/S3 완료, S4 implementation PASS 및 visible UI 사용자 확인 PASS, functional Detailed Logs acceptance DEFERRED. S5 infrastructure는 REVALIDATED 상태이며 product benchmark는 DEFERRED. F-1은 CONDITIONAL/NVDEC production adoption NO 유지 |
-| 현재 단계 | **0.9.4.44 regression baseline 위에서 제품 Search/Index/Comparison acceptance audit을 먼저 수행한다.** F-1은 0.9.4.43에서 `CONDITIONAL`이며 NVDEC production adoption 은 `NO` 이며 **F-2 production integration 은 금지**다(지시 §41). 핵심 반전: dataset 14개 중 13개가 file-start IDR 인데 **1360x0808 가 20/20 mismatch**였고 **확인된 IDR 에서 재시작해도 20/20** 이었다(1080x1920 도 1/20). 즉 **mid-GOP 은 실패 모드 중 하나일 뿐**이며, NVDEC exactness 는 4K 에서도 IDR-start 에서도 성립하지 않는다. 계약에 `exactnessVerified` 를 `Safe` 의 필수조건으로 도입했고(structure 는 필요조건일 뿐), `Unsafe`/`Unknown` 은 CPU fallback 으로 collapse 된다. 성능도 **frame당 2.1배 느림**(CPU 4.438 s vs NVDEC 9.397 s, 870f)이라 **근거 없음**. 1360x808 의 root cause 는 `INCONCLUSIVE`. 이전 Node E **종결**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
-| 현재 버전 | 0.9.4.44 |
+| 현재 노드 | **S4 GUI Detailed Logging verification in progress + product Search/Index/Comparison acceptance audit 준비** — S1/S2/S3 완료, S4 implementation PASS 및 visible UI 사용자 확인 PASS, functional Detailed Logs acceptance DEFERRED. S5 infrastructure는 REVALIDATED 상태이며 product benchmark는 DEFERRED. F-1은 CONDITIONAL/NVDEC production adoption NO 유지. **I-XMP Orientation Fallback 구현 완료** (code implementation PASS, fixture 38 checks PASS, real-dataset coverage NOT_AVAILABLE, full scan regression DEFERRED) → **production acceptance CONDITIONAL**. `color_thumb` no-FFmpeg classification은 audit/pre-register만 완료이고 production correction은 NOT PERFORMED. `--version` 콘솔 출력 판정 수정과 CUDA host compiler `/utf-8` 전달은 VERIFIED. |
+| 현재 단계 | **0.9.4.45 regression baseline 위에서 제품 Search/Index/Comparison acceptance audit을 먼저 수행한다.** F-1은 0.9.4.43에서 `CONDITIONAL`이며 NVDEC production adoption 은 `NO` 이며 **F-2 production integration 은 금지**다(지시 §41). 핵심 반전: dataset 14개 중 13개가 file-start IDR 인데 **1360x0808 가 20/20 mismatch**였고 **확인된 IDR 에서 재시작해도 20/20** 이었다(1080x1920 도 1/20). 즉 **mid-GOP 은 실패 모드 중 하나일 뿐**이며, NVDEC exactness 는 4K 에서도 IDR-start 에서도 성립하지 않는다. 계약에 `exactnessVerified` 를 `Safe` 의 필수조건으로 도입했고(structure 는 필요조건일 뿐), `Unsafe`/`Unknown` 은 CPU fallback 으로 collapse 된다. 성능도 **frame당 2.1배 느림**(CPU 4.438 s vs NVDEC 9.397 s, 870f)이라 **근거 없음**. 1360x808 의 root cause 는 `INCONCLUSIVE`. 이전 Node E **종결**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
+| 현재 버전 | 0.9.4.45 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
@@ -2092,7 +2092,7 @@ benchmark 실행 자동화 · 측정 engine · threshold/regression/anomaly code
 
 ## 2026-10-04 — 0.9.4.45 XMP 검수 정정 + color_thumb audit / pre-register
 
-기준: `0.9.4.45` / `97db24f` · CPU CTest 102/102 · GPU CTest 103/103
+기준: `0.9.4.45` / `97db24f` (구현) + `392a4c2` (이 검수 정정) · CPU CTest 102/102 · GPU CTest 103/103
 상세: `docs/worklog/0.9.4.ko.md` 마지막 항목
 
 ### XMP 현재 상태 (판정 정정)
@@ -2136,4 +2136,99 @@ S4 최종 GUI visual/save acceptance = DEFERRED
 S5 product benchmark               = DEFERRED
 S6                                = DEFERRED
 NVDEC production adoption          = DEFERRED
+```
+
+---
+
+## 2026-10-04 — 0.9.4.45 CPU/GPU 재현 검증 + progress 기준선 정정
+
+기준: `0.9.4.45` / `619f74a` (제품 수정) · CPU CTest 102/102 · GPU CTest 103/103
+상세: `docs/worklog/0.9.4.ko.md` 마지막 항목, `docs/build-history/0.9.4.45.ko.md`
+
+### 제품 수정 2건 (`619f74a`) — progress 에 이전 등재되지 않던 항목
+
+#### 1. `--version` 콘솔 출력 판정 오류
+
+사용자 제보. `MediaSimilarityFinder.exe --version`이 PowerShell에서 출력되지 않고
+CMD에서는 정상이었다.
+
+원인은 `gui/main.cpp::attachParentConsole()` 의 `streamIsRedirected()` 다. GUI
+subsystem(`WIN32_EXECUTABLE TRUE`)이라 `GetConsoleWindow()`가 null이면
+`AttachConsole(ATTACH_PARENT_PROCESS)` 를 시도하고, 리다이렉션이 있으면 `CONOUT$`
+재오픈을 건너뛴다. 이 판정이 **스트림 사용 불가**를 **리다이렉션**으로 오인했다.
+
+| 조건 | 이전 판정 | 의미였던 것 |
+|---|---|---|
+| `fd < 0` | `true` (잘못됨) | 디스크립터 없음 = 사용 불가 |
+| `_get_osfhandle()` 가 `-1`/`0` | `true` (잘못됨) | 유효 OS 핸들 없음 = 사용 불가 |
+| `GetFileType()` 가 `FILE_TYPE_UNKNOWN` | 마지막 `FILE_TYPE_DISK`/`FILE_TYPE_PIPE` 비교로 흘러가 `false` | 무효 핸들 = 사용 불가 |
+
+즉 잘못 `true` 처리된 것은 **두 가지**였고, `FILE_TYPE_UNKNOWN` 은 이미 `false`
+였으나 명시적 판정이 아니었다. 이번 수정에서 **세 경우 모두 명시적 `false`** 로
+바꾸어 실제 리다이렉션 보존이라는 기존 설계 의도를 유지한 채 판정 오류만 제거했다.
+
+VERIFIED 실측: `--version` / `--help` / invalid option(stderr, EXIT=2) / `--smoke`
+/ `cmd /c` / OS 수준 stdout·stderr 분리 redirection / `Start-Process -Wait`
+모두 정상. OS redirection 45바이트 기록.
+
+#### 2. CUDA host compiler 인코딩 경고 C4819
+
+GPU 빌드 로그의 `warning C4819` 는 CUDA 문법·링크 오류가 아니라 코드 페이지 949
+가 CUDA 헤더(`driver_types.h`, `cuda_runtime_api.h`)의 비ASCII 문자를 표현하지
+못해서 나는 인코딩 경고였다. 원인은 `/utf-8` 가 `CXX` 에만 적용되어 CUDA host
+compiler 에 전달되지 않은 것이다.
+
+`nvcc` 는 `/utf-8` 를 직접 받지 못하므로 `-Xcompiler` 로 MSVC host compiler 에
+경유시킨다. 첫 시도는 `COMPILE_LANG_AND_ID:CUDA,MSVC` 였으나 **CUDA 의 compiler id
+가 `NVIDIA` 라 매칭에 실패**했다. 최종은
+`$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>>:-Xcompiler=/utf-8>` 이다.
+
+VERIFIED 실측: 실제 nvcc 명령줄에서 `-Xcompiler="/EHsc -Ob2 /utf-8"` 확인,
+`cuda_backend.cu` 강제 재컴파일 후 `C4819=0 / warning=0 / error=0`,
+`msf_cuda.lib` 생성. CUDA architecture(`compute_75/86/89`) 와 runtime 불변.
+
+### 재현 검증 결과 (VERIFIED)
+
+| 항목 | 판정 |
+|---|---|
+| CPU CTest (`build-windows-cpu`, Release) | VERIFIED 102/102 |
+| GPU CTest (`build-windows-gpu`, Release) | VERIFIED 103/103 |
+| CUDA C4819 | VERIFIED 0건 (실제 nvcc 재컴파일 확인) |
+| `-Xcompiler` 에 `/utf-8` 전달 | VERIFIED (실제 명령줄) |
+| CLI 4항 + OS redirection | VERIFIED |
+| PowerShell `>` 0-byte | REPORTED — regression 아님 |
+
+첫 GPU 빌드는 CUDA object 가 up-to-date 라 nvcc 가 실행되지 않았고(호출 0회),
+**이 상태로 PASS 처리하지 않았다.** `src/cuda_backend.cu` 의 mtime 만 바꿔 강제
+재컴파일했고 내용은 변경하지 않았다(`hash-object` 가 HEAD 와 동일).
+
+PowerShell `>` 0-byte 는 수정 전 binary 에서도 동일 재현되고 `$LASTEXITCODE` 가
+비어 있다. PowerShell 이 GUI subsystem exe 를 기다리지 않기 때문이며, 이후 콘솔
+출력 검증은 **OS 수준 redirection** 을 기준으로 한다.
+
+### progress 기준선 정정 (이번 문서 변경의 이유)
+
+이번 검토에서 `development-progress.{ko,en}.md` 의 헤더 "현재 상태" 가
+`0.9.4.44 (6ada90f)` 를 가리키고 있었으나, 같은 문서 하단이 이미 `0.9.4.45` 작업을
+문서화해 **자기모순**이었다. `AGENTS.md` 7항이 이 문서를 현재 상태의 기준으로
+지정하므로 헤더를 실제 상태에 맞췄다.
+
+- 기준 코드 `0.9.4.44 (6ada90f)` → `0.9.4.45 (619f74a)`
+- 현재 버전 `0.9.4.44` → `0.9.4.45`
+- 현재 노드에 XMP CONDITIONAL / `color_thumb` pre-register / 수정 2건 상태 추가
+- XMP 항목 기준선에 자기 커밋 `392a4c2` 병기
+- `docs/llms.txt` 의 `0.9.4.44` / `6ada90f` 현재 기준선 표현 갱신
+
+### 경계
+
+```text
+제품 코드 변경                    없음 (이번 커밋은 문서 전용)
+버전 bump                         없음 (0.9.4.45 유지)
+engine/DB/schema/cache version     불변 (1.5.0 / 1.0.3 / 9 / 9)
+XMP semantics 변경                 없음
+color_thumb R1 구현                없음 (audit 만)
+Search/Index/Comparison 변경       없음
+vcpkg 이동                         없음
+콘솔 출력 전용 회귀 테스트          미추가 (후보로 기록)
+S4 / S5 / S6 / NVDEC              DEFERRED 유지
 ```
