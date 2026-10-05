@@ -33,6 +33,7 @@ below is surprising, **follow the link to its origin.**
 > **`src_unpacked/AGENTS.md` working rule**: read steps 1-4 before changing source,
 > and do not start a node the current gate does not permit.
 > In particular, the Active Build Queue in `development-progress` determines the current execution priority.
+> **Progress synchronization rule**: whenever Node/Build implementation, verification, verdict, gate, or next work changes, update `development-progress.ko.md` / `.en.md` immediately. This document must remain the latest entry point for current execution state, not the store of detailed completed evidence.
 
 ## Verdict values (no progress percentages)
 
