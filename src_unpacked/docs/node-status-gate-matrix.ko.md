@@ -106,10 +106,10 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        S4  (GUI Detailed Logging acceptance) + 본선 product acceptance audit
-다음             S5  실제 dataset product benchmark → S6 controlled measurement gate
-직접 원인        구현된 Search/Index/Comparison semantics 의 제품 acceptance 미완료
-                 S4 functional acceptance 전까지 S5 는 CLOSED 로 올리지 않는다
+활성 Node        제품 acceptance 결함 수정 (DEFECT-A/B) → S4 (GUI Detailed Logging acceptance)
+다음             S4 실제 화면 acceptance → S5 실제 dataset product benchmark → S6 controlled measurement gate
+직접 원인        acceptance audit(2026-10-04)이 real dataset 에서 제품 결함 DEFECT-A/B 를 찾아 NOT ACCEPTED 종료.
+                 결함 수정과 회귀 검증 전까지 S4 acceptance 로 넘어가지 않는다
 ```
 
 **S4 acceptance 가 막히지 않는 이유**: 이 환경은 headless 이며, 결과 다이얼로그의
@@ -139,6 +139,7 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 | sparse seek | `NOT ACCEPTED` — 재검토 조건 명시됨 | `build-history/0.9.4.42.*` |
 | `exactnessVerified` 필수조건 (F-1) | `CONDITIONAL` | `implementation-briefs/F-random-access-safety.*` |
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
+| 제품 acceptance (Search/Index/Comparison) | `NOT ACCEPTED` — DEFECT-A/B | `worklog/0.9.4.*` acceptance audit 항목 |
 | `color_thumb` no-FFmpeg classification | `DESIGNED` (audit 완료) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*` |
 | nvcc 경고 release gate 등록 | 미결정 | `worklog/0.9.4.*` |
 | 콘솔 출력 전용 회귀 테스트 | 미추가 | `worklog/0.9.4.*` |

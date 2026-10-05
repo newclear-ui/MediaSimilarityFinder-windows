@@ -23,14 +23,18 @@ A separate `workprogress` document is intentionally not created; this document i
 
 > This section records **only live work**. Remove an item from this queue when it is completed; preserve its details in Work Log / Build History.
 > The actual content of `0.9.4.46` is conditional on the acceptance gate below and must not be treated as pre-locked.
+> **Updated 2026-10-04**: the priority-0 product acceptance audit was executed and ended **`NOT ACCEPTED` because a product defect was found**. The completed audit is removed from this queue, and the conditional priority 2 resolved to "defect found", so fixing that defect is now the fixed content of the next build. Detail is in the acceptance audit entry of `docs/worklog/0.9.4.en.md`.
 
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.45 | Product Search / Index / Comparison acceptance audit | First establish the real product semantics on the implemented production path | **NEXT** |
-| 1 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs final functional acceptance | Accept the real GUI result/display/save path and decide whether S4 can close | **NEXT** |
-| 2 | 0.9.4.46 | **Conditional**: if acceptance finds a product defect, fix that first; otherwise `color_thumb` R1 fixture + no-FFmpeg skip/pass | Determine the actual contents of the next build | **PENDING** |
-| 3 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
-| 4 | S5 | Real-dataset product benchmark | Run measurement only after S4 and product acceptance gates pass | **GATE PENDING** |
+| 0 | 0.9.4.46 | **DEFECT-A + DEFECT-B fix** — silent indexing of a decode-failing file (`ycbcr_lzw_bt709.tif`), and permanent `modified` reporting for a file that never analyzes | Fix the product defect found by the acceptance audit. This fix is now the confirmed content of the next build | **PENDING** |
+| 1 | 0.9.4.46 | Add a rescan-convergence regression test for analysis-failing files (prevents DEFECT-B from recurring) | No test currently asserts that a rescan converges to `unchanged` when a file fails analysis | **PENDING** |
+| 2 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs final functional acceptance | Accept the real GUI result/display/save path and decide whether S4 can close. Requires real screen verification, so headless automation alone cannot close it | **PENDING** |
+| 3 | 0.9.4.47 candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Pushed back because the acceptance defect fix takes precedence. Start only after the defect fix and its regression verification | **PENDING** |
+| 4 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
+| 5 | S5 | Real-dataset product benchmark | Run measurement only after S4 and product acceptance gates pass | **GATE PENDING** |
+
+> Nothing beyond priority 2 is started until priorities 0 and 1 are resolved. `color_thumb` R1 moved from conditional priority 2 to priority 3 because the condition resolved to "defect found".
 
 ## Completed Major Milestones
 
@@ -47,6 +51,7 @@ This section keeps only a **compressed completion state** for long-term orientat
 | F-1 | **CONDITIONAL / PRODUCTION ADOPTION NO** | NVIDIA NVDEC investigation completed; production integration prohibited |
 | S0–S3 | **CLOSED** | Initial Validation / Benchmark track infrastructure completed |
 | S4 | **IMPLEMENTED / VERIFICATION IN PROGRESS** | GUI Detailed Logs implementation and user UI confirmation complete; final functional acceptance remains |
+| product acceptance | **NOT ACCEPTED** | Search/Index/Comparison boundaries were proven PASS by an actual product run (694 files, every counter identical on CPU/GPU, determinism confirmed), but a real-dataset scan found DEFECT-A/B, so the total is NOT ACCEPTED |
 
 
 ## Current Status

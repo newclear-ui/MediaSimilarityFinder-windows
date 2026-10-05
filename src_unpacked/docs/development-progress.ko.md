@@ -4,22 +4,6 @@
 > → [`docs/node-status-gate-matrix.ko.md`](node-status-gate-matrix.ko.md)
 > 상태판은 인덱스이며, 이 문서와 Roadmap/Build History가 판정·수치의 원본입니다.
 
-## Active Build Queue
-
-순서는 실제 작업 순서다. 완료된 항목은 제거하고 다음 실제 작업을 최상단에 올린다.
-미래 작업을 완료된 것으로 기록하지 않는다.
-
-| 순위 | 대상 | 버전 | 상태 | 근거 |
-|---|---|---|---|---|
-| 1 | **DEFECT-A + DEFECT-B 수정** — 디코드 실패 파일의 무음 인덱싱 / `modified` 영구 보고 | 0.9.4.46 | **NOT STARTED** | acceptance audit 결함 등록. `worklog/0.9.4.ko.md` |
-| 2 | 분석 실패 파일 재스캔 수렴 회귀 테스트 (DEFECT-B 재발 방지) | 0.9.4.46 | NOT STARTED | 기존 테스트 공백 |
-| 3 | `color_thumb` R1 fixture + no-FFmpeg skip/pass 처리 | 0.9.4.47 후보 | DEFERRED (우선순위 하향) | 결함 수정이 우선 |
-| 4 | S4 GUI Detailed Logs 최종 functional acceptance (실제 화면) | — | DEFERRED | 화면 검증 필요, headless 한계 |
-| 5 | S5 실제 dataset product benchmark | — | DEFERRED | S4 acceptance 의존 |
-| 6 | S6 controlled measurement gate | — | DEFERRED | 실측 dataset 필요, threshold 미정 |
-
-> 1·2번이 해결되기 전까지 3번 이후로 넘어가지 않는다.
-
 ## 문서 목적
 
 이 문서는 development-roadmap.ko.md의 **현재 실제 실행 상태**를 기록합니다.
@@ -39,14 +23,18 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 > 이 절은 **현재 살아 있는 작업만** 기록하는 실행 큐다. 작업이 완료되면 여기서 제거하고, 상세 내용은 Work Log / Build History에 보존한다.
 > `0.9.4.46`의 실제 내용은 아래 Gate 결과에 따라 확정하며, 미리 고정된 것으로 간주하지 않는다.
+> **2026-10-04 갱신**: 우선순위 0 의 제품 acceptance audit을 실행했고 **제품 결함이 발견되어 `NOT ACCEPTED` 로 종료**했다. 완료된 audit은 큐에서 제거했고, 조건부였던 우선순위 2 의 조건이 "결함 발견"으로 확정되어 결함 수정으로 확정했다. 상세 근거는 `docs/worklog/0.9.4.ko.md` 의 acceptance audit 항목.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
 | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.45 | 제품 Search / Index / Comparison acceptance audit | 구현된 production semantics의 실제 제품 동작을 먼저 확정 | **진행 예정** |
-| 1 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs 최종 functional acceptance | 실제 GUI 결과 표시·저장 경로를 acceptance하고 S4 CLOSED 여부 판정 | **진행 예정** |
-| 2 | 0.9.4.46 | **조건부**: acceptance에서 제품 결함 발견 시 해당 결함 우선 수정; 결함이 없으면 `color_thumb` R1 fixture + no-FFmpeg skip/pass | 다음 빌드의 실제 내용 확정 | **대기** |
-| 3 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | production acceptance CONDITIONAL 해소 여부 판정 | **대기** |
-| 4 | S5 | 실제 dataset product benchmark | S4 및 제품 acceptance 완료 후 측정 | **Gate 대기** |
+| 0 | 0.9.4.46 | **DEFECT-A + DEFECT-B 수정** — 디코드 실패 파일의 무음 인덱싱(`ycbcr_lzw_bt709.tif`), 분석 실패 파일의 `modified` 영구 보고 | acceptance 에서 발견된 제품 결함 우선 수정. 결함 수정이 다음 빌드의 실제 내용으로 확정됨 | **대기** |
+| 1 | 0.9.4.46 | 분석 실패 파일 재스캔 수렴 회귀 테스트 추가 (DEFECT-B 재발 방지) | "분석 실패 파일을 포함해 재스캔하면 `unchanged` 로 수렴하는가"를 검증하는 테스트가 현재 존재하지 않음 | **대기** |
+| 2 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs 최종 functional acceptance | 실제 GUI 결과 표시·저장 경로를 acceptance하고 S4 CLOSED 여부 판정. 실제 화면 검증이 필요해 headless 자동화만으로는 종결 불가 | **대기** |
+| 3 | 0.9.4.47 후보 | `color_thumb` R1 fixture + no-FFmpeg skip/pass 처리 | acceptance 결함 수정이 우선이므로 뒤로 밀림. 결함 수정·회귀 검증 완료 후 착수 | **대기** |
+| 4 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | production acceptance CONDITIONAL 해소 여부 판정 | **대기** |
+| 5 | S5 | 실제 dataset product benchmark | S4 및 제품 acceptance 완료 후 측정 | **Gate 대기** |
+
+> 우선순위 0·1 이 해결되기 전까지 2 번 이후로 넘어가지 않는다. `color_thumb` R1 은 조건부 우선순위 2 에서 **결함 발견으로 조건이 해소되어 3 번으로 밀렸다.**
 
 ## 완료된 주요 이정표
 
@@ -63,6 +51,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | F-1 | **CONDITIONAL / PRODUCTION ADOPTION NO** | NVIDIA NVDEC 조사 완료; production integration 금지 |
 | S0–S3 | **CLOSED** | Validation / Benchmark track의 초기 인프라 완료 |
 | S4 | **IMPLEMENTED / VERIFICATION IN PROGRESS** | GUI Detailed Logs 구현·사용자 UI 확인 완료, 최종 functional acceptance만 남음 |
+| 제품 acceptance | **NOT ACCEPTED** | Search/Index/Comparison 경계는 실제 제품 실행으로 PASS 입증(694파일, CPU/GPU 전 카운터 동일, 결정성 확인). 다만 real dataset 스캔에서 DEFECT-A/B 발견으로 총합은 NOT ACCEPTED |
 
 
 ## 현재 상태
