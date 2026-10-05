@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.45` / HEAD synchronized - CPU CTest 102/102 - GPU CTest 103/103
-Last updated: 2026-10-04
+Baseline: `0.9.4.46` / HEAD synchronized - CPU CTest 103/103 - GPU CTest 104/104
+Last updated: 2026-10-05
 
 ## Role of this document
 
