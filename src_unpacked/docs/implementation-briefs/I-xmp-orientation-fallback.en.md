@@ -4,7 +4,7 @@ Status: **IMPLEMENTED / PRODUCTION ACCEPTANCE CONDITIONAL** — original pre-reg
 
 ```text
 Implementation baseline  v0.9.4.44 / 1564b87
-Current product baseline  v0.9.4.45 / 619f74a
+Current product baseline  v0.9.4.46 / 427f3cd
 Experiment   I-XMP orientation fallback
 Product change   YES — XMP fallback added to the ImageDecoder orientation source
 ```
