@@ -20,11 +20,11 @@
 같은 숫자와 판정을 여러 문서에 복사하지 않는다. 아래 표에서 의아한 항목이 있으면
 **해당 원본 링크로 내려갈 것.**
 
-## 읽기 순서 (에이전트 세션 시작 시)
+## 읽기 순서 (OpenCode / ChatGPT 에이전트 세션 시작 시)
 
-1. **이 문서** — 현재 어느 Node에 있고 다음 Gate가 무엇인가
-2. `development-roadmap.{ko,en}.md` — 방향과 선행조건
-3. `development-progress.{ko,en}.md` — 현재 위치와 blocker
+1. **이 문서** — 전체 Node/Gate의 현재 진입점
+2. **`development-progress.{ko,en}.md`** — 현재 실행 큐 · 현재 위치 · blocker · 완료 주요 이정표
+3. `development-roadmap.{ko,en}.md` — 방향과 선행조건
 4. 활성 Node의 `docs/implementation-briefs/<Node>-*.md`
 5. 필요한 `docs/architecture/*.md`
 6. 관련 `docs/build-history/` + `docs/worklog/`
@@ -32,6 +32,7 @@
 
 > **`src_unpacked/AGENTS.md` 작업 규칙**: 소스를 변경하기 전에 위 1~4를 반드시 읽고,
 > 현재 Gate가 허용하지 않는 Node를 먼저 시작하지 않는다.
+> 특히 `development-progress`의 Active Build Queue가 현재 작업의 실행 우선순위를 결정한다.
 
 ## 판정값 정의 (진행률 %를 쓰지 않는다)
 
