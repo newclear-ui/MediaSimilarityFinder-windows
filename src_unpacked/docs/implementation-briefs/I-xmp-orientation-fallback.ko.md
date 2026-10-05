@@ -1,9 +1,10 @@
 # Implementation Brief — I-XMP Orientation Fallback (Pre-register)
 
-Status: **PRE-REGISTERED** (fixture/production 구현보다 먼저 커밋된다)
+Status: **IMPLEMENTED / PRODUCTION ACCEPTANCE CONDITIONAL** — original pre-registration contract is retained; implementation is complete, while real-dataset/full-scan acceptance remains deferred.
 
 ```text
-Base         v0.9.4.44 / 1564b87
+Implementation baseline  v0.9.4.44 / 1564b87
+Current product baseline  v0.9.4.45 / 619f74a
 Experiment   I-XMP orientation fallback
 Product change   YES — ImageDecoder orientation source에 XMP fallback 추가
 ```
