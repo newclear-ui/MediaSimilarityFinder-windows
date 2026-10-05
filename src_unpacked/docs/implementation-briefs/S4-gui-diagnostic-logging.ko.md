@@ -1,6 +1,6 @@
 # Implementation Brief — S4 GUI 상세 로그
 
-Status: IMPLEMENTED / VERIFICATION IN PROGRESS — current product baseline 0.9.4.45 (`619f74a`). The design reset remains the semantic contract; the implementation evidence is anchored at 0.9.4.44 (`6ada90f`). This brief records the current contract/state.
+Status: IMPLEMENTED / VERIFICATION IN PROGRESS — current product baseline 0.9.4.46 (`427f3cd`). The design reset remains the semantic contract; the implementation evidence is anchored at 0.9.4.44 (`6ada90f`). This brief records the current contract/state.
 
 관련 상위 설계: docs/architecture/gui-diagnostic-logging.ko.md / .en.md
 
