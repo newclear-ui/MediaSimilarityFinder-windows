@@ -10,6 +10,44 @@
 
 Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회복 분기를 기록합니다.
 
+## 세션 시작 필수 진입점
+
+이 문서는 **OpenCode 및 ChatGPT 에이전트가 새로운 세션을 시작할 때 반드시 읽어야 하는 핵심 진행 문서**다.
+`docs/node-status-gate-matrix.ko.md`가 전체 Node/Gate의 1페이지 인덱스라면, 이 문서는 **현재 실행 큐·실제 현재 상태·완료된 주요 이정표·현재 blocker**를 복원하는 실행 기준 문서다.
+세션 재시작 시 Matrix를 읽은 직후 이 문서를 읽고, 이 문서의 현재 작업 우선순위를 먼저 따른다.
+완료된 상세 실험·측정·판단은 `docs/worklog/`에, 버전별 실제 변경과 증거는 `docs/build-history/`에 유지한다.
+별도의 `workprogress` 문서는 만들지 않으며, 이 문서를 현재 작업 진행의 단일 진입점으로 사용한다.
+
+## 현재 작업 우선순위 / Active Build Queue
+
+> 이 절은 **현재 살아 있는 작업만** 기록하는 실행 큐다. 작업이 완료되면 여기서 제거하고, 상세 내용은 Work Log / Build History에 보존한다.
+> `0.9.4.46`의 실제 내용은 아래 Gate 결과에 따라 확정하며, 미리 고정된 것으로 간주하지 않는다.
+
+| 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
+| --- | --- | --- | --- | --- |
+| 0 | 0.9.4.45 | 제품 Search / Index / Comparison acceptance audit | 구현된 production semantics의 실제 제품 동작을 먼저 확정 | **진행 예정** |
+| 1 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs 최종 functional acceptance | 실제 GUI 결과 표시·저장 경로를 acceptance하고 S4 CLOSED 여부 판정 | **진행 예정** |
+| 2 | 0.9.4.46 | **조건부**: acceptance에서 제품 결함 발견 시 해당 결함 우선 수정; 결함이 없으면 `color_thumb` R1 fixture + no-FFmpeg skip/pass | 다음 빌드의 실제 내용 확정 | **대기** |
+| 3 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | production acceptance CONDITIONAL 해소 여부 판정 | **대기** |
+| 4 | S5 | 실제 dataset product benchmark | S4 및 제품 acceptance 완료 후 측정 | **Gate 대기** |
+
+## 완료된 주요 이정표
+
+이 절은 장기적으로 유지되는 **압축된 완료 상태**만 기록한다. 상세 측정값, 실패 실험, 구현 변경은 Work Log / Build History를 참조한다.
+
+| 영역 | 완료 상태 | 핵심 결과 |
+| --- | --- | --- |
+| A | **CLOSED** | Foundation / Terminology / Instrumentation 기준선 확립 |
+| B | **CLOSED** | Adaptive Scheduler 완료 |
+| C | **CLOSED** | Calibration / INI Performance Profile C1~C4 완료 |
+| D | **CLOSED** | Pipeline / Queue Optimization 완료; 측정된 addressable ceiling 0.044% |
+| I | **COMPLETE** | Analyze / Matching Performance 완료 |
+| E | **CLOSED / NOT ACCEPTED** | Sparse exactness를 production에서 입증하지 못해 `ExactnessPolicy::RefuseAll`, production Sequential 유지 |
+| F-1 | **CONDITIONAL / PRODUCTION ADOPTION NO** | NVIDIA NVDEC 조사 완료; production integration 금지 |
+| S0–S3 | **CLOSED** | Validation / Benchmark track의 초기 인프라 완료 |
+| S4 | **IMPLEMENTED / VERIFICATION IN PROGRESS** | GUI Detailed Logs 구현·사용자 UI 확인 완료, 최종 functional acceptance만 남음 |
+
+
 ## 현재 상태
 
 | 항목 | 상태 |
