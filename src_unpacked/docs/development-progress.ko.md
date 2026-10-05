@@ -1,5 +1,9 @@
 # Development Progress — 0.9.4 개발선
 
+> 현재 전체 Node 상태의 1페이지 요약:
+> → [`docs/node-status-gate-matrix.ko.md`](node-status-gate-matrix.ko.md)
+> 상태판은 인덱스이며, 이 문서와 Roadmap/Build History가 판정·수치의 원본입니다.
+
 ## 문서 목적
 
 이 문서는 development-roadmap.ko.md의 **현재 실제 실행 상태**를 기록합니다.

@@ -1,5 +1,10 @@
 # Development Roadmap — 0.9.4 Development Line
 
+> **Check this first before starting any work.**
+> → [`docs/node-status-gate-matrix.en.md`](node-status-gate-matrix.en.md) — one-page integrated status board of node state, prerequisites, verdicts, and next gates.
+> This document is the authority for direction; the status board is the entry point for finding the current position quickly.
+> The status board is not the source of truth, so if a verdict or figure differs, **this document plus Progress/Build History is correct.**
+
 ## Document Naming and Structure Rules
 
 The canonical naming/location and role-separation rules are defined in `docs/document-naming.ko.md` / `.en.md`.

@@ -1,5 +1,9 @@
 # Development Progress — 0.9.4 Development Line
 
+> One-page summary of the overall node status:
+> → [`docs/node-status-gate-matrix.en.md`](node-status-gate-matrix.en.md)
+> The status board is an index; this document together with Roadmap/Build History is the origin of verdicts and figures.
+
 ## Purpose
 
 This document records the **actual execution state** of development-roadmap.en.md.

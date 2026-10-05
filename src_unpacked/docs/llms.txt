@@ -8,6 +8,7 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 
 ## Development control documents
 
+- docs/node-status-gate-matrix.ko.md / .en.md — READ FIRST at every session start. One-page integrated status board indexing every node: purpose, design status, prerequisite, implementation, build/verify, current verdict, blocker cause, resolution, next gate, and detail links. It is an INDEX, not the source of truth: it links to roadmap, progress, briefs, architecture, build-history, and worklog rather than copying their figures. Uses state values (CLOSED / CONDITIONAL / DEFERRED / NOT ACCEPTED / NOT STARTED) and gates, never progress percentages. Main track A-H and the parallel S track (S0-S8) are separate tables.
 - docs/development-roadmap.ko.md / .en.md — authoritative A→B→C development flow; roadmap nodes are not version numbers.
 - docs/development-progress.ko.md / .en.md — current node, substep, blocker, validation, and next gate.
 - docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — staged Node B implementation contract.
@@ -111,6 +112,8 @@ Use raw GitHub URLs for source files when programmatic access is needed.
 
 ## Active-node document hierarchy
 
-Roadmap = direction and dependency order. Progress = actual state and recovery history. Implementation Brief = focused engineering contract for the active node. Build History = version-specific evidence.
+Read in this order before changing source: Node Status / Gate Matrix -> Roadmap -> Progress -> the active node's Implementation Brief -> relevant architecture -> build-history / worklog -> source / test.
+
+Roadmap = direction and dependency order. Progress = actual state and recovery history. Implementation Brief = focused engineering contract for the active node. Build History = version-specific evidence. Node Status / Gate Matrix = one-page index of node state, prerequisite, blocker, verdict, and next gate.
 
 Current design classification: B and D are new design work; C is partial reuse + extension.

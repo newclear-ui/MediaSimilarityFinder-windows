@@ -41,8 +41,21 @@
 
 7. **0.9.4 개발선 작업 규칙**
 
+- **에이전트의 세션 재시작시 반드시 읽고 기억할 문서 = `docs/node-status-gate-matrix.ko.md` / `.en.md` (Node Status / Gate Matrix).**
+  이 문서가 현재 어느 Node에 있고 다음 Gate가 무엇인지를 한 장으로 복원하는 진입점이며,
+  사실의 원본이 아니라 roadmap/progress/brief/architecture/build-history/worklog로 연결하는 **인덱스**다.
+  **소스를 변경하기 전에 아래 순서를 반드시 읽고, 현재 Gate가 허용하지 않는 Node를 먼저 시작하지 않는다.**
+  1. `docs/node-status-gate-matrix.ko.md` (통합 상태판)
+  2. `docs/development-roadmap.ko.md` (방향 · 선행조건)
+  3. `docs/development-progress.ko.md` (현재 위치 · blocker)
+  4. 활성 Node의 `docs/implementation-briefs/<Node>-*.ko.md` (실행 계약)
+  5. 필요한 `docs/architecture/*.ko.md`
+  6. 관련 `docs/build-history/<version>.ko.md` + `docs/worklog/0.9.4.ko.md`
+  7. source / test
+  상태판의 판정과 수치가 원본과 다르면 **원본이 맞다.** 상태판은 갱신이 늦어질 수 있는 인덱스로 취급한다.
 - 상위 개발 방향은 `docs/development-roadmap.ko.md` / `.en.md`가 기준이다.
 - 현재 실제 상태는 `docs/development-progress.ko.md` / `.en.md`가 기준이다.
+- 통합 상태판(`node-status-gate-matrix`)은 위 둘의 복사본이 아니다. Node 상태/선행조건/정체 원인/판정/다음 Gate를 한 장에 모은 진입점이며, 판정·수치의 원본은 여전히 Roadmap/Progress/Brief/Build History/Work Log이다.
 - Roadmap 노드 A/B/C는 버전 번호가 아니다.
 - 검증된 코드 상태에 따라 버전을 `0.9.4.0 → 0.9.4.1 → 0.9.4.2 → ...`로 진행한다.
 - 문제 발생 시 A1/B1/C1 같은 하위 작업으로 기록하고 진단 → 수정 → 회귀검증 후 같은 node gate로 복귀한다.

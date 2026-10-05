@@ -1,5 +1,10 @@
 # Development Roadmap — 0.9.4 개발선
 
+> **작업 시작 전 반드시 먼저 확인하십시오.**
+> → [`docs/node-status-gate-matrix.ko.md`](node-status-gate-matrix.ko.md) — Node별 현재 상태/선행조건/판정/다음 Gate 통합 상태판.
+> 이 문서는 방향의 권위 문서이고, 상태판은 현재 위치를 빠르게 찾는 진입점입니다.
+> 상태판은 사실의 원본이 아니므로, 판정·수치가 다르면 **본 문서와 Progress/Build History가 맞습니다.**
+
 ## 문서 네이밍 및 구조 규칙
 
 문서의 정식 이름·위치와 역할 분리는 `docs/document-naming.ko.md` / `.en.md`가 기준이다.

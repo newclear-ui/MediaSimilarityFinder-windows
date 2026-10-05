@@ -22,8 +22,10 @@
 - docs/document-naming.ko/.en.md — 문서 명명, 정식 위치, 역할 분리, rename 절차의 기준.
 - docs/worklog/0.9.4.ko/.en.md — 0.9.4 개발선의 누적 작업 내역(측정 근거, 기각된 가설, 보류 판단, 학습한 방식). **Performance / Tuning Experiment Index** 를 포함하며, 실험 계보와 살아 있는/기각된 후보를 상태와 재검토 조건으로 연결한다. 기각된 후보는 삭제하지 않는다.
 - docs/recent-work-report.ko/.en.md — 최근 중요 작업 3건의 결과 요약 보고(무엇을 했고 현재 상태가 어떤지). 상세 증거는 build-history/worklog에 있고, 이 문서는 한 곳에서 확인하기 위한 요약본이다.
+- docs/node-status-gate-matrix.ko/.en.md — **Node별 현재 상태/선행조건/정체 원인/판정/다음 Gate를 한 장에 모은 통합 상태판(인덱스)**. 세션 시작 시 가장 먼저 읽는 진입점이며, 사실의 원본이 아니라 roadmap/progress/brief/architecture/build-history/worklog로 연결하는 색인이다. 진행률 %를 쓰지 않고 CLOSED/CONDITIONAL/DEFERRED/NOT ACCEPTED 같은 상태값과 Gate로 기록한다. 본선 A~H와 병렬 S 트랙(S0~S8)을 분리 표기한다.
 - docs/architecture/resource-scheduling.ko/.en.md — CPU 정책 + Adaptive GPU AUTO + INI calibration + 실시간 부하 기반 자원관리 목표 아키텍처.
 - docs/architecture/benchmark-telemetry-roadmap.ko/.en.md — benchmark/telemetry 상세 설계.
+- docs/architecture/storage-design.ko/.en.md — 인덱스 저장 위치(스캔 대상 밖 `Index/`), 트랜잭션/체크포인트 정책, 썸네일 캐시, GUI 상세 로그와 Console benchmark 저장소 분리.
 
 ## src/ 핵심 계층
 
