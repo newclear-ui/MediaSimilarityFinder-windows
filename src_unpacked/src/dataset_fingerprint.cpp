@@ -88,13 +88,17 @@ struct Sha256 {
 
 // Reads the entire file. Partial reads are treated as a failure rather than
 // silently hashing a prefix: a dataset identity must cover all the bytes.
-bool hashWholeFile(const fs::path& p, std::string& outHex, std::uint64_t& sizeOut) {
+// cancel is honored during the read so a multi-gigabyte file cannot pin a
+// stop request for minutes; cancellation returns false immediately.
+bool hashWholeFile(const fs::path& p, std::string& outHex, std::uint64_t& sizeOut,
+                   const std::atomic_bool* cancel = nullptr) {
     std::ifstream f(p, std::ios::binary);
     if (!f) return false;
     Sha256 s;
     std::vector<unsigned char> buf(1 << 16);
     std::uint64_t total = 0;
     while (f) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) return false;
         f.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
         const std::streamsize got = f.gcount();
         if (got > 0) { s.update(buf.data(), static_cast<std::size_t>(got)); total += static_cast<std::uint64_t>(got); }
@@ -128,8 +132,12 @@ std::string canonicalRelativePath(const std::string& root, const std::string& fi
     return s;
 }
 
-DatasetFingerprint computeDatasetFingerprint(const std::string& root) {
+DatasetFingerprint computeDatasetFingerprint(const std::string& root,
+                                                const std::atomic_bool* cancel) {
     DatasetFingerprint out;
+    const auto cancelled = [&] {
+        return cancel && cancel->load(std::memory_order_relaxed);
+    };
     std::error_code ec;
     const fs::path rootPath = path_from_utf8(root);
     if (!fs::is_directory(rootPath, ec)) return out;   // stays not_available
@@ -140,6 +148,7 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root) {
     fs::recursive_directory_iterator it(rootPath, fs::directory_options::skip_permission_denied, ec);
     const fs::recursive_directory_iterator end;
     for (; it != end && !ec; it.increment(ec)) {
+        if (cancelled()) { out.state = "cancelled"; return out; }
         std::error_code fec;
         if (!it->is_regular_file(fec)) continue;
         const std::string file = path_to_utf8(it->path());
@@ -147,7 +156,12 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root) {
         if (rel.empty()) continue;                     // defensive: never hash a nameless entry
         Entry e;
         e.rel = rel;
-        if (!hashWholeFile(it->path(), e.hash, e.size)) { out.state = "failed"; return out; }
+        if (!hashWholeFile(it->path(), e.hash, e.size, cancel)) {
+            // Cancellation and read failure are different outcomes. A cancelled
+            // walk must not be reported as a corrupt dataset.
+            out.state = cancelled() ? "cancelled" : "failed";
+            return out;
+        }
         entries.push_back(std::move(e));
     }
     if (ec) { out.state = "failed"; return out; }

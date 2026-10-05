@@ -109,11 +109,11 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        S4 (GUI Detailed Logging real-screen acceptance)
-next               color_thumb R1 (0.9.4.47) -> XMP coverage validation -> S5 benchmark -> S6 gate
-direct cause       the product acceptance defects DEFECT-A/B were fixed in 0.9.4.46.
-                   The only remaining condition is real GUI screen verification, which
-                   headless automation cannot close
+active node        S4 (GUI Detailed Logging real-screen acceptance + Stop behavior check)
+next               color_thumb R1 (after 0.9.4.47) -> XMP coverage validation -> S5 benchmark -> S6 gate
+direct cause       GUI Stop unresponsiveness was fixed at engine level in 0.9.4.48 (cancel plumbed
+                   into the fingerprint). The only remaining condition is real GUI screen/button
+                   verification, which headless automation cannot close
 ```
 
 **Why S4 acceptance is blocked**: this environment is headless, and the actual
@@ -145,6 +145,7 @@ stay in the origin documents.
 | `exactnessVerified` required condition (F-1) | `CONDITIONAL` | `implementation-briefs/F-random-access-safety.*` |
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
 | product acceptance (Search/Index/Comparison) | `NOT ACCEPTED` -> **defects fixed (0.9.4.46)** | `build-history/0.9.4.46.*`, the acceptance audit entry in `worklog/0.9.4.*` |
+| GUI Stop unresponsiveness | **fixed (0.9.4.48, engine level)** | `build-history/0.9.4.48.*`. The actual GUI button click is NOT_VALIDATED |
 | `color_thumb` no-FFmpeg classification | `DESIGNED` (audit complete) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*` |
 | Register nvcc warnings in the release gate | undecided | `worklog/0.9.4.*` |
 | Dedicated console-output regression test | not added | `worklog/0.9.4.*` |

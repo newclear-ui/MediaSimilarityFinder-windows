@@ -106,10 +106,10 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        S4  (GUI Detailed Logging 실제 화면 acceptance)
-다음             color_thumb R1 (0.9.4.47) → XMP coverage validation → S5 benchmark → S6 gate
-직접 원인        제품 acceptance 결함 DEFECT-A/B 는 0.9.4.46 에서 수정 완료.
-                 남은 조건은 실제 GUI 화면 검증뿐이며 이는 headless 로 종결 불가
+활성 Node        S4  (GUI Detailed Logging 실제 화면 acceptance + Stop 동작 확인)
+다음             color_thumb R1 (0.9.4.47 이후) → XMP coverage validation → S5 benchmark → S6 gate
+직접 원인        GUI Stop 무응답은 0.9.4.48 에서 엔진 레벨로 수정 완료(fingerprint cancel 전달).
+                 남은 조건은 실제 GUI 화면·버튼 검증뿐이며 이는 headless 로 종결 불가
 ```
 
 **S4 acceptance 가 막히지 않는 이유**: 이 환경은 headless 이며, 결과 다이얼로그의
@@ -140,6 +140,7 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 | `exactnessVerified` 필수조건 (F-1) | `CONDITIONAL` | `implementation-briefs/F-random-access-safety.*` |
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
 | 제품 acceptance (Search/Index/Comparison) | `NOT ACCEPTED` → **결함 수정 완료 (0.9.4.46)** | `build-history/0.9.4.46.*`, `worklog/0.9.4.*` acceptance audit 항목 |
+| GUI Stop 무응답 | **수정 완료 (0.9.4.48, 엔진 레벨)** | `build-history/0.9.4.48.*`. 실제 GUI 버튼 클릭은 NOT_VALIDATED |
 | `color_thumb` no-FFmpeg classification | `DESIGNED` (audit 완료) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*` |
 | nvcc 경고 release gate 등록 | 미결정 | `worklog/0.9.4.*` |
 | 콘솔 출력 전용 회귀 테스트 | 미추가 | `worklog/0.9.4.*` |

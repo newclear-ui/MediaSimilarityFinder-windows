@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -29,6 +30,9 @@ struct DatasetFingerprint {
     // "measured"     - fingerprint computed
     // "not_available"- root missing / not a directory / nothing to describe
     // "failed"       - the root exists but a file could not be read
+    // "cancelled"    - cancellation was requested before completion. Telemetry
+    //                  only: a cancelled fingerprint never influences scan
+    //                  behavior, and no consumer branches on the state string.
     std::string state = "not_available";
     std::string fingerprint;  // 64 lowercase hex chars, empty unless measured
     std::uint64_t fileCount = 0;
@@ -49,6 +53,11 @@ std::string canonicalRelativePath(const std::string& root, const std::string& fi
 // below the root participate; ordering of the walk does not matter because
 // the manifest is sorted before hashing. Never throws: unreadable entries
 // move the result to "failed" and stop the walk.
-DatasetFingerprint computeDatasetFingerprint(const std::string& root);
+// cancel: when set, aborts promptly (checked before each file and during large
+// file reads) and returns state="cancelled" instead of a partial fingerprint.
+// A partial manifest would be a dishonest identity, so nothing is returned.
+// Telemetry-only; scan behavior never depends on the result.
+DatasetFingerprint computeDatasetFingerprint(const std::string& root,
+                                             const std::atomic_bool* cancel = nullptr);
 
 }

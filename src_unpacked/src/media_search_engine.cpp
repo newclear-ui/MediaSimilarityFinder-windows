@@ -349,7 +349,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // can tell "same data" from "same path". A missing or unreadable root
   // records not_available/failed instead of a zero. This is telemetry only
   // and never influences scan behavior.
-  telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(root));
+  // The fingerprint reads every file fully, so on a large dataset it is minutes
+  // of disk I/O. It must honor the same stop request as the walk, or Stop is
+  // dead until the whole dataset has been hashed. Telemetry-only: a cancelled
+  // fingerprint never influences scan behavior.
+  telemetry_.setDatasetFingerprint(
+      msf::computeDatasetFingerprint(root, control ? &control->cancel : nullptr));
   if(telemetryOn) telemetry_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
   if(control) telemetry_.addRevalidateMs(control->revalidateMs);
   // C2: record the calibration run that fed this scan (if any). Skipped
