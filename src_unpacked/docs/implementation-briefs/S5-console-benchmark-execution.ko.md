@@ -1,7 +1,7 @@
 # Implementation Brief — S5 Console Benchmark Execution (Pre-register)
 
-Status: **REVALIDATED on 2026-10-04 baseline 0.9.4.44** — S4 semantic-reset 트리에서 CLI `--benchmark` 재검증 완료: 실제 `--benchmark` 실행 exit=0, `suite.json`/`runs.jsonl`/`summary.json` 생성, S2 executor + S3 journal/storage 계약 유지, CPU CTest 100/100·GPU CTest 101/101. S5 CLOSED 선언은 아니다(§16 조건 유지).
-Current baseline: v0.9.4.44
+Status: **REVALIDATED on 2026-10-04 against validation baseline 0.9.4.44** — S4 semantic-reset 트리에서 CLI `--benchmark` 재검증 완료: 실제 `--benchmark` 실행 exit=0, `suite.json`/`runs.jsonl`/`summary.json` 생성, S2 executor + S3 journal/storage 계약 유지, CPU CTest 100/100·GPU CTest 101/101. S5 CLOSED 선언은 아니다(§16 조건 유지).
+Current product baseline: v0.9.4.45; validation evidence baseline: v0.9.4.44
 
 ---
 
