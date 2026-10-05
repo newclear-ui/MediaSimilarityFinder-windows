@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.45` / HEAD 동기화 · CPU CTest 102/102 · GPU CTest 103/103
-최종 갱신: 2026-10-04
+기준: `0.9.4.46` / HEAD 동기화 · CPU CTest 103/103 · GPU CTest 104/104
+최종 갱신: 2026-10-05
 
 ## 이 문서의 역할
 
