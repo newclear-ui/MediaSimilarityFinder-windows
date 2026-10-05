@@ -47,14 +47,15 @@ bool Database::prepareStatements(){
     finalizeStatements();
     const char* upsert=
       "INSERT INTO files(path,size,modified,quick_hash,fingerprint,kind,duration,mirror_fingerprint,"
-      "crop_4x3,crop_1x1,crop_9x16,mirror_crop_4x3,mirror_crop_1x1,mirror_crop_9x16) "
-      "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET "
+      "crop_4x3,crop_1x1,crop_9x16,mirror_crop_4x3,mirror_crop_1x1,mirror_crop_9x16,analysis_failed) "
+      "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET "
       "size=excluded.size,modified=excluded.modified,quick_hash=excluded.quick_hash,"
       "fingerprint=excluded.fingerprint,kind=excluded.kind,duration=excluded.duration,"
       "mirror_fingerprint=excluded.mirror_fingerprint,crop_4x3=excluded.crop_4x3,"
       "crop_1x1=excluded.crop_1x1,crop_9x16=excluded.crop_9x16,"
       "mirror_crop_4x3=excluded.mirror_crop_4x3,mirror_crop_1x1=excluded.mirror_crop_1x1,"
-      "mirror_crop_9x16=excluded.mirror_crop_9x16";
+      "mirror_crop_9x16=excluded.mirror_crop_9x16,"
+      "analysis_failed=excluded.analysis_failed";
     const char* remove="DELETE FROM files WHERE path=?";
     const char* contains="SELECT 1 FROM files WHERE path=? AND size=? AND modified=? AND quick_hash=? LIMIT 1";
     sqlite3_stmt* a=nullptr;
@@ -83,21 +84,21 @@ bool Database::initialize(){
  }
  sqlite3_finalize(info);
  if(!hasMirror && !exec("ALTER TABLE files ADD COLUMN mirror_fingerprint INTEGER NOT NULL DEFAULT 0;")) return false;
- const char* cols[]={"crop_4x3","crop_1x1","crop_9x16","mirror_crop_4x3","mirror_crop_1x1","mirror_crop_9x16"};
+  const char* cols[]={"crop_4x3","crop_1x1","crop_9x16","mirror_crop_4x3","mirror_crop_1x1","mirror_crop_9x16","analysis_failed"};
  // One PRAGMA pass is enough for all legacy crop columns.
- bool present[6]={false,false,false,false,false,false};
- if(sqlite3_prepare_v2(D(db_),"PRAGMA table_info(files)",-1,&info,nullptr)==SQLITE_OK){
-   while(sqlite3_step(info)==SQLITE_ROW){
-     const auto* n=sqlite3_column_text(info,1); if(!n) continue;
-     const std::string name(reinterpret_cast<const char*>(n));
-     for(int i=0;i<6;++i) if(name==cols[i]) present[i]=true;
-   }
- }
- sqlite3_finalize(info);
-  for(int i=0;i<6;++i) if(!present[i]){
-    const std::string q="ALTER TABLE files ADD COLUMN "+std::string(cols[i])+" INTEGER NOT NULL DEFAULT 0;";
-    if(!exec(q.c_str())) return false;
+  bool present[7]={false,false,false,false,false,false,false};
+  if(sqlite3_prepare_v2(D(db_),"PRAGMA table_info(files)",-1,&info,nullptr)==SQLITE_OK){
+    while(sqlite3_step(info)==SQLITE_ROW){
+      const auto* n=sqlite3_column_text(info,1); if(!n) continue;
+      const std::string name(reinterpret_cast<const char*>(n));
+      for(int i=0;i<7;++i) if(name==cols[i]) present[i]=true;
+    }
   }
+  sqlite3_finalize(info);
+   for(int i=0;i<7;++i) if(!present[i]){
+     const std::string q="ALTER TABLE files ADD COLUMN "+std::string(cols[i])+" INTEGER NOT NULL DEFAULT 0;";
+     if(!exec(q.c_str())) return false;
+   }
   if(!prepareStatements()) return false;
   // Migrations above are idempotent, so after a successful open the schema is
   // always current: stamp it (diagnostics + future breaking-change gates).
@@ -120,6 +121,7 @@ bool Database::upsert(const FileState& x){
  sqlite3_bind_int(s,6,x.kind); sqlite3_bind_double(s,7,x.duration); sqlite3_bind_int64(s,8,(sqlite3_int64)x.mirrorFingerprint);
  sqlite3_bind_int64(s,9,(sqlite3_int64)x.crop4x3); sqlite3_bind_int64(s,10,(sqlite3_int64)x.crop1x1); sqlite3_bind_int64(s,11,(sqlite3_int64)x.crop9x16);
  sqlite3_bind_int64(s,12,(sqlite3_int64)x.mirrorCrop4x3); sqlite3_bind_int64(s,13,(sqlite3_int64)x.mirrorCrop1x1); sqlite3_bind_int64(s,14,(sqlite3_int64)x.mirrorCrop9x16);
+ sqlite3_bind_int(s,15,x.analysisFailed?1:0);
  return sqlite3_step(s)==SQLITE_DONE;
 }
 
@@ -140,12 +142,13 @@ bool Database::containsUnchanged(const FileState& x) const{
 std::vector<FileState> Database::all() const{
  std::vector<FileState> out; if(!db_) return out;
  sqlite3_stmt* s=nullptr;
- if(sqlite3_prepare_v2(D(db_),"SELECT path,size,modified,quick_hash,fingerprint,kind,duration,mirror_fingerprint,crop_4x3,crop_1x1,crop_9x16,mirror_crop_4x3,mirror_crop_1x1,mirror_crop_9x16 FROM files ORDER BY path",-1,&s,nullptr)!=SQLITE_OK) return out;
+  if(sqlite3_prepare_v2(D(db_),"SELECT path,size,modified,quick_hash,fingerprint,kind,duration,mirror_fingerprint,crop_4x3,crop_1x1,crop_9x16,mirror_crop_4x3,mirror_crop_1x1,mirror_crop_9x16,analysis_failed FROM files ORDER BY path",-1,&s,nullptr)!=SQLITE_OK) return out;
  while(sqlite3_step(s)==SQLITE_ROW){
    FileState x; x.path=(const char*)sqlite3_column_text(s,0); x.size=(std::uint64_t)sqlite3_column_int64(s,1); x.modified=(std::int64_t)sqlite3_column_int64(s,2);
    x.quickHash=(const char*)sqlite3_column_text(s,3); x.fingerprint=(std::uint64_t)sqlite3_column_int64(s,4); x.kind=sqlite3_column_int(s,5); x.duration=sqlite3_column_double(s,6);
    x.mirrorFingerprint=(std::uint64_t)sqlite3_column_int64(s,7); x.crop4x3=(std::uint64_t)sqlite3_column_int64(s,8); x.crop1x1=(std::uint64_t)sqlite3_column_int64(s,9); x.crop9x16=(std::uint64_t)sqlite3_column_int64(s,10);
-   x.mirrorCrop4x3=(std::uint64_t)sqlite3_column_int64(s,11); x.mirrorCrop1x1=(std::uint64_t)sqlite3_column_int64(s,12); x.mirrorCrop9x16=(std::uint64_t)sqlite3_column_int64(s,13);
+    x.mirrorCrop4x3=(std::uint64_t)sqlite3_column_int64(s,11); x.mirrorCrop1x1=(std::uint64_t)sqlite3_column_int64(s,12); x.mirrorCrop9x16=(std::uint64_t)sqlite3_column_int64(s,13);
+    x.analysisFailed=sqlite3_column_int(s,14)!=0;
    out.push_back(std::move(x));
  }
  sqlite3_finalize(s); return out;

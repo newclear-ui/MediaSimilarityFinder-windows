@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.45 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.46 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -442,6 +442,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_match_revalidate_test tests/match_revalidate_test.cpp)
     target_link_libraries(msf_match_revalidate_test PRIVATE msf_core)
     add_test(NAME match_revalidate_test COMMAND msf_match_revalidate_test)
+    # 0.9.4.46 DEFECT-A/B: analysis-failure state model and rescan convergence,
+    # driven through the real MediaSearchEngine production scan path.
+    add_executable(msf_analysis_failure_state_test tests/analysis_failure_state_test.cpp)
+    target_link_libraries(msf_analysis_failure_state_test PRIVATE msf_core)
+    add_test(NAME analysis_failure_state_test COMMAND msf_analysis_failure_state_test)
     add_executable(msf_scanner_test tests/scanner_test.cpp)
     target_link_libraries(msf_scanner_test PRIVATE msf_core)
     add_test(NAME scanner_test COMMAND msf_scanner_test)

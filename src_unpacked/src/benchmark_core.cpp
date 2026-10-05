@@ -63,6 +63,7 @@ BenchmarkScanSummary summarize(const SearchReport& r) {
     s.unchanged = r.unchanged;
     s.removed = r.removed;
     s.analyzed = r.analyzed;
+    s.failed = r.failed;
     s.candidates = r.candidates;
     s.groups = r.groups;
     s.indexedVideos = r.indexedVideos;

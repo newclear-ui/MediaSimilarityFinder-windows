@@ -26,7 +26,15 @@ struct SearchMatch { std::string leftPath,rightPath; double percent=0; };
 // Compact result reference for large-result consumers. It avoids duplicating file-path
 // strings for every match; indices refer to MediaSearchEngine::files() for the scan.
 struct SearchMatchRef { std::size_t leftIndex=0, rightIndex=0; double percent=0; };
-struct SearchReport { std::size_t scanned=0, added=0, modified=0, unchanged=0, removed=0, analyzed=0, candidates=0, groups=0, gpuImages=0, gpuFallbackImages=0; double candidateReductionPercent=0; std::vector<SearchMatch> matches; bool completed=true; std::size_t indexedVideos=0, videoCandidatePairs=0, videoTemporalChecks=0, videoMatches=0; };
+struct SearchReport { std::size_t scanned=0, added=0, modified=0, unchanged=0, removed=0, analyzed=0, candidates=0, groups=0, gpuImages=0, gpuFallbackImages=0;
+  // Files whose decode/analysis was attempted this scan and produced no
+  // fingerprint. Every scanned file ends in exactly one of
+  // added / modified / unchanged / failed, and analyzed counts only the
+  // successful subset of added+modified. A failed file is persisted with an
+  // explicit analysis-failed flag so the next scan converges instead of
+  // repeating `modified` forever, and it never enters search (fingerprint 0).
+  std::size_t failed=0;
+  double candidateReductionPercent=0; std::vector<SearchMatch> matches; bool completed=true; std::size_t indexedVideos=0, videoCandidatePairs=0, videoTemporalChecks=0, videoMatches=0; };
 struct ScanControl {
  std::atomic_bool cancel{false};
  std::atomic_bool pause{false};

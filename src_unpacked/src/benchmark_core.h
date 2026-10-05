@@ -77,6 +77,10 @@ BenchmarkStatus aggregateStatus(const std::vector<BenchmarkModeResult>& modes);
 struct BenchmarkScanSummary {
     std::size_t scanned = 0, added = 0, modified = 0, unchanged = 0, removed = 0;
     std::size_t analyzed = 0, candidates = 0, groups = 0;
+    // Files whose analysis produced no fingerprint. Additive journal field: a
+    // journal without it stays valid replay input and the field reads as absent,
+    // never as 0.
+    std::size_t failed = 0;
     std::size_t indexedVideos = 0, videoCandidatePairs = 0;
 };
 

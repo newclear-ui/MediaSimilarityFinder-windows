@@ -156,11 +156,20 @@ static int runHeadlessScan(const msf::CommandLineOptions& opt, int argc, char** 
               << " unchanged=" << rep.unchanged
               << " removed=" << rep.removed
               << " analyzed=" << rep.analyzed
+              << " failed=" << rep.failed
               << " candidates=" << rep.candidates
               << " groups=" << rep.groups
               << " indexedVideos=" << rep.indexedVideos
               << " videoCandidatePairs=" << rep.videoCandidatePairs
               << "\n";
+    // Analysis failures are a settled state, not a silent skip: the row is kept so
+    // the file is not re-queued forever, but it has no fingerprint and therefore
+    // participates in no search. Say so instead of exiting 0 without a word.
+    if (rep.failed) {
+        std::cerr << "Warning: " << rep.failed
+                  << " file(s) could not be analyzed (no fingerprint) and are excluded"
+                     " from search until their content changes.\n";
+    }
     return 0;
 }
 

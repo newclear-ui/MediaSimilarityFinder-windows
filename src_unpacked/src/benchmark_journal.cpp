@@ -62,6 +62,7 @@ std::string summaryBody(const BenchmarkScanSummary& s) {
       << ",\"unchanged\":" << s.unchanged
       << ",\"removed\":" << s.removed
       << ",\"analyzed\":" << s.analyzed
+      << ",\"failed\":" << s.failed
       << ",\"candidates\":" << s.candidates
       << ",\"groups\":" << s.groups
       << ",\"indexedVideos\":" << s.indexedVideos
@@ -440,6 +441,9 @@ JournalReplay replayJournal(const std::string& runsJsonlPath,
                     const std::string sub = line.substr(sp);
                     if (jsonFieldNumber(sub, "scanned", v))  sum.scanned  = static_cast<std::size_t>(v);
                     if (jsonFieldNumber(sub, "analyzed", v)) sum.analyzed = static_cast<std::size_t>(v);
+                    // Additive: a journal written before this field simply lacks it
+                    // and the flat reader reports 0, exactly as for scanned/analyzed.
+                    if (jsonFieldNumber(sub, "failed", v))   sum.failed   = static_cast<std::size_t>(v);
                 }
                 m.summary = sum;
                 const std::string key = pendingKey(runId, caseId);

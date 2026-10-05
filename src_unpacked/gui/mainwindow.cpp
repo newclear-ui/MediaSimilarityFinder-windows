@@ -557,7 +557,11 @@ void ScanWorker::run() {
                   + "\t" + QString::number(m.percent, 'f', 1));
     emit results(files, matches);
     if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson);
-    emit finished(QString("Scan complete: %1 files, %2 analyzed, %3 candidates, %4 groups").arg(r.scanned).arg(r.analyzed).arg(r.candidates).arg(r.groups)
+    // Analysis failures are a settled state, not silently dropped files. Surface
+    // them in the completion message so a scan that skipped nothing still says so.
+    emit finished(QString("Scan complete: %1 files, %2 analyzed, %3 candidates, %4 groups%5")
+                      .arg(r.scanned).arg(r.analyzed).arg(r.candidates).arg(r.groups)
+                      .arg(r.failed ? QString(", %1 could not be analyzed").arg(r.failed) : QString())
                   + QString("|%1|%2|%3|%4|%5").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates));
   } catch (const std::exception& e) {
     // A failed scan must not discard what it already found: checkpoint first

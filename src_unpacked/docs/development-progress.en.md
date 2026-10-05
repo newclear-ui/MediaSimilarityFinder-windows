@@ -23,18 +23,17 @@ A separate `workprogress` document is intentionally not created; this document i
 
 > This section records **only live work**. Remove an item from this queue when it is completed; preserve its details in Work Log / Build History.
 > The actual content of `0.9.4.46` is conditional on the acceptance gate below and must not be treated as pre-locked.
-> **Updated 2026-10-04**: the priority-0 product acceptance audit was executed and ended **`NOT ACCEPTED` because a product defect was found**. The completed audit is removed from this queue, and the conditional priority 2 resolved to "defect found", so fixing that defect is now the fixed content of the next build. Detail is in the acceptance audit entry of `docs/worklog/0.9.4.en.md`.
+> **Updated 2026-10-04 (2nd)**: the product acceptance audit ended `NOT ACCEPTED`, which fixed the defect repair as the content of `0.9.4.46`, and **DEFECT-A/B plus the rescan-convergence regression test are now complete in that build.** Both completed items are removed from this queue and S4 screen acceptance is promoted to the top as the next gate.
 
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.46 | **DEFECT-A + DEFECT-B fix** — silent indexing of a decode-failing file (`ycbcr_lzw_bt709.tif`), and permanent `modified` reporting for a file that never analyzes | Fix the product defect found by the acceptance audit. This fix is now the confirmed content of the next build | **PENDING** |
-| 1 | 0.9.4.46 | Add a rescan-convergence regression test for analysis-failing files (prevents DEFECT-B from recurring) | No test currently asserts that a rescan converges to `unchanged` when a file fails analysis | **PENDING** |
-| 2 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs final functional acceptance | Accept the real GUI result/display/save path and decide whether S4 can close. Requires real screen verification, so headless automation alone cannot close it | **PENDING** |
-| 3 | 0.9.4.47 candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Pushed back because the acceptance defect fix takes precedence. Start only after the defect fix and its regression verification | **PENDING** |
-| 4 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
-| 5 | S5 | Real-dataset product benchmark | Run measurement only after S4 and product acceptance gates pass | **GATE PENDING** |
+| 0 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs final functional acceptance | Accept the real GUI result/display/save path and decide whether S4 can close. Requires real screen verification, so headless automation alone cannot close it | **PENDING** |
+| 1 | 0.9.4.47 | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Now the top implementation candidate, since the DEFECT-A/B fix and its regression verification are done | **PENDING** |
+| 2 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
+| 3 | S5 | Real-dataset product benchmark | Run measurement only after S4 and product acceptance gates pass | **GATE PENDING** |
+| 4 | Separate task | Transparency gap: unsupported extensions such as `.ico` are silently skipped | Decide whether the scan report should expose a skipped-file count | **PENDING** |
 
-> Nothing beyond priority 2 is started until priorities 0 and 1 are resolved. `color_thumb` R1 moved from conditional priority 2 to priority 3 because the condition resolved to "defect found".
+> `color_thumb` R1 is now priority 1, but S4 screen acceptance cannot advance until the user verifies the real GUI.
 
 ## Completed Major Milestones
 
@@ -51,19 +50,19 @@ This section keeps only a **compressed completion state** for long-term orientat
 | F-1 | **CONDITIONAL / PRODUCTION ADOPTION NO** | NVIDIA NVDEC investigation completed; production integration prohibited |
 | S0–S3 | **CLOSED** | Initial Validation / Benchmark track infrastructure completed |
 | S4 | **IMPLEMENTED / VERIFICATION IN PROGRESS** | GUI Detailed Logs implementation and user UI confirmation complete; final functional acceptance remains |
-| product acceptance | **NOT ACCEPTED** | Search/Index/Comparison boundaries were proven PASS by an actual product run (694 files, every counter identical on CPU/GPU, determinism confirmed), but a real-dataset scan found DEFECT-A/B, so the total is NOT ACCEPTED |
+| product acceptance | **NOT ACCEPTED -> defects fixed in 0.9.4.46** | Search/Index/Comparison boundaries were proven PASS by an actual product run. DEFECT-A/B were fixed in `0.9.4.46` by introducing an analysis-failure state model (`files.analysis_failed`), and unchanged `candidates`/`groups` measurements confirm normal semantics are preserved. **Only real GUI screen acceptance remains** |
 
 
 ## Current Status
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.45 (`619f74a` product fix; later commits are docs-only) |
+| Reference code | 0.9.4.46 (bumped from the `619f74a` product baseline after the DEFECT-A/B fix) |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
 | Current node | **S4 GUI Detailed Logging verification in progress + product Search/Index/Comparison acceptance audit preparation** — S1/S2/S3 complete, S4 implementation and visible UI are PASS, functional Detailed Logs acceptance remains DEFERRED. S5 infrastructure is REVALIDATED and final product benchmark validation is DEFERRED. F-1 remains CONDITIONAL with NVDEC production adoption NO. **I-XMP Orientation Fallback implementation is complete** (code implementation PASS, fixture 38 checks PASS, real-dataset coverage NOT_AVAILABLE, full scan regression DEFERRED) → **production acceptance CONDITIONAL**. The `color_thumb` no-FFmpeg classification is audit/pre-register only; the production correction is NOT PERFORMED. The `--version` console output predicate fix and the CUDA host compiler `/utf-8` forwarding are VERIFIED. |
 | Current phase | **Run the product Search/Index/Comparison acceptance audit on the 0.9.4.45 regression baseline first.** F-1 remains `CONDITIONAL` from 0.9.4.43 and NVDEC production adoption is `NO` and **F-2 production integration is forbidden** (directive §41). Core reversal: 13 of 14 dataset files are IDR-start, yet **1360x0808 mismatched 20/20** and **still mismatched 20/20 when restarted from a confirmed IDR** (1080x1920 was 1/20). So **mid-GOP is only one failure mode** and NVDEC exactness holds neither at 4K nor merely because a stream is IDR-start. The contract makes `exactnessVerified` a necessary condition for `Safe` (structure is only necessary), and `Unsafe`/`Unknown` collapse onto CPU fallback. Performance is also **2.1x slower per frame** (CPU 4.438 s vs NVDEC 9.397 s, 870f), so **no case exists**. The 1360x808 root cause is `INCONCLUSIVE`. Previously Node E **closed**. E-3B (0.9.4.42) drove A/B/C through the real `MediaSearchEngine::scan()` production path to judge end-to-end exactness, and returned **`NOT ACCEPTED`**. **Central finding: the E-2A/E-2B "exact" figures were self-referential** — both experiments compared one seek-based implementation with another, and both call `av_seek_frame` + `avcodec_flush_buffers`, so they **shared the same decoder reference-state loss** and agreed for the wrong reason. The **first** measurement to include the production from-zero sweep found **one genuine divergence** on a 4K H.264 file (`reference count overflow` / `no frame!` / `concealing`). In the same runs sparse was **17.38 % slower end to end** (4K decode dominates), so **the performance argument is gone too**. Three corrections: ① the executor returned a truncated result as success → sample-count contract added ② container-index GOP reported as `Known` → downgraded to `Estimated` ③ a `0.5 × framesPerSample` threshold was removed (it contradicted measurement). **Outcome: `ExactnessPolicy::RefuseAll` as the default** — with no codec holding a production-parity proof, sparse is unreachable in production and every file is Sequential. **Production behaviour is identical to 0.9.4.41 (13/13 bit-identical, adaptive -0.02 %, neutral).** **Methodology lesson: an exactness baseline must be the production path.** Two reimplementations of the same family cannot validate each other, because a shared defect passes. **Next: sparse is not to be reopened without evidence. Revisit conditions are stated in the build history** |
-| Current version | 0.9.4.45 |
+| Current version | 0.9.4.46 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |

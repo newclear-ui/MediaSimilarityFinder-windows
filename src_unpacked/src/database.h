@@ -3,7 +3,16 @@
 #include <string>
 #include <vector>
 namespace msf {
-struct FileState { std::string path; std::uint64_t size=0; std::int64_t modified=0; std::string quickHash; std::uint64_t fingerprint=0; int kind=0; double duration=0; std::uint64_t mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0; std::uint64_t mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0; };
+struct FileState { std::string path; std::uint64_t size=0; std::int64_t modified=0; std::string quickHash; std::uint64_t fingerprint=0; int kind=0; double duration=0; std::uint64_t mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0; std::uint64_t mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0;
+  // Analysis-outcome state. fingerprint!=0 is a completed analysis. With
+  // fingerprint==0 the row is a skeleton, and this flag separates the two
+  // skeleton meanings that used to be indistinguishable:
+  //   false -> analysis was never completed for this content (interrupted by
+  //            cancel/crash, or not yet reached). Must be retried.
+  //   true  -> analysis was attempted against this exact size/modified/quickHash
+  //            and produced no fingerprint. Deterministic for unchanged content,
+  //            so it is not retried until the content identity changes.
+  bool analysisFailed=false; };
 struct ChangeSet { std::vector<FileState> unchanged, added, modified, deleted; };
 // Persisted duplicate pair. Paths use the same canonical UTF-8 form as FileState.
 // Stored ordered (left <= right) so a pair has exactly one row.
@@ -14,7 +23,8 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
  // Internal versions, independent of the 0.9.2.x build numbers ("M.m.p"):
  // engine verdict generation (match logic) and DB schema generation.
  // Missing/malformed rows read as "0.0.0" (pre-versioning).
-   static constexpr const char* kDatabaseVersion = "1.0.3";
+   // 1.0.4 adds files.analysis_failed (additive column, old code still reads it).
+  static constexpr const char* kDatabaseVersion = "1.0.4";
   std::string engineVersion() const; bool setEngineVersion(const std::string& v);
   std::string dbVersion() const; bool setDbVersion(const std::string& v);
   std::string samplingGeneration() const; bool setSamplingGeneration(const std::string& v);

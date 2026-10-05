@@ -109,11 +109,11 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        product acceptance defect fix (DEFECT-A/B) -> S4 (GUI Detailed Logging acceptance)
-next               S4 real-screen acceptance -> S5 real-dataset product benchmark -> S6 controlled measurement gate
-direct cause       the acceptance audit of 2026-10-04 found product defects DEFECT-A/B on the real dataset
-                   and ended NOT ACCEPTED. S4 acceptance is not entered before the defect fix
-                   and its regression verification
+active node        S4 (GUI Detailed Logging real-screen acceptance)
+next               color_thumb R1 (0.9.4.47) -> XMP coverage validation -> S5 benchmark -> S6 gate
+direct cause       the product acceptance defects DEFECT-A/B were fixed in 0.9.4.46.
+                   The only remaining condition is real GUI screen verification, which
+                   headless automation cannot close
 ```
 
 **Why S4 acceptance is blocked**: this environment is headless, and the actual
@@ -144,7 +144,7 @@ stay in the origin documents.
 | sparse seek | `NOT ACCEPTED` — revisit conditions recorded | `build-history/0.9.4.42.*` |
 | `exactnessVerified` required condition (F-1) | `CONDITIONAL` | `implementation-briefs/F-random-access-safety.*` |
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
-| product acceptance (Search/Index/Comparison) | `NOT ACCEPTED` — DEFECT-A/B | the acceptance audit entry in `worklog/0.9.4.*` |
+| product acceptance (Search/Index/Comparison) | `NOT ACCEPTED` -> **defects fixed (0.9.4.46)** | `build-history/0.9.4.46.*`, the acceptance audit entry in `worklog/0.9.4.*` |
 | `color_thumb` no-FFmpeg classification | `DESIGNED` (audit complete) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*` |
 | Register nvcc warnings in the release gate | undecided | `worklog/0.9.4.*` |
 | Dedicated console-output regression test | not added | `worklog/0.9.4.*` |

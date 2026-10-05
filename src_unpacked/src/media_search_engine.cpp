@@ -416,7 +416,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
         // Recalibration must never fail a scan.
       }
     }
-    telemetry_.setFileProgress(r.scanned, r.analyzed, r.scanned > r.analyzed ? r.scanned - r.analyzed : 0);
+    // "pending" must not include files that settled as analysis failures: they are
+    // accounted for separately as a failed state, not as work still outstanding.
+    const std::size_t pending = (r.scanned > r.analyzed + r.failed) ? r.scanned - r.analyzed - r.failed : 0;
+    telemetry_.setFileProgress(r.scanned, r.analyzed, pending);
     // B1: record the scheduler decision (initial == current; live adjustment
     // arrives in B2+). Fallbacks accumulate image + video backend fallbacks.
     // B2: current capacities are the observed image/sec rates when both
@@ -442,7 +445,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   };
   bool telemetryWalkTimed=false;
  const std::string excl = managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{};
- std::size_t done=0, scanned=0, nAdded=0, nModified=0, nUnchanged=0, nRemoved=0;
+  std::size_t done=0, scanned=0, nAdded=0, nModified=0, nUnchanged=0, nRemoved=0, nFailed=0;
  std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
   std::unordered_map<std::string,FileState> currentByPath;
   ScanPipeline livePipe;
@@ -508,7 +511,24 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   for(auto& ir:results){
    FileState x; auto it=currentByPath.find(ir.path);
    if(it==currentByPath.end()) continue;
-   x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages; if(ir.ok){x.fingerprint=ir.fingerprint; if(ir.usedGpu) gpuImagesProcessed_.fetch_add(1,std::memory_order_relaxed); if(!db_.upsert(x)){ return false; } ++r.analyzed; MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);}
+   x=it->second; x.kind=(int)MediaKind::Image; x.mirrorFingerprint=ir.mirrorFingerprint; x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16; x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16; if(ir.usedGpu) ++r.gpuImages; if(ir.gpuFallback) ++r.gpuFallbackImages;
+   if(ir.ok){
+    x.fingerprint=ir.fingerprint; x.analysisFailed=false;
+    if(ir.usedGpu) gpuImagesProcessed_.fetch_add(1,std::memory_order_relaxed);
+    if(!db_.upsert(x)){ return false; }
+    ++r.analyzed;
+    // Outcome-time classification: the file now has a real fingerprint, so
+    // reporting it as added/modified is finally backed by a usable index row.
+    if(oldByPath.find(x.path)==oldByPath.end()) ++nAdded; else ++nModified;
+    MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);
+   } else {
+    // Analysis ran and produced nothing. Record that outcome on the row so the
+    // next scan sees a settled state instead of re-queuing it forever, and count
+    // it as `failed` rather than as a successful add/modify.
+    x.fingerprint=0; x.analysisFailed=true;
+    if(!db_.upsert(x)){ return false; }
+    ++nFailed;
+   }
    ++done; if(control&&control->progress)control->progress(done,scanned,x.path);
    if(ir.hasColorThumb) putColorThumb(ir.path, ir.colorThumb.width, ir.colorThumb.height, std::move(ir.colorThumb.bgra));
   }
@@ -552,7 +572,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      if(taken[i]) continue;
      if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
      taken[i]=1; --remaining; progressed=true;
-     auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue; if(j.ok){if(!db_.upsert(j.state)){ return false; } ++r.analyzed;MediaFile mf{j.state.path,(MediaKind)j.state.kind,j.state.size,(std::uint64_t)j.state.modified,j.state.fingerprint,j.state.mirrorFingerprint,j.state.crop4x3,j.state.crop1x1,j.state.crop9x16,j.state.mirrorCrop4x3,j.state.mirrorCrop1x1,j.state.mirrorCrop9x16,j.state.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);} ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+      auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue;
+      if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return false; } ++r.analyzed; if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
+      else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return false; } ++nFailed; }
+      ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
     if(!progressed && remaining>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
    }
    // D1b/D2 range record (completed ranges only; failed ranges stay absent).
@@ -574,16 +597,29 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
    ++scanned;
    if(control && control->walked) control->walked(scanned);
-   auto it=oldByPath.find(x.path); const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.quickHash!=x.quickHash||it->second.fingerprint==0||(isVid&&videoRegrid));
-  if(!changed){ ++nUnchanged; seen.insert(x.path); return; }
-  if(it==oldByPath.end()) ++nAdded; else ++nModified;
+   auto it=oldByPath.find(x.path);
+   // A skeleton row (fingerprint 0) used to force `changed` unconditionally, which
+   // merged two different situations: analysis never completed (cancel/crash, must
+   // retry) and analysis completed and failed (deterministic for this content, must
+   // NOT be retried or it reports `modified` forever). The explicit
+   // analysisFailed flag separates them, so the report converges.
+   const bool pendingAnalysis=(it!=oldByPath.end() && it->second.fingerprint==0 && !it->second.analysisFailed);
+   const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.quickHash!=x.quickHash||pendingAnalysis||(isVid&&videoRegrid));
+  if(!changed){
+   // A known analysis failure on identical content is not "changed": there is
+   // nothing to redo. It stays out of added/modified and out of the search set.
+   ++nUnchanged; seen.insert(x.path); return;
+  }
+  // added/modified are counted at analysis OUTCOME, not at intent. Counting them
+  // here reported a file as successfully indexed before any fingerprint existed.
   // Remove the previous record before re-analysis. If decoding/analysis fails,
   // the stale fingerprint must not silently survive this successful scan.
   if(it!=oldByPath.end() && !db_.remove(x.path)){ failed=true; return; }
   // Skeleton row first: the file list survives interruption (cancel/crash)
   // even before this file is analyzed. Unanalyzed rows carry fingerprint 0,
-  // are invisible to matching, and are picked up by the fp==0 rule above.
-  { FileState sk=x; sk.kind=(int)kindOf(x.path); sk.fingerprint=0; sk.mirrorFingerprint=0; sk.crop4x3=sk.crop1x1=sk.crop9x16=0; sk.mirrorCrop4x3=sk.mirrorCrop1x1=sk.mirrorCrop9x16=0; sk.duration=0;
+  // are invisible to matching, and are picked up by the pendingAnalysis rule
+  // above. The analysisFailed flag is set only once a failure is observed.
+  { FileState sk=x; sk.kind=(int)kindOf(x.path); sk.fingerprint=0; sk.mirrorFingerprint=0; sk.crop4x3=sk.crop1x1=sk.crop9x16=0; sk.mirrorCrop4x3=sk.mirrorCrop1x1=sk.mirrorCrop9x16=0; sk.duration=0; sk.analysisFailed=false;
     if(!db_.upsert(sk)){ failed=true; return; } }
   seen.insert(x.path);
   currentByPath.emplace(x.path,x);
@@ -646,18 +682,18 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // path (failed/cancelled/normal). Idempotent; join cannot hang on it.
   queue.shutdown();
   walker.join();
-  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.completed=false; return finishScan(false); }
+  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.completed=false; return finishScan(false); }
  // Deleted detection needs the complete seen set: only on fully walked scans.
  // Previously indexed files that no longer exist are removed then. Ignored rows
  // are retained in the database (they reappear only when unignored and rescanned).
  if(walkCompleted){
   for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ failed=true; break; } ++nRemoved; }
  }
-   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.completed=false; return finishScan(false); }
+   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.completed=false; return finishScan(false); }
  // Persist everything done so far, including on cancel: partial progress is
  // kept by design (checkpoints), so interruption never loses the file list.
   if(!checkpoint()){ r.completed=false; return finishScan(false); }
- r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged;
+ r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed;
  r.removed=nRemoved;
  if(cancelled||(control&&control->cancel.load())) r.completed=false;
  // Final commit also closes the trailing transaction checkpoint() reopened:
