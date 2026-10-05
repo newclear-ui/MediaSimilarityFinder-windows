@@ -54,6 +54,7 @@
   7. source / test
   `development-progress`의 Active Build Queue가 현재 작업의 우선순위를 결정하며,
   완료된 상세 기록은 Work Log / Build History에 보존하고 Progress에는 압축된 주요 이정표만 남긴다.
+  **Node 또는 Build의 진척·판정·Gate·우선순위가 바뀌면 `development-progress.ko.md` / `.en.md`를 즉시 갱신한다.** 구현/검증의 시작·완료, 판정 변경, 다음 Build 확정은 발생한 세션에서 반영하며, 완료된 항목은 Active Build Queue에서 제거하고 완료 주요 이정표로 이동한다.
   상태판의 판정과 수치가 원본과 다르면 **원본이 맞다.** 상태판은 갱신이 늦어질 수 있는 인덱스로 취급한다.
 - 상위 개발 방향은 `docs/development-roadmap.ko.md` / `.en.md`가 기준이다.
 - 현재 실제 상태는 `docs/development-progress.ko.md` / `.en.md`가 기준이다.
