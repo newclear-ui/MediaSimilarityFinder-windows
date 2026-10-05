@@ -1,11 +1,11 @@
 # Implementation Brief — S5 Console Benchmark Execution (Design Baseline)
 
-Status: **REVALIDATED against the 0.9.4.44 baseline on 2026-10-04** — CLI `--benchmark` re-verified against the
+Status: **REVALIDATED against the 0.9.4.44 validation baseline on 2026-10-04** — CLI `--benchmark` re-verified against the
 S4 semantic-reset tree: real `--benchmark` execution exit=0 with
 `suite.json`/`runs.jsonl`/`summary.json` written, S2 executor + S3
 journal/storage contracts unchanged, CPU CTest 100/100 and GPU CTest 101/101.
 S5 is still not declared CLOSED (see §16).
-Current baseline: v0.9.4.44
+Current product baseline: v0.9.4.45; validation evidence baseline: v0.9.4.44
 
 ---
 
