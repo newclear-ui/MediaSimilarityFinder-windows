@@ -33,6 +33,7 @@
 > **`src_unpacked/AGENTS.md` 작업 규칙**: 소스를 변경하기 전에 위 1~4를 반드시 읽고,
 > 현재 Gate가 허용하지 않는 Node를 먼저 시작하지 않는다.
 > 특히 `development-progress`의 Active Build Queue가 현재 작업의 실행 우선순위를 결정한다.
+> **진척 동기화 규칙**: Node/Build의 구현·검증·판정·Gate·다음 작업이 변경되면 `development-progress.ko.md` / `.en.md`를 즉시 갱신한다. 이 문서는 완료된 상세 증거의 저장소가 아니라 현재 실행 상태의 최신 진입점이어야 한다.
 
 ## 판정값 정의 (진행률 %를 쓰지 않는다)
 
