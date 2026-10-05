@@ -10,6 +10,44 @@ This document records the **actual execution state** of development-roadmap.en.m
 
 The Roadmap is the structural direction. Progress records the actual position, problems, and recovery branches.
 
+## Mandatory Session-Start Entry Point
+
+This document is a **mandatory read for OpenCode and ChatGPT agents when starting a new session**.
+If `docs/node-status-gate-matrix.en.md` is the one-page Node/Gate index, this document restores the **active execution queue, actual current state, completed major milestones, and current blockers**.
+At session restart, read this document immediately after the Matrix and follow its current execution priority first.
+Detailed experiments, measurements, and decision lineage remain in `docs/worklog/`; version-specific changes and evidence remain in `docs/build-history/`.
+A separate `workprogress` document is intentionally not created; this document is the single entry point for current work progress.
+
+## Active Build Queue / Current Work Priority
+
+> This section records **only live work**. Remove an item from this queue when it is completed; preserve its details in Work Log / Build History.
+> The actual content of `0.9.4.46` is conditional on the acceptance gate below and must not be treated as pre-locked.
+
+| Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
+| --- | --- | --- | --- | --- |
+| 0 | 0.9.4.45 | Product Search / Index / Comparison acceptance audit | First establish the real product semantics on the implemented production path | **NEXT** |
+| 1 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs final functional acceptance | Accept the real GUI result/display/save path and decide whether S4 can close | **NEXT** |
+| 2 | 0.9.4.46 | **Conditional**: if acceptance finds a product defect, fix that first; otherwise `color_thumb` R1 fixture + no-FFmpeg skip/pass | Determine the actual contents of the next build | **PENDING** |
+| 3 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
+| 4 | S5 | Real-dataset product benchmark | Run measurement only after S4 and product acceptance gates pass | **GATE PENDING** |
+
+## Completed Major Milestones
+
+This section keeps only a **compressed completion state** for long-term orientation. Detailed measurements, failed experiments, and implementation changes remain in Work Log / Build History.
+
+| Area | Completion state | Key result |
+| --- | --- | --- |
+| A | **CLOSED** | Foundation / Terminology / Instrumentation baseline established |
+| B | **CLOSED** | Adaptive Scheduler completed |
+| C | **CLOSED** | Calibration / INI Performance Profile C1–C4 completed |
+| D | **CLOSED** | Pipeline / Queue Optimization completed; measured addressable ceiling 0.044% |
+| I | **COMPLETE** | Analyze / Matching Performance completed |
+| E | **CLOSED / NOT ACCEPTED** | Production exactness was not proven for sparse decode; `ExactnessPolicy::RefuseAll`, production Sequential retained |
+| F-1 | **CONDITIONAL / PRODUCTION ADOPTION NO** | NVIDIA NVDEC investigation completed; production integration prohibited |
+| S0–S3 | **CLOSED** | Initial Validation / Benchmark track infrastructure completed |
+| S4 | **IMPLEMENTED / VERIFICATION IN PROGRESS** | GUI Detailed Logs implementation and user UI confirmation complete; final functional acceptance remains |
+
+
 ## Current Status
 
 | Item | Status |
