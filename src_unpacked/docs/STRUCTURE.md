@@ -24,6 +24,8 @@
 - docs/recent-work-report.ko/.en.md — 최근 중요 작업 3건의 결과 요약 보고(무엇을 했고 현재 상태가 어떤지). 상세 증거는 build-history/worklog에 있고, 이 문서는 한 곳에서 확인하기 위한 요약본이다.
 - docs/node-status-gate-matrix.ko/.en.md — **Node별 현재 상태/선행조건/정체 원인/판정/다음 Gate를 한 장에 모은 통합 상태판(인덱스)**. 세션 시작 시 가장 먼저 읽는 진입점이며, 사실의 원본이 아니라 roadmap/progress/brief/architecture/build-history/worklog로 연결하는 색인이다. 진행률 %를 쓰지 않고 CLOSED/CONDITIONAL/DEFERRED/NOT ACCEPTED 같은 상태값과 Gate로 기록한다. 본선 A~H와 병렬 S 트랙(S0~S8)을 분리 표기한다.
 - docs/architecture/resource-scheduling.ko/.en.md — CPU 정책 + Adaptive GPU AUTO + INI calibration + 실시간 부하 기반 자원관리 목표 아키텍처.
+- docs/implementation-briefs/A-foundation-terminology-instrumentation.ko/.en.md — 종료된 Node A 의 참조 계약(GPU 추상화/ON-OFF/build 명칭/MeasureState/deprecatedFrames 분리). 원본 근거는 `docs/build-history/0.9.4.0.*`.
+- docs/implementation-briefs/S-validation-benchmark-track.ko/.en.md — S0~S8 검증/벤치마크 트랙의 통합 계약. 단계별 상세(S4/S5/S6)는 기존 brief 를 유지하고 이 문서는 대체하지 않는다.
 - docs/architecture/benchmark-telemetry-roadmap.ko/.en.md — benchmark/telemetry 상세 설계.
 - docs/architecture/storage-design.ko/.en.md — 인덱스 저장 위치(스캔 대상 밖 `Index/`), 트랜잭션/체크포인트 정책, 썸네일 캐시, GUI 상세 로그와 Console benchmark 저장소 분리.
 

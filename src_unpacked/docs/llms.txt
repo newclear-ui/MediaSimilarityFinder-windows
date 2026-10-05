@@ -14,6 +14,8 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 - docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — staged Node B implementation contract.
 - docs/implementation-briefs/C-calibration-profile.ko.md / .en.md — Node C partial reuse/extension of profile and benchmark concepts.
 - docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — new Node D pipeline/queue implementation contract.
+- docs/implementation-briefs/A-foundation-terminology-instrumentation.ko.md / .en.md - reference contract for the CLOSED Node A (GPU abstraction, ON/OFF only, build naming, MeasureState, decodedFrames/sampledFrames split, and the deprecated items still present in code). Origin evidence: docs/build-history/0.9.4.0.*.
+- docs/implementation-briefs/S-validation-benchmark-track.ko.md / .en.md - integrated contract of the parallel S0-S8 validation/benchmark track. Does not replace the per-stage S4/S5/S6 briefs; it states the stage definitions, the standing rules, and the semantic boundary.
 - docs/architecture/gui-diagnostic-logging.ko.md / .en.md — authoritative GUI Detailed Logs vs CLI Benchmark semantic boundary.
 - docs/implementation-briefs/S4-gui-diagnostic-logging.ko.md / .en.md — current S4 GUI detailed-logging implementation contract.
 - docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — historical/superseded GUI benchmark execution design, retained for provenance.

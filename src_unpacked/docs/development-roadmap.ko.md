@@ -86,6 +86,47 @@ NEXT DEVELOPMENT LINE
 
 각 단계는 이전 단계의 종료 조건을 통과한 뒤 다음 단계로 이동합니다.
 
+
+동시에 병렬로 존재하는 두 번째 트랙. 본선 Gate 에 의존하지 않고 검증/측정 계층만
+담당한다 (2026-09-30 Benchmark Console 설계 확정 때 등록).
+
+```text
+START
+  |
+  v
+[S0] 설계 확정 / pre-register
+  |
+  v
+[S1] Console entry foundation
+  |
+  v
+[S2] Run / Suite benchmark core
+  |
+  v
+[S3] Benchmark storage isolation
+  |
+  v
+[S4] GUI Detailed Logging                       <-- 현재 활성 (acceptance 미완료)
+  |
+  v
+[S5] Console benchmark execution                <-- infra 완료, product benchmark 미실행
+  |
+  v
+[S6] Data-mining automation / measurement gate  <-- 실측 미실행
+  |
+  v
+[S7] Help / usability
+  |
+  v
+[S8] Full verification / release gate
+```
+
+S 트랙 통합 계약은 `docs/implementation-briefs/S-validation-benchmark-track.{ko,en}.md`,
+설계 권위는 `docs/architecture/benchmark-telemetry-roadmap.{ko,en}.md`,
+현재 상태 1페이지는 `docs/node-status-gate-matrix.{ko,en}.md` 다.
+단계별 상세 계약(S4/S5/S6)은 기존 `docs/implementation-briefs/S4-*`, `S5-*`, `S6-*` 를
+그대로 유지하며, 통합 문서는 이를 대체하지 않는다.
+
 ## 문제 발생 시 분기
 
 B에서 문제가 발생한 경우의 예:

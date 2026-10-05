@@ -58,7 +58,7 @@
 
 | Node | 목적 | 사전 설계 | 선행조건 | 구현 | 빌드/검증 | 현재 판정 | 정체 원인 | 해결/결론 | 다음 Gate | 상세 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **A** | Foundation / 용어 / instrumentation | 완료 | — | 완료 | PASS | **CLOSED** | — | GPU 추상화 `GpuBackendKind{Auto,Cuda,Cpu}`, `MSF_ENABLE_GPU`+`MSF_GPU_BACKEND`, build 명명 분리, `MeasureState` 6종, `decodedFrames`/`sampledFrames` 분리, 미측정=0 금지 | B | `build-history/0.9.4.0.*`, `architecture/resource-scheduling.*`, `architecture/gpu-backend-roadmap.*` |
+| **A** | Foundation / 용어 / instrumentation | 완료 | — | 완료 | PASS | **CLOSED** | — | GPU 추상화 `GpuBackendKind{Auto,Cuda,Cpu}`, `MSF_ENABLE_GPU`+`MSF_GPU_BACKEND`, build 명명 분리, `MeasureState` 6종, `decodedFrames`/`sampledFrames` 분리, 미측정=0 금지 | B | `implementation-briefs/A-foundation-terminology-instrumentation.*`(참조 계약), `build-history/0.9.4.0.*`, `architecture/resource-scheduling.*`, `architecture/gpu-backend-roadmap.*` |
 | **B** | Adaptive Scheduler | 완료 | A | 완료 | PASS | **CLOSED** | 고정 50:50 배분 | capability + calibration + 실시간 부하 + throughput + queue + transfer cost 기반 동적 배분. GPU 사용률 수동 설정 제거 | C | `implementation-briefs/B-adaptive-scheduler.*` |
 | **C** | Calibration / INI Performance Profile | 완료 | B | 완료 | PASS | **CLOSED** | calibration 수명주기 경계 | C1 Profile Foundation → C2 Initial → C3 Opportunistic → C4 Gate. live runtime state가 항상 우선 | D | `implementation-briefs/C-calibration-profile.*` |
 | **D** | Pipeline / Queue Optimization | 완료 | C | 완료 | PASS | **CLOSED** | 실제 병목 비중이 0.044 %에 불과 | bounded walker queue, transfer stall 해소. D3+D4 addressable ceiling 0.044 % → 추가 최적화 보류 | I | `implementation-briefs/D-pipeline-queue.*` |
@@ -78,7 +78,8 @@
 ## S 트랙 — Validation / Benchmark Track
 
 본선 A~H 와 **병렬 트랙**이다. 서로의 Gate 에 의존하지 않으며, 검증/측정 계층만
-담당한다. 상세 계약은 `docs/architecture/benchmark-telemetry-roadmap.{ko,en}.md`.
+담당한다. 트랙 통합 계약은 `docs/implementation-briefs/S-validation-benchmark-track.{ko,en}.md`,
+설계 권위는 `docs/architecture/benchmark-telemetry-roadmap.{ko,en}.md` 다.
 
 선행관계: `S0 → S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8`
 

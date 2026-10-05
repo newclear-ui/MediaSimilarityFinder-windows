@@ -125,6 +125,9 @@ START
 [D] Pipeline / Queue Optimization
   |
   v
+[I] Analyze / Matching Performance
+  |
+  v
 [E] Adaptive Video Decode Planner
   |
   v
@@ -142,6 +145,44 @@ START
   v
 [H] Regression / Stability / Performance Validation
 ```
+
+동시에 병렬로 존재하는 S 트랙 (본선 Gate 에 의존하지 않는다):
+
+```
+START
+  |
+  v
+[S0] 설계 확정 / pre-register
+  |
+  v
+[S1] Console entry foundation
+  |
+  v
+[S2] Run / Suite benchmark core
+  |
+  v
+[S3] Benchmark storage isolation
+  |
+  v
+[S4] GUI Detailed Logging
+  |
+  v
+[S5] Console benchmark execution
+  |
+  v
+[S6] Data-mining automation / measurement gate
+  |
+  v
+[S7] Help / usability
+  |
+  v
+[S8] Full verification / release gate
+```
+
+> **이 문서는 2026-09-26 세션 스냅샷이며 위 시점의 기록이다.** 이후 빌드 중에
+> 본선에 **Node I** 가 `D` 와 `E` 사이에 추가되었고, `S` 검증/벤치마크 트랙이
+> 별도로 등록되었다. 현재 권위 조회는 `docs/node-status-gate-matrix.{ko,en}.md`
+> 를 먼저 읽을 것.
 
 ### Node A
 GPU terminology, GPU ON/OFF policy, build naming, benchmark instrumentation의 공통 기반.
@@ -166,6 +207,30 @@ Vulkan / AMD HIP-ROCm / Intel Level Zero를 실제 검증 기반으로 독립 �
 
 ### Node H
 CPU-only, GPU OFF, GPU ON/AUTO, low-end simulation, external load, decoder success/fallback, cancellation/partial, accuracy parity, stability, cache compatibility 등을 통합 검증.
+
+### Node I (빌드 중 추가)
+Analyze / Matching Performance. `D` 와 `E` 사이에 삽입되었다. 전체 wall time 의
+98.62 %가 `analyze` 단계였고, 그 안에서 decode 가 94.90 %를 차지하며 실제
+decompression 은 그 1/20(open+factory 가 89.54 %)이었다. 설계 문서:
+`docs/implementation-briefs/I-decode-once-resize-twice.{ko,en}.md`.
+
+### S 트랙 (빌드 중 추가, 본선과 병렬)
+검증/벤치마크 전용 트랙. 본선 Gate 에 의존하지 않으며 측정값 없이는 닫지 않는다.
+
+- `S0` 설계 확정 / pre-register
+- `S1` Console entry foundation (CLI 파싱, help/version, headless scan)
+- `S2` Run / Suite benchmark core (production 검색 경로 재사용, 두 번째 엔진 금지)
+- `S3` Benchmark storage isolation (append-only `runs.jsonl`, `summary.json` 은 파생)
+- `S4` GUI Detailed Logging — 현재 활성, acceptance 미완료
+- `S5` Console benchmark execution — infra 완료, product benchmark 미실행
+- `S6` Data-mining automation / measurement gate — 실측 미실행, threshold 미정
+- `S7` Help / usability
+- `S8` Full verification / release gate
+
+통합 계약: `docs/implementation-briefs/S-validation-benchmark-track.{ko,en}.md`.
+설계 권위: `docs/architecture/benchmark-telemetry-roadmap.{ko,en}.md`.
+`S4`/`S5`/`S6` 은 GUI 상세 로그 ↔ CLI benchmark 의미 경계를 반드시 지킨다
+(Benchmark 와 Telemetry 는 동의어가 아니다).
 
 ---
 

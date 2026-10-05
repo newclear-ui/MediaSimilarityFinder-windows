@@ -59,7 +59,7 @@ Dependency chain: `A -> B -> C -> D -> I -> E -> F -> G -> H`
 
 | Node | Purpose | Design | Prerequisite | Implementation | Build/Verify | Current verdict | Blocker cause | Resolution/Conclusion | Next gate | Detail |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **A** | Foundation / terminology / instrumentation | complete | — | complete | PASS | **CLOSED** | — | GPU abstraction `GpuBackendKind{Auto,Cuda,Cpu}`, `MSF_ENABLE_GPU` + `MSF_GPU_BACKEND`, split build naming, 6 `MeasureState` values, `decodedFrames`/`sampledFrames` split, no recording 0 for unmeasured | B | `build-history/0.9.4.0.*`, `architecture/resource-scheduling.*`, `architecture/gpu-backend-roadmap.*` |
+| **A** | Foundation / terminology / instrumentation | complete | — | complete | PASS | **CLOSED** | — | GPU abstraction `GpuBackendKind{Auto,Cuda,Cpu}`, `MSF_ENABLE_GPU` + `MSF_GPU_BACKEND`, split build naming, 6 `MeasureState` values, `decodedFrames`/`sampledFrames` split, no recording 0 for unmeasured | B | `implementation-briefs/A-foundation-terminology-instrumentation.*` (reference contract), `build-history/0.9.4.0.*`, `architecture/resource-scheduling.*`, `architecture/gpu-backend-roadmap.*` |
 | **B** | Adaptive Scheduler | complete | A | complete | PASS | **CLOSED** | fixed 50:50 split | Dynamic split from capability + calibration + live load + throughput + queue + transfer cost. Manual GPU percentage control removed | C | `implementation-briefs/B-adaptive-scheduler.*` |
 | **C** | Calibration / INI Performance Profile | complete | B | complete | PASS | **CLOSED** | calibration lifecycle boundary | C1 Profile Foundation -> C2 Initial -> C3 Opportunistic -> C4 Gate. Live runtime state always wins | D | `implementation-briefs/C-calibration-profile.*` |
 | **D** | Pipeline / Queue Optimization | complete | C | complete | PASS | **CLOSED** | the real bottleneck share was only 0.044 % | bounded walker queue, transfer stall removed. D3+D4 addressable ceiling 0.044 % -> further optimization held | I | `implementation-briefs/D-pipeline-queue.*` |
@@ -80,8 +80,9 @@ Dependency chain: `A -> B -> C -> D -> I -> E -> F -> G -> H`
 ## S track — Validation / Benchmark Track
 
 This is a **parallel track** to the A-H main line. It does not depend on the main
-gates and owns only the verification/measurement layer. The detailed contract is
-`docs/architecture/benchmark-telemetry-roadmap.{ko,en}.md`.
+gates and owns only the verification/measurement layer. The integrated track contract is
+`docs/implementation-briefs/S-validation-benchmark-track.{ko,en}.md`; the design
+authority is `docs/architecture/benchmark-telemetry-roadmap.{ko,en}.md`.
 
 Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 

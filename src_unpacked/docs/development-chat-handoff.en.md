@@ -56,12 +56,34 @@ A Foundation / Terminology / Instrumentation
 B Adaptive Scheduler
 C Calibration / INI Performance Profile
 D Pipeline / Queue Optimization
+I Analyze / Matching Performance          <- added during later builds, between D and E
 E Adaptive Video Decode Planner
 F Hardware Video Decode Backend
 G Additional GPU Backends
 H Regression / Stability / Performance Validation
 
 Each node must pass its exit criteria before the next node is started.
+
+In parallel, the S track (validation / benchmark) runs independently of the
+main-line gates:
+
+S0 Design fix / pre-register
+S1 Console entry foundation
+S2 Run / Suite benchmark core
+S3 Benchmark storage isolation
+S4 GUI Detailed Logging                 <- active now, acceptance incomplete
+S5 Console benchmark execution          <- infra complete, product benchmark not run
+S6 Data-mining automation / measurement gate   <- not executed, threshold undefined
+S7 Help / usability
+S8 Full verification / release gate
+
+Integrated S track contract:
+`docs/implementation-briefs/S-validation-benchmark-track.{ko,en}.md`.
+
+> **This document is a 2026-09-26 session snapshot and reflects that point in
+> time.** Node I was later inserted between D and E, and the S track was
+> registered separately. For the current authority, read
+> `docs/node-status-gate-matrix.{ko,en}.md` first.
 
 ## 5. Current progress
 

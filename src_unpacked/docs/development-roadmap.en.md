@@ -93,6 +93,48 @@ NEXT DEVELOPMENT LINE
 
 Each node must pass its exit criteria before the next node becomes active.
 
+A second track runs in parallel. It does not depend on the main-line gates and
+owns only the verification/measurement layer. It was registered when the
+Benchmark Console design was finalized on 2026-09-30.
+
+```text
+START
+  |
+  v
+[S0] Design fix / pre-register
+  |
+  v
+[S1] Console entry foundation
+  |
+  v
+[S2] Run / Suite benchmark core
+  |
+  v
+[S3] Benchmark storage isolation
+  |
+  v
+[S4] GUI Detailed Logging                        <-- active now (acceptance incomplete)
+  |
+  v
+[S5] Console benchmark execution                 <-- infra complete, product benchmark not run
+  |
+  v
+[S6] Data-mining automation / measurement gate   <-- measurement not executed
+  |
+  v
+[S7] Help / usability
+  |
+  v
+[S8] Full verification / release gate
+```
+
+The integrated S track contract is `docs/implementation-briefs/S-validation-benchmark-track.{ko,en}.md`,
+the design authority is `docs/architecture/benchmark-telemetry-roadmap.{ko,en}.md`,
+and the one-page current status is `docs/node-status-gate-matrix.{ko,en}.md`.
+The per-stage contracts (S4/S5/S6) stay in the existing
+`docs/implementation-briefs/S4-*`, `S5-*`, `S6-*` documents; the integrated
+document does not replace them.
+
 ### Recovery branches
 
 Example when a scheduler problem appears in B:
