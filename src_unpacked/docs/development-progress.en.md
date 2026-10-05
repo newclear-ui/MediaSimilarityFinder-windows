@@ -17,6 +17,7 @@ If `docs/node-status-gate-matrix.en.md` is the one-page Node/Gate index, this do
 At session restart, read this document immediately after the Matrix and follow its current execution priority first.
 Detailed experiments, measurements, and decision lineage remain in `docs/worklog/`; version-specific changes and evidence remain in `docs/build-history/`.
 A separate `workprogress` document is intentionally not created; this document is the single entry point for current work progress.
+**Update this document immediately whenever Node or Build progress, verdict, gate, or priority changes.** Starting or completing implementation, verification results, PASS/CONDITIONAL/DEFERRED/NOT ACCEPTED/CLOSED changes, and confirmation of the next build must be reflected in the Active Build Queue and current-state sections in the same session in which the change occurs. Preserve the detailed evidence in Work Log / Build History.
 
 ## Active Build Queue / Current Work Priority
 
