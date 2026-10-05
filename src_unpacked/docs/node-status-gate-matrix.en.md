@@ -20,11 +20,11 @@ verdicts on one page and links out to the origin document for figures and contra
 The same figure or verdict is not copied into several documents. If a table entry
 below is surprising, **follow the link to its origin.**
 
-## Reading order (at agent session start)
+## Reading order (at OpenCode / ChatGPT agent session start)
 
-1. **This document** — which node we are on and what the next gate is
-2. `development-roadmap.{ko,en}.md` — direction and prerequisites
-3. `development-progress.{ko,en}.md` — current position and blockers
+1. **This document** — the overall Node/Gate entry point
+2. **`development-progress.{ko,en}.md`** — active execution queue, current position, blockers, and completed major milestones
+3. `development-roadmap.{ko,en}.md` — direction and prerequisites
 4. The active node's `docs/implementation-briefs/<Node>-*.md`
 5. The required `docs/architecture/*.md`
 6. Relevant `docs/build-history/` + `docs/worklog/`
@@ -32,6 +32,7 @@ below is surprising, **follow the link to its origin.**
 
 > **`src_unpacked/AGENTS.md` working rule**: read steps 1-4 before changing source,
 > and do not start a node the current gate does not permit.
+> In particular, the Active Build Queue in `development-progress` determines the current execution priority.
 
 ## Verdict values (no progress percentages)
 
