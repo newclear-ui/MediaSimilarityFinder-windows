@@ -56,6 +56,10 @@ Orphaned thumbnail rows are pruned when a scan finishes.
 This document describes the current storage design. Version-specific changes are
 recorded separately under `docs/build-history/`.
 
+The Korean counterpart is `docs/architecture/storage-design.ko.md`. The two files
+are preserved as independent KO/EN documents and are not renamed; their content is
+identical.
+
 
 ## Detailed Log and Benchmark Storage Separation
 

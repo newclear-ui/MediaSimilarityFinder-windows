@@ -27,7 +27,7 @@
 - docs/implementation-briefs/A-foundation-terminology-instrumentation.ko/.en.md — 종료된 Node A 의 참조 계약(GPU 추상화/ON-OFF/build 명칭/MeasureState/deprecatedFrames 분리). 원본 근거는 `docs/build-history/0.9.4.0.*`.
 - docs/implementation-briefs/S-validation-benchmark-track.ko/.en.md — S0~S8 검증/벤치마크 트랙의 통합 계약. 단계별 상세(S4/S5/S6)는 기존 brief 를 유지하고 이 문서는 대체하지 않는다.
 - docs/architecture/benchmark-telemetry-roadmap.ko/.en.md — benchmark/telemetry 상세 설계.
-- docs/architecture/storage-design.ko/.en.md — 인덱스 저장 위치(스캔 대상 밖 `Index/`), 트랜잭션/체크포인트 정책, 썸네일 캐시, GUI 상세 로그와 Console benchmark 저장소 분리.
+- docs/architecture/storage-design.ko.md / docs/architecture/storage-design.md — 인덱스 저장 위치(스캔 대상 밖 `Index/`), 트랜잭션/체크포인트 정책, 썸네일 캐시, GUI 상세 로그와 Console benchmark 저장소 분리. **KO/EN 각본을 서로 독립된 파일로 보존한다. 영문은 suffix 없는 `storage-design.md` 를 유지하며 개명하지 않는다.**
 
 ## src/ 핵심 계층
 
