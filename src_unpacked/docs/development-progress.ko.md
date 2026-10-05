@@ -4,6 +4,22 @@
 > → [`docs/node-status-gate-matrix.ko.md`](node-status-gate-matrix.ko.md)
 > 상태판은 인덱스이며, 이 문서와 Roadmap/Build History가 판정·수치의 원본입니다.
 
+## Active Build Queue
+
+순서는 실제 작업 순서다. 완료된 항목은 제거하고 다음 실제 작업을 최상단에 올린다.
+미래 작업을 완료된 것으로 기록하지 않는다.
+
+| 순위 | 대상 | 버전 | 상태 | 근거 |
+|---|---|---|---|---|
+| 1 | **DEFECT-A + DEFECT-B 수정** — 디코드 실패 파일의 무음 인덱싱 / `modified` 영구 보고 | 0.9.4.46 | **NOT STARTED** | acceptance audit 결함 등록. `worklog/0.9.4.ko.md` |
+| 2 | 분석 실패 파일 재스캔 수렴 회귀 테스트 (DEFECT-B 재발 방지) | 0.9.4.46 | NOT STARTED | 기존 테스트 공백 |
+| 3 | `color_thumb` R1 fixture + no-FFmpeg skip/pass 처리 | 0.9.4.47 후보 | DEFERRED (우선순위 하향) | 결함 수정이 우선 |
+| 4 | S4 GUI Detailed Logs 최종 functional acceptance (실제 화면) | — | DEFERRED | 화면 검증 필요, headless 한계 |
+| 5 | S5 실제 dataset product benchmark | — | DEFERRED | S4 acceptance 의존 |
+| 6 | S6 controlled measurement gate | — | DEFERRED | 실측 dataset 필요, threshold 미정 |
+
+> 1·2번이 해결되기 전까지 3번 이후로 넘어가지 않는다.
+
 ## 문서 목적
 
 이 문서는 development-roadmap.ko.md의 **현재 실제 실행 상태**를 기록합니다.
