@@ -140,6 +140,15 @@
      `captureSilent` INFINITE 대기 → bounded lifecycle + 호출별 timeout (`proc_capture_test` · `monitor_test` 반복 샘플로 검증),
      `WINDOWS_GUI` 미수정 바이너리는 팝업 불가피함이 증명됨 (40파일 실행 중 보이는 창 11건).
 
+12. **임시 작업 디렉터리 — `D:\temp` 고정 (영구 규칙)**
+   - 조사·격리·프로브·대량 복사 등 모든 임시 작업은 **`D:\temp` 아래에서만** 수행한다.
+     OS 영역인 `C:` (`$env:TEMP`, `C:\Users\...\AppData\Local\Temp` 포함)에는 임시 파일을 만들지 않는다.
+   - 근거 (2026-10-05 실측): C++ 조사 프로브와 격리 복사물이 C: TEMP에 누적되어 OS 디스크 압박의 한 원인이 되었다.
+     OpenCode 세션 DB(`~/.local/share/opencode/opencode.db`)가 대량 도구 출력을 통째로 저장해 수십 GB로 불어난 것도 같은 날 확인됨.
+     OS 디스크와 작업 스크래치는 물리적으로 분리한다. `D:` 여유 공간을 작업 전에 확인한다.
+   - bash `workdir` 인자 등 작업 경로 지정이 필요하면 `D:\temp\<목적>` 형태를 쓴다.
+   - 임시물 정리 시에도 10항(휴지통 이동)을 그대로 적용한다.
+
 ## 문서 네이밍 및 구조
 
 - 정식 명명/위치 규칙은 `docs/document-naming.ko.md` + `.en.md`를 따른다.

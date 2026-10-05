@@ -114,8 +114,12 @@ std::string sha256Hex(const unsigned char* data, std::size_t len) {
 }
 
 std::string canonicalRelativePath(const std::string& root, const std::string& file) {
+    // Both inputs are UTF-8 by product convention. A narrow fs::path(string)
+    // would reinterpret them as the ANSI code page and throw
+    // "No mapping for the Unicode character..." for any non-ASCII name, so the
+    // explicit UTF-8 construction is mandatory here, not stylistic.
     std::error_code ec;
-    fs::path rel = fs::relative(fs::path(file), fs::path(root), ec);
+    fs::path rel = fs::relative(path_from_utf8(file), path_from_utf8(root), ec);
     if (ec || rel.empty()) return std::string();
     std::string s = path_to_utf8(rel.lexically_normal());
     for (char& c : s) { if (c == '\\') c = '/'; if (c == '/') c = '/'; }

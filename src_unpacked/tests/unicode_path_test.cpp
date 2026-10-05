@@ -6,6 +6,7 @@
 // Filenames below spell "test" in Korean via explicit UTF-8 byte escapes so
 // the test is independent of the compiler's source-file encoding.
 #include "database.h"
+#include "dataset_fingerprint.h"
 #include "media_pipeline.h"
 #include "path_utils.h"
 #include "scanner.h"
@@ -69,6 +70,14 @@ int main() {
   msf::FileState a{"a.jpg", 100, 10, "x"};
   if (!db.upsert(a) || db.all().size() != 1) return 5;
   db.close();
+  // 6. Dataset fingerprint must not throw on Korean-named files (0.9.4.46+).
+  // canonicalRelativePath() built fs::path from narrow UTF-8 bytes, which MSVC
+  // reinterprets as the ANSI code page and throws "No mapping for the Unicode
+  // character..." for any non-ASCII name, failing the whole scan at startup.
+  {
+    const auto fp = msf::computeDatasetFingerprint(msf::path_to_utf8(d));
+    if (fp.state != "measured" || fp.fileCount < 2 || fp.fingerprint.empty()) return 6;
+  }
   fs::remove_all(d, ec);
   std::cout << "unicode_path=ok\n";
   return 0;
