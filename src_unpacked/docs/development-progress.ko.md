@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.64 구현 완료 → 수동 GUI acceptance → 제품 Search/Index/Comparison acceptance 재확인
+> **작업 순서 요약:** 0.9.4.65 핸들러 무throw 완료 → 수동 GUI acceptance → 제품 Search/Index/Comparison acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -96,6 +96,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 크래시 대응 3종 | **완료(0.9.4.62)** | catch-all로 기록된 실패화. Qt 메시지 파일 싱크. heartbeat 열거 표시. crashdiag 5 checks |
 | GUI usability 3종 | **완료(0.9.4.63)** | 상세 로그 표시 설정. splitter 가운데 우선. filename 선택. Test Mode·traversal DEFERRED. usability 13 checks |
 | 표시 옵션 설정 통합 | **완료(0.9.4.64)** | 별도 표시 대화상자 삭제, 설정 일반 탭으로 이동. round-trip 불변. 테스트 closer race 수정. usability 13 checks |
+| 스캔 실패 핸들러 무throw | **완료(0.9.4.65)** | 세 번째 0xC0000409 덤프가 핸들러 persist 경로 특정. 두 핸들러 persist·emit 독립 try/catch. crashdiag 7 checks |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -182,12 +183,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.64 (0.9.4.63 에서 표시 옵션 설정 통합 후 bump) |
+| 기준 코드 | 0.9.4.65 (0.9.4.64 에서 스캔 실패 핸들러 무throw 후 bump) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.64 GUI usability manual acceptance** — 0.9.4.64 구현 및 자동 검증은 완료. ui_usability_test 13 checks, CPU 111/111, GPU 112/112, --version 0.9.4.64, warning/error/C4819 0건. 별도 표시 대화상자를 삭제하고 설정 일반 탭으로 통합했다. 남은 것은 실제 Windows 화면에서 설정/resize/filename을 확인하고 Tiles/ListMode 및 대규모 dataset traversal을 수동 확인하는 것. 0.9.4.62 crash-response 방어/관측 패치는 완료했고 root cause는 미확정이므로 다음 crash 발생 시 runbook 기반 증거 수집을 우선한다. XMP Orientation은 fixture PASS이나 real-dataset coverage가 없어 CONDITIONAL. `color_thumb` R1은 미착수. S5 infrastructure는 REVALIDATED, 실제 product benchmark는 Gate 대기. F-1은 CONDITIONAL/NVDEC production adoption NO. |
-| 현재 단계 | **0.9.4.64 구현 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance → XMP/color_thumb → S5 → S6** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.64 |
+| 현재 노드 | **0.9.4.65 스캔 실패 핸들러 무throw 완료 → 0.9.4.64 GUI usability manual acceptance 계속** — 0.9.4.65 구현 및 자동 검증은 완료. ui_usability_test 13 checks, crash_diagnostics_test 7 checks, CPU 111/111, GPU 112/112, --version 0.9.4.65, warning/error/C4819 0건. 별도 표시 대화상자를 삭제하고 설정 일반 탭으로 통합했다. 남은 것은 실제 Windows 화면에서 설정/resize/filename을 확인하고 Tiles/ListMode 및 대규모 dataset traversal을 수동 확인하는 것. 0.9.4.62 crash-response 방어/관측 패치는 완료했고 root cause는 미확정이므로 다음 crash 발생 시 runbook 기반 증거 수집을 우선한다. XMP Orientation은 fixture PASS이나 real-dataset coverage가 없어 CONDITIONAL. `color_thumb` R1은 미착수. S5 infrastructure는 REVALIDATED, 실제 product benchmark는 Gate 대기. F-1은 CONDITIONAL/NVDEC production adoption NO. |
+| 현재 단계 | **0.9.4.65 핸들러 무throw 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance → XMP/color_thumb → S5 → S6** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
+| 현재 버전 | 0.9.4.65 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

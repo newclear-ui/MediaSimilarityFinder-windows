@@ -1,4 +1,4 @@
-// Crash-diagnostics regression (0.9.4.62).
+// Crash-diagnostics regression (0.9.4.62, handler hardening in 0.9.4.65).
 //
 // The two consecutive 0xC0000409 fail-fast crashes left no product record:
 // ScanWorker::run caught only std::exception, Qt messages went nowhere, and
@@ -10,6 +10,11 @@
 //      terminating the process (driven by the MSF_TEST_THROW_NONSTD seam;
 //      production never sets it). SEH faults still crash (not caught here),
 //      which is why this test can assert survival at all.
+//   3. (0.9.4.65) A throw inside the failure handler itself still reports
+//      failed() instead of terminating: the 2026-10-07 dump proved the fault
+//      stack sits in the handler's persist path (abort out of run(), a Qt
+//      slot). Driven by MSF_TEST_THROW_PERSIST on top of the NONSTD seam;
+//      production never sets either.
 #include "mainwindow.h"
 #include <QCoreApplication>
 #include <QFile>
@@ -68,6 +73,26 @@ int main(int argc, char** argv) {
         check(failedSeen, "failed() emitted for a non-standard exception");
         check(failedMsg.contains("non-standard"), "failure reason names the cause");
         qunsetenv("MSF_TEST_THROW_NONSTD");
+    }
+
+    // ---- 3. Throw inside the handler still reports failed(). ----
+    {
+        qputenv("MSF_TEST_THROW_NONSTD", "1");
+        qputenv("MSF_TEST_THROW_PERSIST", "1");
+        ScanWorker w(QString::fromStdString((d / "media").string()),
+                     QString::fromStdString(d.string()),
+                     8, 50, 50, false);
+        bool failedSeen = false;
+        QString failedMsg;
+        QObject::connect(&w, &ScanWorker::failed, &w,
+                         [&](const QString& m) { failedSeen = true; failedMsg = m; },
+                         Qt::DirectConnection);
+        w.run(); // would terminate the process without the 0.9.4.65 guard:
+                 // persistMatchesSnapshot throws inside the catch-all handler
+        check(failedSeen, "failed() emitted when the handler's persist throws");
+        check(failedMsg.contains("non-standard"), "original failure reason kept");
+        qunsetenv("MSF_TEST_THROW_NONSTD");
+        qunsetenv("MSF_TEST_THROW_PERSIST");
     }
 
     fs::remove_all(d, ec);

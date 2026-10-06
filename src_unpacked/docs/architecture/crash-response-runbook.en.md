@@ -72,7 +72,35 @@ down the faulting thread and stack.
 - Leading candidate: unhandled worker-thread exception into terminate then
   abort (`ScanWorker::run` caught `std::exception` only).
 
-### 3-2. Post-fill crash after a gradient match storm (test env, needs its own directive)
+### 3-2. 2026-10-07 04:30:43 — 0xC0000409 fail-fast, third occurrence (fault path pinned by dump)
+
+- Product GPU build 0.9.4.64 (`build-windows-gpu\Release`, timestamp
+  `0x6AC5408D`); died 21 minutes into a `G:\Downloads\ss_twit` scan. The
+  heartbeat was alive 8 seconds before death (walked=156481/listed=228000
+  at 0% — enumeration phase).
+- Event 1000: `0xc0000409` at offset `0xa527e` — same as the previous two.
+  Same offset three times running means a deterministic abort path.
+- Direct parsing of the dump
+  (`D:\Temp\OpenCodeWork\dumps\MediaSimilarityFinder.exe.11104.dmp`,
+  12.8MB mini):
+  - Exception `0xC0000409` with parameter `0x7` is the `int 29h` inside
+    ucrtbase `abort()` (`abort+0x4E`, confirmed by disassembly). Not a Qt
+    fatal (no `msf_qt.log`).
+  - The fault thread is the scan worker. The top of its stack matches the
+    `catch (std::exception&)` handler region of `ScanWorker::run` (a
+    `persistMatchesSnapshot` call plus an `e.what()` virtual call plus
+    `emit failed` — identified by PDB-less IAT/disassembly reverse lookup
+    against a shadow PDB build).
+- Verdict: the 0.9.4.62 catch-all catches the first exception, but if
+  persist or emit inside the handler throws again, it leaves the Qt slot
+  for `terminate()` -> `abort()`. The dump points exactly at that chain.
+  The dump cannot reveal the FIRST exception's origin (it died after being
+  caught).
+- Response: 0.9.4.65 wraps persist and emit in both handlers in independent
+  try/catch blocks, removing every escape path. Details:
+  `docs/build-history/0.9.4.65.en.md`.
+
+### 3-3. Post-fill crash after a gradient match storm (test env, needs its own directive)
 
 - Thousands of cross-matches streamed at once, then 0xC0000005 after a fill.
   Engine-only 240-file scan is clean. Recorded separately as a GUI-side

@@ -600,8 +600,13 @@ void ScanWorker::run() {
   } catch (const std::exception& e) {
     // A failed scan must not discard what it already found: checkpoint first
     // so the next scan of the same folder quick-loads the partial results.
-    persistMatchesSnapshot();
-    emit failed(e.what());
+    // (0.9.4.65) Neither step may throw out of this handler: run() is a Qt
+    // slot, so an escaping exception crosses Qt internals into terminate() ->
+    // abort() (the 0xC0000409 signature, proven by the 2026-10-07 dump whose
+    // fault stack sits in this handler's persist path). Persist and report
+    // are attempted independently; each swallows its own failure.
+    try { persistMatchesSnapshot(); } catch (...) {}
+    try { emit failed(e.what()); } catch (...) {}
   } catch (...) {
     // Fail-fast converted to a recorded failure (0.9.4.62): a non-standard
     // exception used to terminate the whole process with no record (the
@@ -609,11 +614,18 @@ void ScanWorker::run() {
     // and report failed instead. SEH access violations still crash: MSVC
     // builds without /EHa do not unwind those through catch(...), so real
     // memory corruption keeps failing fast instead of being masked.
-    persistMatchesSnapshot();
-    emit failed("unhandled non-standard exception in scan worker");
+    // (0.9.4.65) Same no-throw rule as above: the handler itself throwing
+    // re-enters terminate() -> abort() with no record.
+    try { persistMatchesSnapshot(); } catch (...) {}
+    try { emit failed("unhandled non-standard exception in scan worker"); } catch (...) {}
   }
 }
 void ScanWorker::persistMatchesSnapshot() {
+  // Test-only fault injection (0.9.4.65): makes the failure-handler path
+  // throw deterministically, proving the handler itself never lets an
+  // exception escape the worker slot (terminate -> abort). Production code
+  // never sets this variable, so the branch is dead otherwise.
+  if (qEnvironmentVariableIsSet("MSF_TEST_THROW_PERSIST")) throw std::runtime_error("MSF_TEST_THROW_PERSIST");
   std::vector<msf::SearchMatch> all; all.reserve((std::size_t)allMatches_.size());
   for (const auto& m : allMatches_) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
   engine_.saveMatches(all);

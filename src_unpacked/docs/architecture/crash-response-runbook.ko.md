@@ -70,7 +70,29 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting
   (`ScanWorker::run`이 `std::exception`만 catch했음).
   덤프 확보 후 스택 특정 필요.
 
-### 3-2. gradient match-storm 후 크래시 (테스트 환경, 별도 지시 필요)
+### 3-2. 2026-10-07 04:30:43 — 0xC0000409 fail-fast, 3번째 (덤프로 fault 경로 특정)
+
+- 제품 GPU 빌드 0.9.4.64 (`build-windows-gpu\Release`, 타임스탬프 `0x6AC5408D`),
+  `G:\Downloads\ss_twit` 스캔 시작 21분 후 사망. heartbeat는 사망 8초 전까지
+  alive (walked=156481/listed=228000, 0% — 열거 구간).
+- 이벤트 1000: `0xc0000409`, 오프셋 `0xa527e` — 앞선 2회와 동일.
+  동일 오프셋 3회 = 결정적 abort 경로.
+- 덤프(`D:\Temp\OpenCodeWork\dumps\MediaSimilarityFinder.exe.11104.dmp`,
+  mini 12.8MB) 직접 파싱 결과:
+  - 예외 `0xC0000409` + 파라미터 `0x7` = ucrtbase `abort()` 내부의
+    `int 29h` (`abort+0x4E`, disasm 확인). Qt fatal 아님 (`msf_qt.log` 없음).
+  - fault 스레드 = 스캔 worker. 스택 최상단이 `ScanWorker::run`의
+    `catch (std::exception&)` 핸들러 영역과 일치
+    (`persistMatchesSnapshot` 호출 + `e.what()` 가상 호출 + `emit failed` —
+    PDB 없이 IAT/disasm 역조회 + 섀도우 PDB 대조로 특정).
+- 판정: 0.9.4.62 catch-all은 첫 예외를 잡지만, 핸들러 안의 persist·emit이
+  다시 던지면 Qt 슬롯 밖으로 나가 `terminate()` → `abort()`로 직행한다.
+  덤프가 바로 그 사슬을 가리킨다. 첫 예외의 원인은 덤프로 알 수 없음
+  (이미 잡힌 뒤 사망).
+- 대응: 0.9.4.65에서 두 핸들러의 persist·emit을 독립 try/catch로 감싸
+  핸들러 밖 탈출 경로 제거. 상세: `docs/build-history/0.9.4.65.ko.md`.
+
+### 3-3. gradient match-storm 후 크래시 (테스트 환경, 별도 지시 필요)
 
 - 수천 cross-match가 한 번에 stream되자 fill 이후 0xC0000005.
   엔진 단독 240-file 스캔은 정상. GUI 측 match-storm 규모 문제로 분리 기록.
