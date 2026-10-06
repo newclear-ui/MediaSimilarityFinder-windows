@@ -102,6 +102,45 @@ This backlog is **not mixed into the 0.9.4.59 correctness repair**. GPU utilizat
 
 The real GUI reproduced a regression where scrolling the similar-group list downward with mouse dragging, the vertical scrollbar, or keyboard navigation such as End becomes slow and eventually returns the list to the top. This is treated as a separate phase: compare the historical **0.9.3.10 semantic scroll-anchor fix** with the current 0.9.4 thumbnail catch-up/full-list rebuild path, then fix the regression. Do not mix this GUI change into Phase 1 engine semantic fixes.
 
+## 2026-10-06 — 0.9.4.60 verification complete and GUI scroll regression analysis
+
+0.9.4.60 completed the phase-1 semantic/diagnostic repair. CPU CTest 108/108 and GPU CTest 109/109 passed, including 35 checks in the new `scan_generation_scope_test`; engine/DB/schema/cache remain 1.5.0 / 1.0.4 / 9 / 9.
+
+### Phase-1 result
+
+- Video generation admission is separated from general deletion `seen` through `videoScopeSeen`.
+- `scanVideos=false` never changes video generation, and ignored stale videos cannot promote the generation.
+- `ScanTerminal { Completed, Cancelled, Failed }` makes the terminal reason explicit, so a real DB failure cannot be relabeled Cancelled by a later Stop.
+- Generation metadata write failure keeps the previous value and does not invalidate already-committed search results.
+- The new scope/stamp/DB-error regression has 35 checks; the existing video-cancel 26 and image-drain 7 checks remain green.
+
+### Phase-2 GUI scroll regression — source-level cause established
+
+The historical `0.9.3.10` scroll-anchor fix is still present in the current source. The regression is therefore not caused by the anchor code being removed.
+
+The current structure contains a more direct problem:
+
+- `uiTimer_` continues running after scan completion; `setRunning(false)` intentionally leaves the timer alive.
+- The thumbnail budget is only four fresh decodes per UI tick. When cache misses exceed that budget, `fileThumb()` sets `thumbStarved_`.
+- The next timer tick lets `refreshStreaming()` perform a full `rebuildGroups()` + `refreshGroupList()` solely because `thumbStarved_` is true.
+- `refreshGroupList()` -> `fillPair()` clears and recreates the entire middle tree/grid.
+- Therefore the application can destructively rebuild the very view the user is actively navigating with the scrollbar, mouse, wheel, or End/Home/Page keys.
+- The 0.9.3.10 anchor is a safety net after such a rebuild; it does not make destructive rebuilds during an active scroll interaction safe.
+
+The source review does not yet prove which exact Qt internal layout/scrollbar step finally clamps the position to zero. That should be established by the GUI regression test/instrumentation rather than guessed.
+
+### Phase-2 correction direction
+
+1. When group data itself has not changed, `thumbStarved_` catch-up must not rebuild all group widgets.
+2. Keep existing tree/grid items and update thumbnails for currently visible groups in place.
+3. Add a short interaction/cooldown gate around scrollbar `sliderPressed/sliderReleased` and wheel/key scrolling so a full rebuild can never happen during active user navigation.
+4. Keep the existing `0.9.3.10` semantic anchor as the fallback for cases where a real full rebuild is still required.
+5. Make End/Home/PageUp/PageDown, mouse wheel/drag, and vertical scrollbar drag explicit regression acceptance cases.
+
+### Scope
+
+This phase-2 GUI task must not change engine cancellation semantics. Scheduler/worker/GPU performance tuning, `color_thumb`, NVDEC, sparse, and S4 real-screen acceptance remain separate gates.
+
 ## Current Status
 
 | Item | Status |
