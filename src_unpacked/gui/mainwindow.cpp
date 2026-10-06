@@ -298,6 +298,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogTotal")) return S("합계","Total");
   if (!std::strcmp(key,"detailLogTimeSplit")) return S("시간 배분","Time split");
   if (!std::strcmp(key,"detailLogMatching")) return S("매칭","Matching");
+  if (!std::strcmp(key,"readDone")) return S("읽기 완료","Read complete");
+  if (!std::strcmp(key,"indexDone")) return S("인덱스 완료","Index complete");
   if (!std::strcmp(key,"detailLogToggle")) return S("상세 로그","Detailed Logs");
   if (!std::strcmp(key,"fpProgress")) return S("지문 생성 중","Fingerprinting");
   if (!std::strcmp(key,"searchLog")) return S("검색 로그","Search Log");
@@ -969,18 +971,18 @@ void MainWindow::buildLeft(QWidget* w) {
   auto* sumTitle = new QLabel(this); sumTitle->setObjectName("sumTitle"); sumTitle->setStyleSheet("font-weight:bold;");
   lay->addWidget(sumTitle);
   auto* form = new QFormLayout; lay->addLayout(form);
-  sumTotal_ = new QLabel("-", w); sumDone_ = new QLabel("-", w); sumGroups_ = new QLabel("-", w);
+  sumTotal_ = new QLabel("-", w); sumDone_ = new QLabel("-", w); sumIndexed_ = new QLabel("-", w); sumGroups_ = new QLabel("-", w);
   sumDup_ = new QLabel("-", w); sumTime_ = new QLabel("-", w); sumGpu_ = new QLabel("-", w);
   sumCpu_ = new QLabel("-", w); sumRam_ = new QLabel("-", w);
-  sumTotal_->setObjectName("sumTotal"); sumDone_->setObjectName("sumDone"); sumGroups_->setObjectName("sumGroups");
+  sumTotal_->setObjectName("sumTotal"); sumDone_->setObjectName("sumDone"); sumIndexed_->setObjectName("sumIndexed"); sumGroups_->setObjectName("sumGroups");
   sumDup_->setObjectName("sumDup"); sumTime_->setObjectName("sumTime"); sumGpu_->setObjectName("sumGpu");
   sumCpu_->setObjectName("sumCpu"); sumRam_->setObjectName("sumRam");
   // value labels are the field widgets; refreshSummary() writes "name: value" into the name labels
   // and keeps raw values here for layout stability.
-  sumValTotal_ = new QLabel("-", w); sumValDone_ = new QLabel("-", w); sumValGroups_ = new QLabel("-", w);
+  sumValTotal_ = new QLabel("-", w); sumValDone_ = new QLabel("-", w); sumValIndexed_ = new QLabel("-", w); sumValGroups_ = new QLabel("-", w);
   sumValDup_ = new QLabel("-", w); sumValTime_ = new QLabel("-", w); sumValGpu_ = new QLabel("-", w);
   sumValCpu_ = new QLabel("-", w); sumValRam_ = new QLabel("-", w);
-  form->addRow(sumTotal_, sumValTotal_); form->addRow(sumDone_, sumValDone_);
+  form->addRow(sumTotal_, sumValTotal_); form->addRow(sumDone_, sumValDone_); form->addRow(sumIndexed_, sumValIndexed_);
   form->addRow(sumGroups_, sumValGroups_); form->addRow(sumDup_, sumValDup_);
   form->addRow(sumTime_, sumValTime_); form->addRow(sumGpu_, sumValGpu_);
   form->addRow(sumCpu_, sumValCpu_); form->addRow(sumRam_, sumValRam_);
@@ -1261,7 +1263,7 @@ void MainWindow::applyStaticTexts() {
     folders_->topLevelItem(2)->setText(0, trStr(l, "network"));
   }
   auto* sumTitle = findChild<QLabel*>("sumTitle"); if (sumTitle) sumTitle->setText(trStr(l, "summary"));
-  sumTotal_->setText(trStr(l, "total")); sumDone_->setText(trStr(l, "scanned")); sumGroups_->setText(trStr(l, "groups"));
+  sumTotal_->setText(trStr(l, "total")); sumDone_->setText(trStr(l, "readDone")); sumIndexed_->setText(trStr(l, "indexDone")); sumGroups_->setText(trStr(l, "groups"));
   sumDup_->setText(trStr(l, "dups")); sumTime_->setText(trStr(l, "elapsed")); sumGpu_->setText(trStr(l, "gpu"));
   sumCpu_->setText(trStr(l, "cpu")); sumRam_->setText(trStr(l, "ram"));
   refreshSummary();
@@ -3393,15 +3395,20 @@ qint64 MainWindow::elapsedActiveMs() const {
 }
 void MainWindow::refreshSummary(const msf::SearchReport*) {
   if (!hasReport_ || lastStats_.size() < 5) {
-    sumValTotal_->setText("-"); sumValDone_->setText("-"); sumValGroups_->setText("-");
+    sumValTotal_->setText("-"); sumValDone_->setText("-"); sumValIndexed_->setText("-"); sumValGroups_->setText("-");
     sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(gpuStateText());
     sumValCpu_->setText("-"); sumValRam_->setText("-");
     return;
   }
   const qulonglong completed = lastStats_[0].toULongLong();
+  const qulonglong indexed = lastStats_.size() > 1 ? lastStats_[1].toULongLong() : 0;
   const qulonglong total = targetKnown_ ? targetTotal_ : completed;
   sumValTotal_->setText(QString::number(total));
-  sumValDone_->setText(QString("%1 / %2").arg(completed).arg(total));
+  // "읽기 완료" is files admitted to the pipeline (r.scanned); "인덱스 완료"
+  // is files fingerprinted and DB-written this scan (r.analyzed). They differ
+  // whenever files fail analysis or were already indexed.
+  sumValDone_->setText(QString::number(completed));
+  sumValIndexed_->setText(QString::number(indexed));
   sumValGroups_->setText(lastStats_[3]);
   qulonglong dupFiles = 0;
   for (const auto& g : groups_) dupFiles += (qulonglong)g.paths.size();

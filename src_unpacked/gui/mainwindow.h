@@ -280,9 +280,9 @@ private:
   // on the scan.
   QComboBox* strategyBox_=nullptr;
   // left
-  QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumGroups_=nullptr,
+  QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumIndexed_=nullptr,*sumGroups_=nullptr,
     *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;
-  QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValGroups_=nullptr,
+  QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValIndexed_=nullptr,*sumValGroups_=nullptr,
     *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr;
   // middle
   QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;

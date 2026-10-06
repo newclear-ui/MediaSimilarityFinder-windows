@@ -161,6 +161,8 @@ int main(int argc, char** argv) {
       "detailLogTotal", "detailLogTimeSplit", "detailLogMatching",
       // fingerprint-phase live progress (indeterminate bar + file/byte text)
       "fpProgress",
+      // left summary panel rows: total / read-complete / index-complete split
+      "readDone", "indexDone",
     };
     int missing = 0;
     for (const char* k : kKeys) {
