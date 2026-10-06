@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.60 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.61 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -726,6 +726,13 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_scan_workflow_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_workflow_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_workflow_test COMMAND msf_scan_workflow_test)
+      # 0.9.4.61 GUI scroll regression: thumbnail starvation must drive
+      # in-place catch-up only (never a full list rebuild mid-scroll), with a
+      # scroll gate deferring data-change rebuilds during interaction.
+      add_executable(msf_ui_scroll_regression_test tests/ui_scroll_regression_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
+      target_link_libraries(msf_ui_scroll_regression_test PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_ui_scroll_regression_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME ui_scroll_regression_test COMMAND msf_ui_scroll_regression_test)
       # S4 functional Detailed Logs acceptance: real MainWindow scan with
       # [Detailed Logs] on, asserting the produced telemetry (purpose,
       # counts, fingerprint, dialog path) instead of only the dialog.

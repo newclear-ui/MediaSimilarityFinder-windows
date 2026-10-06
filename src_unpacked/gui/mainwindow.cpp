@@ -39,6 +39,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QKeyEvent>
+#include <QWheelEvent>
 #include <algorithm>
 #include <QListWidget>
 #include <QMenu>
@@ -393,6 +394,11 @@ ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int 
 // stream in during a scan.
 constexpr int kThumbBudgetPerTick = 4;
 constexpr int kShellBudgetPerTick = 24;
+// Post-navigation full-rebuild cooldown (0.9.4.61): after a wheel/keyboard
+// navigation event or a scrollbar release, full list refills wait this long
+// so they never land mid-gesture. Short on purpose (inside one 600ms timer
+// interval): input is never blocked, the rebuild is only deferred.
+constexpr qint64 kScrollGateCooldownMs = 500;
 // One shared provider: constructing QFileIconProvider per call plus a
 // per-file SHGetFileInfo costs milliseconds each — times 11k groups per
 // 600ms tick it blocked the GUI thread for tens of seconds (blank pane,
@@ -705,35 +711,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   connect(monitorTimer_, &QTimer::timeout, this, &MainWindow::updateMonitorStatus);
   monitorTimer_->start();
   uiTimer_ = new QTimer(this); uiTimer_->setInterval(600);
-  connect(uiTimer_, &QTimer::timeout, this, [this] {
-    // Fresh decode budget every tick: list refreshes below may request
-    // hundreds of uncached thumbs; only the first few decode now, the rest
-    // show file-type icons until a later tick. Cache hits are always free.
-    thumbBudget_ = kThumbBudgetPerTick;
-    shellBudget_ = kShellBudgetPerTick;
-    bool refreshed = false;
-    if (groupsDirty_) {
-      groupsDirty_ = false;
-      drainMatches(); // matches streamed since the last tick (also covers pause:
-                      // the worker emits nothing while paused, so without this
-                      // the final pre-pause matches would sit undrained)
-      refreshStreaming();
-      refreshed = true;
-    }
-    if (thumbStarved_ && !refreshed)
-      refreshStreaming(); // thumbnail catch-up is independent of incoming matches
-    if (scanning_) updateStatusCounts();
-    if (scanning_) {
-      // Recompose with live elapsed so a long single file (e.g. a big video)
-      // shows activity instead of a frozen message.
-      const qint64 el = elapsedActiveMs();
-      const qulonglong uiTotal = targetKnown_ ? targetTotal_ : lastTotalN_;
-      statusMsg_->setText(scanStatusText(lastTotalN_, uiTotal, maxPctShown_, lastPath_, el));
-      scanHeartbeat();
-    }
-    updateGpuLabel();
-    updateSysLabels();
-  });
+  connect(uiTimer_, &QTimer::timeout, this, &MainWindow::onUiTick);
   tray_ = new QSystemTrayIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon), this);
   auto* tm = new QMenu(this);
   tm->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
@@ -1058,6 +1036,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   // View-mode dropdown in the same QComboBox style as the preset combo: one
   // arrow only (the old QToolButton drew its own arrow next to the "▾" text).
   viewBox_ = new QComboBox(w);
+  viewBox_->setObjectName("viewBox"); // automation hook, see folder_
   viewBox_->setMinimumHeight(30);
   {
     const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
@@ -1078,6 +1057,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   imgTree_ = new QTreeWidget(imgTab); imgTree_->setColumnCount(5); imgTree_->setRootIsDecorated(false);
   imgTree_->setObjectName("imgTree"); // automation hook, see folder_
   imgGrid_ = new QListWidget(imgTab);
+  imgGrid_->setObjectName("imgGrid"); // automation hook, see folder_
   imgGrid_->setViewMode(QListView::IconMode); imgGrid_->setResizeMode(QListView::Adjust);
   imgGrid_->setMovement(QListView::Static); imgGrid_->setSpacing(8);
   imgGrid_->setUniformItemSizes(true); imgGrid_->setLayoutMode(QListView::Batched);
@@ -1844,14 +1824,35 @@ void MainWindow::clampCpuDigitSelection() {
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* ev) {
   // Ctrl+A inside the CPU box selects the digits only, never prefix/suffix.
-  if (cpu_ && watched == cpu_->findChild<QLineEdit*>() && ev->type() == QEvent::KeyPress) {
-    const auto* k = static_cast<QKeyEvent*>(ev);
+  if (cpu_ && watched == cpu_->findChild<QLineEdit*>() && ev->type() == QEvent::KeyPress) {    const auto* k = static_cast<QKeyEvent*>(ev);
     if (k->matches(QKeySequence::SelectAll)) {
       QLineEdit* e = cpu_->findChild<QLineEdit*>();
       if (!e) return true;
       const int pre = cpu_->prefix().size();
       e->setSelection(pre, std::max(0, (int)(e->text().size() - pre - cpu_->suffix().size())));
       return true;
+    }
+  }
+  // Scroll-regression gate feed (0.9.4.61): wheel and keyboard navigation in
+  // the middle group views stamps user activity so the next full refill waits
+  // out the cooldown. The event is never consumed — scrolling behaves exactly
+  // as before; only the rebuild is deferred.
+  const bool isMidViewport =
+      (imgTree_ && (watched == imgTree_ || watched == imgTree_->viewport())) ||
+      (vidTree_ && (watched == vidTree_ || watched == vidTree_->viewport())) ||
+      (imgGrid_ && (watched == imgGrid_ || watched == imgGrid_->viewport())) ||
+      (vidGrid_ && (watched == vidGrid_ || watched == vidGrid_->viewport()));
+  if (isMidViewport) {
+    if (ev->type() == QEvent::Wheel) { noteUserScroll(); }
+    else if (ev->type() == QEvent::KeyPress) {
+      switch (static_cast<QKeyEvent*>(ev)->key()) {
+        case Qt::Key_Up: case Qt::Key_Down: case Qt::Key_PageUp: case Qt::Key_PageDown:
+        case Qt::Key_Home: case Qt::Key_End: case Qt::Key_Left: case Qt::Key_Right:
+          noteUserScroll();
+          break;
+        default:
+          break;
+      }
     }
   }
   return QMainWindow::eventFilter(watched, ev);
@@ -1984,6 +1985,33 @@ void MainWindow::drainMatches() {
   for (const auto& m : v) addMatch(m.left, m.right, m.percent, m.kind);
   groupsDirty_ = true;
 }
+void MainWindow::testUiTick() { onUiTick(); }
+void MainWindow::onUiTick() {
+  // Fresh decode budget every tick: list refreshes below may request
+  // hundreds of uncached thumbs; only the first few decode now, the rest
+  // show file-type icons until a later tick. Cache hits are always free.
+  thumbBudget_ = kThumbBudgetPerTick;
+  shellBudget_ = kShellBudgetPerTick;
+  if (groupsDirty_) {
+    drainMatches(); // matches streamed since the last tick (also covers pause:
+                    // the worker emits nothing while paused, so without this
+                    // the final pre-pause matches would sit undrained).
+                    // groupsDirty_ clears inside rebuildGroups only, so a
+                    // scroll-gated tick retries later instead of dropping data.
+  }
+  refreshStreaming(); // internally splits full rebuild vs thumbnail catch-up
+  if (scanning_) updateStatusCounts();
+  if (scanning_) {
+    // Recompose with live elapsed so a long single file (e.g. a big video)
+    // shows activity instead of a frozen message.
+    const qint64 el = elapsedActiveMs();
+    const qulonglong uiTotal = targetKnown_ ? targetTotal_ : lastTotalN_;
+    statusMsg_->setText(scanStatusText(lastTotalN_, uiTotal, maxPctShown_, lastPath_, el));
+    scanHeartbeat();
+  }
+  updateGpuLabel();
+  updateSysLabels();
+}
 void MainWindow::refreshStreaming(bool force) {
   // Full list rebuilds (widget churn for every group) are the most expensive
   // GUI work during a scan. rebuildGroups() itself walks every accumulated
@@ -1995,14 +2023,53 @@ void MainWindow::refreshStreaming(bool force) {
   // immediately regardless of the gate.
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   const qint64 interval = std::clamp(lastFillCostMs_ * 3, (qint64)600, (qint64)3000);
-  if ((force || thumbStarved_ || (matchSeq_ != lastFillSig_ && now - lastFillMs_ >= interval))) {
-    rebuildGroups();
-    lastFillSig_ = matchSeq_; lastFillMs_ = now;
+  // Data change (streamed matches or any matchSeq_ advance) is the only
+  // reason for a full rebuild. Thumbnail starvation alone fills visible
+  // icons in place below and must never recreate the widget list: that was
+  // the scroll regression (a starved catch-up destroying the scrolled
+  // position on every tick). A scroll-gated tick defers the rebuild without
+  // dropping it — groupsDirty_/lastFillSig_ stay set until it runs.
+  const bool dataChanged = groupsDirty_ || (matchSeq_ != lastFillSig_);
+  if (force || (dataChanged && !scrollGateActive() && now - lastFillMs_ >= interval)) {
+    rebuildGroups(); // also clears groupsDirty_: all known data now reflected
     QElapsedTimer t; t.start();
     refreshGroupList(); refreshFileViews();
     lastFillCostMs_ = t.elapsed();
+  } else if (thumbStarved_ && !dataChanged && !sliderHeld_) {
+    thumbCatchUpVisible(); // in-place only; never touches layout or scroll
   }
+  // Otherwise this tick does nothing: a scroll-gated tick keeps its pending
+  // flags (groupsDirty_/lastFillSig_) for a later tick instead of rebuilding.
   updateStatusCounts();
+}
+void MainWindow::noteUserScroll() {
+  lastUserScrollMs_ = QDateTime::currentMSecsSinceEpoch();
+}
+bool MainWindow::scrollGateActive() const {
+  if (sliderHeld_) return true;
+  return QDateTime::currentMSecsSinceEpoch() - lastUserScrollMs_ < kScrollGateCooldownMs;
+}
+void MainWindow::thumbCatchUpVisible() {
+  // Tree rows carry no thumbnails, so only the visible grid participates.
+  // Bounded by construction: the loop covers at most the viewport's items
+  // (index math only for the rest), and decodes spend the shared per-tick
+  // thumb budget via fileThumb. An icon is replaced only when it actually
+  // changed (placeholder -> real thumb), so settled rows cost hash lookups.
+  QListWidget* grid = groupsList_;
+  if (!grid || !grid->isVisible()) return;
+  const QRect vis = grid->viewport()->rect();
+  const QSize iconSize = grid->iconSize();
+  for (int row = 0; row < grid->count(); ++row) {
+    QListWidgetItem* item = grid->item(row);
+    if (!item || !grid->visualItemRect(item).intersects(vis)) continue;
+    const int gi = item->data(Qt::UserRole).toInt();
+    if (gi < 0 || gi >= groups_.size() || groups_[gi].paths.isEmpty()) continue;
+    const QIcon fresh = fileThumb(groups_[gi].paths.front(), iconSize);
+    if (fresh.cacheKey() != item->icon().cacheKey()) {
+      item->setIcon(fresh);
+      ++thumbInPlaceCount_;
+    }
+  }
 }
 void MainWindow::updateGroupFoot() {
   // "전체 619 · 선택 116": total groups vs the 1-based selected group.
@@ -2056,6 +2123,11 @@ void MainWindow::rebuildGroups() {
   } else if (currentGroup_ >= groups_.size()) {
     currentGroup_ = -1; currentFile_.clear();
   }
+  // Single clearing point: every rebuild consumes all streamed matches known
+  // so far into groups_, so pending data no longer exists afterwards. Direct
+  // finish paths (scanFinished/scanFailed) benefit automatically — without
+  // this a final drained batch would keep every post-scan tick rebuilding.
+  groupsDirty_ = false;
 }
 QString MainWindow::fmtSize(qulonglong n) const {
   if (n < 1024) return QString("%1 B").arg(n);
@@ -2108,6 +2180,24 @@ void MainWindow::connectResView(QTreeWidget* tree, QListWidget* grid) {
     if (QListWidgetItem* it = grid->itemAt(p)) grid->setCurrentItem(it);
     showGroupMenu(grid->mapToGlobal(p));
   });
+  // Scroll-regression gate (0.9.4.61): full list refills never run while the
+  // user holds a scrollbar, and a short cooldown follows wheel/keyboard
+  // navigation. Input is never blocked — only the rebuild is deferred.
+  // Programmatic moves (scrollToItem/setValue) do not emit sliderPressed, so
+  // anchor restoration and view switches never trip the gate.
+  auto hookBar = [this](QAbstractSlider* bar) {
+    if (!bar) return;
+    connect(bar, &QAbstractSlider::sliderPressed, this, [this] { sliderHeld_ = true; noteUserScroll(); });
+    connect(bar, &QAbstractSlider::sliderReleased, this, [this] { sliderHeld_ = false; noteUserScroll(); });
+  };
+  hookBar(tree->verticalScrollBar());
+  hookBar(grid->verticalScrollBar());
+  // Keys go to the view widget, wheel to its viewport: watch both so neither
+  // navigation path misses the gate feed.
+  tree->installEventFilter(this);
+  grid->installEventFilter(this);
+  tree->viewport()->installEventFilter(this);
+  grid->viewport()->installEventFilter(this);
 }
 void MainWindow::gridSelected(QListWidgetItem* cur, QListWidgetItem*) {
   if (!cur) return;
@@ -2317,6 +2407,15 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
 }
 void MainWindow::refreshGroupList() {
   thumbStarved_ = false;
+  // Test-only instrumentation: every destructive middle-pane refill passes
+  // through here (timer path and direct user-action callers alike), while
+  // thumbnail-only catch-up never does. Lets the regression test assert
+  // "catch-up ticks rebuild nothing, data changes rebuild".
+  ++fullRebuildCount_;
+  // Coverage bookkeeping lives here for the same reason: any full fill
+  // (streaming, finish, sort, search, tab) reflects all matches known, so a
+  // post-scan tick must not rebuild again on a stale signature.
+  lastFillSig_ = matchSeq_; lastFillMs_ = QDateTime::currentMSecsSinceEpoch();
   int ni = 0, nv = 0;
   for (const auto& g : groups_) { if (g.kind == 2) ++nv; else ++ni; }
   groupTitle_->setText(trStr(lang(), "groups") + QString(" (%1)").arg(groups_.size()));

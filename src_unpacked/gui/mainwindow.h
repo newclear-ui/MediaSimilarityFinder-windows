@@ -132,6 +132,13 @@ public:
   // worker is gone). Lets acceptance tests assert the detailed-log result
   // of a real MainWindow scan without touching private state.
   std::string telemetryJsonForTest() const;
+  // Scroll-regression test hooks (0.9.4.61): run one UI-timer tick body
+  // synchronously, and read the rebuild/catch-up counters. Production code
+  // never calls these; they exist so offscreen tests can drive ticks
+  // deterministically instead of waiting on wall-clock timer intervals.
+  void testUiTick();
+  qulonglong testFullRebuildCount() const { return fullRebuildCount_; }
+  qulonglong testThumbInPlaceCount() const { return thumbInPlaceCount_; }
   static void scanLog(const QString& line); // process-wide scan log file
   static void sortTiedReferencePaths(QStringList&, const QHash<QString,qulonglong>&, const QHash<QString,qulonglong>&);
 private slots:
@@ -195,7 +202,11 @@ private:
   void setRunning(bool);
   void rebuildGroups();          // union-find over accumulated matches
   void updateGroupFoot();        // "전체 N · 선택 M" footer label
+  void onUiTick();               // 600ms timer body (extracted for testUiTick)
   void refreshStreaming(bool force=false); // throttled rebuild+fill for live scans
+  void thumbCatchUpVisible();    // in-place thumbnail fill for visible items only (never rebuilds)
+  bool scrollGateActive() const; // slider held or inside the post-scroll cooldown
+  void noteUserScroll();         // stamp a user navigation event (wheel/keys/slider)
   void refreshGroupList();       // middle pane from groups_
   void refreshFileViews();       // right grid+list from selected group
   void refreshDetail();          // tabs for current file
@@ -251,6 +262,16 @@ private:
   qulonglong lastFillSig_=0;   // matchSeq_ at the last full list fill
   qint64 lastFillMs_=0;        // when the last full fill ran
   qint64 lastFillCostMs_=0;    // measured cost of the last full fill
+  // Scroll-regression guards (0.9.4.61): full list refills never run while the
+  // user is dragging a scrollbar or inside the short post-navigation cooldown,
+  // so thumbnail catch-up cannot destroy the scrolled position. Input itself
+  // is never blocked or eaten — only the rebuild is deferred to a later tick.
+  qint64 lastUserScrollMs_=0;
+  bool sliderHeld_=false;
+  // Test-only instrumentation (never exposed to telemetry/benchmark schemas):
+  // full refills vs in-place thumbnail updates, asserted by the regression test.
+  mutable qulonglong fullRebuildCount_=0;
+  mutable qulonglong thumbInPlaceCount_=0;
   QStringList lastStats_; // scanned|analyzed|unchanged|groups|candidates from finished()
   qint64 repElapsedMs_=0;
   QHash<QString,double> bestPct_; QSet<QString> marked_;
