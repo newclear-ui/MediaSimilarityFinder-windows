@@ -33,6 +33,10 @@ struct AnalysisJob { FileState state; bool ok=false; bool changed=false; };
 // error (decode/DB/internal) is Failed. Completed futures observed after a
 // stop are still persisted — same preservation rule as the image drain.
 enum class VideoRangeResult { Success, Cancelled, Failed };
+// Terminal scan outcome, passed explicitly to finishScan. Never inferred from
+// the live cancel flag: a DB failure followed by a later Stop must still
+// report Failed (failed=true, cancelled=false), not Cancelled.
+enum class ScanTerminal { Completed, Cancelled, Failed };
 bool MediaSearchEngine::openIndex(const std::string& p){ managedIndexActive_=false; if(!db_.open(p)||!db_.initialize()) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return videoEngine_.openPersistentCache(p+".video_cache.sqlite"); }
 void MediaSearchEngine::close(){ videoEngine_.closePersistentCache(); db_.close(); managedIndexActive_=false; }
 bool MediaSearchEngine::openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory){
@@ -376,13 +380,14 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if (profCalibrated) telemetry_.calibration() = profCalib.telemetry;
   // Cluster count consumed by finishScan below (computed after analyze).
   std::size_t clusterGroups = 0;
-  auto finishScan=[&](bool completed)->SearchReport{
+  auto finishScan=[&](ScanTerminal terminal)->SearchReport{
+    const bool completed=(terminal==ScanTerminal::Completed);
     // Node A: cancelled/partial benchmarks stay distinguishable from clean
     // completions; file progress separates started/completed/remaining.
-    if(!completed){
-      if(control && control->cancel.load(std::memory_order_relaxed)) telemetry_.setCancelled("cancelled");
-      else telemetry_.setFailed("", "failed");
-    }
+    // The terminal reason is explicit per return path: a failure that happens
+    // before a later Stop still reports Failed, never Cancelled.
+    if(terminal==ScanTerminal::Cancelled) telemetry_.setCancelled("cancelled");
+    else if(terminal==ScanTerminal::Failed) telemetry_.setFailed("", "failed");
     // C3: opportunistic recalibration. Only on completed scans fed by a
     // profile, only after K consecutive deviating scans, only with a
     // candidate that agrees with live observation. Failures and
@@ -475,6 +480,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   std::size_t nImgScanned=0, nVidScanned=0, nImgAnalyzed=0, nVidAnalyzed=0;
   std::size_t nImgPairs=0, nVidPairs=0;
  std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
+ // Video-scope admission evidence for the sampling-generation stamp. `seen`
+ // above is deletion detection / walker presence (ignored and out-of-scope
+ // files are recorded there too), so it must NOT decide generation scope.
+ // A path lands here only after passing the ignored check, the media-scope
+ // check, and the actual scanned/video admission boundary below.
+ std::unordered_set<std::string> videoScopeSeen; videoScopeSeen.reserve(old.size()+256);
   std::unordered_map<std::string,FileState> currentByPath;
   ScanPipeline livePipe;
  auto liveEmit=[&](const MediaMatch& m){
@@ -658,8 +669,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(kindOf(x.path)==MediaKind::Image){
    imageBatch.push_back(x.path);
    if(imageBatch.size()>=gpuBatch){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
-   } else {
+    } else {
      FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(std::move(v));
+     videoScopeSeen.insert(x.path);
      while(!failed && !cancelled && changedVideos.size()-videoBase>=static_cast<std::size_t>(workers)){
       const auto vt0=std::chrono::steady_clock::now();
       const auto vr=processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers));
@@ -731,23 +743,23 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // path (failed/cancelled/normal). Idempotent; join cannot hang on it.
   queue.shutdown();
   walker.join();
-  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(false); }
- // Deleted detection needs the complete seen set: only on fully walked scans.
- // Previously indexed files that no longer exist are removed then. Ignored rows
+  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(ScanTerminal::Failed); }
+  // Deleted detection needs the complete seen set: only on fully walked scans.
+  // Previously indexed files that no longer exist are removed then. Ignored rows
  // are retained in the database (they reappear only when unignored and rescanned).
  if(walkCompleted){
   for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ failed=true; break; } ++nRemoved; }
  }
-   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(false); }
+   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(ScanTerminal::Failed); }
  // Persist everything done so far, including on cancel: partial progress is
  // kept by design (checkpoints), so interruption never loses the file list.
-  if(!checkpoint()){ r.completed=false; return finishScan(false); }
+  if(!checkpoint()){ r.completed=false; return finishScan(ScanTerminal::Failed); }
  r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs;
  r.removed=nRemoved;
  if(cancelled||(control&&control->cancel.load())) r.completed=false;
  // Final commit also closes the trailing transaction checkpoint() reopened:
  // leaving it open would make the *next* scan's BEGIN fail and return empty.
-  if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); r.completed=false; return finishScan(false); }
+  if(tx && !db_.commitTransaction()){ db_.rollbackTransaction(); r.completed=false; return finishScan(ScanTerminal::Failed); }
  candidateStates_=db_.all(); rebuildCandidateIndexes();
  // Unchanged files must participate in every incremental search.
   files_.clear();
@@ -820,25 +832,34 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // refresh the last-scan marker (a cancelled run must not claim freshness).
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
   else if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_);
-   if(r.completed) db_.setSamplingGeneration(kSamplingGeneration);
-   else {
-    // Sampling-generation stamp on cancel. Video rescan-reuse requires the
-    // stamp (videoRegrid forces re-analysis while unstamped), so without this
-    // every cancelled video scan would redo all videos next scan even though
-    // their fingerprints are persisted and current. But stamping blindly
-    // would bless pre-existing rows sampled by older code that this scan
-    // never admitted. Stamp only when every non-ignored old video row was
-    // admitted (seen) this scan: admitted rows were re-analyzed with current
-    // code, settled as analysis-failed, or left skeleton (retried anyway), so
-    // no stale-generation row escapes. Fresh DBs stamp vacuously (nothing to
-    // protect). Ignored rows are exempt (deliberately frozen by the user).
-    bool allOldVideosSeen=true;
-    for(auto& o:old){
-     if((MediaKind)o.kind!=MediaKind::Video) continue;
-     if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue;
-     if(seen.find(o.path)==seen.end()){ allOldVideosSeen=false; break; }
+   // Sampling-generation stamp (shared completed/cancelled invariant). Video
+   // rescan-reuse requires the stamp (videoRegrid forces re-analysis while
+   // unstamped). The stamp is written only when this scan actually processed
+   // video scope: a scan with scanVideos=false never touches it, even
+   // vacuously, and ignored rows never count as evidence (they were not
+   // processed, so they must not promote a stale generation to current).
+   // Concretely every pre-existing video row must sit in videoScopeSeen,
+   // which records only post-ignored, post-scope, actually-admitted videos.
+   // Newly discovered videos have no old row and follow normal admission.
+   // Unreached legacy rows keep the next scan on regrid by holding the old
+   // value, so unignoring them later re-analyzes instead of reusing stale
+   // fingerprints. A failed stamp write keeps the old value (safe regrid)
+   // and never fails or rolls back the already-committed scan results.
+   {
+    bool videoScopeProcessed=true;
+    if(control && !control->scanVideos) videoScopeProcessed=false;
+    else {
+     for(auto& o:old){
+      if((MediaKind)o.kind!=MediaKind::Video) continue;
+      if(videoScopeSeen.find(o.path)==videoScopeSeen.end()){ videoScopeProcessed=false; break; }
+     }
     }
-    if(allOldVideosSeen) db_.setSamplingGeneration(kSamplingGeneration);
+    // The return value is checked, not ignored: on a metadata-write failure the
+    // old generation is kept (the failed write changed nothing), so the next
+    // video scan safely regrids instead of trusting an unwritten stamp. The
+    // failure is metadata-only — the scan results are already committed and
+    // valid, so it must not fail or roll back the search.
+    if(videoScopeProcessed){ if(!db_.setSamplingGeneration(kSamplingGeneration)){ } }
    }
   // Distinct linkage clusters among this scan's pairs. The GUI rebuilds the
   // same union-find from streamed matches, so telemetry's matches.groups
@@ -894,6 +915,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
             : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),
         scopeImages, scopeVideos));
   }
-  return finishScan(r.completed);
+  // The only incomplete arrival here is cancellation (all failure paths
+  // returned early with Failed above), so incomplete means Cancelled.
+  return finishScan(r.completed ? ScanTerminal::Completed : ScanTerminal::Cancelled);
 }
 }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.59 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.60 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -554,6 +554,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_scan_cancel_video_test tests/scan_cancel_video_test.cpp)
     target_link_libraries(msf_scan_cancel_video_test PRIVATE msf_core)
     add_test(NAME scan_cancel_video_test COMMAND msf_scan_cancel_video_test)
+    # 0.9.4.60 follow-up: generation scope (image-only/ignored/stamp-failure)
+    # plus explicit terminal state (DB error with cancel set stays Failed).
+    add_executable(msf_scan_generation_scope_test tests/scan_generation_scope_test.cpp)
+    target_link_libraries(msf_scan_generation_scope_test PRIVATE msf_core)
+    add_test(NAME scan_generation_scope_test COMMAND msf_scan_generation_scope_test)
     # 0.9.4.47+: Stop responsiveness. The dataset fingerprint runs at scan start
     # and must honor cancellation instead of hashing everything first.
     add_executable(msf_cancel_fingerprint_test tests/cancel_fingerprint_test.cpp)
