@@ -99,6 +99,12 @@ The image search engine is now considered **first-pass complete as a product pat
 
 This backlog is **not mixed into the 0.9.4.59 correctness repair**. GPU utilization itself is not the objective; end-to-end throughput and system stability remain the objectives.
 
+### Post-1.0 image-verdict refinement backlog
+
+- **Burst-shot similarity verdicts (DEFERRED)**: burst shots of the same person and background group at 95.8% similarity. The current pHash+SSIM structure measures the whole scene and never attenuates pose differences. No discriminator exists besides the threshold, so this waits until after 1.0. Detail: `docs/architecture/image-burst-shot-similarity.en.md`.
+- **Planned Settings option**: an on/off option in similar-image search settings to not judge burst shots as similar. Default keeps current behavior.
+- **Planned dual-algorithm selectable search**: the current algorithm plus a strict path with stronger burst separation, selectable per the option. Model-based approaches such as face landmarks stay candidates only.
+
 ### Phase 2: GUI regression
 
 The real GUI reproduced a regression where scrolling the similar-group list downward with mouse dragging, the vertical scrollbar, or keyboard navigation such as End becomes slow and eventually returns the list to the top. This is treated as a separate phase: compare the historical **0.9.3.10 semantic scroll-anchor fix** with the current 0.9.4 thumbnail catch-up/full-list rebuild path, then fix the regression. Do not mix this GUI change into Phase 1 engine semantic fixes.

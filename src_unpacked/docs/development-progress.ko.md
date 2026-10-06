@@ -100,6 +100,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 이 백로그는 **0.9.4.59 correctness 수정과 같은 작업에 섞지 않는다.** GPU 사용률 자체를 목표로 하지 않고 end-to-end throughput과 시스템 안정성을 목표로 한다.
 
+### 1.0 이후 이미지 판정 고도화 백로그
+
+- **burst 샷 유사 판정 대응 (DEFERRED)**: 동일 인물·동일 배경의 연속 촬영이 95.8% 유사율로 같은 그룹에 묶인다. 현재 pHash+SSIM 구조는 전체 장면 기준이라 포즈 차이를 감쇠하지 못한다. 임계값 외 분리 수단이 없으므로 1.0 이후에 다룬다. 상세: `docs/architecture/image-burst-shot-similarity.ko.md`.
+- **설정 옵션 계획**: 유사이미지 검색 설정에 burst 샷을 유사이미지로 판단하지 않는 on/off 옵션 추가 예정. 기본값은 현행 유지.
+- **이중 알고리즘 선택 검색 계획**: 현행 알고리즘 + burst 분리 강화 strict 경로를 옵션에 따라 선택 검색. 얼굴 랜드마크 등 모델 기반은 후보로만 유지.
+
 ### 2차: GUI-UI 회귀
 
 실제 GUI에서 유사그룹 목록을 마우스 드래그/세로 scrollbar/End 등의 키보드 navigation으로 아래로 이동하면 특정 위치 이후 느려지고 목록 상단으로 되돌아가는 회귀가 재현되었다. 이 문제는 0.9.3.10의 **semantic scroll-anchor 복원 수정** 이력과 현재 0.9.4의 thumbnail catch-up/full-list rebuild 경로를 대조하여 별도 수정한다. GUI 회귀 수정을 1차 엔진 semantic 수정과 동일 빌드 범위에 섞지 않는다.
