@@ -21,26 +21,45 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> 이 절은 **현재 살아 있는 작업만** 기록하는 실행 큐다. 완료된 항목은 큐에서 제거하고
-> 상세 내용은 Work Log / Build History에 보존한다.
-> **2026-10-07 사용자 실제 GUI 피드백 반영:** 0.9.4.61 스크롤 회귀는 실제 Windows GUI에서
-> 현재 정상 동작으로 관찰되었다. 핵심 원인인 starvation-only destructive rebuild는 제거된 것으로 판단한다.
-> 남은 full-list traversal 비용은 기능 blocker가 아니라 잠재적 GUI 비용으로 별도 후순위에 둔다.
-> 다음 즉시 작업은 0.9.4.62 GUI usability + diagnostic-control 정리이며, 위험도가 높은
-> catch-up traversal 최적화와 Test Mode의 실제 재도입은 후반 검토로 분리한다.
+> 이 절은 **현재 살아 있는 작업과 뒤로 밀린 대기 작업을 한곳에서 복구하기 위한 실행 대기표**다.
+> 완료된 작업은 큐에서 제거하되, 후순위/보류 항목은 별도 백로그로 남긴다.
+> **2026-10-07 갱신:** 0.9.4.62는 GUI usability 빌드가 아니라 **crash-response baseline**이다.
+> GUI usability 작업은 **0.9.4.63**으로 분리한다. 다음 크래시가 발생하면
+> `docs/architecture/crash-response-runbook.{ko,en}.md`에 따라 증거를 먼저 수집하며,
+> 현재 추측성 crash 원인 수정은 하지 않는다.
+>
+> 0.9.4.61의 similar-group scroll 회귀는 실제 Windows GUI에서 현재 정상 동작하는 것으로
+> 관찰되어 핵심 기능 blocker에서는 제외한다. thumbnail catch-up의 전체 QListWidget 순회는
+> 별도 성능 리스크로 남긴다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
 | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.61 | **즉시: GUI usability/diagnostic-control 정리** | 상세 로그 표시 설정, 오른쪽 상세 pane 폭 제한/가운데 pane 확장, 파일명 text selection | **PLANNED → 0.9.4.62** |
-| 1 | 0.9.4.61 | **후속: Test Mode 설계/구현 검토** | 구 GUI Benchmark의 'index를 바꾸지 않고 같은 처리 경로를 다시 실행해 측정' 목적을 개발용 Test Mode로 재정의. CLI Benchmark와 semantic 분리 | **DESIGNED / 구현 후반** |
-| 2 | 0.9.4.61 | **후순위: thumbnail catch-up 전체 순회 비용 정리** | 보이는 항목만 확인하도록 순회 범위를 줄일 수 있는지 검토. 현재 스크롤 blocker가 아니라 성능 위험으로 기록 | **DEFERRED / risk-contained** |
-| 3 | S4 | 실제 GUI Search/Update → Detailed Logs 표시·저장 최종 acceptance | 사용자 실제 화면에서 기능/저장 경로를 확인해 S4 CLOSED 여부 판정 | **PENDING** |
-| 4 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage | production acceptance CONDITIONAL 해소 여부 판정 | **PENDING** |
-| 5 | 다음 candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass | S4 acceptance 이후 수행 | **PENDING** |
-| 6 | S5 | 실제 dataset product benchmark | 제품 acceptance 완료 후 측정 | **GATE 대기** |
+| 0 | **0.9.4.63** | **GUI usability 정리** | Detailed Logs 표시 설정, splitter 정책, 파일명 text selection | **PLANNED / 다음 구현** |
+| 1 | **0.9.4.62** | **Crash-response follow-up** | 재발 시 scan/Qt/WER/dump 증거 확보 후 fault thread/root cause 특정 | **GUARDRAIL / 증거 발생 시 즉시 우선** |
+| 2 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance 재확인** | 실제 dataset에서 분석 실패 파일 포함 edge-case의 silent indexing/modified semantics를 최종 확정 | **NOT ACCEPTED / UI 작업 후 재검증** |
+| 3 | S4 | **GUI Detailed Logs 실제 화면 + 저장 최종 acceptance** | Search/Update → Detailed Logs → 저장/종료까지 사용자 경로 확인 | **PENDING / product acceptance와 연계** |
+| 4 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture PASS를 실제 dataset evidence로 확장하여 CONDITIONAL 해소 | **PENDING** |
+| 5 | color_thumb | **R1 fixture + no-FFmpeg skip/pass** | `color_thumb_test`의 no-FFmpeg 환경 의미론을 정상적인 PASS/SKIP으로 확정 | **PENDING / production correction 전** |
+| 6 | S5 | **실제 dataset product benchmark** | 제품 acceptance 완료 후 controlled benchmark 실행 | **GATE 대기** |
+| 7 | S6 | **measurement / data-mining gate** | S5 실제 표본을 이용한 build/case comparison 후보 생성 및 gate 판정 | **DEFERRED / S5 선행** |
 
-> 1.0 이후 버스트샷 판정 고도화와 scheduler/pipeline/GPU throughput 개선은 현재 0.9.4.62 작업과
-> 섞지 않는다. Burst Shot 상세 설계는 `docs/architecture/image-burst-shot-similarity.{ko,en}.md`가 권위다.
+### 후순위 대기 백로그
+
+| 분류 | 작업 | 현재 상태 / 원칙 |
+| --- | --- | --- |
+| 개발 기능 | **GUI Test Mode** | 기존 GUI Benchmark를 그대로 부활시키지 않고, index를 변경하지 않는 개발용 반복 측정 모드로 재설계. **DESIGNED / 구현 후반** |
+| GUI 성능 | **thumbnail catch-up visible-range traversal** | 실제 decode는 visible item에 한정되지만 매 tick 전체 list를 훑음. 기능 blocker가 아니므로 안전한 visible-range 접근법이 있을 때만 개선. **DEFERRED / risk-contained** |
+| 제품 기능 | **Video comparison semantics / GUI video acceptance** | video comparison 알고리즘과 이에 대한 실사용 acceptance가 이미지 경로만큼 닫히지 않음. GUI scroll acceptance도 영상은 별도 판정. **DEFERRED** |
+| 1.0 이후 | **Burst-shot similarity refinement** | burst shot을 일반 near-duplicate와 구분하고 Settings에서 알고리즘 선택 가능하게 하는 방향. 상세 권위는 `docs/architecture/image-burst-shot-similarity.{ko,en}.md`. **POST-1.0** |
+| 1.0 이후 | **CPU/I/O/decode/GPU pipeline throughput 개선** | 낮은 GPU duty 자체를 목표로 하지 않고 end-to-end throughput, backpressure, overlap, queue starvation 개선을 목표로 함. **POST-1.0** |
+| 1.0 이후 | **Scheduler bottleneck awareness 고도화** | 전체 CPU/GPU 사용률이 아니라 단계별 bottleneck / 자기 사용량 / I/O 대기를 구분하는 방향. **POST-1.0** |
+
+> **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
+> 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
+>
+> **작업 순서 요약:** 0.9.4.63 GUI usability → 제품 Search/Index/Comparison acceptance 재확인
+> → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
+> Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
 ## 완료된 주요 이정표
 
