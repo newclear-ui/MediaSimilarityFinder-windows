@@ -158,8 +158,14 @@ inline ResolvedOrientation resolveOrientationToTransform(IWICMetadataQueryReader
         else if (v.vt == VT_I4) { ok = (v.lVal >= 1 && v.lVal <= 8); o = (unsigned)v.lVal; }
         else if (v.vt == VT_LPWSTR) { ok = parseOrientationText(v.pwszVal, o); }
         else if (v.vt == VT_LPSTR && v.pszVal) {
-          wchar_t w[32]; const size_t n = std::mbstowcs(w, v.pszVal, 31);
-          if (n != (size_t)-1) { w[n] = L'\0'; ok = parseOrientationText(w, o); }
+          // VT_LPSTR is ACP-encoded by definition. Convert explicitly instead
+          // of std::mbstowcs, whose result depends on the thread C locale
+          // (default "C" accepts ASCII only). Same outcome for the ASCII
+          // digits this parses; deterministic rather than locale-dependent
+          // for anything else. Failure stays graceful (ok=false).
+          wchar_t w[32] = {};
+          const int n = MultiByteToWideChar(CP_ACP, 0, v.pszVal, -1, w, 31);
+          if (n > 0) { ok = parseOrientationText(w, o); }
         } else if (v.vt == VT_BSTR && v.bstrVal) { ok = parseOrientationText(v.bstrVal, o); }
         PropVariantClear(&v);
         if (ok) return {transformForOrientationValue(o), OrientationSource::Xmp};

@@ -25,6 +25,11 @@ static void parallelFor(std::size_t n, F&& fn){
   const std::size_t b=j*chunk, e=std::min(n,b+chunk);
   if(b>=e) break;
   futs.emplace_back(std::async(std::launch::async,[b,e,&fn]{
+   // Load-bearing: a worker thread must never terminate. Any throw (including
+   // a path-conversion failure) becomes dec[i].ok=false for that slot, which
+   // the analysis-failure state model handles as a settled `failed` outcome.
+   // The cause is intentionally not distinguished here; per-file diagnostics
+   // belong in DecodeTelemetry, not in the fan-out.
    try { for(std::size_t i=b;i<e;++i) fn(i); } catch(...) {}
   }));
  }

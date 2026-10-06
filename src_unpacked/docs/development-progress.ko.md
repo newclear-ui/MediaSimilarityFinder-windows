@@ -57,18 +57,19 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | Detailed Logs 사용자 요약 | **추가 완료(0.9.4.49)** | 벤치마크 내부 계측은 많으나 일반 사용자용 요약이 없고 중복 파일 총개수가 없었음. 종류별 scanned/analyzed/throughput + duplicate groups/files/pairs 분리 + 합계 + 시간 배분. `summary_breakdown_test` 21 checks. **GUI 화면 렌더링은 NOT_VALIDATED** |
 | S4 telemetry Phase-A | **보강 완료(0.9.4.50)** | 종료 시각·취소 위치·fingerprint 소요/읽은량·합산 바이트·series 절대 시각·시스템 총 메모리. phase는 cancel 후 전진 금지로 고정. 빠른 스캔용 finalize 1회 측정 보장. 회귀는 기존 테스트 확장 |
 | fingerprint 진행 보고 | **추가 완료(0.9.4.51)** | 수 분 해시 중 무보고 공백 해소. 별도 signal + 150ms 스로틀. telemetry OFF면 미실행. `cancel_fingerprint` 21 checks. **GUI 화면은 NOT_VALIDATED** |
+| 이미지 처리 내제 문제 | **수정 완료(0.9.4.52)** | XMP VT_LPSTR mbstowcs 로케일 의존을 CP_ACP 명시 변환으로 교체. parallelFor catch 의도 고정. fingerprint 0 불가능 검증으로 상태 모델 sound 확인. **XMP 38 checks 직접 커버** |
 
 
 ## 현재 상태
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.51 (0.9.4.50 에서 fingerprint 진행 보고 + telemetry OFF 스킵 후 bump) |
+| 기준 코드 | 0.9.4.52 (0.9.4.51 에서 이미지 처리 내제 문제 수정 후 bump) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
 | 현재 노드 | **S4 GUI Detailed Logging verification in progress + product Search/Index/Comparison acceptance audit 준비** — S1/S2/S3 완료, S4 implementation PASS 및 visible UI 사용자 확인 PASS, functional Detailed Logs acceptance DEFERRED. S5 infrastructure는 REVALIDATED 상태이며 product benchmark는 DEFERRED. F-1은 CONDITIONAL/NVDEC production adoption NO 유지. **I-XMP Orientation Fallback 구현 완료** (code implementation PASS, fixture 38 checks PASS, real-dataset coverage NOT_AVAILABLE, full scan regression DEFERRED) → **production acceptance CONDITIONAL**. `color_thumb` no-FFmpeg classification은 audit/pre-register만 완료이고 production correction은 NOT PERFORMED. `--version` 콘솔 출력 판정 수정과 CUDA host compiler `/utf-8` 전달은 VERIFIED. |
 | 현재 단계 | **0.9.4.46에서 DEFECT-A/B 수정과 재스캔 수렴 회귀 테스트를 완료했고, 0.9.4.47에서 비ASCII 스캔 실패 수정도 완료했다. 다음 Gate는 S4 GUI 실제 화면 acceptance다.** F-1은 0.9.4.43에서 `CONDITIONAL`이며 NVDEC production adoption 은 `NO` 이며 **F-2 production integration 은 금지**다(지시 §41). 핵심 반전: dataset 14개 중 13개가 file-start IDR 인데 **1360x0808 가 20/20 mismatch**였고 **확인된 IDR 에서 재시작해도 20/20** 이었다(1080x1920 도 1/20). 즉 **mid-GOP 은 실패 모드 중 하나일 뿐**이며, NVDEC exactness 는 4K 에서도 IDR-start 에서도 성립하지 않는다. 계약에 `exactnessVerified` 를 `Safe` 의 필수조건으로 도입했고(structure 는 필요조건일 뿐), `Unsafe`/`Unknown` 은 CPU fallback 으로 collapse 된다. 성능도 **frame당 2.1배 느림**(CPU 4.438 s vs NVDEC 9.397 s, 870f)이라 **근거 없음**. 1360x808 의 root cause 는 `INCONCLUSIVE`. 이전 Node E **종결**. E-3B(0.9.4.42) 는 실제 `MediaSearchEngine::scan()` production 경로로 A/B/C 를 구동해 end-to-end exactness 를 판정했고 **판정 `NOT ACCEPTED`**. **핵심 발견: E-2A/E-2B 의 "exact" 수치는 자기참조였다** — 두 실험 모두 seek 기반 구현끼리 비교했고, 둘 다 `av_seek_frame`+`avcodec_flush_buffers` 로 **같은 decoder reference state 손실을 공유**해 틀린 이유로 일치했다. production(from-zero 스윕)을 포함한 **첫 측정**에서 4K H.264 1개가 **실제 불일치**를 보였다(`reference count overflow`/`no frame!`/`concealing`). 같은 실행에서 sparse 는 **end-to-end +17.38% 더 느림**(4K decode 지배) → **성능 논거도 소멸**. 정정 3건: ① executor 가 truncated 결과를 성공 반환 → sample-count contract 추가 ② container-index GOP 을 `Known` 으로 보고 → `Estimated` 하향 ③ 발췌된 `0.5×framesPerSample` threshold 제거(실측과 모순). **결과 `ExactnessPolicy::RefuseAll` 기본값 도입** — production-parity 증명이 있는 codec 이 없어 sparse 는 production 에서 도달 불가하고 전 파일 Sequential. **production 동작은 0.9.4.41 과 동일(13/13 bit-identical, adaptive -0.02% 중립).** **methodology 교훈: exactness 기준선은 반드시 production 경로여야 한다.** 같은 계열 재구현끼리는 공유 결함을 서로 검증하지 못한다. **다음: sparse 는 증거 없이 재개하지 않는다. 재검토 조건은 build history 문서에 명시** |
-| 현재 버전 | 0.9.4.51 |
+| 현재 버전 | 0.9.4.52 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

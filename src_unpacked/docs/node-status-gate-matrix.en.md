@@ -115,6 +115,7 @@ direct cause       GUI Stop unresponsiveness was fixed at engine level in 0.9.4.
                    into the fingerprint). The Detailed Logs user summary was added in 0.9.4.49.
                    S4 telemetry Phase-A was reinforced in 0.9.4.50.
                    Fingerprint progress reporting was added in 0.9.4.51.
+                   Embedded image-path issues were fixed in 0.9.4.52.
                    The only remaining condition is real GUI screen/button
                    verification, which headless automation cannot close
 ```
