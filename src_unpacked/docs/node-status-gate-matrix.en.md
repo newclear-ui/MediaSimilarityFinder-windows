@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.46` / HEAD synchronized - CPU CTest 103/103 - GPU CTest 104/104
-Last updated: 2026-10-05
+Baseline: `0.9.4.59` / HEAD synchronized - CPU CTest 107/107 - GPU CTest 108/108
+Last updated: 2026-10-06
 
 ## Role of this document
 
@@ -109,22 +109,13 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        S4 (GUI Detailed Logging real-screen acceptance + Stop behavior check)
-next               color_thumb R1 -> XMP coverage validation -> S5 benchmark -> S6 gate
-direct cause       GUI Stop unresponsiveness was fixed at engine level in 0.9.4.48 (cancel plumbed
-                   into the fingerprint). The Detailed Logs user summary was added in 0.9.4.49.
-                   S4 telemetry Phase-A was reinforced in 0.9.4.50.
-                   Fingerprint progress reporting was added in 0.9.4.51.
-                   Embedded image-path issues were fixed in 0.9.4.52.
-                   Summary panel 3-row split was done in 0.9.4.53.
-                   Live read counter was done in 0.9.4.54.
-                   Monotonic panel counters were done in 0.9.4.55.
-                   scanFinished diagnostics were added in 0.9.4.56.
-                   Fingerprint scope awareness was done in 0.9.4.57.
-                   Drain on Stop was done in 0.9.4.58.
-                   Video Cancelled/Failed split was done in 0.9.4.59.
-                   The only remaining condition is real GUI screen/button
-                   verification, which headless automation cannot close
+active node        0.9.4.59 follow-up phase 1 (generation semantics + terminal diagnostics + DB-error regression)
+next               phase-2 GUI scroll regression -> S4 real-screen acceptance -> color_thumb R1 -> XMP coverage -> S5 benchmark -> S6 gate
+direct cause       The Video Cancelled/Failed split itself is fixed in 0.9.4.59, but generation stamping still depends on the general
+                   `seen` set and can mutate video generation when `scanVideos=false`. The finishScan live-cancel inference
+                   can also relabel a real failure as Cancelled. The real GUI run observed 32,494 images / about 0.2% GPU duty /
+                   30.8% average CPU, so scheduler/pipeline hardening is recorded as a post-1.0 backlog. The similar-group
+                   scroll regression is explicitly separated as phase 2.
 ```
 
 **Why S4 acceptance is blocked**: this environment is headless, and the actual
