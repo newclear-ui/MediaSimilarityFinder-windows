@@ -21,28 +21,44 @@ A separate `workprogress` document is intentionally not created; this document i
 
 ## Active Build Queue / Current Work Priority
 
-> This section records **only live work**. Remove completed items from the queue and
-> preserve detailed evidence in Work Log / Build History.
-> **Updated 2026-10-07 from direct user GUI feedback:** the 0.9.4.61 similar-group scroll
-> regression now behaves normally in the real Windows GUI. The core starvation-only destructive
-> rebuild is therefore treated as effectively PASS at the product-use level. The remaining
-> full-list traversal cost is a potential GUI cost, not a current correctness blocker.
-> The next immediate work is 0.9.4.62 GUI usability + diagnostic-control cleanup; the
-> higher-risk catch-up traversal optimization and Test Mode reintroduction are intentionally later.
+> This section is the **single execution waiting list for both live work and intentionally deferred work**.
+> Completed items are removed from the live queue; deferred/lower-priority items remain in a separate backlog.
+> **Updated 2026-10-07:** 0.9.4.62 is **the crash-response baseline, not the GUI usability build**.
+> GUI usability is therefore assigned to **0.9.4.63**. If another crash occurs, collect evidence first
+> according to `docs/architecture/crash-response-runbook.{ko,en}.md`; do not make speculative root-cause changes.
+>
+> The 0.9.4.61 similar-group scroll regression is now observed as normal in the real Windows GUI,
+> so it is no longer a current functional blocker. The thumbnail catch-up full-list traversal remains
+> a separate performance risk.
 
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.61 | **Immediate: GUI usability / diagnostic-control cleanup** | Detailed Logs visibility setting, right detail-pane width cap / center-pane growth, filename text selection | **PLANNED -> 0.9.4.62** |
-| 1 | 0.9.4.61 | **Later: Test Mode design / implementation review** | Reframe the old GUI Benchmark purpose as a developer Test Mode: repeat the processing path without changing the real index, while keeping CLI Benchmark semantic boundaries | **DESIGNED / later implementation** |
-| 2 | 0.9.4.61 | **Deferred: reduce thumbnail catch-up full-list traversal** | Investigate a truly visible-range-bounded traversal. Not a current scroll blocker; keep as a contained performance risk | **DEFERRED / risk-contained** |
-| 3 | S4 | Real GUI Search/Update -> Detailed Logs display/save final acceptance | Use the real screen to decide whether S4 can be CLOSED | **PENDING** |
-| 4 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
-| 5 | Next candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Proceed after S4 acceptance | **PENDING** |
-| 6 | S5 | Real-dataset product benchmark | Measure only after product acceptance is complete | **GATE PENDING** |
+| 0 | **0.9.4.63** | **GUI usability cleanup** | Detailed Logs visibility setting, splitter policy, filename text selection | **PLANNED / next implementation** |
+| 1 | **0.9.4.62** | **Crash-response follow-up** | On recurrence, collect scan/Qt/WER/dump evidence and identify fault thread/root cause | **GUARDRAIL / immediate on evidence** |
+| 2 | Product acceptance | **Final Search / Index / Comparison acceptance recheck** | Resolve the latest real-dataset edge-case semantics around silent analysis failures / modified state | **NOT ACCEPTED / recheck after GUI work** |
+| 3 | S4 | **Final real-screen + save acceptance for GUI Detailed Logs** | Validate Search/Update → Detailed Logs → save/finish on the real user path | **PENDING / tied to product acceptance** |
+| 4 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | Extend fixture PASS to real-dataset evidence and clear the CONDITIONAL production acceptance | **PENDING** |
+| 5 | color_thumb | **R1 fixture + no-FFmpeg skip/pass handling** | Define correct PASS/SKIP semantics for `color_thumb_test` without FFmpeg | **PENDING / before production correction** |
+| 6 | S5 | **Real-dataset product benchmark** | Run the controlled benchmark only after product acceptance | **GATE PENDING** |
+| 7 | S6 | **Measurement / data-mining gate** | Generate build/case comparison candidates and evaluate the measurement gate from real S5 samples | **DEFERRED / S5 first** |
 
-> Post-1.0 burst-shot refinement and scheduler/pipeline/GPU throughput work stay separate from the
-> 0.9.4.62 GUI cleanup. The Burst Shot design authority is
-> `docs/architecture/image-burst-shot-similarity.{ko,en}.md`.
+### Deferred Backlog
+
+| Category | Work | Current status / principle |
+| --- | --- | --- |
+| Developer feature | **GUI Test Mode** | Do not revive the old GUI Benchmark verbatim. Reframe it as a developer repeat-measurement mode that does not alter the real index. **DESIGNED / later implementation** |
+| GUI performance | **Visible-range thumbnail catch-up traversal** | Actual decoding is limited to visible items, but every tick still scans the whole list. Change only if a safe visible-range access path is available. **DEFERRED / risk-contained** |
+| Product feature | **Video comparison semantics / GUI video acceptance** | Video comparison semantics and equivalent real-use acceptance are not closed at the same level as the image path. **DEFERRED** |
+| Post-1.0 | **Burst-shot similarity refinement** | Separate burst shots from true near-duplicates and later expose algorithm choice in Settings. Authority: `docs/architecture/image-burst-shot-similarity.{ko,en}.md`. **POST-1.0** |
+| Post-1.0 | **CPU/I/O/decode/GPU pipeline throughput** | Optimize end-to-end throughput, backpressure, overlap, and queue starvation; do not optimize GPU utilization as a vanity metric. **POST-1.0** |
+| Post-1.0 | **Scheduler bottleneck awareness** | Distinguish stage bottlenecks, own resource usage, and I/O wait rather than reacting only to system-wide CPU/GPU utilization. **POST-1.0** |
+
+> **Boundary:** Do not reopen sparse production, NVDEC production adoption, or utilization-only GPU tuning.
+> Existing rejection/deferred evidence remains authoritative.
+>
+> **Execution summary:** 0.9.4.63 GUI usability → final Search/Index/Comparison acceptance recheck
+> → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
+> Test Mode and traversal remain lower-priority work and must not block the main validation track.
 
 ## Completed Major Milestones
 
