@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.59` / HEAD synchronized - CPU CTest 107/107 - GPU CTest 108/108
-Last updated: 2026-10-06
+Baseline: `0.9.4.61` / HEAD `21313fd` - CPU CTest 109/109 - GPU CTest 110/110
+Last updated: 2026-10-07
 
 ## Role of this document
 
@@ -109,13 +109,15 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        Phase-2 GUI-UI scroll regression (phase-1 semantic repair completed in 0.9.4.60)
-next               S4 real-screen acceptance -> color_thumb R1 -> XMP coverage -> S5 benchmark -> S6 gate
-direct cause       0.9.4.60 completes the generation-scope and terminal-state repair.
-                   The 0.9.3.10 scroll anchor is still present, but uiTimer_ remains alive after scans and
-                   thumbStarved_ can trigger a destructive fillPair() full rebuild while the user is scrolling.
-                   Phase 2 therefore prioritizes in-place thumbnail catch-up plus a scroll-interaction gate.
-                   The post-1.0 scheduler/pipeline performance backlog remains separate.
+active node        0.9.4.62 GUI usability / diagnostic-control cleanup after 0.9.4.61 direct GUI feedback
+next               S4 real-screen acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
+current verdict    The 0.9.4.61 similar-group scroll regression behaves normally in current real Windows GUI testing.
+                   The core starvation-only destructive rebuild was removed; the 0.9.3.10 anchor remains as fallback.
+remaining risk     thumbCatchUpVisible() decodes/updates only visible items, but currently scans the entire list each tick
+                   to find them. This is not the present correctness blocker and is intentionally deferred.
+immediate         0.9.4.62: Detailed Logs visibility setting, right-pane width cap / center-pane expansion, filename selection.
+later             Test Mode reintroduction review and visible-range traversal optimization, with risk containment.
+                   Post-1.0 burst-shot and scheduler/pipeline throughput work remains separate.
 ```
 
 **Why S4 acceptance is blocked**: this environment is headless, and the actual
@@ -154,5 +156,5 @@ stay in the origin documents.
 
 ## Version invariance check
 
-`kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.3` - `kBenchmarkSchemaVersion 9` -
+`kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.4` - `kBenchmarkSchemaVersion 9` -
 `kCacheFormatVersion 9` — unchanged at the 0.9.4.45 baseline.
