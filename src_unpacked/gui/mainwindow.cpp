@@ -119,7 +119,6 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"resume")) return S("계속","Resume");
   if (!std::strcmp(key,"stop")) return S("중지","Stop");
   if (!std::strcmp(key,"settings")) return S("설정","Settings");
-  if (!std::strcmp(key,"displaySettings")) return S("표시 설정","Display Settings");
   if (!std::strcmp(key,"showDetailLog")) return S("상세 로그 표시","Show Detailed Logs");
   if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
@@ -977,8 +976,7 @@ void MainWindow::buildToolbar() {
   connect(utilBtn_, &QToolButton::clicked, this, [this] { utilBtn_->showMenu(); });
   auto* utilMenu_ = new QMenu(utilBtn_);
   monSettingsAct_ = utilMenu_->addAction(trStr(lang(), "settings"), this, &MainWindow::configureMonitor);
-  auto* displayAct = utilMenu_->addAction(trStr(lang(), "displaySettings"), this, &MainWindow::showDisplaySettings);
-  displayAct->setObjectName("displaySettingsAct"); // automation hook, see folder_
+  monSettingsAct_->setObjectName("settingsAct"); // automation hook, see folder_
   helpAct_ = utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_);
@@ -3687,6 +3685,7 @@ void MainWindow::updateGpuLabel() {
 void MainWindow::configureMonitor() {
   QSettings st;
   QDialog dlg(this);
+  dlg.setObjectName("settingsDlg"); // automation hook, see folder_
   dlg.setWindowTitle(trStr(lang(), "monSettings"));
   dlg.resize(760, 560);
   dlg.restoreGeometry(QSettings().value("ui/settingsGeom").toByteArray());
@@ -3702,7 +3701,14 @@ void MainWindow::configureMonitor() {
   langSel->addItem(QStringLiteral("English"), QStringLiteral("en"));
   langSel->setCurrentIndex(lang() == UiLang::Ko ? 0 : 1);
   langRow->addWidget(langLabel); langRow->addWidget(langSel); langRow->addStretch(1);
-  generalLay->addLayout(langRow); generalLay->addStretch(1);
+  generalLay->addLayout(langRow);
+  // Show Detailed Logs checkbox (0.9.4.63+): toolbar checkbox visibility only,
+  // telemetry wiring untouched. Stored in portable QSettings like the rest.
+  auto* showLog = new QCheckBox(trStr(lang(), "showDetailLog"), generalTab);
+  showLog->setObjectName("showDetailLogBox"); // automation hook, see folder_
+  showLog->setChecked(QSettings().value("ui/showDetailLog", true).toBool());
+  generalLay->addWidget(showLog);
+  generalLay->addStretch(1);
   tabs->addTab(generalTab, trStr(lang(), "general"));
   auto* monTab = new QWidget(tabs);
   auto* monLay = new QVBoxLayout(monTab);
@@ -3779,6 +3785,8 @@ void MainWindow::configureMonitor() {
   st.setValue("monitor/stableSeconds", stable->value());
   st.setValue("monitor/pollSeconds", poll->value());
   st.setValue("monitor/gpuEnabled", gpu->isChecked());
+  st.setValue("ui/showDetailLog", showLog->isChecked());
+  applyDetailLogVisibility();
   st.setValue("ui/language", langSel->currentData().toString());
   setLanguage(langSel->currentIndex());
   statusMsg_->setText(QString("%1 — %2 / %3").arg(trStr(lang(), "monSaved")).arg(watches.size()).arg(compares.size()));
@@ -3792,26 +3800,6 @@ void MainWindow::applyDetailLogVisibility() {
   const bool show = QSettings().value("ui/showDetailLog", true).toBool();
   if (logTglAct_) logTglAct_->setVisible(show);
   else if (logTgl_) logTgl_->setVisible(show);
-}
-void MainWindow::showDisplaySettings() {
-  // Minimal general display settings dialog (extensible: future display
-  // options such as the post-1.0 burst-shot toggle belong here, not in the
-  // monitor dialog). Portable QSettings policy like everything else.
-  QDialog dlg(this);
-  dlg.setObjectName("displaySettingsDlg"); // automation hook, see folder_
-  dlg.setWindowTitle(trStr(lang(), "displaySettings"));
-  auto* root = new QVBoxLayout(&dlg);
-  auto* showLog = new QCheckBox(trStr(lang(), "showDetailLog"), &dlg);
-  showLog->setObjectName("showDetailLogBox"); // automation hook, see folder_
-  showLog->setChecked(QSettings().value("ui/showDetailLog", true).toBool());
-  root->addWidget(showLog);
-  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dlg);
-  root->addWidget(buttons);
-  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-  if (dlg.exec() != QDialog::Accepted) return;
-  QSettings().setValue("ui/showDetailLog", showLog->isChecked());
-  applyDetailLogVisibility();
 }
 void MainWindow::toggleMonitor() {
   // The monitor button is a pure on/off toggle with highlight feedback.

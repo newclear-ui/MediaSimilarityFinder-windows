@@ -150,8 +150,8 @@ int main(int argc, char** argv) {
       "detailLogDone", "detailLogStopped", "detailLogOff",
       "strategyModeAuto", "strategyModeCpu", "strategyModeGpu", "strategyModeTip",
       "searchLog",
-      // display settings dialog (Show Detailed Logs visibility option)
-      "displaySettings", "showDetailLog",
+      // settings dialog (Show Detailed Logs visibility option)
+      "showDetailLog",
       // detailed-log result dialog rows
       "detailLogWall", "detailLogFiles", "detailLogImages", "detailLogVideos",
       "detailLogCpuUse", "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",

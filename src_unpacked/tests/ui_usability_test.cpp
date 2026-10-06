@@ -58,16 +58,17 @@ void pumpUntil(std::function<bool()> done, int timeoutMs, const char* what) {
     std::cout << "  [ok] " << what << std::endl;
 }
 
-// Drives the modal display-settings dialog: polls until it appears, sets the
-// checkbox, accepts. A fire cap quits the app instead of hanging forever if
-// the dialog never opens (broken feature must fail, not hang CTest).
+// Drives the modal settings dialog (general tab holds the Show Detailed
+// Logs checkbox): polls until it appears, sets the checkbox, accepts. A fire
+// cap quits the app instead of hanging forever if the dialog never opens
+// (broken feature must fail, not hang CTest).
 void driveSettingsDialog(MainWindow& w, bool show, int* fires) {
     QTimer poll;
     poll.setInterval(100);
     int n = 0;
     QObject::connect(&poll, &QTimer::timeout, [&]() {
         ++n;
-        if (auto* dlg = w.findChild<QDialog*>("displaySettingsDlg")) {
+        if (auto* dlg = w.findChild<QDialog*>("settingsDlg")) {
             if (auto* cb = dlg->findChild<QCheckBox*>("showDetailLogBox")) {
                 cb->setChecked(show);
                 dlg->accept();
@@ -76,7 +77,7 @@ void driveSettingsDialog(MainWindow& w, bool show, int* fires) {
         if (n > 200) QApplication::quit();
     });
     poll.start();
-    if (auto* act = w.findChild<QAction*>("displaySettingsAct")) act->trigger();
+    if (auto* act = w.findChild<QAction*>("settingsAct")) act->trigger();
     poll.stop();
     if (fires) *fires = n;
     QApplication::processEvents();
@@ -112,7 +113,9 @@ int main(int argc, char** argv) {
     QObject::connect(&closer, &QTimer::timeout, [&]() {
         if (QWidget* m = QApplication::activeModalWidget()) m->close();
     });
-    closer.start();
+    // NOTE: the closer is started only for the scan phase (Phase C). It
+    // closes ANY active modal, so running it during Phase A races the
+    // settings dialog the driver opens (flaky ON-round-trip failure).
 
     // ---- Phase A: Show Detailed Logs round-trip (no scan needed). ----
     auto* logTgl = w.findChild<QCheckBox*>("logTgl");
@@ -157,6 +160,7 @@ int main(int argc, char** argv) {
     // ---- Phase C: filename selectable like full path (needs a scan). ----
     auto* scan = w.findChild<QPushButton*>("scan");
     if (!scan) { std::cerr << "no scan button\n"; return 3; }
+    closer.start(); // benchmark summary dialog only from here on
     scan->click();
     QApplication::processEvents();
     pumpUntil([&] { return scan->isEnabled(); }, 180000, "fixture scan finished");

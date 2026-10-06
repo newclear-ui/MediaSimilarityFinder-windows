@@ -207,7 +207,6 @@ private:
   void updateExecutionUiState();
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
-  void showDisplaySettings();    // general display settings dialog (Detailed Logs visibility)
   void applyDetailLogVisibility(); // show/hide logTgl_ from ui/showDetailLog (default ON)
   void rebuildGroups();          // union-find over accumulated matches
   void updateGroupFoot();        // "전체 N · 선택 M" footer label
