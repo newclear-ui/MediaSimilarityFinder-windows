@@ -54,6 +54,11 @@ struct ScanControl {
   // sitting at 0% with only disk I/O visible.
   std::function<void(std::size_t)> listing;
   std::function<void(std::size_t)> walked;
+  // Fingerprint-phase progress (files hashed so far, bytes hashed so far,
+  // current path). The fingerprint reads every file fully and can run minutes
+  // on huge datasets with no other progress signal; without this the UI sits
+  // at 0% with only disk I/O visible. Fired per hashed file; the UI throttles.
+  std::function<void(std::size_t,std::uint64_t,const std::string&)> fingerprintProgress;
  // Optional streaming delivery for large result sets. When retainMatches is false,
  // SearchReport does not materialize the full match list in memory.
  std::function<void(const SearchMatch&)> onMatch;

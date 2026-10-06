@@ -134,6 +134,49 @@ int main() {
         e.close();
     }
 
+    // ---- 5. fingerprint progress fires live (the fixed blackout). ----
+    {
+        std::size_t lastN = 0;
+        std::uint64_t lastB = 0;
+        std::size_t calls = 0;
+        const auto fp = msf::computeDatasetFingerprint(
+            root.string(), nullptr,
+            [&](std::size_t n, std::uint64_t b, const std::string&) {
+                ++calls;
+                if (n > lastN) lastN = n;
+                if (b > lastB) lastB = b;
+            });
+        check(fp.state == "measured", "progress run still measures");
+        check(calls == 20, "progress fired once per hashed file");
+        check(lastN == 20, "progress file count reaches the total");
+        check(lastB > 0, "progress byte count is nonzero");
+        check(lastB == fp.totalBytes, "progress bytes converge to the total");
+    }
+
+    // ---- 6. telemetry-off scan skips the fingerprint (no wasted I/O). ----
+    // Fresh app dir so this is a first scan: everything must analyze while
+    // the fingerprint stays untouched.
+    {
+        const auto app6 = fs::temp_directory_path() / "msf_cancel_fp_app6";
+        fs::remove_all(app6, ec);
+        fs::create_directories(app6, ec);
+        msf::MediaSearchEngine e;
+        if (!e.openIndexForRoot(root.string(), app6.string())) {
+            std::cerr << "reopen2 failed\n";
+            return 4;
+        }
+        msf::ScanControl c;
+        c.telemetryEnabled = false;
+        const auto r = e.scan(root.string(), 8, &c);
+        check(r.completed, "telemetry-off scan completes");
+        check(r.analyzed == 20, "telemetry-off scan still analyzes");
+        const std::string js = e.telemetryJson();
+        check(js.find("\"state\":\"not_available\"") != std::string::npos,
+              "telemetry-off leaves the fingerprint not_available");
+        e.close();
+        fs::remove_all(app6, ec);
+    }
+
     fs::remove_all(root, ec);
     fs::remove_all(app, ec);
 

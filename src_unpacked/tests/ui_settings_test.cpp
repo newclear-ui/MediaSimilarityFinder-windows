@@ -159,6 +159,8 @@ int main(int argc, char** argv) {
       "detailLogSummary", "detailLogDuration", "detailLogDupGroups",
       "detailLogDupFiles", "detailLogDupPairs", "detailLogThroughput",
       "detailLogTotal", "detailLogTimeSplit", "detailLogMatching",
+      // fingerprint-phase live progress (indeterminate bar + file/byte text)
+      "fpProgress",
     };
     int missing = 0;
     for (const char* k : kKeys) {

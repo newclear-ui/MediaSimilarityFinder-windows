@@ -83,6 +83,10 @@ signals:
   void walkedCount(qulonglong);
   void telemetryReady(QString);
   void listingProgress(std::size_t);
+  // Fingerprint-phase live progress (files hashed, bytes hashed, path).
+  // Separate from progress()/progressCount() so the walk/analysis percent
+  // math is untouched; the fingerprint has no known total.
+  void fingerprintProgress(qulonglong,qulonglong,QString);
   void matchesArrived();            // throttled; call takePending()
   void quickLoaded(int);            // stored matches reloaded from the index
   void revalidated(int,int);        // old-engine pairs re-checked: kept, dropped
@@ -105,6 +109,7 @@ private:
   qint64 lastProgMs_=0; std::size_t lastProgDone_=0, lastProgTotal_=0; std::string lastProgPath_;
   qint64 lastListMs_=0; std::size_t lastListN_=0;
   qint64 lastWalkedMs_=0; std::size_t lastWalkedN_=0;
+  qint64 lastFpMs_=0;
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction
   bool detailedLogEnabled_=true;
@@ -134,6 +139,7 @@ private slots:
   void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
   void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
   void onScanCounts(qulonglong,qulonglong);
+  void onFingerprintProgress(qulonglong,qulonglong,QString);
   void onTargetCount(qulonglong);
   void onWalkedCount(qulonglong);
   void onListingProgress(std::size_t);

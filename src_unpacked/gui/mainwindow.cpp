@@ -299,6 +299,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogTimeSplit")) return S("시간 배분","Time split");
   if (!std::strcmp(key,"detailLogMatching")) return S("매칭","Matching");
   if (!std::strcmp(key,"detailLogToggle")) return S("상세 로그","Detailed Logs");
+  if (!std::strcmp(key,"fpProgress")) return S("지문 생성 중","Fingerprinting");
   if (!std::strcmp(key,"searchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"detailLogOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
   // Execution-strategy keys. Kept apart from the detailLog* keys above:
@@ -480,6 +481,17 @@ void ScanWorker::run() {
     // cancel, and close stay responsive no matter the scan speed.
     lastProgMs_ = 0; lastProgDone_ = 0; lastProgTotal_ = 0; lastProgPath_.clear();
     lastListMs_ = 0; lastListN_ = 0; lastWalkedMs_ = 0; lastWalkedN_ = 0;
+    lastFpMs_ = 0;
+    // Fingerprint-phase live progress. Same 150 ms throttle as the walk
+    // callbacks: the fingerprint can hash thousands of files per second.
+    // Separate signal so the walk/analysis percent math is untouched.
+    control_.fingerprintProgress = [this](std::size_t n, std::uint64_t b, const std::string& path) {
+      const qint64 now = QDateTime::currentMSecsSinceEpoch();
+      if (now - lastFpMs_ > 150) {
+        lastFpMs_ = now;
+        emit fingerprintProgress((qulonglong)n, (qulonglong)b, QString::fromStdString(path));
+      }
+    };
     control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
       lastProgDone_ = done; lastProgTotal_ = total; lastProgPath_ = path;
       gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
@@ -1433,6 +1445,7 @@ void MainWindow::startScan() {
   connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);
   connect(worker_, &ScanWorker::progressCount, this, &MainWindow::onScanCounts);
   connect(worker_, &ScanWorker::walkedCount, this, &MainWindow::onWalkedCount);
+  connect(worker_, &ScanWorker::fingerprintProgress, this, &MainWindow::onFingerprintProgress);
   connect(worker_, &ScanWorker::targetCount, this, &MainWindow::onTargetCount);
   connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
   connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
@@ -1521,6 +1534,16 @@ void MainWindow::scanProgress(int p, QString path) {
 void MainWindow::onListingProgress(std::size_t n) {
   statusProg_->setRange(0, 0); // indeterminate: walking the directory tree
   statusMsg_->setText(QString("%1 %2").arg(trStr(lang(), "listing")).arg(n));
+}
+void MainWindow::onFingerprintProgress(qulonglong n, qulonglong bytes, QString path) {
+  // Fingerprint phase has no known total, so the bar stays indeterminate like
+  // the listing phase. Shows hashed files and bytes so a minutes-long hash
+  // reads as progress, not a freeze. Does not touch the walk/analysis percent.
+  statusProg_->setRange(0, 0);
+  const double gb = (double)bytes / (1024.0 * 1024.0 * 1024.0);
+  QString shortPath = path;
+  if (shortPath.size() > 72) shortPath = QStringLiteral("...") + shortPath.right(69);
+  statusMsg_->setText(QString("%1: %2 files, %3 GB — %4").arg(trStr(lang(), "fpProgress")).arg(n).arg(gb, 0, 'f', 1).arg(shortPath));
 }
 void MainWindow::onQuickLoaded(int n) {
   drainMatches();

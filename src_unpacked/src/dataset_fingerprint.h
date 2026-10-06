@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -63,7 +64,12 @@ std::string canonicalRelativePath(const std::string& root, const std::string& fi
 // file reads) and returns state="cancelled" instead of a partial fingerprint.
 // A partial manifest would be a dishonest identity, so nothing is returned.
 // Telemetry-only; scan behavior never depends on the result.
+// progress: optional per-hashed-file reporter (files hashed so far, bytes
+// hashed so far, current path). The fingerprint phase otherwise reports
+// nothing for minutes on huge datasets. Called synchronously, no throttling
+// inside; the UI throttles.
 DatasetFingerprint computeDatasetFingerprint(const std::string& root,
-                                             const std::atomic_bool* cancel = nullptr);
+                                             const std::atomic_bool* cancel = nullptr,
+                                             std::function<void(std::size_t,std::uint64_t,const std::string&)> progress = nullptr);
 
 }

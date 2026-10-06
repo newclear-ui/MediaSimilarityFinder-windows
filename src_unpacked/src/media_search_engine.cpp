@@ -360,9 +360,19 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const auto cancelRequested = [&] {
     return control && control->cancel.load(std::memory_order_relaxed);
   };
-  telemetry_.setPhase("fingerprint");
-  telemetry_.setDatasetFingerprint(
-      msf::computeDatasetFingerprint(root, control ? &control->cancel : nullptr));
+  // The fingerprint exists only for telemetry. With telemetry off there is no
+  // consumer, so running it would be minutes of disk I/O for nothing. Skip it
+  // and leave the default not_available state.
+  if (telemetryOn) {
+    telemetry_.setPhase("fingerprint");
+    telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(
+        root, control ? &control->cancel : nullptr,
+        control && control->fingerprintProgress
+            ? [&](std::size_t n, std::uint64_t b, const std::string& p) {
+                control->fingerprintProgress(n, b, p);
+              }
+            : std::function<void(std::size_t,std::uint64_t,const std::string&)>()));
+  }
   if(telemetryOn) telemetry_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
   if(control) telemetry_.addRevalidateMs(control->revalidateMs);
   // C2: record the calibration run that fed this scan (if any). Skipped

@@ -135,7 +135,8 @@ std::string canonicalRelativePath(const std::string& root, const std::string& fi
 }
 
 DatasetFingerprint computeDatasetFingerprint(const std::string& root,
-                                                const std::atomic_bool* cancel) {
+                                                const std::atomic_bool* cancel,
+                                                std::function<void(std::size_t,std::uint64_t,const std::string&)> progress) {
     DatasetFingerprint out;
     const auto t0 = std::chrono::steady_clock::now();
     const auto cancelled = [&] {
@@ -184,6 +185,9 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
         }
         bytesRead += e.size;
         entries.push_back(std::move(e));
+        // Live progress for the UI. Fired per hashed file; the caller
+        // throttles. Reports what has actually been hashed, never estimates.
+        if (progress) progress(entries.size(), bytesRead, file);
     }
     if (ec) { out.state = "failed"; stampDuration(); return out; }
 
