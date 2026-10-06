@@ -109,13 +109,13 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        0.9.4.59 follow-up phase 1 (generation semantics + terminal diagnostics + DB-error regression)
-next               phase-2 GUI scroll regression -> S4 real-screen acceptance -> color_thumb R1 -> XMP coverage -> S5 benchmark -> S6 gate
-direct cause       The Video Cancelled/Failed split itself is fixed in 0.9.4.59, but generation stamping still depends on the general
-                   `seen` set and can mutate video generation when `scanVideos=false`. The finishScan live-cancel inference
-                   can also relabel a real failure as Cancelled. The real GUI run observed 32,494 images / about 0.2% GPU duty /
-                   30.8% average CPU, so scheduler/pipeline hardening is recorded as a post-1.0 backlog. The similar-group
-                   scroll regression is explicitly separated as phase 2.
+active node        Phase-2 GUI-UI scroll regression (phase-1 semantic repair completed in 0.9.4.60)
+next               S4 real-screen acceptance -> color_thumb R1 -> XMP coverage -> S5 benchmark -> S6 gate
+direct cause       0.9.4.60 completes the generation-scope and terminal-state repair.
+                   The 0.9.3.10 scroll anchor is still present, but uiTimer_ remains alive after scans and
+                   thumbStarved_ can trigger a destructive fillPair() full rebuild while the user is scrolling.
+                   Phase 2 therefore prioritizes in-place thumbnail catch-up plus a scroll-interaction gate.
+                   The post-1.0 scheduler/pipeline performance backlog remains separate.
 ```
 
 **Why S4 acceptance is blocked**: this environment is headless, and the actual
