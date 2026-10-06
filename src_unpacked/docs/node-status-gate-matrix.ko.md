@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.46` / HEAD 동기화 · CPU CTest 103/103 · GPU CTest 104/104
-최종 갱신: 2026-10-05
+기준: `0.9.4.59` / HEAD 동기화 · CPU CTest 107/107 · GPU CTest 108/108
+최종 갱신: 2026-10-06
 
 ## 이 문서의 역할
 
@@ -106,21 +106,13 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        S4  (GUI Detailed Logging 실제 화면 acceptance + Stop 동작 확인)
-다음             color_thumb R1 → XMP coverage validation → S5 benchmark → S6 gate
-직접 원인        GUI Stop 무응답은 0.9.4.48 에서 엔진 레벨로 수정 완료(fingerprint cancel 전달).
-                 Detailed Logs 사용자 요약은 0.9.4.49 에서 추가 완료.
-                 S4 telemetry Phase-A는 0.9.4.50 에서 보강 완료.
-                 fingerprint 진행 보고는 0.9.4.51 에서 추가 완료.
-                 이미지 처리 내제 문제는 0.9.4.52 에서 수정 완료.
-                 요약 패널 3행 분리는 0.9.4.53 에서 완료.
-                 읽기 카운터 실시간화는 0.9.4.54 에서 완료.
-                 패널 카운터 monotonic은 0.9.4.55 에서 완료.
-                 scanFinished 진단은 0.9.4.56 에서 추가.
-                 fingerprint scope 인식은 0.9.4.57 에서 완료.
-                 Stop 시 드레인은 0.9.4.58 에서 완료.
-                 Video Cancelled/Failed 분리는 0.9.4.59 에서 완료.
-                 남은 조건은 실제 GUI 화면·버튼 검증뿐이며 이는 headless 로 종결 불가
+활성 Node        0.9.4.59 후속 1차 (generation semantic + terminal diagnostic + DB-error regression)
+다음             2차 GUI scroll regression → S4 real-screen acceptance → color_thumb R1 → XMP coverage → S5 benchmark → S6 gate
+직접 원인        0.9.4.59의 Video Cancelled/Failed split 자체는 해결됐으나 generation stamp가 general `seen`에 의존하고
+                 `scanVideos=false`에서도 변경 가능한 semantic bug가 발견됨. finishScan의 live cancel 추론도
+                 failure를 Cancelled로 오판할 수 있어 명시적 terminal state가 필요함.
+                 실제 GUI에서는 32,494 images / GPU duty 약 0.2% / CPU 평균 30.8%가 관찰되어 1.0 이후 scheduler/pipeline
+                 고도화 백로그로 기록함. GUI 유사그룹 scroll regression은 2차 과제로 분리함.
 ```
 
 **S4 acceptance 가 막히지 않는 이유**: 이 환경은 headless 이며, 결과 다이얼로그의
