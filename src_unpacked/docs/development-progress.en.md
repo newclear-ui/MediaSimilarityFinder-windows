@@ -27,11 +27,12 @@ A separate `workprogress` document is intentionally not created; this document i
 
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs final functional acceptance | Accept the real GUI result/display/save path and decide whether S4 can close. Requires real screen verification, so headless automation alone cannot close it | **PENDING** |
-| 1 | 0.9.4.47 | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Now the top implementation candidate, since the DEFECT-A/B fix and its regression verification are done | **PENDING** |
-| 2 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
-| 3 | S5 | Real-dataset product benchmark | Run measurement only after S4 and product acceptance gates pass | **GATE PENDING** |
-| 4 | Separate task | Transparency gap: unsupported extensions such as `.ico` are silently skipped | Decide whether the scan report should expose a skipped-file count | **PENDING** |
+| 0 | 0.9.4.59 follow-up | **Phase 1: cancellation/generation semantics + terminal diagnostic state + DB-error regression** | Remove the remaining confirmed semantic bug and close diagnostic/verification gaps before GUI work | **IN PROGRESS** |
+| 1 | After phase 1 | **Phase 2: GUI similar-group list scroll regression** | Compare the 0.9.3.10 scroll-anchor fix with the current `thumbStarved_`/full-rebuild path and eliminate End/drag/key-navigation regression | **PLANNED** |
+| 2 | S4 | Real GUI Search/Update → Detailed Logs screen/save acceptance | Use real-screen verification to decide S4 CLOSED | **PENDING** |
+| 3 | Next candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Proceed only after S4 and phase-2 GUI regression work | **PENDING** |
+| 4 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage | Decide whether current CONDITIONAL production acceptance can be cleared | **PENDING** |
+| 5 | S5 | Real-dataset product benchmark | Measure only after product acceptance is complete | **GATE PENDING** |
 
 > `color_thumb` R1 is now priority 1, but S4 screen acceptance cannot advance until the user verifies the real GUI.
 
@@ -66,6 +67,39 @@ This section keeps only a **compressed completion state** for long-term orientat
 | fingerprint timing relocation | **done in 0.9.4.58** | Telemetry-only hash no longer blocks the walk. Moved past match/group, skipped on cancel/failure/off. Empty cancelledDuring |
 | Video Cancelled/Failed split | **done in 0.9.4.59** | Stop no longer promotes to failed/rollback. Completions persist, seen-conditional stamp. Video 26 checks |
 
+
+## 2026-10-06 — 0.9.4.59 review and next correction order
+
+The CPU/GPU CTest results for 0.9.4.59 are passing, but code semantics and the real user diagnostic run show that **build completion is not equivalent to completed cancellation semantics**. The next work is intentionally split into two phases.
+
+### Phase 1: engine / diagnostics / verification
+
+- **Confirmed semantic bug:** the video sampling-generation stamp depends on the general `seen` set. `processOne()` inserts videos into `seen` even when `scanVideos=false`, so an image-only scan can advance video generation. The successful-scan `r.completed` branch can also stamp generation without regard to video scope. Video generation must only advance when in-scope video admission/processing has crossed the required boundary, and it must **never change when `scanVideos=false`**.
+- **Diagnostic semantic hardening:** `finishScan(false)` currently infers Cancelled from the live cancel flag. A real DB failure followed by a late Stop can therefore be reported as Cancelled even though the transaction failed. Pass an explicit terminal state (Completed/Cancelled/Failed) so DB failures remain Failed.
+- **Verification additions:** add an image-only generation-stamp regression, deterministic DB-error → rollback/Failed + `failed=true) telemetry coverage, and explicit handling/verification of generation-stamp write failure.
+
+### Real GUI performance observations
+
+In the 0.9.4.59 GUI run, all 32,494 images used the GPU image path, but reported GPU duty was only about **0.2%**. The image stage took 567.7 s; verify decode consumed about 25.4 s and WIC copy about 25.1 s, while the GPU H2D/kernel/D2H work was only about 0.31 s. This does not by itself indicate a CUDA defect; the stronger performance hypothesis is **insufficient pipeline overlap between CPU/WIC decode/crop/I/O and the GPU hashing stage**.
+
+Even with the Maximum (90%) CPU policy, observed process CPU usage oscillated roughly across 20–70% and averaged 30.8%. Observed drive I/O also varied around the 15–40% range. These are classified as **post-1.0 throughput/parallelism work**, not as 0.9.4.59 correctness defects.
+
+### Explicit post-1.0 performance backlog
+
+The image search engine is now considered **first-pass complete as a product path**, but after 1.0 it should be improved in these areas:
+
+- tighter mapping between CPU worker occupancy and the user CPU policy
+- I/O backpressure and read/decode concurrency
+- better overlap across decode/crop/hash stages and longer-lived GPU batches
+- reduced GPU queue starvation and more host↔device overlap
+- scheduler awareness of stage-level bottlenecks, self-attributed usage, and I/O wait rather than relying mainly on aggregate system utilization
+- one admission/backpressure model for both the low initial Balanced worker occupancy and the oscillatory/idle behavior still observed under Maximum
+
+This backlog is **not mixed into the 0.9.4.59 correctness repair**. GPU utilization itself is not the objective; end-to-end throughput and system stability remain the objectives.
+
+### Phase 2: GUI regression
+
+The real GUI reproduced a regression where scrolling the similar-group list downward with mouse dragging, the vertical scrollbar, or keyboard navigation such as End becomes slow and eventually returns the list to the top. This is treated as a separate phase: compare the historical **0.9.3.10 semantic scroll-anchor fix** with the current 0.9.4 thumbnail catch-up/full-list rebuild path, then fix the regression. Do not mix this GUI change into Phase 1 engine semantic fixes.
 
 ## Current Status
 
