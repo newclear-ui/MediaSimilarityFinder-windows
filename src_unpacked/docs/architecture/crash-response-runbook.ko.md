@@ -98,7 +98,7 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting
   엔진 단독 240-file 스캔은 정상. GUI 측 match-storm 규모 문제로 분리 기록.
   scroll 회귀와는 다른 버그.
 
-## 4. 방어 패치 내역 (0.9.4.62)
+## 4. 방어 패치 내역 (0.9.4.62, 0.9.4.65)
 
 - `ScanWorker::run`에 `catch (...)` 추가. 부분 매치 checkpoint 후
   `failed` 보고로 전환하여 무기록 종료를 기록된 실패로 격하.
@@ -107,6 +107,19 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting
   않으므로 실제 메모리 손상은 계속 fail-fast (마스킹 없음).
 - 테스트용 `MSF_TEST_THROW_NONSTD` seam 포함. 제품 코드는 설정하지 않음.
 - 상세: `docs/build-history/0.9.4.62.ko.md`.
+
+### 0.9.4.65 — 핸들러 무throw 확정 (위 3-2 대응)
+
+- 두 catch 핸들러의 `persistMatchesSnapshot()`와 `emit failed()`를 각각
+  독립 `try/catch(...)`로 감싼다. persist가 실패해도 보고는 시도하고,
+  핸들러 밖으로 예외가 나가는 경로가 없다.
+- 원인: 3-2 덤프의 fault 스택이 핸들러 persist 경로를 가리킴. `run()`은
+  Qt 슬롯이라 핸들러 탈출 = `terminate()` → `abort()` 직행.
+- 테스트용 `MSF_TEST_THROW_PERSIST` seam 추가. `MSF_TEST_THROW_NONSTD`와
+  조합하면 덤프 사슬(핸들러 안에서 persist가 던짐)을 결정적으로 재현.
+  `crash_diagnostics_test` 7 checks (CPU·GPU).
+- SEH fail-fast 마스킹 없음 원칙 유지.
+- 상세: `docs/build-history/0.9.4.65.ko.md`.
 
 ## 5. 관측 패치 내역 (0.9.4.62)
 
@@ -122,6 +135,7 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting
 ## 6. 관련 문서
 
 - `docs/build-history/0.9.4.62.{ko,en}.md` — 패치 상세와 검증 수치.
-- `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 항목 (원인·실측).
+- `docs/build-history/0.9.4.65.{ko,en}.md` — 핸들러 무throw 패치와 덤프 분석.
+- `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 항목 (원인·실측).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — 별개 주제
   (유사 판정). 크래시와 무관하므로 혼동하지 말 것.

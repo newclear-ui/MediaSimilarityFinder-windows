@@ -106,7 +106,7 @@ down the faulting thread and stack.
   Engine-only 240-file scan is clean. Recorded separately as a GUI-side
   match-storm volume issue, unrelated to the scroll regression.
 
-## 4. Defense patch history (0.9.4.62)
+## 4. Defense patch history (0.9.4.62, 0.9.4.65)
 
 - Added `catch (...)` to `ScanWorker::run`. Checkpoints partial matches and
   reports failed, downgrading silent death to a recorded failure.
@@ -117,6 +117,21 @@ down the faulting thread and stack.
   instead of being masked.
 - Includes the `MSF_TEST_THROW_NONSTD` test seam. Never set by production code.
 - Detail: `docs/build-history/0.9.4.62.en.md`.
+
+### 0.9.4.65 — non-throwing handlers (response to 3-2 above)
+
+- `persistMatchesSnapshot()` and `emit failed()` in both catch handlers are
+  each wrapped in independent `try/catch(...)` blocks. If persist fails, the
+  report is still attempted; no path lets an exception leave a handler.
+- Cause: the 3-2 dump's fault stack points at the handler's persist path.
+  `run()` is a Qt slot, so a handler escape goes straight to `terminate()`
+  -> `abort()`.
+- New `MSF_TEST_THROW_PERSIST` test seam. Combined with
+  `MSF_TEST_THROW_NONSTD` it deterministically replays the dump's chain
+  (persist throwing inside the handler). `crash_diagnostics_test` 7 checks
+  (CPU and GPU).
+- The no-masking-of-SEH-fail-fast principle is kept.
+- Detail: `docs/build-history/0.9.4.65.en.md`.
 
 ## 5. Observability patch history (0.9.4.62)
 
@@ -131,6 +146,7 @@ down the faulting thread and stack.
 ## 6. Related documents
 
 - `docs/build-history/0.9.4.62.{ko,en}.md` — patch detail and verification numbers.
-- `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 entries (cause, measurements).
+- `docs/build-history/0.9.4.65.{ko,en}.md` — non-throwing handler patch and dump analysis.
+- `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 entries (cause, measurements).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — separate topic
   (similarity verdicts). Do not confuse with crashes.
