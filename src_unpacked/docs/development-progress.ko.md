@@ -26,12 +26,13 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **2026-10-04 갱신 (2차)**: 제품 acceptance audit이 `NOT ACCEPTED` 로 끝나 결함 수정으로 확정됐고, **`0.9.4.46` 으로 DEFECT-A/B 수정과 재스캔 수렴 회귀 테스트를 완료해 빌드했다.** 완료된 2건을 큐에서 제거했고, 다음 Gate인 S4 화면 acceptance 를 최상단에 올린다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
-| --- | --- | --- | --- | --- |
-| 0 | 0.9.4.45 | S4 GUI Search/Update → Detailed Logs 최종 functional acceptance | 실제 GUI 결과 표시·저장 경로를 acceptance하고 S4 CLOSED 여부 판정. 실제 화면 검증이 필요해 headless 자동화만으로는 종결 불가 | **대기** |
-| 1 | 0.9.4.47 | `color_thumb` R1 fixture + no-FFmpeg skip/pass 처리 | DEFECT-A/B 수정이 완료되어 이제 최우선 후보. acceptance 결함 수정과 회귀 검증이 끝났으므로 착수 가능 | **대기** |
-| 2 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage validation | production acceptance CONDITIONAL 해소 여부 판정 | **대기** |
-| 3 | S5 | 실제 dataset product benchmark | S4 및 제품 acceptance 완료 후 측정 | **Gate 대기** |
-| 4 | 별도 과제 | 미지원 확장자(`.ico` 등) 조용히 건너뛰는 투명성 결여 | 스캔 리포트에 건너뛴 파일 수를 노출할지 결정 | **대기** |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 0.9.4.59 후속 | **1차: Cancel/Generation semantic 보정 + 진단 terminal-state 보정 + DB-error 회귀** | 0.9.4.59에서 남은 명확한 semantic bug와 진단/검증 공백을 먼저 제거. 구현 후 CPU/GPU 재검증 | **IN PROGRESS** |
+| 1 | 1차 완료 후 | **2차: GUI 유사그룹 목록 스크롤 회귀 수정** | 0.9.3.10 scroll-anchor 수정과 현재 `thumbStarved_`/full rebuild 경로를 대조하여 End/drag/key navigation 회귀 제거 | **PLANNED** |
+| 2 | S4 | 실제 GUI Search/Update → Detailed Logs 화면·저장 최종 acceptance | 실제 화면 검증으로 S4 CLOSED 여부 판정 | **대기** |
+| 3 | 다음 후보 | `color_thumb` R1 fixture + no-FFmpeg skip/pass | S4 및 2차 GUI 회귀가 끝난 뒤 진행 | **대기** |
+| 4 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage | production acceptance CONDITIONAL 해소 여부 판정 | **대기** |
+| 5 | S5 | 실제 dataset product benchmark | 제품 acceptance 완료 후 측정 | **Gate 대기** |
 
 > `color_thumb` R1 은 이제 1순위로 올라왔으나, S4 화면 acceptance 는 사용자 측 실제
 > GUI 확인이 선행되어야 진행 가능하다.
@@ -67,6 +68,39 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 지문 실행 시점 재배치 | **완료(0.9.4.58)** | telemetry 전용 해시가 walk 앞 차단하던 구조 해소. match/group 이후로 이동, 취소·실패·OFF면 생략. cancelledDuring 빈 문자열 |
 | Video Cancelled/Failed 분리 | **완료(0.9.4.59)** | Stop의 failed 승격·rollback 해소. 완료분 persist, seen 기준 조건부 스탬프. video 26 checks |
 
+
+## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
+
+0.9.4.59의 CPU/GPU CTest는 통과했지만, 코드 의미론과 실제 사용자 진단 결과를 재검토한 결과 **빌드 완료를 cancellation semantic 완료와 동일하게 취급하지 않는다.** 다음 순서로 보강한다.
+
+### 1차: 엔진/진단/검증
+
+- **명확한 semantic bug:** video sampling generation stamp 판정이 일반 `seen` 집합에 의존한다. `processOne()`은 `scanVideos=false`인 비디오도 `seen`에 넣고 있으므로 이미지 전용 스캔이 비디오 generation을 갱신할 수 있다. 또한 성공 스캔의 `r.completed` 분기 자체가 video scope와 무관하게 generation을 갱신할 수 있다. video generation은 **in-scope video admission/processing 경계를 통과한 경우에만** 갱신해야 하며 `scanVideos=false`에서는 절대 변경하지 않는다.
+- **진단 semantic 보강:** `finishScan(false)`가 종료 직전의 live cancel flag를 읽어 Failed를 Cancelled로 오판할 수 있다. terminal outcome을 Completed/Cancelled/Failed의 명시적 상태로 전달하여 실제 DB 오류는 Stop이 뒤따라도 Failed로 남겨야 한다.
+- **검증 보강:** 이미지 전용 스캔이 video generation을 바꾸지 않는 회귀, deterministic DB-error → rollback/Failed + telemetry failed=true 회귀, generation-stamp write 실패 처리 검증을 추가한다.
+
+### 실제 GUI 진단에서 확인된 성능 관찰
+
+0.9.4.59 실측 GUI 실행에서는 32,494개 이미지가 모두 GPU 경로를 탔지만 GPU duty는 약 **0.2%**였다. image stage 567.7s 중 verify decode가 약 25.4s이고 WIC copy가 약 25.1s였으며 GPU H2D/kernel/D2H 합계는 약 0.31s 수준이었다. 따라서 현재 낮은 GPU duty는 곧바로 CUDA 오류를 의미하지 않으며, **CPU/WIC decode·crop·I/O와 GPU hashing 사이의 pipeline overlap 부족이 우선 병목 후보**다.
+
+CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진동하고 평균 30.8%에 머문 관찰이 있다. 디스크 I/O 역시 관찰상 약 15~40% 수준의 변동이 컸다. 이 수치는 현재 scheduler의 정확성 defect가 아니라 **다음 성능 개선에서 다뤄야 할 실효 throughput/parallelism 문제**로 분류한다.
+
+### 1.0 이후 성능 개선 백로그
+
+이미지 검색 엔진은 현재 **1차 제품 경로로 완성**되었으나, 1.0 이후 다음 영역을 개선 목표로 명시한다.
+
+- 실제 CPU worker occupancy와 사용자 CPU limit의 관계 정밀화
+- 파일 I/O backpressure 및 read/decode concurrency 조정
+- decode/crop/hash 단계의 pipeline overlap 및 GPU batch 지속시간 개선
+- GPU queue starvation 감소와 host↔device overlap 확대
+- scheduler가 시스템 전체 CPU/GPU 사용률만 보지 않고 **단계별 bottleneck / 자기 사용량 / I/O 대기**를 구분하도록 고도화
+- Balanced에서 초기 worker 사용량이 과도하게 낮았던 현상과 Maximum에서도 높은 idle/oscillation이 남는 현상을 동일한 admission/backpressure 모델로 다룬다.
+
+이 백로그는 **0.9.4.59 correctness 수정과 같은 작업에 섞지 않는다.** GPU 사용률 자체를 목표로 하지 않고 end-to-end throughput과 시스템 안정성을 목표로 한다.
+
+### 2차: GUI-UI 회귀
+
+실제 GUI에서 유사그룹 목록을 마우스 드래그/세로 scrollbar/End 등의 키보드 navigation으로 아래로 이동하면 특정 위치 이후 느려지고 목록 상단으로 되돌아가는 회귀가 재현되었다. 이 문제는 0.9.3.10의 **semantic scroll-anchor 복원 수정** 이력과 현재 0.9.4의 thumbnail catch-up/full-list rebuild 경로를 대조하여 별도 수정한다. GUI 회귀 수정을 1차 엔진 semantic 수정과 동일 빌드 범위에 섞지 않는다.
 
 ## 현재 상태
 
