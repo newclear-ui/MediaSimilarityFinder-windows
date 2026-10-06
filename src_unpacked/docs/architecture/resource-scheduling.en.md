@@ -279,6 +279,31 @@ Implementation proceeds incrementally on the 0.9.3.x development line.
 CPU fallback remains mandatory, and hardware acceleration is treated as an optional backend.
 
  
+## 15. Measurement-based Post-1.0 Performance Backlog
+
+The Adaptive Scheduler and image-search path are now considered a **first-pass product implementation**. However, the 0.9.4.59 real GUI run exposed the following behavior, so these items are explicitly assigned to the post-1.0 performance backlog.
+
+- Even under the Maximum (90%) policy, observed process CPU usage oscillated roughly across 20–70% for long intervals, with a 30.8% average. A CPU policy percentage is not the same thing as guaranteed process CPU occupancy; worker admission/backpressure needs a more precise model.
+- Balanced initially showed low worker utilization on the 8-core/16-thread test system, with only about four threads visibly active at first. Increasing worker count alone is not sufficient; I/O wait, decode latency, and queue admission must be modeled together.
+- All 32,494 images used the GPU image path in the real run, yet reported GPU duty was only about 0.2%. The stronger bottleneck candidates are WIC/CPU decode, crop, file I/O, verification, and gaps between short GPU work bursts rather than the CUDA kernel itself.
+- Observed drive I/O utilization also stayed mostly around 15–40%. Therefore simply adding CPU workers cannot be assumed to raise end-to-end throughput reliably.
+
+### Scheduler hardening direction after 1.0
+
+The next scheduler improvements do **not** optimize for GPU utilization by itself. The target remains end-to-end throughput, latency stability, and coexistence with the user's system.
+
+1. Measure actual CPU worker occupancy against the selected CPU policy and adjust admission accordingly.
+2. Make read -> decode -> crop -> hash queueing and backpressure workload-aware instead of relying only on worker count.
+3. Reduce short GPU bursts and CPU-induced starvation by increasing useful host<->device overlap where correctness permits.
+4. Distinguish stage bottlenecks, self-attributed usage, I/O wait, queue starvation, and aggregate system load in scheduler inputs.
+5. Revisit the long-period oscillation and initial under-utilization as a workload-admission problem, not merely as an SMA/hysteresis tuning problem.
+
+These are **outside the 0.9.4.59 correctness repair** and belong to a separate post-1.0 performance track. Low GPU duty in the current image path is not itself evidence of a correctness failure or a broken GPU backend.
+
+### Image-search engine status
+
+The image-search engine is **first-pass complete as a product path**. Future improvements must be based on real-dataset measurements without changing correctness semantics; any performance candidate must pass exactness/semantic-parity validation first.
+
 ## 15. Benchmark / Telemetry integration
 
 The Adaptive Scheduler cannot be validated adequately without detailed benchmark telemetry, so benchmark redesign is a first-class development stage.
