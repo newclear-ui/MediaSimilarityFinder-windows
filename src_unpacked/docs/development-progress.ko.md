@@ -21,21 +21,26 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> 이 절은 **현재 살아 있는 작업만** 기록하는 실행 큐다. 작업이 완료되면 여기서 제거하고, 상세 내용은 Work Log / Build History에 보존한다.
-> `0.9.4.46`의 실제 내용은 아래 Gate 결과에 따라 확정하며, 미리 고정된 것으로 간주하지 않는다.
-> **2026-10-04 갱신 (2차)**: 제품 acceptance audit이 `NOT ACCEPTED` 로 끝나 결함 수정으로 확정됐고, **`0.9.4.46` 으로 DEFECT-A/B 수정과 재스캔 수렴 회귀 테스트를 완료해 빌드했다.** 완료된 2건을 큐에서 제거했고, 다음 Gate인 S4 화면 acceptance 를 최상단에 올린다.
+> 이 절은 **현재 살아 있는 작업만** 기록하는 실행 큐다. 완료된 항목은 큐에서 제거하고
+> 상세 내용은 Work Log / Build History에 보존한다.
+> **2026-10-07 사용자 실제 GUI 피드백 반영:** 0.9.4.61 스크롤 회귀는 실제 Windows GUI에서
+> 현재 정상 동작으로 관찰되었다. 핵심 원인인 starvation-only destructive rebuild는 제거된 것으로 판단한다.
+> 남은 full-list traversal 비용은 기능 blocker가 아니라 잠재적 GUI 비용으로 별도 후순위에 둔다.
+> 다음 즉시 작업은 0.9.4.62 GUI usability + diagnostic-control 정리이며, 위험도가 높은
+> catch-up traversal 최적화와 Test Mode의 실제 재도입은 후반 검토로 분리한다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
-| --- | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.59 후속 | **1차: Cancel/Generation semantic 보정 + 진단 terminal-state 보정 + DB-error 회귀** | 0.9.4.59에서 남은 명확한 semantic bug와 진단/검증 공백을 먼저 제거. 구현 후 CPU/GPU 재검증 | **IN PROGRESS** |
-| 1 | 1차 완료 후 | **2차: GUI 유사그룹 목록 스크롤 회귀 수정** | 0.9.3.10 scroll-anchor 수정과 현재 `thumbStarved_`/full rebuild 경로를 대조하여 End/drag/key navigation 회귀 제거 | **PLANNED** |
-| 2 | S4 | 실제 GUI Search/Update → Detailed Logs 화면·저장 최종 acceptance | 실제 화면 검증으로 S4 CLOSED 여부 판정 | **대기** |
-| 3 | 다음 후보 | `color_thumb` R1 fixture + no-FFmpeg skip/pass | S4 및 2차 GUI 회귀가 끝난 뒤 진행 | **대기** |
-| 4 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage | production acceptance CONDITIONAL 해소 여부 판정 | **대기** |
-| 5 | S5 | 실제 dataset product benchmark | 제품 acceptance 완료 후 측정 | **Gate 대기** |
+| --- | --- | --- | --- | --- |
+| 0 | 0.9.4.61 | **즉시: GUI usability/diagnostic-control 정리** | 상세 로그 표시 설정, 오른쪽 상세 pane 폭 제한/가운데 pane 확장, 파일명 text selection | **PLANNED → 0.9.4.62** |
+| 1 | 0.9.4.61 | **후속: Test Mode 설계/구현 검토** | 구 GUI Benchmark의 'index를 바꾸지 않고 같은 처리 경로를 다시 실행해 측정' 목적을 개발용 Test Mode로 재정의. CLI Benchmark와 semantic 분리 | **DESIGNED / 구현 후반** |
+| 2 | 0.9.4.61 | **후순위: thumbnail catch-up 전체 순회 비용 정리** | 보이는 항목만 확인하도록 순회 범위를 줄일 수 있는지 검토. 현재 스크롤 blocker가 아니라 성능 위험으로 기록 | **DEFERRED / risk-contained** |
+| 3 | S4 | 실제 GUI Search/Update → Detailed Logs 표시·저장 최종 acceptance | 사용자 실제 화면에서 기능/저장 경로를 확인해 S4 CLOSED 여부 판정 | **PENDING** |
+| 4 | 다음 validation | XMP Orientation Fallback real-dataset/full-scan coverage | production acceptance CONDITIONAL 해소 여부 판정 | **PENDING** |
+| 5 | 다음 candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass | S4 acceptance 이후 수행 | **PENDING** |
+| 6 | S5 | 실제 dataset product benchmark | 제품 acceptance 완료 후 측정 | **GATE 대기** |
 
-> `color_thumb` R1 은 이제 1순위로 올라왔으나, S4 화면 acceptance 는 사용자 측 실제
-> GUI 확인이 선행되어야 진행 가능하다.
+> 1.0 이후 버스트샷 판정 고도화와 scheduler/pipeline/GPU throughput 개선은 현재 0.9.4.62 작업과
+> 섞지 않는다. Burst Shot 상세 설계는 `docs/architecture/image-burst-shot-similarity.{ko,en}.md`가 권위다.
 
 ## 완료된 주요 이정표
 
@@ -2377,3 +2382,20 @@ vcpkg 이동                         없음
 콘솔 출력 전용 회귀 테스트          미추가 (후보로 기록)
 S4 / S5 / S6 / NVDEC              DEFERRED 유지
 ```
+
+## 2026-10-07 — 0.9.4.61 실제 GUI 피드백 및 0.9.4.62 작업 순서
+
+사용자 실제 Windows GUI 검증에서 유사그룹 목록은 현재 마우스 스크롤/세로 scrollbar/하단 이동 후에도 정상 동작하는 것으로 관찰되었다. 따라서 0.9.4.61의 핵심 scroll regression fix는 제품 사용 수준에서 **실질 PASS**로 기록한다. video list는 video comparison algorithm이 아직 미완성인 상태이므로 의미 있는 동일 acceptance는 후순위다.
+
+### 즉시 적용 대상
+- GUI의 **상세 로그 체크박스/컨트롤을 설정에서 표시·숨김**할 수 있게 한다. 설정값은 재시작 후에도 유지한다.
+- 오른쪽 그룹 상세 pane은 미리보기 기준으로 약 4개 이미지가 자연스럽게 들어가는 폭을 기준으로 더 이상 과도하게 늘어나지 않게 하고, 추가 창 너비는 가운데 유사그룹 pane이 우선 가져가도록 splitter 정책을 조정한다.
+- 상세 정보의 **파일 이름**도 전체 경로와 동일하게 mouse/keyboard text selection과 double-click selection이 가능하게 한다.
+
+### 후반 검토 대상
+- 과거 GUI Benchmark의 목적은 인덱스를 변경하지 않고 실제 처리 경로를 다시 실행한 것으로 가정하여 시간/telemetry를 비교하는 개발용 측정이었다. 이를 **Test Mode**로 재정의하는 것을 검토한다. CLI Benchmark와 GUI Test Mode는 semantic을 섞지 않는다.
+- `thumbCatchUpVisible()`의 현재 구조는 실제 decode는 visible item에 제한하지만 매 tick 전체 QListWidget 항목을 훑어 visible 여부를 검사한다. 이는 현재 scroll blocker가 아니므로 즉시 수정하지 않고, 대규모 group에서도 안전하게 visible range만 직접 얻는 방식으로 바꿀 수 있는지 별도 검토한다.
+
+### 1.0 이후 유지
+- Burst-shot similarity refinement는 post-1.0 DEFERRED 유지. 현행 pHash+SSIM을 유지하며 설정 옵션 + dual-algorithm selectable search를 후속 설계로 둔다.
+- 이미지 한 장의 낮은 GPU duty는 현재 correctness blocker가 아니다. CPU/WIC decode·crop·I/O와 GPU hash 사이의 overlap 문제는 post-1.0 throughput backlog로 유지한다.
