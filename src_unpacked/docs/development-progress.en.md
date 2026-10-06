@@ -33,7 +33,7 @@ A separate `workprogress` document is intentionally not created; this document i
 
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
-| 0 | **0.9.4.63** | **GUI usability cleanup** | Detailed Logs visibility setting, splitter policy, filename text selection | **PLANNED / next implementation** |
+| 0 | **0.9.4.63** | **GUI usability manual acceptance** | Real-screen settings dialog, resize behavior, filename selection, Tiles/ListMode, large-dataset traversal | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
 | 1 | **0.9.4.62** | **Crash-response follow-up** | On recurrence, collect scan/Qt/WER/dump evidence and identify fault thread/root cause | **GUARDRAIL / immediate on evidence** |
 | 2 | Product acceptance | **Final Search / Index / Comparison acceptance recheck** | Resolve the latest real-dataset edge-case semantics around silent analysis failures / modified state | **NOT ACCEPTED / recheck after GUI work** |
 | 3 | S4 | **Final real-screen + save acceptance for GUI Detailed Logs** | Validate Search/Update → Detailed Logs → save/finish on the real user path | **PENDING / tied to product acceptance** |
@@ -46,7 +46,7 @@ A separate `workprogress` document is intentionally not created; this document i
 
 | Category | Work | Current status / principle |
 | --- | --- | --- |
-| Developer feature | **GUI Test Mode** | Do not revive the old GUI Benchmark verbatim. Reframe it as a developer repeat-measurement mode that does not alter the real index. **DESIGNED / later implementation** |
+| Developer feature | **GUI Test Mode** | The old GUI Benchmark is not revived. Investigation showed that UI surface, scratch lifecycle, telemetry distinction, and acceptance design are required, so this build leaves it **DEFERRED**. Only the KO/EN name is fixed: ‘테스트 모드’ / ‘Test Mode’. A separate version and acceptance plan are required before resuming. |
 | GUI performance | **Visible-range thumbnail catch-up traversal** | Actual decoding is limited to visible items, but every tick still scans the whole list. Change only if a safe visible-range access path is available. **DEFERRED / risk-contained** |
 | Product feature | **Video comparison semantics / GUI video acceptance** | Video comparison semantics and equivalent real-use acceptance are not closed at the same level as the image path. **DEFERRED** |
 | Post-1.0 | **Burst-shot similarity refinement** | Separate burst shots from true near-duplicates and later expose algorithm choice in Settings. Authority: `docs/architecture/image-burst-shot-similarity.{ko,en}.md`. **POST-1.0** |
@@ -56,7 +56,7 @@ A separate `workprogress` document is intentionally not created; this document i
 > **Boundary:** Do not reopen sparse production, NVDEC production adoption, or utilization-only GPU tuning.
 > Existing rejection/deferred evidence remains authoritative.
 >
-> **Execution summary:** 0.9.4.63 GUI usability → final Search/Index/Comparison acceptance recheck
+> **Execution summary:** 0.9.4.63 manual GUI acceptance → final Search/Index/Comparison acceptance recheck
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode and traversal remain lower-priority work and must not block the main validation track.
 
@@ -181,8 +181,8 @@ This phase-2 GUI task must not change engine cancellation semantics. Scheduler/w
 | Reference code | 0.9.4.63 (bumped from 0.9.4.62 after the crash response trio) |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **0.9.4.62 crash-response baseline → 0.9.4.63 GUI usability preparation** — S1/S2/S3 complete; S4 implementation and visible UI are PASS, but final acceptance is tied to product acceptance and remains PENDING. The 0.9.4.62 crash-response containment/observability patch is complete, while the root cause remains unproven; the next crash must follow the runbook evidence order. XMP Orientation has fixture PASS but no real-dataset coverage, so production acceptance remains CONDITIONAL. `color_thumb` R1 is not started. S5 infrastructure is REVALIDATED and the real product benchmark remains gate-pending. F-1 remains CONDITIONAL with NVDEC production adoption NO. |
-| Current phase | **0.9.4.62 crash-response is complete → 0.9.4.63 GUI usability → final Search/Index/Comparison acceptance recheck → S4 final acceptance → XMP/color_thumb → S5 → S6**. The latest real-dataset acceptance audit still leaves Search/Index/Comparison **NOT ACCEPTED**, even though some execution paths are PASS, so S4/S5 must not be promoted to final PASS prematurely. On any new crash, collect logs/WER/Qt/dump evidence using `crash-response-runbook` before speculative code changes. F-1 remains `CONDITIONAL`, NVDEC production adoption remains `NO`, and sparse production remains blocked by `ExactnessPolicy::RefuseAll`. |
+| Current node | **0.9.4.63 GUI usability manual acceptance** — 0.9.4.63 implementation and automated verification are complete; S4 implementation and visible UI are PASS, but final acceptance is tied to product acceptance and remains PENDING. The 0.9.4.62 crash-response containment/observability patch is complete, while the root cause remains unproven; the next crash must follow the runbook evidence order. XMP Orientation has fixture PASS but no real-dataset coverage, so production acceptance remains CONDITIONAL. `color_thumb` R1 is not started. S5 infrastructure is REVALIDATED and the real product benchmark remains gate-pending. F-1 remains CONDITIONAL with NVDEC production adoption NO. |
+| Current phase | **0.9.4.63 implementation complete → real GUI manual acceptance → final Search/Index/Comparison acceptance recheck → S4 final acceptance → XMP/color_thumb → S5 → S6**. The latest real-dataset acceptance audit still leaves Search/Index/Comparison **NOT ACCEPTED**, even though some execution paths are PASS, so S4/S5 must not be promoted to final PASS prematurely. On any new crash, collect logs/WER/Qt/dump evidence using `crash-response-runbook` before speculative code changes. F-1 remains `CONDITIONAL`, NVDEC production adoption remains `NO`, and sparse production remains blocked by `ExactnessPolicy::RefuseAll`. |
 | Current version | 0.9.4.63 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
