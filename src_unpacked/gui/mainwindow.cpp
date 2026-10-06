@@ -1709,6 +1709,10 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
   dlg.exec();
 }
 void MainWindow::scanFinished(QString msg) {
+  // Entry/exit trace for hang diagnosis. If a future "stuck popup" report
+  // shows "enter" without the matching "exit" in msf_scan.log, the stall is
+  // inside this function; if neither appears, the worker never returned.
+  scanLog(QString("scanFinished enter: %1").arg(msg.left(80)));
   // A stop request already shows this popup from cancelScan(): keep it for
   // the rebuild instead of flashing a second one.
   QDialog* wait = cancelWait_;
@@ -1761,6 +1765,7 @@ void MainWindow::scanFinished(QString msg) {
   wait->deleteLater();
   setRunning(false);
   statusProg_->setValue(100);
+  scanLog(QString("scanFinished exit"));
 }
 void MainWindow::scanFailed(QString msg) {
   scanLog(QString("failed %1").arg(msg));
