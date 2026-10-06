@@ -215,7 +215,7 @@ bool MediaSearchEngine::getColorThumb(const std::string& path, int& w, int& h, s
 bool MediaSearchEngine::getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const {
   return videoEngine_.peekThumb48(path, gray48);
 }
-SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
+SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); analyzedCount_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
   auto old=db_.all();
   std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
   const bool videoRegrid=(db_.samplingGeneration()!=kSamplingGeneration);
@@ -548,7 +548,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     x.fingerprint=ir.fingerprint; x.analysisFailed=false;
     if(ir.usedGpu) gpuImagesProcessed_.fetch_add(1,std::memory_order_relaxed);
     if(!db_.upsert(x)){ return false; }
-    ++r.analyzed; ++nImgAnalyzed;
+    ++r.analyzed; ++nImgAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed);
     // Outcome-time classification: the file now has a real fingerprint, so
     // reporting it as added/modified is finally backed by a usable index row.
     if(oldByPath.find(x.path)==oldByPath.end()) ++nAdded; else ++nModified;
@@ -605,7 +605,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
      taken[i]=1; --remaining; progressed=true;
       auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue;
-      if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return false; } ++r.analyzed; ++nVidAnalyzed; if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
+      if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return false; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
       else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return false; } ++nFailed; }
       ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
     if(!progressed && remaining>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));

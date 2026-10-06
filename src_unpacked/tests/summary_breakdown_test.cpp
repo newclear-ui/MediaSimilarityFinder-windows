@@ -90,6 +90,9 @@ int main() {
     check(r.imgDupFiles == 2, "imgDupFiles=2 (both members, not the group count)");
     check(r.vidDupFiles == 0, "vidDupFiles=0");
     check(r.imgDupFiles != r.imgGroups, "duplicate files and groups are different things");
+    // Live analyzed counter agrees with the final report by construction
+    // (incremented at the same sites as r.analyzed). The GUI panel reads it.
+    check(e.analyzedCount() == r.analyzed, "live analyzedCount matches final analyzed");
 
     // Telemetry mirrors the engine so the GUI summary and the JSON agree.
     const std::string js = e.telemetryJson();

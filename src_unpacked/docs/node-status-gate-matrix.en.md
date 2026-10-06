@@ -117,6 +117,7 @@ direct cause       GUI Stop unresponsiveness was fixed at engine level in 0.9.4.
                    Fingerprint progress reporting was added in 0.9.4.51.
                    Embedded image-path issues were fixed in 0.9.4.52.
                    Summary panel 3-row split was done in 0.9.4.53.
+                   Live read counter was done in 0.9.4.54.
                    The only remaining condition is real GUI screen/button
                    verification, which headless automation cannot close
 ```

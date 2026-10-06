@@ -129,6 +129,7 @@ const std::vector<MediaFile>& files() const { return files_; }
   // of polling nvidia-smi, whose polling window cannot see sub-millisecond
   // batches. Reset to 0 at the start of every scan().
   std::uint64_t gpuImagesProcessed() const { return gpuImagesProcessed_.load(); }
+  std::uint64_t analyzedCount() const { return analyzedCount_.load(); }
   bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
   bool hasTelemetry() const { return telemetry_.hasData(); }
   std::string telemetryJson() const { return telemetry_.toJson(); }
@@ -146,6 +147,10 @@ const std::vector<MediaFile>& files() const { return files_; }
   Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
   mutable GpuBackend videoGpu_;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
+  // Live analyzed count for the GUI panel during a running scan. Incremented
+  // exactly where r.analyzed increments, so the live value and the final
+  // report agree by construction. Read-only atomic; no scan logic depends on it.
+  std::atomic<std::uint64_t> analyzedCount_{0};
   mutable std::atomic<bool> gpuActive_{false};
   TelemetryRecorder telemetry_;
   // B1 Minimal Adaptive Allocation: decided per scan, re-evaluated at

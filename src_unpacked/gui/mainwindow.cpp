@@ -1546,6 +1546,9 @@ void MainWindow::onFingerprintProgress(qulonglong n, qulonglong bytes, QString p
   QString shortPath = path;
   if (shortPath.size() > 72) shortPath = QStringLiteral("...") + shortPath.right(69);
   statusMsg_->setText(QString("%1: %2 files, %3 GB — %4").arg(trStr(lang(), "fpProgress")).arg(n).arg(gb, 0, 'f', 1).arg(shortPath));
+  // The left panel's read-complete row must move during fingerprint too:
+  // nothing else updates it before the walk starts.
+  sumValDone_->setText(QString::number(n));
 }
 void MainWindow::onQuickLoaded(int n) {
   drainMatches();
@@ -1708,6 +1711,10 @@ void MainWindow::scanFinished(QString msg) {
   QDialog* wait = cancelWait_;
   cancelWait_ = nullptr;
   if (!wait) wait = showReportWaitPopup(this, lang());
+  // The popup must never outlive this function: every exit below closes it
+  // and returns the GUI to idle, even on an unexpected exception. Otherwise
+  // a "writing report" popup stays open forever with no way back.
+  try {
   drainMatches();
   if (thumbDbOpen_) thumbDb_.pruneThumbs(); // drop thumbs of files gone from the index
   scanLog(QString("finish %1").arg(msg));
@@ -1742,6 +1749,11 @@ void MainWindow::scanFinished(QString msg) {
   }
   refreshSummary();
   updateStatusCounts();
+  } catch (const std::exception& e) {
+    scanLog(QString("scanFinished exception (state preserved): %1").arg(e.what()));
+  } catch (...) {
+    scanLog(QString("scanFinished unknown exception (state preserved)"));
+  }
   wait->close();
   wait->deleteLater();
   setRunning(false);
@@ -3442,11 +3454,16 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
                             .arg(trStr(lang(), "marked")).arg(marked_.size()));
   // Live summary during scans (previously only time+GPU moved): totals from
   // the pre-walk count, done/scanned from the worker, groups/dups live.
+  // Read-complete shows walked files; index-complete shows analyzed files from
+  // the engine's live counter. Plain numbers match the post-scan panel format;
+  // the old combined "done / total" shape was part of the confusion.
   if (scanning_) {
     sumValTime_->setText(fmtElapsed(elapsedActiveMs()));
     sumValTotal_->setText(targetKnown_ ? QString::number(targetTotal_) : "-");
-    sumValDone_->setText(targetKnown_ ? QString("%1 / %2").arg(lastTotalN_).arg(targetTotal_)
-                                      : QString("%1 / %2").arg(lastTotalN_).arg(lastTotalN_));
+    sumValDone_->setText(QString::number(lastTotalN_));
+    qulonglong liveAnalyzed = 0;
+    if (worker_) liveAnalyzed = (qulonglong)worker_->scanEngine().analyzedCount();
+    sumValIndexed_->setText(QString::number(liveAnalyzed));
     sumValGroups_->setText(QString::number(groups_.size()));
     sumValDup_->setText(QString::number(files));
   }
