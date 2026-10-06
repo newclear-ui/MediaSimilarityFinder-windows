@@ -34,6 +34,16 @@ struct SearchReport { std::size_t scanned=0, added=0, modified=0, unchanged=0, r
   // explicit analysis-failed flag so the next scan converges instead of
   // repeating `modified` forever, and it never enters search (fingerprint 0).
   std::size_t failed=0;
+  // Per-kind user-facing summary. scanned/analyzed split by media kind so the
+  // GUI can show Images and Videos rows without re-deriving them. pairs counts
+  // verified matches (>= threshold) per kind; groups counts distinct linkage
+  // clusters per kind; dupFiles counts files participating in any pair per
+  // kind. A cluster never spans kinds (image and video indexes are separate),
+  // so the per-kind groups partition the total cluster count.
+  std::size_t imgScanned=0, imgAnalyzed=0, vidScanned=0, vidAnalyzed=0;
+  std::size_t imgPairs=0, vidPairs=0;
+  std::size_t imgGroups=0, vidGroups=0;
+  std::size_t imgDupFiles=0, vidDupFiles=0;
   double candidateReductionPercent=0; std::vector<SearchMatch> matches; bool completed=true; std::size_t indexedVideos=0, videoCandidatePairs=0, videoTemporalChecks=0, videoMatches=0; };
 struct ScanControl {
  std::atomic_bool cancel{false};

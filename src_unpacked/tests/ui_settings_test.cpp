@@ -154,6 +154,11 @@ int main(int argc, char** argv) {
       "detailLogWall", "detailLogFiles", "detailLogImages", "detailLogVideos",
       "detailLogCpuUse", "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",
       "detailLogMatches", "detailLogSlow",
+      // user-facing search summary (per-kind scanned/analyzed/throughput plus
+      // the duplicate groups/files/pairs split)
+      "detailLogSummary", "detailLogDuration", "detailLogDupGroups",
+      "detailLogDupFiles", "detailLogDupPairs", "detailLogThroughput",
+      "detailLogTotal", "detailLogTimeSplit", "detailLogMatching",
     };
     int missing = 0;
     for (const char* k : kKeys) {

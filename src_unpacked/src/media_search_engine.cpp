@@ -445,12 +445,21 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       st.selectedBackend = sd.backend;
       st.backendFallbacks = (std::uint64_t)r.gpuFallbackImages + telemetry_.videoGpuFallbacks();
     }
+    // Per-kind user-facing summary. r.* per-kind fields were populated at each
+    // return point (scanned/analyzed) and at the cluster block (pairs/groups/
+    // dupFiles, zero when matching never completed). Telemetry mirrors them
+    // so the GUI summary and the JSON agree by construction.
+    telemetry_.setKindScanned(r.imgScanned, r.vidScanned);
+    telemetry_.setMatchBreakdown(r.imgPairs, r.imgGroups, r.imgDupFiles,
+                                 r.vidPairs, r.vidGroups, r.vidDupFiles);
     telemetry_.finalize(completed, r.scanned, r.analyzed, r.unchanged, r.candidates, r.matches.size(), clusterGroups, r.candidateReductionPercent, gpuImagesProcessed_.load(std::memory_order_relaxed), r.gpuFallbackImages);
     return r;
   };
   bool telemetryWalkTimed=false;
  const std::string excl = managedIndexActive_ ? path_to_utf8(managedIndex_.directory.parent_path()) : std::string{};
   std::size_t done=0, scanned=0, nAdded=0, nModified=0, nUnchanged=0, nRemoved=0, nFailed=0;
+  std::size_t nImgScanned=0, nVidScanned=0, nImgAnalyzed=0, nVidAnalyzed=0;
+  std::size_t nImgPairs=0, nVidPairs=0;
  std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
   std::unordered_map<std::string,FileState> currentByPath;
   ScanPipeline livePipe;
@@ -521,7 +530,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     x.fingerprint=ir.fingerprint; x.analysisFailed=false;
     if(ir.usedGpu) gpuImagesProcessed_.fetch_add(1,std::memory_order_relaxed);
     if(!db_.upsert(x)){ return false; }
-    ++r.analyzed;
+    ++r.analyzed; ++nImgAnalyzed;
     // Outcome-time classification: the file now has a real fingerprint, so
     // reporting it as added/modified is finally backed by a usable index row.
     if(oldByPath.find(x.path)==oldByPath.end()) ++nAdded; else ++nModified;
@@ -578,7 +587,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
      taken[i]=1; --remaining; progressed=true;
       auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue;
-      if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return false; } ++r.analyzed; if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
+      if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return false; } ++r.analyzed; ++nVidAnalyzed; if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
       else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return false; } ++nFailed; }
       ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
     if(!progressed && remaining>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -596,11 +605,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
   return true;
  };
-  auto processOne=[&](FileState&& x){
+   auto processOne=[&](FileState&& x){
    if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
    const bool isVid=(kindOf(x.path)==MediaKind::Video);
    if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
    ++scanned;
+   if(isVid) ++nVidScanned; else ++nImgScanned;
    if(control && control->walked) control->walked(scanned);
    auto it=oldByPath.find(x.path);
    // A skeleton row (fingerprint 0) used to force `changed` unconditionally, which
@@ -687,18 +697,18 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // path (failed/cancelled/normal). Idempotent; join cannot hang on it.
   queue.shutdown();
   walker.join();
-  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.completed=false; return finishScan(false); }
+  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(false); }
  // Deleted detection needs the complete seen set: only on fully walked scans.
  // Previously indexed files that no longer exist are removed then. Ignored rows
  // are retained in the database (they reappear only when unignored and rescanned).
  if(walkCompleted){
   for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ failed=true; break; } ++nRemoved; }
  }
-   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.completed=false; return finishScan(false); }
+   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(false); }
  // Persist everything done so far, including on cancel: partial progress is
  // kept by design (checkpoints), so interruption never loses the file list.
   if(!checkpoint()){ r.completed=false; return finishScan(false); }
- r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed;
+ r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs;
  r.removed=nRemoved;
  if(cancelled||(control&&control->cancel.load())) r.completed=false;
  // Final commit also closes the trailing transaction checkpoint() reopened:
@@ -737,6 +747,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
    if(telemetryOn) telemetry_.addStreamedMatch();
    if (m.left < clusterParent.size() && m.right < clusterParent.size()) {
+     // Pairs are kind-homogeneous (image and video indexes are separate), so
+     // the left side determines the pair's kind. If a mixed pair ever appears
+     // it is counted for neither kind rather than misattributed.
+     const bool lVid = files_[m.left].kind == MediaKind::Video;
+     const bool rVid = files_[m.right].kind == MediaKind::Video;
+     if (lVid == rVid) { if (lVid) ++nVidPairs; else ++nImgPairs; }
      std::size_t a = m.left;
      while (clusterParent[a] != a) { clusterParent[a] = clusterParent[clusterParent[a]]; a = clusterParent[a]; }
      std::size_t b = m.right;
@@ -773,16 +789,34 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // Distinct linkage clusters among this scan's pairs. The GUI rebuilds the
   // same union-find from streamed matches, so telemetry's matches.groups
   // agrees with what the user sees (st.groups counts pairs instead).
+  // Per-kind split for the user-facing summary: a cluster never spans kinds
+  // because image and video candidate indexes are separate, so counting roots
+  // and members per kind partitions the totals exactly.
   {
     std::unordered_set<std::size_t> roots;
+    std::unordered_set<std::size_t> imgRoots, vidRoots;
+    std::size_t nImgDup = 0, nVidDup = 0;
     for (std::size_t i = 0; i < files_.size() && i < clusterParent.size(); ++i) {
       if (!clusterTouched[i]) continue;
       std::size_t rt = i;
       while (clusterParent[rt] != rt) rt = clusterParent[rt];
       roots.insert(rt);
+      if (files_[i].kind == MediaKind::Video) {
+        vidRoots.insert(rt);
+        ++nVidDup;
+      } else {
+        imgRoots.insert(rt);
+        ++nImgDup;
+      }
     }
     clusterGroups = roots.size();
+    r.imgGroups = imgRoots.size(); r.vidGroups = vidRoots.size();
+    r.imgDupFiles = nImgDup; r.vidDupFiles = nVidDup;
   }
-  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks; return finishScan(r.completed);
+  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks;
+  r.imgScanned=nImgScanned; r.vidScanned=nVidScanned;
+  r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed;
+  r.imgPairs=nImgPairs; r.vidPairs=nVidPairs;
+  return finishScan(r.completed);
 }
 }

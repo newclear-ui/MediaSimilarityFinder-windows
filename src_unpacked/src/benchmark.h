@@ -198,6 +198,12 @@ void addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseReje
   void setFailed(const std::string& stage, const std::string& reason);
   void setCompletionReason(const std::string& reason);
   void setFileProgress(std::size_t started, std::size_t completed, std::size_t remaining);
+  // Per-kind user-facing summary. Set alongside finalize() from the engine's
+  // per-kind counters. Zero by default; serialized with measured/not_measured
+  // states like every other optional telemetry value.
+  void setKindScanned(std::size_t imgScanned, std::size_t vidScanned);
+  void setMatchBreakdown(std::size_t imgPairs, std::size_t imgGroups, std::size_t imgDupFiles,
+                         std::size_t vidPairs, std::size_t vidGroups, std::size_t vidDupFiles);
   SchedulerTelemetry& scheduler() { return scheduler_; }
   const SchedulerTelemetry& scheduler() const { return scheduler_; }
   CalibrationTelemetry& calibration() { return calibration_; }
@@ -303,5 +309,9 @@ private:
   std::size_t scanned_ = 0, analyzed_ = 0, unchanged_ = 0, candidates_ = 0, matches_ = 0, groups_ = 0;
   double reductionPct_ = 0;
   std::uint64_t gpuImages_ = 0, gpuFallback_ = 0;
+  std::size_t imgScanned_ = 0, vidScanned_ = 0;
+  std::size_t imgPairs_ = 0, imgGroups_ = 0, imgDupFiles_ = 0;
+  std::size_t vidPairs_ = 0, vidGroups_ = 0, vidDupFiles_ = 0;
+  bool kindBreakdownSet_ = false;
 };
 }

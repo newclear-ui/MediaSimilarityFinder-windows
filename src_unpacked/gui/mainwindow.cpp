@@ -289,6 +289,15 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogIo")) return S("디스크 I/O","Disk I/O");
   if (!std::strcmp(key,"detailLogMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"detailLogSlow")) return S("느린 파일","Slowest files");
+  if (!std::strcmp(key,"detailLogSummary")) return S("검색 요약","Search Summary");
+  if (!std::strcmp(key,"detailLogDuration")) return S("검색 시간","Search Duration");
+  if (!std::strcmp(key,"detailLogDupGroups")) return S("중복 그룹","duplicate groups");
+  if (!std::strcmp(key,"detailLogDupFiles")) return S("중복 파일","duplicate files");
+  if (!std::strcmp(key,"detailLogDupPairs")) return S("중복 쌍","duplicate pairs");
+  if (!std::strcmp(key,"detailLogThroughput")) return S("처리량","throughput");
+  if (!std::strcmp(key,"detailLogTotal")) return S("합계","Total");
+  if (!std::strcmp(key,"detailLogTimeSplit")) return S("시간 배분","Time split");
+  if (!std::strcmp(key,"detailLogMatching")) return S("매칭","Matching");
   if (!std::strcmp(key,"detailLogToggle")) return S("상세 로그","Detailed Logs");
   if (!std::strcmp(key,"searchLog")) return S("검색 로그","Search Log");
   if (!std::strcmp(key,"detailLogOff")) return S("상세 기록 꺼짐 (결과만 표시)","Detail recording off (results only)");
@@ -1537,10 +1546,58 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
   const QJsonObject mat = root["matches"].toObject();
   const auto f1 = [](double v) { return QString::number(v, 'f', 1); };
   const auto f2 = [](double v) { return QString::number(v, 'f', 2); };
+  // Duration as "12m 34.5s" for the user-facing summary. Wall time only;
+  // stage splits follow below.
+  const auto fmtDur = [&](double ms) {
+    const long long totalS = (long long)(ms / 1000.0);
+    const long long m = totalS / 60, s = totalS % 60;
+    const double frac = (ms / 1000.0) - (double)(m * 60 + s);
+    if (m > 0) return QString("%1m %2s").arg(m).arg(QString::number((double)s + frac, 'f', 1));
+    return QString("%1s").arg(QString::number(ms / 1000.0, 'f', 1));
+  };
   QStringList lines;
   lines << QString("%1: %2").arg(trStr(lang(), "detailLogState"),
       meta["completed"].toBool() ? trStr(lang(), "detailLogDone") : trStr(lang(), "detailLogStopped"));
   if (!cfg["detail"].toBool(true)) lines << trStr(lang(), "detailLogOff");
+  // User-facing summary first: per-kind scanned/analyzed/throughput plus the
+  // duplicate groups/files/pairs split. Groups and files are different things
+  // (clusters vs members) and are shown separately by design.
+  {
+    const qulonglong iScan = (qulonglong)imgs["scanned"].toDouble();
+    const qulonglong iAn = (qulonglong)imgs["count"].toDouble();
+    const qulonglong vScan = (qulonglong)vids["scanned"].toDouble();
+    const qulonglong vAn = (qulonglong)vids["count"].toDouble();
+    const double iMs = sum["imageStageMs"].toDouble();
+    const double vMs = sum["videoStageMs"].toDouble();
+    const double iRate = (iMs > 0 && iAn > 0) ? 1000.0 * (double)iAn / iMs : 0.0;
+    const double vRate = (vMs > 0 && vAn > 0) ? 1000.0 * (double)vAn / vMs : 0.0;
+    const qulonglong iGr = (qulonglong)mat["imageGroups"].toDouble();
+    const qulonglong iDf = (qulonglong)mat["imageDuplicateFiles"].toDouble();
+    const qulonglong iPr = (qulonglong)mat["imagePairs"].toDouble();
+    const qulonglong vGr = (qulonglong)mat["videoGroups"].toDouble();
+    const qulonglong vDf = (qulonglong)mat["videoDuplicateFiles"].toDouble();
+    const qulonglong vPr = (qulonglong)mat["videoPairs"].toDouble();
+    lines << QString("== %1 ==").arg(trStr(lang(), "detailLogSummary"));
+    lines << QString("%1: %2").arg(trStr(lang(), "detailLogDuration"), fmtDur(sum["wallMs"].toDouble()));
+    lines << QString("%1  scanned: %2  analyzed: %3  %4: %5 files/sec").arg(trStr(lang(), "detailLogImages"))
+        .arg(iScan).arg(iAn).arg(trStr(lang(), "detailLogThroughput")).arg(f1(iRate));
+    lines << QString("  %1: %2  %3: %4  %5: %6").arg(trStr(lang(), "detailLogDupGroups")).arg(iGr)
+        .arg(trStr(lang(), "detailLogDupFiles")).arg(iDf)
+        .arg(trStr(lang(), "detailLogDupPairs")).arg(iPr);
+    lines << QString("%1  scanned: %2  analyzed: %3  %4: %5 files/sec").arg(trStr(lang(), "detailLogVideos"))
+        .arg(vScan).arg(vAn).arg(trStr(lang(), "detailLogThroughput")).arg(f1(vRate));
+    lines << QString("  %1: %2  %3: %4  %5: %6").arg(trStr(lang(), "detailLogDupGroups")).arg(vGr)
+        .arg(trStr(lang(), "detailLogDupFiles")).arg(vDf)
+        .arg(trStr(lang(), "detailLogDupPairs")).arg(vPr);
+    lines << QString("%1  scanned: %2  analyzed: %3  %4: %5  %6: %7")
+        .arg(trStr(lang(), "detailLogTotal"))
+        .arg((qulonglong)sum["scanned"].toDouble()).arg((qulonglong)sum["analyzed"].toDouble())
+        .arg(trStr(lang(), "detailLogDupGroups")).arg(iGr + vGr)
+        .arg(trStr(lang(), "detailLogDupFiles")).arg(iDf + vDf);
+    lines << QString("%1: Total %2 · Image %3 · Video %4 · %5 %6").arg(trStr(lang(), "detailLogTimeSplit"))
+        .arg(fmtDur(sum["wallMs"].toDouble())).arg(fmtDur(iMs)).arg(fmtDur(vMs))
+        .arg(trStr(lang(), "detailLogMatching")).arg(fmtDur(sum["analyzeMs"].toDouble()));
+  }
   lines << QString("%1: %2 s (walk %3 s, reval %4 s, img %5 s, vid %6 s, analyze %7 s)").arg(trStr(lang(), "detailLogWall"))
       .arg(f1(sum["wallMs"].toDouble() / 1000.0)).arg(f1(sum["walkMs"].toDouble() / 1000.0))
       .arg(f1(sum["revalidateMs"].toDouble() / 1000.0)).arg(f1(sum["imageStageMs"].toDouble() / 1000.0))

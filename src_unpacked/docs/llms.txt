@@ -2,7 +2,7 @@
 
 ## Current development version
 
-0.9.4.48 (engine 1.5.0, DB 1.0.4, benchmark schema 9, cache format 9; official baseline 0.9.2.32; development line 0.9.4; S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL; XMP orientation fallback CONDITIONAL; product acceptance NOT ACCEPTED with DEFECT-A/B fixed in 0.9.4.46, the non-ASCII scan failure fixed in 0.9.4.47, and GUI Stop unresponsiveness fixed at engine level in 0.9.4.48; color_thumb correction NOT PERFORMED)
+0.9.4.49 (engine 1.5.0, DB 1.0.4, benchmark schema 9, cache format 9; official baseline 0.9.2.32; development line 0.9.4; S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL; XMP orientation fallback CONDITIONAL; product acceptance NOT ACCEPTED with DEFECT-A/B fixed in 0.9.4.46, the non-ASCII scan failure fixed in 0.9.4.47, GUI Stop unresponsiveness fixed at engine level in 0.9.4.48, and the Detailed Logs user summary added in 0.9.4.49; color_thumb correction NOT PERFORMED)
 
 Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3 / 1:1 / 9:16 crops), DTW video comparison with scene anchors and a duration prefilter, GPU-accelerated image hashing (currently NVIDIA CUDA backend), incremental SQLite index, persistent GUI thumbnail cache, and a real-time folder monitor with a Qt GUI.
 
@@ -62,7 +62,7 @@ Important status: 0.9.4.26 implements Nodes A–C plus D1a/D1b observability, D2
 
 ## Current state (2026-10-04)
 
-- `0.9.4.48` is the current regression baseline (GUI Stop unresponsiveness fixed over `0.9.4.47`: the scan-start dataset fingerprint read every file while ignoring cancellation; cancel is now plumbed in with an immediate `state="cancelled"` return). `0.9.4.47` fixed the non-ASCII path scan failure. `0.9.4.46` fixed the product Search/Index/Comparison defects DEFECT-A and DEFECT-B via `files.analysis_failed`. See `docs/build-history/0.9.4.48.*`, `0.9.4.47.*`, and `0.9.4.46.*`. The `--version` console output predicate fix and the CUDA host compiler `/utf-8` forwarding landed earlier in `619f74a`.
+- `0.9.4.49` is the current regression baseline (Detailed Logs user summary added over `0.9.4.48`: per-kind scanned/analyzed plus duplicate groups/files/pairs split, with groups as cluster count and files as member count kept separate). `0.9.4.48` fixed GUI Stop unresponsiveness. `0.9.4.47` fixed the non-ASCII path scan failure. `0.9.4.46` fixed the product Search/Index/Comparison defects DEFECT-A and DEFECT-B via `files.analysis_failed`. See `docs/build-history/0.9.4.49.*`, `0.9.4.48.*`, `0.9.4.47.*`, and `0.9.4.46.*`. The `--version` console output predicate fix and the CUDA host compiler `/utf-8` forwarding landed earlier in `619f74a`.
 - GUI is user-first: Search/Update remains the real execution path; [상세 로그] / [Detailed Logs] is diagnostic telemetry, not a benchmark workflow.
 - S4 implementation and visible UI are PASS; functional Detailed Logs acceptance remains DEFERRED.
 - S5 infrastructure is REVALIDATED; final product benchmark validation is DEFERRED until the product Search/Index/Comparison acceptance audit is complete.

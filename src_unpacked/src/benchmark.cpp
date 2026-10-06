@@ -134,6 +134,16 @@ void TelemetryRecorder::setFileProgress(std::size_t started, std::size_t complet
   filesStarted_ = started; filesCompleted_ = completed; filesRemaining_ = remaining;
   fileProgressRecorded_ = true;
 }
+void TelemetryRecorder::setKindScanned(std::size_t imgScanned, std::size_t vidScanned) {
+  imgScanned_ = imgScanned; vidScanned_ = vidScanned;
+  kindBreakdownSet_ = true;
+}
+void TelemetryRecorder::setMatchBreakdown(std::size_t imgPairs, std::size_t imgGroups, std::size_t imgDupFiles,
+                                          std::size_t vidPairs, std::size_t vidGroups, std::size_t vidDupFiles) {
+  imgPairs_ = imgPairs; imgGroups_ = imgGroups; imgDupFiles_ = imgDupFiles;
+  vidPairs_ = vidPairs; vidGroups_ = vidGroups; vidDupFiles_ = vidDupFiles;
+  kindBreakdownSet_ = true;
+}
 void TelemetryRecorder::abortUnfinished() {
   if (started_ && !finished_) {
     setCancelled("aborted");
@@ -552,7 +562,9 @@ std::string TelemetryRecorder::toJson() const {
     << ",\"imageStageMs\":" << imageStageMs_ << ",\"videoStageMs\":" << videoStageMs_ << ",\"analyzeMs\":" << analyzeMs_
     << ",\"scanned\":" << scanned_ << ",\"analyzed\":" << analyzed_ << ",\"unchanged\":" << unchanged_
     << ",\"filesPerSec\":" << (wallMs_ > 0 ? 1000.0 * (double)analyzed_ / wallMs_ : 0) << "},";
-  o << "\"images\":{\"count\":" << imgN << ",\"bytes\":" << imgBytes_.load()
+  o << "\"images\":{\"count\":" << imgN << ",\"scanned\":" << imgScanned_
+    << ",\"scannedState\":\"" << measureStateName(kindBreakdownSet_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"bytes\":" << imgBytes_.load()
     << ",\"gpuHashed\":" << imgGpu_.load() << ",\"cpuHashed\":" << (imgN - imgGpu_.load())
     << ",\"decodeMs\":" << imgDecodeMs << ",\"hashMs\":" << imgHashMs << ",\"cropMs\":" << imgCropMs
     << ",\"gpuBatchMs\":" << (double)imgGpuNs_.load() / 1e6
@@ -596,7 +608,9 @@ std::string TelemetryRecorder::toJson() const {
     }
   }
   o << "]},";
-  o << "\"videos\":{\"count\":" << vidN << ",\"bytes\":" << vidBytes_.load() << ",\"frames\":" << vidFrames_.load()
+  o << "\"videos\":{\"count\":" << vidN << ",\"scanned\":" << vidScanned_
+    << ",\"scannedState\":\"" << measureStateName(kindBreakdownSet_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+    << ",\"bytes\":" << vidBytes_.load() << ",\"frames\":" << vidFrames_.load()
      << ",\"decodedFrames\":" << (vidDecodedRecorded_ ? std::to_string(vidDecodedFrames_.load()) : std::string("null"))
      << ",\"decodedFramesState\":\"" << measureStateName(vidDecodedRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
      << ",\"sampledFrames\":" << (vidSampledRecorded_ ? std::to_string(vidSampledFrames_.load()) : std::string("null"))
@@ -679,7 +693,13 @@ std::string TelemetryRecorder::toJson() const {
   o << "]},";
   o << "\"matches\":{\"candidates\":" << candidates_ << ",\"pairs\":" << streamedMatches_.load(std::memory_order_relaxed)
     << ",\"retainedPairs\":" << matches_ << ",\"groups\":" << groups_
-    << ",\"reductionPct\":" << reductionPct_     << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_ << "},";
+    << ",\"reductionPct\":" << reductionPct_     << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_
+    // Per-kind user-facing summary. A cluster never spans kinds, so the
+    // per-kind groups partition the total. States follow the measured/
+    // not_measured rule: unset means the scan never reached matching.
+    << ",\"imagePairs\":" << imgPairs_ << ",\"imageGroups\":" << imgGroups_ << ",\"imageDuplicateFiles\":" << imgDupFiles_
+    << ",\"videoPairs\":" << vidPairs_ << ",\"videoGroups\":" << vidGroups_ << ",\"videoDuplicateFiles\":" << vidDupFiles_
+    << ",\"breakdownState\":\"" << measureStateName(kindBreakdownSet_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\"},";
   // D9a: analyze internal split. The four stage times are non-overlapping
   // slices of the analyze total, so their sum never exceeds it. A stage that
   // was never entered is not_measured rather than 0 -- "measured as 0 ms"

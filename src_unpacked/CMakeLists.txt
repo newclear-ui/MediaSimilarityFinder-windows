@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.48 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.49 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -548,6 +548,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_cancel_fingerprint_test tests/cancel_fingerprint_test.cpp)
     target_link_libraries(msf_cancel_fingerprint_test PRIVATE msf_core)
     add_test(NAME cancel_fingerprint_test COMMAND msf_cancel_fingerprint_test)
+    # 0.9.4.48+: user-facing summary breakdown. Per-kind scanned/analyzed plus
+    # the duplicate groups/files/pairs split, driven on the production path.
+    add_executable(msf_summary_breakdown_test tests/summary_breakdown_test.cpp)
+    target_link_libraries(msf_summary_breakdown_test PRIVATE msf_core)
+    add_test(NAME summary_breakdown_test COMMAND msf_summary_breakdown_test)
     add_executable(msf_benchmark_test tests/benchmark_test.cpp)
     target_link_libraries(msf_benchmark_test PRIVATE msf_core)
     add_test(NAME benchmark_test COMMAND msf_benchmark_test)
