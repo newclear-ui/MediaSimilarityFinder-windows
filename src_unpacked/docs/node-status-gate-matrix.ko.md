@@ -106,13 +106,13 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        0.9.4.59 후속 1차 (generation semantic + terminal diagnostic + DB-error regression)
-다음             2차 GUI scroll regression → S4 real-screen acceptance → color_thumb R1 → XMP coverage → S5 benchmark → S6 gate
-직접 원인        0.9.4.59의 Video Cancelled/Failed split 자체는 해결됐으나 generation stamp가 general `seen`에 의존하고
-                 `scanVideos=false`에서도 변경 가능한 semantic bug가 발견됨. finishScan의 live cancel 추론도
-                 failure를 Cancelled로 오판할 수 있어 명시적 terminal state가 필요함.
-                 실제 GUI에서는 32,494 images / GPU duty 약 0.2% / CPU 평균 30.8%가 관찰되어 1.0 이후 scheduler/pipeline
-                 고도화 백로그로 기록함. GUI 유사그룹 scroll regression은 2차 과제로 분리함.
+활성 Node        2차 GUI-UI Scroll regression (0.9.4.60 1차 semantic 수정 완료 후속)
+다음             S4 real-screen acceptance → color_thumb R1 → XMP coverage → S5 benchmark → S6 gate
+직접 원인        0.9.4.60에서 generation scope/terminal semantic은 수정 완료.
+                 GUI에는 0.9.3.10 scroll-anchor가 남아 있지만, uiTimer_가 검색 종료 후에도 살아 있고
+                 thumbStarved_를 이유로 fillPair() 전체 rebuild를 수행하여 사용자 scroll 중 list를 clear/recreate할 수 있다.
+                 2차는 thumbnail catch-up의 in-place 갱신과 scroll interaction gate가 우선이다.
+                 1.0 이후 scheduler/pipeline 성능 백로그는 별도 유지한다.
 ```
 
 **S4 acceptance 가 막히지 않는 이유**: 이 환경은 headless 이며, 결과 다이얼로그의
