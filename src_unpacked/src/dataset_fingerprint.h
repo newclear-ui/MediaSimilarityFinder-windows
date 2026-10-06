@@ -68,8 +68,17 @@ std::string canonicalRelativePath(const std::string& root, const std::string& fi
 // hashed so far, current path). The fingerprint phase otherwise reports
 // nothing for minutes on huge datasets. Called synchronously, no throttling
 // inside; the UI throttles.
+// scanImages/scanVideos: restrict hashing to the scan's media scope. An
+// images-only scan must not hash hundreds of gigabytes of video before any
+// walk begins. Defaults preserve the historical all-files behavior, so the
+// common all-scope fingerprint value is unchanged. A restricted scope yields a
+// different (scope-specific) fingerprint, which is correct: scope is already a
+// separate S6 grouping axis, and no valid real-dataset fingerprints exist yet
+// (cancelled runs record null).
 DatasetFingerprint computeDatasetFingerprint(const std::string& root,
                                              const std::atomic_bool* cancel = nullptr,
-                                             std::function<void(std::size_t,std::uint64_t,const std::string&)> progress = nullptr);
+                                             std::function<void(std::size_t,std::uint64_t,const std::string&)> progress = nullptr,
+                                             bool scanImages = true,
+                                             bool scanVideos = true);
 
 }

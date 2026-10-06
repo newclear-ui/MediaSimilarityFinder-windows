@@ -365,13 +365,18 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // and leave the default not_available state.
   if (telemetryOn) {
     telemetry_.setPhase("fingerprint");
+    // Scope-aware: an images-only scan hashes only images. Hashing videos
+    // first on a video-heavy dataset blocks all walk/index work for hours.
+    const bool scopeImages = !control || control->scanImages;
+    const bool scopeVideos = !control || control->scanVideos;
     telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(
         root, control ? &control->cancel : nullptr,
         control && control->fingerprintProgress
             ? [&](std::size_t n, std::uint64_t b, const std::string& p) {
                 control->fingerprintProgress(n, b, p);
               }
-            : std::function<void(std::size_t,std::uint64_t,const std::string&)>()));
+            : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),
+        scopeImages, scopeVideos));
   }
   if(telemetryOn) telemetry_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
   if(control) telemetry_.addRevalidateMs(control->revalidateMs);

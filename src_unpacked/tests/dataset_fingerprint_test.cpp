@@ -259,6 +259,38 @@ int main() {
     expect(js.find(a1.fingerprint) == std::string::npos, "F: stale fingerprint not carried over");
   }
   if (!gFail.empty()) { std::cerr << "F states: " << gFail << "\n"; return 7; }
+  {
+    // G: media-scope filtering (0.9.4.57+). An images-only scan must not hash
+    // videos first: on a video-heavy dataset that blocks all walk/index work.
+    // Unrestricted scope keeps the historical all-files behavior exactly.
+    const auto scopeBase = fs::temp_directory_path() / "msf_dataset_fp_scope";
+    std::error_code sec;
+    fs::remove_all(scopeBase, sec);
+    fs::create_directories(scopeBase, sec);
+    auto blob = [&](const fs::path& p) {
+      std::ofstream f(p, std::ios::binary);
+      std::string data(1024, 'x');
+      f.write(data.data(), static_cast<std::streamsize>(data.size()));
+    };
+    blob(scopeBase / "a.jpg");
+    blob(scopeBase / "b.png");
+    blob(scopeBase / "c.mp4");
+    blob(scopeBase / "d.txt");
+    const std::string scopeRoot = msf::path_to_utf8(scopeBase);
+    const auto all = msf::computeDatasetFingerprint(scopeRoot);
+    expect(all.state == "measured", "G: all-scope measures");
+    expect(all.fileCount == 4, "G: all-scope hashes every file");
+    const auto imgs = msf::computeDatasetFingerprint(scopeRoot, nullptr, nullptr, true, false);
+    expect(imgs.state == "measured", "G: images-only measures");
+    expect(imgs.fileCount == 2, "G: images-only hashes only images");
+    const auto vids = msf::computeDatasetFingerprint(scopeRoot, nullptr, nullptr, false, true);
+    expect(vids.state == "measured", "G: videos-only measures");
+    expect(vids.fileCount == 1, "G: videos-only hashes only videos");
+    expect(imgs.fingerprint != all.fingerprint, "G: scoped fingerprint differs from all-scope");
+    expect(vids.fingerprint != all.fingerprint, "G: video fingerprint differs from all-scope");
+    fs::remove_all(scopeBase, sec);
+  }
+  if (!gFail.empty()) { std::cerr << "G section: " << gFail << "\n"; return 8; }
 
   std::error_code ec;
   fs::remove_all(base, ec);

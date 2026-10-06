@@ -1,5 +1,6 @@
 #include "dataset_fingerprint.h"
 #include "path_utils.h"
+#include "scanner.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -136,7 +137,9 @@ std::string canonicalRelativePath(const std::string& root, const std::string& fi
 
 DatasetFingerprint computeDatasetFingerprint(const std::string& root,
                                                 const std::atomic_bool* cancel,
-                                                std::function<void(std::size_t,std::uint64_t,const std::string&)> progress) {
+                                                std::function<void(std::size_t,std::uint64_t,const std::string&)> progress,
+                                                bool scanImages,
+                                                bool scanVideos) {
     DatasetFingerprint out;
     const auto t0 = std::chrono::steady_clock::now();
     const auto cancelled = [&] {
@@ -171,6 +174,16 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
         if (cancelled()) { out.state = "cancelled"; stampDuration(); return out; }
         std::error_code fec;
         if (!it->is_regular_file(fec)) continue;
+        // Scope filter uses the single media classifier (no duplicate rules).
+        // Unrestricted scope keeps the historical all-files behavior exactly,
+        // including non-media files. A restricted scope hashes only in-scope
+        // media: an images-only scan must not hash videos first, which on a
+        // video-heavy dataset is hundreds of gigabytes before any walk begins.
+        if (!scanImages || !scanVideos) {
+            const bool isVid = Scanner::isVideoPath(it->path());
+            if (isVid) { if (!scanVideos) continue; }
+            else if (!Scanner::isMediaPath(it->path()) || !scanImages) continue;
+        }
         const std::string file = path_to_utf8(it->path());
         const std::string rel = canonicalRelativePath(root, file);
         if (rel.empty()) continue;                     // defensive: never hash a nameless entry
