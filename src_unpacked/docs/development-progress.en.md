@@ -21,20 +21,28 @@ A separate `workprogress` document is intentionally not created; this document i
 
 ## Active Build Queue / Current Work Priority
 
-> This section records **only live work**. Remove an item from this queue when it is completed; preserve its details in Work Log / Build History.
-> The actual content of `0.9.4.46` is conditional on the acceptance gate below and must not be treated as pre-locked.
-> **Updated 2026-10-04 (2nd)**: the product acceptance audit ended `NOT ACCEPTED`, which fixed the defect repair as the content of `0.9.4.46`, and **DEFECT-A/B plus the rescan-convergence regression test are now complete in that build.** Both completed items are removed from this queue and S4 screen acceptance is promoted to the top as the next gate.
+> This section records **only live work**. Remove completed items from the queue and
+> preserve detailed evidence in Work Log / Build History.
+> **Updated 2026-10-07 from direct user GUI feedback:** the 0.9.4.61 similar-group scroll
+> regression now behaves normally in the real Windows GUI. The core starvation-only destructive
+> rebuild is therefore treated as effectively PASS at the product-use level. The remaining
+> full-list traversal cost is a potential GUI cost, not a current correctness blocker.
+> The next immediate work is 0.9.4.62 GUI usability + diagnostic-control cleanup; the
+> higher-risk catch-up traversal optimization and Test Mode reintroduction are intentionally later.
 
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
-| 0 | 0.9.4.59 follow-up | **Phase 1: cancellation/generation semantics + terminal diagnostic state + DB-error regression** | Remove the remaining confirmed semantic bug and close diagnostic/verification gaps before GUI work | **IN PROGRESS** |
-| 1 | After phase 1 | **Phase 2: GUI similar-group list scroll regression** | Compare the 0.9.3.10 scroll-anchor fix with the current `thumbStarved_`/full-rebuild path and eliminate End/drag/key-navigation regression | **PLANNED** |
-| 2 | S4 | Real GUI Search/Update → Detailed Logs screen/save acceptance | Use real-screen verification to decide S4 CLOSED | **PENDING** |
-| 3 | Next candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Proceed only after S4 and phase-2 GUI regression work | **PENDING** |
-| 4 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage | Decide whether current CONDITIONAL production acceptance can be cleared | **PENDING** |
-| 5 | S5 | Real-dataset product benchmark | Measure only after product acceptance is complete | **GATE PENDING** |
+| 0 | 0.9.4.61 | **Immediate: GUI usability / diagnostic-control cleanup** | Detailed Logs visibility setting, right detail-pane width cap / center-pane growth, filename text selection | **PLANNED -> 0.9.4.62** |
+| 1 | 0.9.4.61 | **Later: Test Mode design / implementation review** | Reframe the old GUI Benchmark purpose as a developer Test Mode: repeat the processing path without changing the real index, while keeping CLI Benchmark semantic boundaries | **DESIGNED / later implementation** |
+| 2 | 0.9.4.61 | **Deferred: reduce thumbnail catch-up full-list traversal** | Investigate a truly visible-range-bounded traversal. Not a current scroll blocker; keep as a contained performance risk | **DEFERRED / risk-contained** |
+| 3 | S4 | Real GUI Search/Update -> Detailed Logs display/save final acceptance | Use the real screen to decide whether S4 can be CLOSED | **PENDING** |
+| 4 | Next validation | XMP Orientation Fallback real-dataset/full-scan coverage | Decide whether the current CONDITIONAL production acceptance can be cleared | **PENDING** |
+| 5 | Next candidate | `color_thumb` R1 fixture + no-FFmpeg skip/pass handling | Proceed after S4 acceptance | **PENDING** |
+| 6 | S5 | Real-dataset product benchmark | Measure only after product acceptance is complete | **GATE PENDING** |
 
-> `color_thumb` R1 is now priority 1, but S4 screen acceptance cannot advance until the user verifies the real GUI.
+> Post-1.0 burst-shot refinement and scheduler/pipeline/GPU throughput work stay separate from the
+> 0.9.4.62 GUI cleanup. The Burst Shot design authority is
+> `docs/architecture/image-burst-shot-similarity.{ko,en}.md`.
 
 ## Completed Major Milestones
 
@@ -2529,3 +2537,20 @@ vcpkg migration                      none
 dedicated console-output test        not added (recorded as a candidate)
 S4 / S5 / S6 / NVDEC                kept DEFERRED
 ```
+
+## 2026-10-07 — 0.9.4.61 direct GUI feedback and 0.9.4.62 work order
+
+Direct Windows GUI verification shows that the similar-group list now scrolls normally in current testing, including scrollbar-based movement. The core 0.9.4.61 scroll regression is therefore recorded as **effectively PASS at product-use level**. Video-list equivalence is deferred because the video comparison algorithm is not yet complete.
+
+### Immediate scope
+- Add a persistent Settings option to **show/hide the Detailed Logs control**. Keep the GUI Detailed Logs semantic unchanged; this is only a user-facing visibility preference.
+- Adjust the main horizontal splitter so the right group-detail pane stops growing once it has roughly the width needed for a four-image preview, and additional window width primarily expands the center similar-group pane.
+- Make the filename value in the Details form text-selectable and double-click selectable in the same way as the full path value.
+
+### Later scope
+- Record a developer-oriented **Test Mode** that revives the old GUI measurement intent without reviving the old GUI Benchmark product surface: assume the index is absent/stale, execute the same processing path, and collect timing/telemetry without modifying the actual index. Keep CLI Benchmark and GUI Test Mode semantically separate.
+- The current `thumbCatchUpVisible()` performs actual thumbnail decode/update only for visible items, but it still scans the full QListWidget to find those visible items on each tick. This is a contained performance risk, not the current scroll blocker; investigate only after the immediate GUI cleanup and do not add a risky workaround without measurement.
+
+### Post-1.0 retained backlog
+- Burst-shot similarity refinement stays DEFERRED until after 1.0; the planned Settings option plus dual-algorithm selectable search remains in `docs/architecture/image-burst-shot-similarity.en.md`.
+- The low image-GPU duty observation is not a correctness blocker. CPU/WIC decode, crop, I/O, and GPU-hash overlap remains post-1.0 throughput work.
