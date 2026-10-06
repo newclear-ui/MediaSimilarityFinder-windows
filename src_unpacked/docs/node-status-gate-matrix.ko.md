@@ -119,6 +119,7 @@
                  scanFinished 진단은 0.9.4.56 에서 추가.
                  fingerprint scope 인식은 0.9.4.57 에서 완료.
                  Stop 시 드레인은 0.9.4.58 에서 완료.
+                 Video Cancelled/Failed 분리는 0.9.4.59 에서 완료.
                  남은 조건은 실제 GUI 화면·버튼 검증뿐이며 이는 headless 로 종결 불가
 ```
 

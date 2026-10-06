@@ -28,6 +28,11 @@ static std::uint64_t foldVideoHashes(const std::vector<std::uint64_t>& values){
 }
 static bool stopped(ScanControl* c){ if(!c) return false; while(c->pause.load()&&!c->cancel.load())std::this_thread::sleep_for(std::chrono::milliseconds(80)); return c->cancel.load(); }
 struct AnalysisJob { FileState state; bool ok=false; bool changed=false; };
+// Video range outcome: Cancelled is NOT Failed. A user Stop must never become
+// failed=true (which would roll back the whole transaction); only a real
+// error (decode/DB/internal) is Failed. Completed futures observed after a
+// stop are still persisted — same preservation rule as the image drain.
+enum class VideoRangeResult { Success, Cancelled, Failed };
 bool MediaSearchEngine::openIndex(const std::string& p){ managedIndexActive_=false; if(!db_.open(p)||!db_.initialize()) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return videoEngine_.openPersistentCache(p+".video_cache.sqlite"); }
 void MediaSearchEngine::close(){ videoEngine_.closePersistentCache(); db_.close(); managedIndexActive_=false; }
 bool MediaSearchEngine::openIndexForRoot(const std::string& rootPath, const std::string& applicationDirectory){
@@ -560,7 +565,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  };
  // Videos retain the bounded asynchronous CPU/FFmpeg analysis path. This keeps
  // GPU image batching independent from the video decoder architecture.
-  auto processVideoRange=[&](std::size_t from,std::size_t to)->bool{
+  auto processVideoRange=[&](std::size_t from,std::size_t to)->VideoRangeResult{
    // B1 re-evaluation point (existing phase boundary; no topology change).
    // B3: video carries no new throughput observation, but loads refresh.
    refreshSchedLoad();
@@ -581,38 +586,41 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      return j;
     }));
   }
-   bool stopSeen=false;
-   // D2: completion order (was index order). Same threads, same joins ??
-   // only the harvest sequence changes, so a straggler stops blocking
-   // finished siblings. 5 ms idle bound per range, negligible against
-   // seconds-long builds. Cancel semantics preserved: post-stop
-   // completions are still joined and discarded.
-   std::vector<char> taken(futs.size(), 0);
-   std::size_t remaining=futs.size();
-   while(remaining>0){
-    bool progressed=false;
-    for(std::size_t i=0;i<futs.size();++i){
-     if(taken[i]) continue;
-     if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
-     taken[i]=1; --remaining; progressed=true;
-      auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true; if(stopSeen) continue;
-      if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return false; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
-      else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return false; } ++nFailed; }
-      ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
-    if(!progressed && remaining>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
-   }
+    bool stopSeen=false;
+    // D2: completion order (was index order). Same threads, same joins ??
+    // only the harvest sequence changes, so a straggler stops blocking
+    // finished siblings. 5 ms idle bound per range, negligible against
+    // seconds-long builds. Cancel semantics: in-flight analyses still join,
+    // and completions observed after a stop are PERSISTED (not discarded),
+    // so a Stop keeps valid results instead of losing them. No new range
+    // starts after a stop; the callers map Cancelled to scan-level cancel.
+    std::vector<char> taken(futs.size(), 0);
+    std::size_t remaining=futs.size();
+    while(remaining>0){
+     bool progressed=false;
+     for(std::size_t i=0;i<futs.size();++i){
+      if(taken[i]) continue;
+      if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
+      taken[i]=1; --remaining; progressed=true;
+       auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true;
+       if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
+       else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed; }
+       ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
+     if(!progressed && remaining>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
    // D1b/D2 range record (completed ranges only; failed ranges stay absent).
    {
     double rangeMax = 0;
     for (double v : rangeFileMs) rangeMax = std::max(rangeMax, v);
     telemetry_.recordVideoRange(to > from ? to - from : 0, rangeMax);
    }
-   // Prompt stop: in-flight analyses must still join, but their results are
-   // discarded and no new range starts, so the scan winds down instead of
-   // grinding on. Checkpoints keep completed work; the worker maps cancel.
-   if(stopSeen) return false;
-  if(done-lastCommitDone>=500){ if(!checkpoint()) return false; }
-  return true;
+    // Prompt stop: in-flight analyses still join and their completed results
+    // persist above, but no new range starts, so the scan winds down instead
+    // of grinding on. Checkpoints keep completed work; the caller maps
+    // Cancelled to scan-level cancel (never to failed/rollback).
+    if(stopSeen) return VideoRangeResult::Cancelled;
+   if(done-lastCommitDone>=500){ if(!checkpoint()) return VideoRangeResult::Failed; }
+   return VideoRangeResult::Success;
  };
    auto processOne=[&](FileState&& x){
    if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
@@ -651,13 +659,14 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    imageBatch.push_back(x.path);
    if(imageBatch.size()>=gpuBatch){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
    } else {
-    FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(std::move(v));
-    while(!failed && changedVideos.size()-videoBase>=static_cast<std::size_t>(workers)){
-     const auto vt0=std::chrono::steady_clock::now();
-     if(!processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers))) failed=true;
-     else videoBase+=static_cast<std::size_t>(workers);
-     telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
-    }
+     FileState v=x; v.kind=(int)MediaKind::Video; changedVideos.push_back(std::move(v));
+     while(!failed && !cancelled && changedVideos.size()-videoBase>=static_cast<std::size_t>(workers)){
+      const auto vt0=std::chrono::steady_clock::now();
+      const auto vr=processVideoRange(videoBase,videoBase+static_cast<std::size_t>(workers));
+      if(vr==VideoRangeResult::Failed) failed=true;
+      else { videoBase+=static_cast<std::size_t>(workers); if(vr==VideoRangeResult::Cancelled) cancelled=true; }
+      telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
+     }
    }
    if(!failed && scanned-lastCommitScanned>=1000){ if(!checkpoint()) failed=true; }
   };
@@ -696,23 +705,28 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   else if(walkDone.load() && queue.empty()){ if(!telemetryWalkTimed){ telemetryWalkTimed=true; telemetry_.addWalkMs(telemetryMsSince()); } walkCompleted=true; break; }
  }
   if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
-  // Drain-on-cancel: Stop means "read no new files", not "discard work already
-  // read". Admitted-but-unanalyzed images (bounded batch, seconds of work)
-  // complete analysis so their fingerprints index; otherwise a stop after
-  // hours of reading would keep zero index. Videos keep existing drop behavior
-  // because a single video decode is unbounded and draining it could stall
-  // Stop for minutes. A db error during drain still marks failure.
+   // Drain-on-cancel: Stop means "read no new files", not "discard work already
+   // read". Admitted-but-unanalyzed images (bounded batch, seconds of work)
+   // complete analysis so their fingerprints index; otherwise a stop after
+   // hours of reading would keep zero index. Videos follow the same
+   // preservation rule inside processVideoRange (completed futures persist,
+   // Cancelled never becomes failed); only new ranges are refused here,
+   // because a single video decode is unbounded and draining unbounded new
+   // work could stall Stop for minutes. A db error during drain still marks
+   // failure.
   if(!failed && cancelled && !imageBatch.empty()){
     if(!processImageBatch(imageBatch)) failed=true;
     imageBatch.clear();
   }
-  while(!failed && !cancelled && videoBase<changedVideos.size()){
-   const std::size_t n=std::min(static_cast<std::size_t>(workers),changedVideos.size()-videoBase);
-   if(stopped(control)){ cancelled=true; break; }
-   const auto vt0=std::chrono::steady_clock::now();
-   if(!processVideoRange(videoBase,videoBase+n)) failed=true; else videoBase+=n;
-   telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
-  }
+   while(!failed && !cancelled && videoBase<changedVideos.size()){
+    const std::size_t n=std::min(static_cast<std::size_t>(workers),changedVideos.size()-videoBase);
+    if(stopped(control)){ cancelled=true; break; }
+    const auto vt0=std::chrono::steady_clock::now();
+    const auto vr=processVideoRange(videoBase,videoBase+n);
+    if(vr==VideoRangeResult::Failed) failed=true;
+    else { videoBase+=n; if(vr==VideoRangeResult::Cancelled) cancelled=true; }
+    telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
+   }
   // D3-Minimal: wake any producer blocked at this point on every exit
   // path (failed/cancelled/normal). Idempotent; join cannot hang on it.
   queue.shutdown();
@@ -806,7 +820,26 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // refresh the last-scan marker (a cancelled run must not claim freshness).
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
   else if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_);
-  if(r.completed) db_.setSamplingGeneration(kSamplingGeneration);
+   if(r.completed) db_.setSamplingGeneration(kSamplingGeneration);
+   else {
+    // Sampling-generation stamp on cancel. Video rescan-reuse requires the
+    // stamp (videoRegrid forces re-analysis while unstamped), so without this
+    // every cancelled video scan would redo all videos next scan even though
+    // their fingerprints are persisted and current. But stamping blindly
+    // would bless pre-existing rows sampled by older code that this scan
+    // never admitted. Stamp only when every non-ignored old video row was
+    // admitted (seen) this scan: admitted rows were re-analyzed with current
+    // code, settled as analysis-failed, or left skeleton (retried anyway), so
+    // no stale-generation row escapes. Fresh DBs stamp vacuously (nothing to
+    // protect). Ignored rows are exempt (deliberately frozen by the user).
+    bool allOldVideosSeen=true;
+    for(auto& o:old){
+     if((MediaKind)o.kind!=MediaKind::Video) continue;
+     if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue;
+     if(seen.find(o.path)==seen.end()){ allOldVideosSeen=false; break; }
+    }
+    if(allOldVideosSeen) db_.setSamplingGeneration(kSamplingGeneration);
+   }
   // Distinct linkage clusters among this scan's pairs. The GUI rebuilds the
   // same union-find from streamed matches, so telemetry's matches.groups
   // agrees with what the user sees (st.groups counts pairs instead).

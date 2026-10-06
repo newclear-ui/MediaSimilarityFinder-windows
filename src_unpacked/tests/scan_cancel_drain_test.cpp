@@ -8,7 +8,9 @@
 //
 // Deterministic, no timing: cancel is set from the synchronous walked hook
 // after 3 admissions. Default gpuBatch (256) far exceeds the 10-file fixture,
-// so no mid-walk batch fires; without the drain, analyzed would be 0.
+// so no mid-walk batch fires; without the drain, analyzed would be 0. Exact
+// counts throughout: 3 admitted/drained, then rescan reuses exactly those 3
+// as unchanged and analyzes exactly the remaining 7 fresh.
 #include "media_search_engine.h"
 #include <filesystem>
 #include <fstream>
@@ -73,10 +75,15 @@ int main() {
     };
     const auto r = e.scan(root.string(), 8, &c);
     check(!r.completed, "cancelled scan reports completed=false");
-    check(r.analyzed >= 3, "admitted images drain to analysis despite cancel");
-    check(r.scanned >= 3, "admissions happened before the stop");
-    // Drained rows are real index rows: a rescan finds them unchanged instead
-    // of re-analyzing.
+    // Exact: the single-threaded consumer admits precisely the 3 files whose
+    // processOne ran before the loop observes the cancel; the trailing batch
+    // then drains all of them. No timing involved.
+    check(r.analyzed == 3, "admitted images drain to analysis despite cancel (exact)");
+    check(r.scanned == 3, "exactly 3 admissions happened before the stop");
+    check(r.imgAnalyzed == 3, "all drained analysis is image analysis");
+    // Drained rows are real index rows: the rescan must reuse exactly those 3
+    // as unchanged and analyze exactly the remaining 7 fresh — proving the
+    // first scan's work was actually reused, not merely present.
     {
         msf::MediaSearchEngine e2;
         if (!e2.openIndexForRoot(root.string(), app.string())) {
@@ -85,7 +92,8 @@ int main() {
         }
         const auto r2 = e2.scan(root.string(), 8, nullptr);
         check(r2.completed, "rescan completes");
-        check(r2.analyzed + r.analyzed >= 3, "drained + resumed cover the admissions");
+        check(r2.unchanged == 3, "drained rows reused as unchanged (exact)");
+        check(r2.analyzed == 7, "remaining files analyzed fresh (exact)");
         e2.close();
     }
     e.close();

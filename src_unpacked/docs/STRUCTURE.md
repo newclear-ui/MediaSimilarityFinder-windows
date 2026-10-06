@@ -73,7 +73,7 @@
 - scripts/backup_src.ps1 [-Keep 3] — GitHub과 동일한 소스+문서 zip 백업. `git archive`로만 생성하므로 워킹트리 편집이 섞일 수 없고, HEAD != origin/main 이거나 미커밋 tracked 변경이 있으면 refuse. 산출물은 저장소 루트 `backup/MediaSimilarityFinder-v<버전>-src.zip`. 기본 3개 보존이며 초과 시 가장 오래된 것을 휴지통으로 보낸다(AGENTS.md 4번).
 - msf_dataset_report <root> — dataset fingerprint 출력 + <root>.fingerprint.json 기록(root 옆, root 안쪽 금지).
 - msf_dataset_baseline <root> <app-dir> [runs] — 동일 dataset 반복 스캔, walker queue / GPU 내부 타이밍 / stage 분해 리포트. CTest 아님(의사결정 입력). D9c: verify 내부 비용 분해(decode/key/crop/flip/frame_ssim/other, exclusive 합계 = verifyMs) 도 함께 출력.
-- 현재 CMakeLists.txt에는 107개 CTest 등록이 정의되어 있으며, 현재 구성된 CPU/GPU Release 트리의 전체 CTest는 각각 106/106, 107/107이다.
+- 현재 CMakeLists.txt에는 108개 CTest 등록이 정의되어 있으며, 현재 구성된 CPU/GPU Release 트리의 전체 CTest는 각각 107/107, 108/108이다.
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - 버전 상향 파일(검색용): CMakeLists.txt, vcpkg.json, gui/main.cpp, scripts/package_portable.ps1, src/index_manager.cpp.
 - Portable UI settings: `initAppSettings()` 가 organization `MediaSimilarityFinder-ui` + application `MediaSimilarityFinder` 로 INI 를 exe 옆에 기록한다. 0.9.4.24 이전의 `newclear-ui` 디렉터리는 첫 실행 시 1회 자동 migration 되며, 새 위치에 이미 파일이 있으면 덮어쓰지 않는다. QuickLook 레지스트리 조회는 `NativeFormat` + 명시 path 라서 이 identity 와 무관하다.
