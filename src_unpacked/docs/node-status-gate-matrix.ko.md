@@ -110,6 +110,7 @@
 다음             color_thumb R1 → XMP coverage validation → S5 benchmark → S6 gate
 직접 원인        GUI Stop 무응답은 0.9.4.48 에서 엔진 레벨로 수정 완료(fingerprint cancel 전달).
                  Detailed Logs 사용자 요약은 0.9.4.49 에서 추가 완료.
+                 S4 telemetry Phase-A는 0.9.4.50 에서 보강 완료.
                  남은 조건은 실제 GUI 화면·버튼 검증뿐이며 이는 headless 로 종결 불가
 ```
 

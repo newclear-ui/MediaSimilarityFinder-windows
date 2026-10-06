@@ -166,6 +166,22 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   analyzeTel_ = AnalyzeTelemetry{};
   analyzeTelRecorded_ = false;
   startedAt_ = localTimeStr();
+  finishedAt_.clear();
+  phase_.clear();
+#ifdef _WIN32
+  // Total physical RAM once per run. Lets memMBMax be judged against the
+  // machine on low-memory systems. Failure leaves 0, never a guess.
+  {
+    MEMORYSTATUSEX ms{};
+    ms.dwLength = sizeof(ms);
+    if (GlobalMemoryStatusEx(&ms) && ms.ullTotalPhys > 0)
+      memSystemMB_ = (double)ms.ullTotalPhys / (1024.0 * 1024.0);
+    else
+      memSystemMB_ = 0;
+  }
+#else
+  memSystemMB_ = 0;
+#endif
   static std::atomic<std::uint64_t> runCounter{0};
   runId_ = startedAt_ + "-" + std::to_string(runCounter.fetch_add(1, std::memory_order_relaxed) + 1);
   startTick_ = nowNs();
@@ -370,6 +386,7 @@ void TelemetryRecorder::addVideoGpu(bool used, bool fallback, double gpuMs) {
 void TelemetryRecorder::sampleOnce(double tMs) {
   ResourceSample s;
   s.tMs = tMs;
+  s.wallTime = localTimeStr();
   s.gpu = gpuActiveFn_ ? gpuActiveFn_() : false;
 #ifdef _WIN32
   FILETIME fc, fe, fk, fu;
@@ -450,9 +467,22 @@ void TelemetryRecorder::stopSampler() {
 void TelemetryRecorder::finalize(bool completed, std::size_t scanned, std::size_t analyzed, std::size_t unchanged,
                                  std::size_t candidates, std::size_t matches, std::size_t groups, double reductionPct,
                                  std::uint64_t gpuImages, std::uint64_t gpuFallback) {
-  if (finished_) return;
-  stopSampler();
-  wallMs_ = (double)(nowNs() - startTick_) / 1e6;
+    if (finished_) return;
+    stopSampler();
+    wallMs_ = (double)(nowNs() - startTick_) / 1e6;
+    finishedAt_ = localTimeStr();
+    // Guarantee at least one resource sample. A fast scan can finish before
+    // the 250 ms sampler thread fires, leaving series empty and wallTime
+    // unverifiable. One synchronous sample at finish time is a real
+    // measurement (CPU, memory, IO counters as they stand), not a fill-in.
+    // sampleOnce() takes sampleMutex_ itself, so the emptiness check must not
+    // hold the lock across the call.
+    bool needBaseline = false;
+    {
+      std::lock_guard<std::mutex> g(sampleMutex_);
+      needBaseline = samples_.empty();
+    }
+    if (needBaseline) sampleOnce(wallMs_);
   completed_ = completed;
   if (completionReason_.empty()) completionReason_ = completed ? "completed" : "cancelled";
   scanned_ = scanned; analyzed_ = analyzed; unchanged_ = unchanged;
@@ -537,6 +567,11 @@ std::string TelemetryRecorder::toJson() const {
   o << "{\"meta\":{\"app\":\"MediaSimilarityFinder\",\"build\":\"" << escapeJson(cfg_.build) << "\","
     << "\"engine\":\"" << escapeJson(cfg_.engine) << "\",\"db\":\"" << escapeJson(cfg_.db) << "\",\"purpose\":\"" << telemetryPurposeName(cfg_.purpose) << "\","
     << "\"startedAt\":\"" << startedAt_ << "\",\"completed\":" << (completed_ ? "true" : "false") << ","
+    // Absolute finish, recorded at finalize(), never derived from wallMs.
+    << "\"finishedAt\":\"" << finishedAt_ << "\""
+    // Cancellation phase: where the run was when Stop landed. Empty unless
+    // the run actually cancelled, so a normal run carries no phase claim.
+    << ",\"cancelledDuring\":\"" << escapeJson(cancelled_ ? phase_ : std::string()) << "\","
     // root is a location. dataset is the identity of the bytes under it, so
     // two runs can prove they used the same input. Fingerprint is null unless
     // it was actually measured; a missing root stays not_available, never 0.
@@ -547,7 +582,12 @@ std::string TelemetryRecorder::toJson() const {
     << (datasetFp_.fingerprint.empty() ? std::string("null")
                                        : ("\"" + datasetFp_.fingerprint + "\""))
     << ",\"fileCount\":" << datasetFp_.fileCount
-    << ",\"totalBytes\":" << datasetFp_.totalBytes << "}"
+    << ",\"totalBytes\":" << datasetFp_.totalBytes
+    // Fingerprint-phase telemetry. durationMs measures the whole walk+hash;
+    // bytesRead counts actually hashed bytes (equals totalBytes on success).
+    // Lets a multi-GB fingerprint phase be diagnosed from the log alone.
+    << ",\"durationMs\":" << datasetFp_.durationMs
+    << ",\"bytesRead\":" << datasetFp_.bytesRead << "}"
     << ",\"schemaVersion\":" << kBenchmarkSchemaVersion << ",\"runId\":\"" << escapeJson(runId_) << "\""
     << ",\"cancelled\":" << (cancelled_ ? "true" : "false") << ",\"paused\":" << (paused_ ? "true" : "false")
     << ",\"failed\":" << (failed_ ? "true" : "false") << ",\"failedStage\":\"" << escapeJson(failedStage_) << "\""
@@ -561,6 +601,9 @@ std::string TelemetryRecorder::toJson() const {
   o << "\"summary\":{\"wallMs\":" << wallMs_ << ",\"walkMs\":" << walkMs_ << ",\"revalidateMs\":" << revalidateMs_
     << ",\"imageStageMs\":" << imageStageMs_ << ",\"videoStageMs\":" << videoStageMs_ << ",\"analyzeMs\":" << analyzeMs_
     << ",\"scanned\":" << scanned_ << ",\"analyzed\":" << analyzed_ << ",\"unchanged\":" << unchanged_
+    // Total scanned bytes, exactly images.bytes + videos.bytes. Distinct from
+    // dataset.totalBytes, which sizes the fingerprint input, not the analysis.
+    << ",\"totalScannedBytes\":" << (imgBytes_.load() + vidBytes_.load())
     << ",\"filesPerSec\":" << (wallMs_ > 0 ? 1000.0 * (double)analyzed_ / wallMs_ : 0) << "},";
   o << "\"images\":{\"count\":" << imgN << ",\"scanned\":" << imgScanned_
     << ",\"scannedState\":\"" << measureStateName(kindBreakdownSet_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
@@ -672,7 +715,11 @@ std::string TelemetryRecorder::toJson() const {
     << ",\"diskState\":\"" << measureStateName(diskState) << "\""
     << ",\"truncated\":" << (truncated ? "true" : "false") << ",\"cpuProcMean\":" << cpuMean
     << ",\"cpuProcMax\":" << cpuMax << ",\"cpuProcStd\":" << cpuStd << ",\"cpuSysMean\":" << sysMean
-    << ",\"memMBMax\":" << memMax << ",\"gpuDutyPct\":" << gpuDuty
+    << ",\"memMBMax\":" << memMax
+    // Total physical RAM for judging the process peak on low-memory systems.
+    // 0 means not captured, never a guess.
+    << ",\"memSystemMB\":" << memSystemMB_
+    << ",\"gpuDutyPct\":" << gpuDuty
     << ",\"gpuLongestIdleMs\":" << (double)idleMax * kSampleMs
     << ",\"diskVolume\":\"" << escapeJson(diskVolume_) << "\""
     << ",\"diskAvailable\":" << (diskWasAvailable_ ? "true" : "false")
@@ -687,7 +734,8 @@ std::string TelemetryRecorder::toJson() const {
     for (const auto& s : samples_) {
       if (!first) o << ",";
       first = false;
-      o << "[" << s.tMs << "," << s.cpuProc << "," << s.cpuSys << "," << s.memMB << "," << (s.gpu ? 1 : 0) << "," << s.ioReadBps << "," << s.ioWriteBps << "]";
+      o << "[" << s.tMs << "," << s.cpuProc << "," << s.cpuSys << "," << s.memMB << "," << (s.gpu ? 1 : 0) << "," << s.ioReadBps << "," << s.ioWriteBps
+        << ",\"" << s.wallTime << "\"]";
     }
   }
   o << "]},";

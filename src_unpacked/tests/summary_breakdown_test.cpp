@@ -98,6 +98,44 @@ int main() {
     check(js.find("\"imageDuplicateFiles\":2") != std::string::npos, "telemetry carries imageDuplicateFiles=2");
     check(js.find("\"videoPairs\":0") != std::string::npos, "telemetry carries videoPairs=0");
     check(js.find("\"breakdownState\":\"measured\"") != std::string::npos, "breakdown is measured");
+    // Phase-A telemetry fields. finishedAt exists and is not before startedAt
+    // (same localTimeStr convention, so lexicographic compare is valid).
+    // totalScannedBytes equals images.bytes + videos.bytes. Series keeps tMs
+    // and carries an absolute wallTime anchor. Fingerprint duration/bytes are
+    // present. System RAM is captured for low-memory assessment.
+    {
+        const auto sAt = js.find("\"startedAt\":\"");
+        const auto fAt = js.find("\"finishedAt\":\"");
+        check(sAt != std::string::npos && fAt != std::string::npos, "startedAt and finishedAt exist");
+        if (sAt != std::string::npos && fAt != std::string::npos) {
+            const std::string s = js.substr(sAt + 13, 19);
+            const std::string f = js.substr(fAt + 14, 19);
+            check(s <= f, "finishedAt is not before startedAt");
+        }
+        check(js.find("\"cancelledDuring\":\"\"") != std::string::npos, "no phase claimed on a normal run");
+        check(js.find("\"totalScannedBytes\"") != std::string::npos, "totalScannedBytes present");
+        // Series entries are positional arrays [tMs,cpuProc,cpuSys,memMB,gpu,
+        // ioReadBps,ioWriteBps,"wallTime"]. The 8th element is the absolute
+        // timestamp; there is no "wallTime": key by design.
+        {
+            const auto sp = js.find("\"series\":[[");
+            bool hasWall = false;
+            if (sp != std::string::npos) {
+                // An 8-element entry has 7 commas before its closing bracket.
+                // Look for ,"YYYY- pattern: quote, comma, quote, 4 digits, dash.
+                for (std::size_t i = sp; i + 8 < js.size(); ++i) {
+                    if (js[i] == ',' && js[i+1] == '"' &&
+                        js[i+2] >= '0' && js[i+2] <= '9' &&
+                        js[i+6] == '-') { hasWall = true; break; }
+                    if (js[i] == ']' && i > sp + 12) break;
+                }
+            }
+            check(hasWall, "series carries absolute wallTime");
+        }
+        check(js.find("\"durationMs\"") != std::string::npos, "fingerprint durationMs present");
+        check(js.find("\"bytesRead\"") != std::string::npos, "fingerprint bytesRead present");
+        check(js.find("\"memSystemMB\"") != std::string::npos, "system RAM captured");
+    }
 
     e.close();
     fs::remove_all(root, ec);

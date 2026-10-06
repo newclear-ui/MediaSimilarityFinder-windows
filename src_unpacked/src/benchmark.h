@@ -56,14 +56,18 @@ struct SlowFile {
   std::size_t frames = 0;
 };
 struct ResourceSample {
-  double tMs = 0;
-  double cpuProc = 0;
-  double cpuSys = 0;
-  double memMB = 0;
-  bool gpu = false;
-  double ioReadBps = 0;
-  double ioWriteBps = 0;
-};
+    double tMs = 0;
+    // Absolute wall-clock anchor in the same localTimeStr() convention as
+    // meta.startedAt/finishedAt. tMs stays the relative axis; wallTime lets two
+    // runs' timelines be compared directly. Second resolution by convention.
+    std::string wallTime;
+    double cpuProc = 0;
+    double cpuSys = 0;
+    double memMB = 0;
+    bool gpu = false;
+    double ioReadBps = 0;
+    double ioWriteBps = 0;
+    };
 // Node A: scheduler-decision record. Structure only ??the Node B Adaptive
 // Scheduler fills it; until then it stays NotMeasured and must not be read
 // as "zero work share".
@@ -204,6 +208,9 @@ void addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseReje
   void setKindScanned(std::size_t imgScanned, std::size_t vidScanned);
   void setMatchBreakdown(std::size_t imgPairs, std::size_t imgGroups, std::size_t imgDupFiles,
                          std::size_t vidPairs, std::size_t vidGroups, std::size_t vidDupFiles);
+  // Scan-phase API for cancellation diagnosis. Call at each phase entry;
+  // the value is only surfaced as meta.cancelledDuring when cancelled.
+  void setPhase(const std::string& phase) { phase_ = phase; }
   SchedulerTelemetry& scheduler() { return scheduler_; }
   const SchedulerTelemetry& scheduler() const { return scheduler_; }
   CalibrationTelemetry& calibration() { return calibration_; }
@@ -222,8 +229,15 @@ private:
   DatasetFingerprint datasetFp_{};
   AnalyzeTelemetry analyzeTel_{};
   bool analyzeTelRecorded_ = false;
-  std::string startedAt_;
-  std::string runId_;
+    std::string startedAt_;
+    // Wall-clock finish, recorded at finalize() in the same localTimeStr()
+    // convention as startedAt_. Never derived from wallMs.
+    std::string finishedAt_;
+    // Current scan phase for cancellation diagnosis ("fingerprint", "walk",
+    // "analyze"). Set at each phase entry; serialized as cancelledDuring only
+    // when the run actually cancelled, else empty.
+    std::string phase_;
+    std::string runId_;
   double wallMs_ = 0;
   long long startTick_ = 0;
   double walkMs_ = 0, imageStageMs_ = 0, videoStageMs_ = 0, analyzeMs_ = 0, revalidateMs_ = 0;
@@ -292,6 +306,10 @@ private:
   bool diskWasAvailable_ = false;
   std::atomic<unsigned long long> procIoReadBytes_{0}, procIoWriteBytes_{0};
   std::atomic<unsigned long long> procIoReadOps_{0}, procIoWriteOps_{0};
+  // Total physical system RAM in MiB, captured once at start(). Lets the
+  // process peak (memMBMax) be judged against the machine, which is what
+  // matters on low-memory systems. 0 means not captured.
+  double memSystemMB_ = 0;
   void openDiskCounters();
   void closeDiskCounters();
   bool samplesTruncated_ = false;

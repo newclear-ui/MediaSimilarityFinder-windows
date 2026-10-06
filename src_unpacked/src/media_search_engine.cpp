@@ -353,6 +353,14 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // of disk I/O. It must honor the same stop request as the walk, or Stop is
   // dead until the whole dataset has been hashed. Telemetry-only: a cancelled
   // fingerprint never influences scan behavior.
+  // Phase tracking for cancellation diagnosis. Each setPhase marks entry, but a
+  // phase advances only while no cancel is outstanding: once Stop has landed,
+  // the recorded phase freezes at where the scan actually was, instead of
+  // marching to "analyze" while unwinding. Phases: fingerprint, walk, analyze.
+  const auto cancelRequested = [&] {
+    return control && control->cancel.load(std::memory_order_relaxed);
+  };
+  telemetry_.setPhase("fingerprint");
   telemetry_.setDatasetFingerprint(
       msf::computeDatasetFingerprint(root, control ? &control->cancel : nullptr));
   if(telemetryOn) telemetry_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
@@ -652,9 +660,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    }
    if(!failed && scanned-lastCommitScanned>=1000){ if(!checkpoint()) failed=true; }
   };
- // The walker streams walked files while this thread analyzes them, so CPU/GPU
- // work overlaps the directory walk instead of waiting for it.
- std::thread walker([&]{
+  // The walker streams walked files while this thread analyzes them, so CPU/GPU
+  // work overlaps the directory walk instead of waiting for it.
+  if (!cancelRequested()) telemetry_.setPhase("walk");
+  std::thread walker([&]{
   Scanner s; Scanner::ScanCallbacks cb;
   if(control){
    cb.onProgress=[control](std::size_t n){ if(control->listing) control->listing(n); };
@@ -744,6 +753,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   std::vector<std::size_t> clusterParent(files_.size());
   for (std::size_t i = 0; i < clusterParent.size(); ++i) clusterParent[i] = i;
   std::vector<char> clusterTouched(files_.size(), 0);
+  if (!cancelRequested()) telemetry_.setPhase("analyze");
   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
    if(telemetryOn) telemetry_.addStreamedMatch();
    if (m.left < clusterParent.size() && m.right < clusterParent.size()) {

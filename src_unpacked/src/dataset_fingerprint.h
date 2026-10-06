@@ -37,6 +37,12 @@ struct DatasetFingerprint {
     std::string fingerprint;  // 64 lowercase hex chars, empty unless measured
     std::uint64_t fileCount = 0;
     std::uint64_t totalBytes = 0;
+    // Fingerprint-phase telemetry. durationMs measures the whole walk+hash;
+    // bytesRead counts bytes actually hashed (equals totalBytes on success,
+    // less on cancel/failure). Lets a multi-GB fingerprint phase be diagnosed
+    // from the log alone. Never part of the identity.
+    double durationMs = 0;
+    std::uint64_t bytesRead = 0;
 };
 
 // Stable lowercase hex SHA-256 of a byte range. Exposed because the same

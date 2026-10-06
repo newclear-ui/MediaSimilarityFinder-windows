@@ -2,6 +2,8 @@
 #include "path_utils.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <system_error>
@@ -135,20 +137,37 @@ std::string canonicalRelativePath(const std::string& root, const std::string& fi
 DatasetFingerprint computeDatasetFingerprint(const std::string& root,
                                                 const std::atomic_bool* cancel) {
     DatasetFingerprint out;
+    const auto t0 = std::chrono::steady_clock::now();
     const auto cancelled = [&] {
         return cancel && cancel->load(std::memory_order_relaxed);
     };
     std::error_code ec;
     const fs::path rootPath = path_from_utf8(root);
-    if (!fs::is_directory(rootPath, ec)) return out;   // stays not_available
+    // Duration/bytes are stamped on every exit so "how long did the fingerprint
+    // take" is answerable even for empty or missing roots.
+    const auto stampEmpty = [&] {
+        out.durationMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count();
+        out.bytesRead = 0;
+    };
+    if (!fs::is_directory(rootPath, ec)) { stampEmpty(); return out; }   // stays not_available
 
     struct Entry { std::string rel; std::uint64_t size; std::string hash; };
     std::vector<Entry> entries;
+    // bytesRead accumulates fully hashed files. On success it equals
+    // totalBytes; on cancel/failure it is less. Partial chunk reads inside a
+    // cancelled file are not counted: only complete file hashes are honest.
+    std::uint64_t bytesRead = 0;
+    const auto stampDuration = [&] {
+        out.durationMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count();
+        out.bytesRead = bytesRead;
+    };
 
     fs::recursive_directory_iterator it(rootPath, fs::directory_options::skip_permission_denied, ec);
     const fs::recursive_directory_iterator end;
     for (; it != end && !ec; it.increment(ec)) {
-        if (cancelled()) { out.state = "cancelled"; return out; }
+        if (cancelled()) { out.state = "cancelled"; stampDuration(); return out; }
         std::error_code fec;
         if (!it->is_regular_file(fec)) continue;
         const std::string file = path_to_utf8(it->path());
@@ -160,11 +179,13 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
             // Cancellation and read failure are different outcomes. A cancelled
             // walk must not be reported as a corrupt dataset.
             out.state = cancelled() ? "cancelled" : "failed";
+            stampDuration();
             return out;
         }
+        bytesRead += e.size;
         entries.push_back(std::move(e));
     }
-    if (ec) { out.state = "failed"; return out; }
+    if (ec) { out.state = "failed"; stampDuration(); return out; }
 
     // Byte-order sort on the canonical path: locale independent, and it is
     // what makes the fingerprint independent of walk order.
@@ -174,7 +195,7 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
     out.fileCount = static_cast<std::uint64_t>(entries.size());
     for (const Entry& e : entries) out.totalBytes += e.size;
 
-    if (entries.empty()) return out;                   // empty dataset stays not_available
+    if (entries.empty()) { stampDuration(); return out; }   // empty dataset stays not_available
 
     Sha256 manifest;
     for (const Entry& e : entries) {
@@ -184,6 +205,7 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
     }
     out.fingerprint = manifest.finish();
     out.state = "measured";
+    stampDuration();
     return out;
 }
 

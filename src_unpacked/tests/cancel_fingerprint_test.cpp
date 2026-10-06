@@ -110,6 +110,13 @@ int main() {
         check(r.scanned == 0 || r.analyzed == 0,
               "cancelled scan analyzes nothing");
         std::cout << "  [info] cancelled scan took " << ms << " ms\n";
+        // Cancellation phase is recorded: pre-set cancel lands during the
+        // fingerprint stage, before any walk. The JSON must say so.
+        const std::string js = e.telemetryJson();
+        check(js.find("\"cancelledDuring\":\"fingerprint\"") != std::string::npos,
+              "cancelledDuring=fingerprint for a pre-set cancel");
+        check(js.find("\"cancelled\":true") != std::string::npos,
+              "cancelled flag is true");
         e.close();
     }
 
