@@ -279,6 +279,31 @@ Benchmark / Telemetry는 모든 node에서 함께 발전하는 계층입니다. 
 CPU fallback은 항상 유지하며, hardware acceleration은 선택 가능한 backend로 취급한다.
 
  
+## 15. 실측 기반 1.0 이후 성능 개선 백로그
+
+현재 Adaptive Scheduler와 이미지 검색 경로는 **1차 제품 구현**으로 분류한다. 다만 0.9.4.59 실제 GUI 실측에서 다음 현상이 관찰되었으므로 1.0 이후 성능 개선 대상으로 명시한다.
+
+- Maximum(90%) 정책에서도 실제 process CPU 사용률은 장시간 구간에서 약 20~70%로 진동했고 평균은 30.8%였다. 사용자 CPU 정책 퍼센트와 실제 CPU 점유율을 동일 개념으로 해석해서는 안 되며, worker occupancy/admission/backpressure 모델을 더 정교하게 만들어야 한다.
+- Balanced는 초기 관찰에서 8코어/16스레드 환경에서도 실제 작업 스레드 활용이 약 4개 수준으로 낮게 시작했다. worker 수만 늘리는 것이 아니라 I/O 대기, decode latency, queue admission을 함께 모델링해야 한다.
+- 32,494개 이미지가 GPU 경로를 사용한 실측에서도 GPU duty는 약 0.2%였다. GPU kernel 자체보다 WIC/CPU decode, crop, 파일 I/O, verification 및 짧은 GPU 작업 구간 사이의 빈 구간이 더 큰 병목 후보이다.
+- 관찰된 drive I/O 활용도 역시 대체로 15~40% 수준에서 변동했다. 따라서 단순히 CPU worker를 추가하는 것만으로는 전체 throughput을 안정적으로 높인다고 볼 수 없다.
+
+### 1.0 이후 scheduler 고도화 방향
+
+다음 개선은 **GPU utilization 자체를 목표로 하지 않는다.** 목표는 end-to-end throughput, latency 안정성, 사용자 시스템과의 공존이다.
+
+1. 실제 CPU worker occupancy와 CPU policy의 관계를 계측하고 admission을 조정한다.
+2. 파일 read → decode → crop → hash 사이의 bounded queue와 backpressure를 workload-aware하게 조정한다.
+3. GPU batch가 너무 짧게 실행되거나 CPU 단계 때문에 장시간 idle하는 구간을 줄여 host↔device overlap을 높인다.
+4. scheduler 입력을 aggregate CPU/GPU utilization만으로 제한하지 않고 stage bottleneck, 자기 사용량, I/O wait, queue starvation을 분리한다.
+5. live load SMA/hysteresis만으로는 해결되지 않는 장주기 oscillation과 initial under-utilization을 workload-level admission 문제로 재평가한다.
+
+이 항목들은 **0.9.4.59 correctness 수정 범위에 포함하지 않으며**, 1.0 이후 별도 성능 개선 트랙으로 다룬다. 현재의 낮은 GPU duty는 correctness failure나 GPU backend failure로 해석하지 않는다.
+
+### 이미지 검색 엔진 상태
+
+이미지 검색 엔진은 **1차적으로 제품 경로가 완성된 상태**다. 이후 개선은 correctness를 깨지 않는 범위에서 실제 dataset 기반으로 진행하며, 새 성능 후보는 exactness/semantic parity 검증을 선행한다.
+
 ## 15. Benchmark / Telemetry 연계
 
 Adaptive Scheduler는 benchmark 없이는 충분히 검증할 수 없으므로 benchmark를 독립적인 핵심 개발 단계로 취급한다.
