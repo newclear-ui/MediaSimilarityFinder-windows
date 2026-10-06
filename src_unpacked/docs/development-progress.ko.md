@@ -103,6 +103,47 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 실제 GUI에서 유사그룹 목록을 마우스 드래그/세로 scrollbar/End 등의 키보드 navigation으로 아래로 이동하면 특정 위치 이후 느려지고 목록 상단으로 되돌아가는 회귀가 재현되었다. 이 문제는 0.9.3.10의 **semantic scroll-anchor 복원 수정** 이력과 현재 0.9.4의 thumbnail catch-up/full-list rebuild 경로를 대조하여 별도 수정한다. GUI 회귀 수정을 1차 엔진 semantic 수정과 동일 빌드 범위에 섞지 않는다.
 
+## 2026-10-06 — 0.9.4.60 검증 완료 및 GUI Scroll 회귀 2차 원인 분석
+
+0.9.4.60은 1차 semantic/diagnostic 수정 범위를 완료했다. CPU CTest 108/108, GPU CTest 109/109, 신규 `scan_generation_scope_test` 35 checks를 포함한 회귀가 PASS했고, engine/DB/schema/cache는 각각 1.5.0 / 1.0.4 / 9 / 9를 유지한다.
+
+### 1차 결과
+
+- Video generation scope를 일반 `seen`에서 분리한 `videoScopeSeen`으로 교정했다.
+- `scanVideos=false`에서는 generation을 변경하지 않으며 ignored stale video가 generation 승격의 근거가 되지 않는다.
+- `ScanTerminal { Completed, Cancelled, Failed }`로 terminal reason을 명시 전달하여 실제 DB failure가 늦은 Stop 때문에 Cancelled로 재분류되지 않는다.
+- generation metadata write 실패는 기존 generation을 유지하고 검색 결과 자체는 유효한 것으로 취급한다.
+- 신규 scope/stamp/DB-error 회귀 35 checks와 기존 video cancel 26, image drain 7 checks가 유지된다.
+
+### 2차 GUI-UI Scroll 회귀 — source-level 원인 확정
+
+과거 `0.9.3.10`의 scroll-anchor 수정은 현재 코드에도 남아 있다. 따라서 anchor 코드가 삭제되어 생긴 회귀는 아니다.
+
+현재 구조에는 더 직접적인 문제가 있다.
+
+- `uiTimer_`가 scan 종료 후에도 계속 동작한다 (`setRunning(false)`에서 timer를 중지하지 않음).
+- thumbnail budget은 tick당 4개뿐이고 cache miss가 누적되면 `fileThumb()`가 `thumbStarved_=true`를 세운다.
+- 다음 timer tick에서 `refreshStreaming()`이 `thumbStarved_` 하나만으로 full `rebuildGroups()` + `refreshGroupList()`를 다시 수행한다.
+- `refreshGroupList()` → `fillPair()`는 middle tree/grid를 `clear()`한 뒤 모든 group widget을 다시 생성한다.
+- 즉 **사용자가 scrollbar drag / wheel / End 등의 navigation을 수행하는 동안에도 동일한 view를 destructive full rebuild할 수 있는 구조**다.
+- 0.9.3.10의 anchor 복원은 이 rebuild 후 위치를 복구하는 안전장치이지, 사용 중인 scrollbar/selection/layout을 파괴하지 않는 구조는 아니다.
+
+따라서 이번 2차 수정의 핵심은 anchor 알고리즘을 다시 바꾸는 것이 아니라 **thumbnail catch-up 때문에 발생하는 불필요한 full rebuild를 제거하고, 사용자 scrolling과 rebuild를 상호 배제**하는 것이다.
+
+현재 source review만으로 실제 '어느 Qt 내부 단계에서 0으로 clamp되는가'까지는 증명하지 않았다. 그 지점은 GUI regression test/instrumentation으로 확인한다.
+
+### 2차 수정 방향
+
+1. `groupsDirty_` 또는 실제 group-data 변경이 없는 `thumbStarved_` catch-up에서는 `rebuildGroups()/fillPair()` 전체 재구축을 하지 않는다.
+2. 기존 list/grid item을 유지한 채 **현재 viewport에 보이는 group의 thumbnail만 in-place 갱신**하는 경로를 우선한다.
+3. scrollbar `sliderPressed/sliderReleased`와 wheel/key scroll에 대한 짧은 interaction/cooldown gate를 두어 사용자 스크롤 중 full rebuild가 절대 발생하지 않게 한다.
+4. 기존 `0.9.3.10` semantic anchor는 full rebuild가 정말 필요한 경우의 fallback으로 유지한다.
+5. End/Home/PageUp/PageDown, mouse wheel, viewport drag, vertical scrollbar drag를 명시적인 regression acceptance로 만든다.
+
+### 범위
+
+이번 2차 GUI 작업은 engine semantic을 다시 변경하지 않는다. scheduler/worker/GPU 성능 튜닝, color_thumb, NVDEC, sparse, S4 visual acceptance는 별도 Gate로 유지한다.
+
 ## 현재 상태
 
 | 항목 | 상태 |
