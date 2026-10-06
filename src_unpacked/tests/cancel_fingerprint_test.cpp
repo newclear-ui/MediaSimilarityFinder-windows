@@ -110,13 +110,20 @@ int main() {
         check(r.scanned == 0 || r.analyzed == 0,
               "cancelled scan analyzes nothing");
         std::cout << "  [info] cancelled scan took " << ms << " ms\n";
-        // Cancellation phase is recorded: pre-set cancel lands during the
-        // fingerprint stage, before any walk. The JSON must say so.
+        // Cancellation phase is recorded. Since 0.9.4.58 the fingerprint runs
+        // after productive work, so a pre-set cancel never enters any phase:
+        // fingerprint is skipped and the walk guard blocks the walk phase.
+        // Empty phase plus cancelled=true is the truthful record (stopped
+        // before anything began), not a missing measurement.
         const std::string js = e.telemetryJson();
-        check(js.find("\"cancelledDuring\":\"fingerprint\"") != std::string::npos,
-              "cancelledDuring=fingerprint for a pre-set cancel");
+        check(js.find("\"cancelledDuring\":\"\"") != std::string::npos,
+              "cancelledDuring empty for a pre-set cancel (no phase entered)");
         check(js.find("\"cancelled\":true") != std::string::npos,
               "cancelled flag is true");
+        // The fingerprint never ran (skipped on cancel), so no identity was
+        // computed and none is claimed. Productive work was never blocked.
+        check(js.find("\"state\":\"not_available\"") != std::string::npos,
+              "skipped fingerprint leaves not_available");
         e.close();
     }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.57 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.58 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -543,6 +543,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_scan_cancel_test tests/scan_cancel_test.cpp)
     target_link_libraries(msf_scan_cancel_test PRIVATE msf_core)
     add_test(NAME scan_cancel_test COMMAND msf_scan_cancel_test)
+    # 0.9.4.58: drain-on-cancel. Stop means "read no new files", not "discard
+    # work already read": the pending image batch drains to indexed rows.
+    add_executable(msf_scan_cancel_drain_test tests/scan_cancel_drain_test.cpp)
+    target_link_libraries(msf_scan_cancel_drain_test PRIVATE msf_core)
+    add_test(NAME scan_cancel_drain_test COMMAND msf_scan_cancel_drain_test)
     # 0.9.4.47+: Stop responsiveness. The dataset fingerprint runs at scan start
     # and must honor cancellation instead of hashing everything first.
     add_executable(msf_cancel_fingerprint_test tests/cancel_fingerprint_test.cpp)

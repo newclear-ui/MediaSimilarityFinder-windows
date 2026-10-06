@@ -121,6 +121,7 @@ direct cause       GUI Stop unresponsiveness was fixed at engine level in 0.9.4.
                    Monotonic panel counters were done in 0.9.4.55.
                    scanFinished diagnostics were added in 0.9.4.56.
                    Fingerprint scope awareness was done in 0.9.4.57.
+                   Drain on Stop was done in 0.9.4.58.
                    The only remaining condition is real GUI screen/button
                    verification, which headless automation cannot close
 ```

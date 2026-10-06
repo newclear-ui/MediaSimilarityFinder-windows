@@ -360,24 +360,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const auto cancelRequested = [&] {
     return control && control->cancel.load(std::memory_order_relaxed);
   };
-  // The fingerprint exists only for telemetry. With telemetry off there is no
-  // consumer, so running it would be minutes of disk I/O for nothing. Skip it
-  // and leave the default not_available state.
-  if (telemetryOn) {
-    telemetry_.setPhase("fingerprint");
-    // Scope-aware: an images-only scan hashes only images. Hashing videos
-    // first on a video-heavy dataset blocks all walk/index work for hours.
-    const bool scopeImages = !control || control->scanImages;
-    const bool scopeVideos = !control || control->scanVideos;
-    telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(
-        root, control ? &control->cancel : nullptr,
-        control && control->fingerprintProgress
-            ? [&](std::size_t n, std::uint64_t b, const std::string& p) {
-                control->fingerprintProgress(n, b, p);
-              }
-            : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),
-        scopeImages, scopeVideos));
-  }
+  // NOTE: the dataset fingerprint used to run here, before the walk. That put
+  // a telemetry-only full-dataset hash in front of all productive work, so on
+  // huge datasets nothing was indexed for minutes/hours. It now runs after
+  // match/group computation, right before finishScan (see below).
   if(telemetryOn) telemetry_.startSampler([this](){ return gpuActive_.load(std::memory_order_relaxed); });
   if(control) telemetry_.addRevalidateMs(control->revalidateMs);
   // C2: record the calibration run that fed this scan (if any). Skipped
@@ -709,7 +695,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(stopped(control)) cancelled=true;
   else if(walkDone.load() && queue.empty()){ if(!telemetryWalkTimed){ telemetryWalkTimed=true; telemetry_.addWalkMs(telemetryMsSince()); } walkCompleted=true; break; }
  }
- if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
+  if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
+  // Drain-on-cancel: Stop means "read no new files", not "discard work already
+  // read". Admitted-but-unanalyzed images (bounded batch, seconds of work)
+  // complete analysis so their fingerprints index; otherwise a stop after
+  // hours of reading would keep zero index. Videos keep existing drop behavior
+  // because a single video decode is unbounded and draining it could stall
+  // Stop for minutes. A db error during drain still marks failure.
+  if(!failed && cancelled && !imageBatch.empty()){
+    if(!processImageBatch(imageBatch)) failed=true;
+    imageBatch.clear();
+  }
   while(!failed && !cancelled && videoBase<changedVideos.size()){
    const std::size_t n=std::min(static_cast<std::size_t>(workers),changedVideos.size()-videoBase);
    if(stopped(control)){ cancelled=true; break; }
@@ -842,6 +838,29 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   r.imgScanned=nImgScanned; r.vidScanned=nVidScanned;
   r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed;
   r.imgPairs=nImgPairs; r.vidPairs=nVidPairs;
+  // Dataset fingerprint runs HERE, after all productive work (walk, analysis,
+  // matching), not before it. It exists only for telemetry (S6 dataset
+  // identity) and must never gate progress: previously it hashed the entire
+  // dataset first, so on huge datasets nothing was indexed for minutes/hours
+  // and every early stop left zero progress. Scope-aware as before; skipped
+  // entirely when telemetry is off, and skipped on cancel/failure so a stop
+  // or an error is reported promptly instead of hashing first. A skipped
+  // fingerprint leaves the default not_available state, same as before.
+  // cancelRequested() (live flag) is checked rather than only the local
+  // `cancelled`, so a Stop landing during analyze also skips the hash.
+  if (telemetryOn && walkCompleted && !cancelled && !failed && !cancelRequested()) {
+    telemetry_.setPhase("fingerprint");
+    const bool scopeImages = !control || control->scanImages;
+    const bool scopeVideos = !control || control->scanVideos;
+    telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(
+        root, control ? &control->cancel : nullptr,
+        control && control->fingerprintProgress
+            ? [&](std::size_t n, std::uint64_t b, const std::string& p) {
+                control->fingerprintProgress(n, b, p);
+              }
+            : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),
+        scopeImages, scopeVideos));
+  }
   return finishScan(r.completed);
 }
 }
