@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.59` / HEAD 동기화 · CPU CTest 107/107 · GPU CTest 108/108
-최종 갱신: 2026-10-06
+기준: `0.9.4.61` / HEAD `21313fd` · CPU CTest 109/109 · GPU CTest 110/110
+최종 갱신: 2026-10-07
 
 ## 이 문서의 역할
 
@@ -106,13 +106,15 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        2차 GUI-UI Scroll regression (0.9.4.60 1차 semantic 수정 완료 후속)
-다음             S4 real-screen acceptance → color_thumb R1 → XMP coverage → S5 benchmark → S6 gate
-직접 원인        0.9.4.60에서 generation scope/terminal semantic은 수정 완료.
-                 GUI에는 0.9.3.10 scroll-anchor가 남아 있지만, uiTimer_가 검색 종료 후에도 살아 있고
-                 thumbStarved_를 이유로 fillPair() 전체 rebuild를 수행하여 사용자 scroll 중 list를 clear/recreate할 수 있다.
-                 2차는 thumbnail catch-up의 in-place 갱신과 scroll interaction gate가 우선이다.
-                 1.0 이후 scheduler/pipeline 성능 백로그는 별도 유지한다.
+활성 Node        0.9.4.62 GUI usability / diagnostic-control 정리 (0.9.4.61 실제 GUI 피드백 후속)
+다음             S4 real-screen acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
+현재 판단        0.9.4.61의 scroll regression은 실제 Windows GUI에서 현재 정상 동작으로 관찰되었다.
+                 핵심 starvation-only destructive rebuild 제거와 in-place catch-up/scroll gate는 유지한다.
+잔여 위험        thumbCatchUpVisible()은 decode는 visible item에 제한하지만 item 목록 전체를 매 tick 순회해
+                 visible 여부를 찾는다. 현재 correctness blocker가 아니므로 후순위 성능 검토로 둔다.
+후속             상세 로그 표시 설정, splitter 폭 정책, filename selection을 0.9.4.62 즉시 작업으로 둔다.
+                 Test Mode 재도입 검토와 full-traversal 최적화는 후반으로 분리한다.
+                 1.0 이후 Burst-shot / scheduler-pipeline 성능 백로그는 계속 별도 유지한다.
 ```
 
 **S4 acceptance 가 막히지 않는 이유**: 이 환경은 headless 이며, 결과 다이얼로그의
@@ -150,5 +152,5 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 
 ## 버전 불변 확인
 
-`kEngineVersion 1.5.0` · `kDatabaseVersion 1.0.3` · `kBenchmarkSchemaVersion 9` ·
+`kEngineVersion 1.5.0` · `kDatabaseVersion 1.0.4` · `kBenchmarkSchemaVersion 9` ·
 `kCacheFormatVersion 9` — 0.9.4.45 기준 변경 없음.
