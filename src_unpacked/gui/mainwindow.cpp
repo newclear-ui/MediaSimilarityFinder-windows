@@ -119,6 +119,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"resume")) return S("계속","Resume");
   if (!std::strcmp(key,"stop")) return S("중지","Stop");
   if (!std::strcmp(key,"settings")) return S("설정","Settings");
+  if (!std::strcmp(key,"displaySettings")) return S("표시 설정","Display Settings");
+  if (!std::strcmp(key,"showDetailLog")) return S("상세 로그 표시","Show Detailed Logs");
   if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
   if (!std::strcmp(key,"explorer")) return S("탐색기","Explorer");
@@ -794,6 +796,24 @@ void MainWindow::restoreUiState() {
   if (split_) {
     const auto sp = st.value("ui/splitter").toByteArray();
     if (!sp.isEmpty()) split_->restoreState(sp);
+    // Saved states predate the middle-first policy and may squeeze the group
+    // pane (e.g. a wide right pane from the old stretch factors). Never delete
+    // the user's state: only enforce a middle minimum by borrowing from the
+    // right pane first (down to its detail minimum), then the left.
+    QList<int> sz = split_->sizes();
+    if (sz.size() == 3) {
+      const int total = sz[0] + sz[1] + sz[2];
+      const int leftMin = 140, midMin = 320, rightMin = 360;
+      if (sz[1] < midMin && total >= leftMin + midMin + rightMin) {
+        int need = midMin - sz[1];
+        const int fromRight = qMin(need, sz[2] - rightMin);
+        sz[2] -= fromRight; need -= fromRight;
+        const int fromLeft = qMin(need, sz[0] - leftMin);
+        sz[0] -= fromLeft; need -= fromLeft;
+        sz[1] = total - sz[0] - sz[2];
+        split_->setSizes(sz);
+      }
+    }
   }
   auto restoreHeader = [&st](QTreeWidget* t, const char* key) {
     if (!t) return;
@@ -817,14 +837,21 @@ void MainWindow::buildUi() {
   split_ = new QSplitter(Qt::Horizontal, central);
   split_->setOpaqueResize(true);
   auto* leftW = new QWidget(split_); auto* midW = new QWidget(split_); auto* rightW = new QWidget(split_);
+  leftW->setObjectName("leftPane"); midW->setObjectName("middlePane"); rightW->setObjectName("rightPane"); // automation hooks
+  split_->setObjectName("mainSplit"); // automation hook, see folder_
   buildLeft(leftW); buildMiddle(midW); buildRight(rightW);
   split_->addWidget(leftW); split_->addWidget(midW); split_->addWidget(rightW);
   // NOTE: setCollapsible must come after the widgets exist; calling it on an
   // empty splitter prints "QSplitter::setCollapsible: Index out of range".
   split_->setCollapsible(0, true); split_->setCollapsible(1, true); split_->setCollapsible(2, false);
-  split_->setStretchFactor(0, 0); split_->setStretchFactor(1, 0); split_->setStretchFactor(2, 1);
+  // Middle-first growth (0.9.4.63): extra window width goes to the similar-group
+  // pane, not the detail pane. The old (0,0,1) factors ballooned the right pane
+  // on every resize; with (0,1,0) only user drags change left/right widths.
+  split_->setStretchFactor(0, 0); split_->setStretchFactor(1, 1); split_->setStretchFactor(2, 0);
   const auto saved = QSettings().value("ui/splitter").toByteArray();
-  if (saved.isEmpty()) split_->setSizes({200, 330, 950});
+  // Default (no saved state): right pane fits ~4 preview images (4x128 + gaps),
+  // the rest belongs to the middle pane. Saved states are never deleted here.
+  if (saved.isEmpty()) split_->setSizes({200, 720, 560});
   // Non-empty saved state is applied by restoreUiState() after all panes exist.
   outer->addWidget(split_, 1);
   statusBar_ = statusBar();
@@ -950,11 +977,13 @@ void MainWindow::buildToolbar() {
   connect(utilBtn_, &QToolButton::clicked, this, [this] { utilBtn_->showMenu(); });
   auto* utilMenu_ = new QMenu(utilBtn_);
   monSettingsAct_ = utilMenu_->addAction(trStr(lang(), "settings"), this, &MainWindow::configureMonitor);
+  auto* displayAct = utilMenu_->addAction(trStr(lang(), "displaySettings"), this, &MainWindow::showDisplaySettings);
+  displayAct->setObjectName("displaySettingsAct"); // automation hook, see folder_
   helpAct_ = utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
-  toolBar_->addWidget(scan_); toolBar_->addWidget(logTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
+  toolBar_->addWidget(scan_); logTglAct_ = toolBar_->addWidget(logTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator();
   // Execution resource strategy + fine CPU budget as one compact area.
   toolBar_->addWidget(strategyBox_);
@@ -969,6 +998,7 @@ void MainWindow::buildToolbar() {
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
   toolBar_->addWidget(utilBtn_); // far-right menu
+  applyDetailLogVisibility(); // ui/showDetailLog (default ON): visibility only, telemetry untouched
 }
 
 void MainWindow::buildLeft(QWidget* w) {
@@ -1170,6 +1200,7 @@ void MainWindow::buildRight(QWidget* w) {
   lay->addLayout(head);
   viewStack_ = new QStackedWidget(w);
   grid_ = new QListWidget(w);
+  grid_->setObjectName("fileGrid"); // automation hook, see folder_
   grid_->setViewMode(QListView::IconMode); grid_->setResizeMode(QListView::Adjust);
   // Tight uniform cells: no side margins for text to spill into the neighbor
   // photo, and one layout pass for all rows (long/short names align).
@@ -2933,6 +2964,8 @@ void MainWindow::refreshDetail() {
   nameLabel->setWordWrap(true);
   nameLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   nameLabel->setToolTip(fi.fileName());
+  // Same selection policy as the full-path value below: mouse + keyboard.
+  nameLabel->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
   detailForm_->addRow(trStr(lang(), "fileName"), nameLabel);
   pathLabel->setText(QDir::toNativeSeparators(fi.absolutePath()));
   pathLabel->setToolTip(QDir::toNativeSeparators(fi.absolutePath()));
@@ -3749,6 +3782,36 @@ void MainWindow::configureMonitor() {
   st.setValue("ui/language", langSel->currentData().toString());
   setLanguage(langSel->currentIndex());
   statusMsg_->setText(QString("%1 — %2 / %3").arg(trStr(lang(), "monSaved")).arg(watches.size()).arg(compares.size()));
+}
+void MainWindow::applyDetailLogVisibility() {
+  // Visibility only: the telemetry wiring behind logTgl_ is untouched, and a
+  // hidden checkbox keeps its checked state so re-showing restores behavior.
+  // Through the toolbar action: QToolBar owns child visibility via the action
+  // created by addWidget, so hiding the widget directly would be reverted on
+  // the next toolbar layout.
+  const bool show = QSettings().value("ui/showDetailLog", true).toBool();
+  if (logTglAct_) logTglAct_->setVisible(show);
+  else if (logTgl_) logTgl_->setVisible(show);
+}
+void MainWindow::showDisplaySettings() {
+  // Minimal general display settings dialog (extensible: future display
+  // options such as the post-1.0 burst-shot toggle belong here, not in the
+  // monitor dialog). Portable QSettings policy like everything else.
+  QDialog dlg(this);
+  dlg.setObjectName("displaySettingsDlg"); // automation hook, see folder_
+  dlg.setWindowTitle(trStr(lang(), "displaySettings"));
+  auto* root = new QVBoxLayout(&dlg);
+  auto* showLog = new QCheckBox(trStr(lang(), "showDetailLog"), &dlg);
+  showLog->setObjectName("showDetailLogBox"); // automation hook, see folder_
+  showLog->setChecked(QSettings().value("ui/showDetailLog", true).toBool());
+  root->addWidget(showLog);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dlg);
+  root->addWidget(buttons);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  if (dlg.exec() != QDialog::Accepted) return;
+  QSettings().setValue("ui/showDetailLog", showLog->isChecked());
+  applyDetailLogVisibility();
 }
 void MainWindow::toggleMonitor() {
   // The monitor button is a pure on/off toggle with highlight feedback.

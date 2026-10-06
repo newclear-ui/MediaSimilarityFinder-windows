@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.62 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.63 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -733,6 +733,12 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_ui_scroll_regression_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_ui_scroll_regression_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME ui_scroll_regression_test COMMAND msf_ui_scroll_regression_test)
+      # 0.9.4.63 GUI usability: display-settings round-trip, splitter
+      # middle-first growth, filename selectability.
+      add_executable(msf_ui_usability_test tests/ui_usability_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
+      target_link_libraries(msf_ui_usability_test PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_ui_usability_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME ui_usability_test COMMAND msf_ui_usability_test)
       # 0.9.4.62 crash diagnostics: Qt message file sink plus scan-worker
       # catch-all (non-standard exceptions become failed(), not terminate).
       add_executable(msf_crash_diagnostics_test tests/crash_diagnostics_test.cpp gui/mainwindow.cpp gui/mainwindow.h)

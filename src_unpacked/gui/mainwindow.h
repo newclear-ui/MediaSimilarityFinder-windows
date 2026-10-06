@@ -207,6 +207,8 @@ private:
   void updateExecutionUiState();
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void setRunning(bool);
+  void showDisplaySettings();    // general display settings dialog (Detailed Logs visibility)
+  void applyDetailLogVisibility(); // show/hide logTgl_ from ui/showDetailLog (default ON)
   void rebuildGroups();          // union-find over accumulated matches
   void updateGroupFoot();        // "전체 N · 선택 M" footer label
   void onUiTick();               // 600ms timer body (extracted for testUiTick)
@@ -308,7 +310,7 @@ private:
   QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;
   QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
-  QCheckBox* logTgl_=nullptr;
+  QCheckBox* logTgl_=nullptr; QAction* logTglAct_=nullptr;
   // Execution resource strategy (single-select dropdown): the user's
   // real-search resource choice. logTgl_ enables diagnostic telemetry
   // on the scan.

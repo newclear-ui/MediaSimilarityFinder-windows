@@ -109,14 +109,14 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        0.9.4.62 GUI usability / diagnostic-control cleanup after 0.9.4.61 direct GUI feedback
+active node        S4 real-screen acceptance (0.9.4.63 usability trio done, Test Mode and traversal deferred)
 next               S4 real-screen acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
 current verdict    The 0.9.4.61 similar-group scroll regression behaves normally in current real Windows GUI testing.
                    The core starvation-only destructive rebuild was removed; the 0.9.3.10 anchor remains as fallback.
 remaining risk     thumbCatchUpVisible() decodes/updates only visible items, but currently scans the entire list each tick
                    to find them. This is not the present correctness blocker and is intentionally deferred.
-immediate         0.9.4.62: Detailed Logs visibility setting, right-pane width cap / center-pane expansion, filename selection.
-later             Test Mode reintroduction review and visible-range traversal optimization, with risk containment.
+immediate         0.9.4.63: Detailed Logs visibility setting, right-pane width cap / center-pane expansion, filename selection: done.
+later             Test Mode reintroduction review and visible-range traversal optimization: reviewed, deferred with rationale recorded.
                    Post-1.0 burst-shot and scheduler/pipeline throughput work remains separate.
 ```
 
