@@ -419,6 +419,10 @@ QIcon MainWindow::placeholderIcon(const QString& path) const {
 
 void ScanWorker::run() {
   try {
+    // Test-only fault injection (0.9.4.62): drives the catch-all below
+    // deterministically for the crash-handler regression test. Production
+    // code never sets this variable, so the branch is dead otherwise.
+    if (qEnvironmentVariableIsSet("MSF_TEST_THROW_NONSTD")) throw 42;
     engine_.setResourcePolicy(msf::make_policy(msf::ResourceMode::Custom, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
@@ -597,6 +601,15 @@ void ScanWorker::run() {
     // so the next scan of the same folder quick-loads the partial results.
     persistMatchesSnapshot();
     emit failed(e.what());
+  } catch (...) {
+    // Fail-fast converted to a recorded failure (0.9.4.62): a non-standard
+    // exception used to terminate the whole process with no record (the
+    // 0xC0000409 signature seen in real crashes). Persist partial matches
+    // and report failed instead. SEH access violations still crash: MSVC
+    // builds without /EHa do not unwind those through catch(...), so real
+    // memory corruption keeps failing fast instead of being masked.
+    persistMatchesSnapshot();
+    emit failed("unhandled non-standard exception in scan worker");
   }
 }
 void ScanWorker::persistMatchesSnapshot() {
@@ -699,6 +712,34 @@ void initAppSettings(const QString& portableDir) {
   // Runs after the identity is set, because the copy is validated by opening
   // the new file through QSettings, and before any caller reads a value.
   migrationCopyLegacySettings(portableDir);
+}
+static QMutex g_qtMsgMutex;
+static QString g_qtMsgPath;
+static void qtMessageLogHandler(QtMsgType type, const QMessageLogContext&, const QString& msg) {
+  const char* tag = "INFO";
+  switch (type) {
+    case QtDebugMsg: tag = "DEBUG"; break;
+    case QtInfoMsg: tag = "INFO"; break;
+    case QtWarningMsg: tag = "WARNING"; break;
+    case QtCriticalMsg: tag = "CRITICAL"; break;
+    case QtFatalMsg: tag = "FATAL"; break;
+  }
+  // No Qt calls here that could log (no recursion): raw file write only.
+  const QByteArray line = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toUtf8()
+      + " [" + tag + "] " + msg.toUtf8() + "\n";
+  QMutexLocker g(&g_qtMsgMutex);
+  QFile f(g_qtMsgPath);
+  if (f.open(QIODevice::WriteOnly | QIODevice::Append)) { f.write(line); f.close(); }
+  // Returning from a fatal handler lets Qt abort as usual: fail-fast kept,
+  // now with the last words recorded above.
+}
+void installQtMessageLog(const QString& path) {
+  const QString p = path.isEmpty()
+      ? QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QStringLiteral("/msf_qt.log")
+      : path;
+  QMutexLocker g(&g_qtMsgMutex);
+  g_qtMsgPath = p;
+  qInstallMessageHandler(qtMessageLogHandler);
 }
 MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
@@ -1515,6 +1556,7 @@ void MainWindow::scanProgress(int p, QString path) {
   updateStatusCounts();
 }
 void MainWindow::onListingProgress(std::size_t n) {
+  lastListN_ = (qulonglong)n; // heartbeat-visible: walk/count phases emit no scanProgress
   statusProg_->setRange(0, 0); // indeterminate: walking the directory tree
   statusMsg_->setText(QString("%1 %2").arg(trStr(lang(), "listing")).arg(n));
 }
@@ -3545,8 +3587,12 @@ void MainWindow::scanHeartbeat() {
   if (now - lastBeat < 10000) return;
   lastBeat = now;
   Q_UNUSED(now); // elapsed comes from elapsedActiveMs() (pause-excluded)
-  scanLog(QString("alive elapsed=%1 lastPct=%2 lastPath=%3 groups=%4 marked=%5")
+  // walked/listed expose the otherwise invisible enumeration phases: when a
+  // rescan shows lastPct=0 for many minutes, growing walked/listed counts
+  // prove the walk is progressing instead of hung (0.9.4.62 crash analysis).
+  scanLog(QString("alive elapsed=%1 lastPct=%2 lastPath=%3 walked=%4 listed=%5 groups=%6 marked=%7")
               .arg(fmtElapsed(elapsedActiveMs())).arg(lastPct_).arg(lastPath_)
+              .arg(lastTotalN_).arg(lastListN_)
               .arg(groups_.size()).arg(marked_.size()));
 }
 void MainWindow::scanLog(const QString& line) {

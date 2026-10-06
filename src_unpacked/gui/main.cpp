@@ -122,6 +122,7 @@ static int runHeadlessScan(const msf::CommandLineOptions& opt, int argc, char** 
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationVersion(kVersion);
     initAppSettings(QCoreApplication::applicationDirPath());
+    installQtMessageLog(); // crash diagnostics: Qt warnings/fatals to %TEMP%/msf_qt.log
 
     const std::string rootUtf8 = msf::path_to_utf8(msf::path_from_utf8(opt.scanRoot));
     std::error_code ec;
@@ -185,6 +186,7 @@ static int runConsoleBenchmark(const msf::CommandLineOptions& opt, int argc, cha
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationVersion(kVersion);
     initAppSettings(QCoreApplication::applicationDirPath());
+    installQtMessageLog(); // crash diagnostics: Qt warnings/fatals to %TEMP%/msf_qt.log
 
     msf::ConsoleBenchmarkOptions options;
     options.sourceRoot = msf::path_to_utf8(msf::path_from_utf8(opt.benchmarkRoot));
@@ -253,6 +255,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QCoreApplication::setApplicationVersion(kVersion);
     initAppSettings(QCoreApplication::applicationDirPath());
+    installQtMessageLog(); // crash diagnostics: Qt warnings/fatals to %TEMP%/msf_qt.log
 
     if (opt.mode == msf::CommandMode::Smoke) {
         // Headless CI smoke hook: build the full main window offscreen,

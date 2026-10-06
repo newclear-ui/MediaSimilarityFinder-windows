@@ -42,6 +42,13 @@ QString trStr(UiLang lang, const char* key); // KO/EN string table (see .cpp)
 // \\.\pipe\QuickLook.App.Pipe.<UserSID>. Exported for the pipe test.
 QString quickLookToggleMessage(const QString& filePath);
 bool quickLookSendMessage(const QString& pipeName, const QByteArray& payload);
+// Crash diagnostics (0.9.4.62): Qt message file sink. Installed by main() so
+// warnings/criticals survive, and a fatal's last words land in the file
+// before Qt aborts (fail-fast preserved, now with a record). Per-message
+// open/append/close under a mutex: crash-safe (no buffered loss) and
+// thread-safe. Empty path selects %TEMP%/msf_qt.log. Tests pass their own
+// path and restore the default handler afterwards.
+void installQtMessageLog(const QString& path = QString());
 // Letterbox-fit helper: every display icon entering a grid is normalized to
 // the exact requested rect, so cells stay uniform (Explorer-like) regardless
 // of source aspect/size. Transparent padding, never distorted.
@@ -250,6 +257,7 @@ private:
   // Reset at scan start alongside the other counters.
   qulonglong lastReadN_=0;
   qulonglong targetTotal_=0; bool targetKnown_=false;
+  qulonglong lastListN_=0; // directory-walk listing count (heartbeat-visible)
   QString qlPendingPath_; int qlPollLeft_ = 0; // pending preview while its server starts
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
