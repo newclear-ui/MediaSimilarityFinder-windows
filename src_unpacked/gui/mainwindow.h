@@ -233,6 +233,11 @@ private:
   QString currentFile_; int currentGroup_=-1;
   int lastPct_=0; QString lastPath_; int maxPctShown_=0;
   qulonglong lastDoneN_=0, lastTotalN_=0;
+  // Monotonic read-progress across phases within one scan. Fingerprint-hashed
+  // and walked counts are different sequences sharing no denominator; taking
+  // the max keeps the panel from visibly resetting to 0 at the phase handoff.
+  // Reset at scan start alongside the other counters.
+  qulonglong lastReadN_=0;
   qulonglong targetTotal_=0; bool targetKnown_=false;
   QString qlPendingPath_; int qlPollLeft_ = 0; // pending preview while its server starts
   QStringList cutPaths_;

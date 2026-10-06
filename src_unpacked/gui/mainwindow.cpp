@@ -1375,6 +1375,7 @@ void MainWindow::setRunning(bool v) {
     maxPctShown_ = 0;
     lastDoneN_ = 0;
     lastTotalN_ = 0;
+    lastReadN_ = 0;
     targetTotal_ = 0;
     targetKnown_ = false;
   } else {
@@ -1547,8 +1548,10 @@ void MainWindow::onFingerprintProgress(qulonglong n, qulonglong bytes, QString p
   if (shortPath.size() > 72) shortPath = QStringLiteral("...") + shortPath.right(69);
   statusMsg_->setText(QString("%1: %2 files, %3 GB — %4").arg(trStr(lang(), "fpProgress")).arg(n).arg(gb, 0, 'f', 1).arg(shortPath));
   // The left panel's read-complete row must move during fingerprint too:
-  // nothing else updates it before the walk starts.
-  sumValDone_->setText(QString::number(n));
+  // nothing else updates it before the walk starts. Monotonic across phases
+  // so the walk handoff never visibly resets to 0.
+  if ((qulonglong)n > lastReadN_) lastReadN_ = (qulonglong)n;
+  sumValDone_->setText(QString::number(lastReadN_));
 }
 void MainWindow::onQuickLoaded(int n) {
   drainMatches();
@@ -3407,9 +3410,13 @@ qint64 MainWindow::elapsedActiveMs() const {
 }
 void MainWindow::refreshSummary(const msf::SearchReport*) {
   if (!hasReport_ || lastStats_.size() < 5) {
-    sumValTotal_->setText("-"); sumValDone_->setText("-"); sumValIndexed_->setText("-"); sumValGroups_->setText("-");
-    sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(gpuStateText());
-    sumValCpu_->setText("-"); sumValRam_->setText("-");
+    // Preserve live progress from a cancelled scan instead of blanking: a stop
+    // during fingerprint/walk did real work that "-" would erase.
+    if (lastReadN_ == 0) {
+      sumValTotal_->setText("-"); sumValDone_->setText("-"); sumValIndexed_->setText("-"); sumValGroups_->setText("-");
+      sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(gpuStateText());
+      sumValCpu_->setText("-"); sumValRam_->setText("-");
+    }
     return;
   }
   const qulonglong completed = lastStats_[0].toULongLong();
@@ -3457,10 +3464,14 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
   // Read-complete shows walked files; index-complete shows analyzed files from
   // the engine's live counter. Plain numbers match the post-scan panel format;
   // the old combined "done / total" shape was part of the confusion.
+  // Read-complete is monotonic across the fingerprint->walk handoff: the two
+  // phases count different sequences, so the max is shown rather than letting
+  // the walk restart the row at 0.
   if (scanning_) {
     sumValTime_->setText(fmtElapsed(elapsedActiveMs()));
     sumValTotal_->setText(targetKnown_ ? QString::number(targetTotal_) : "-");
-    sumValDone_->setText(QString::number(lastTotalN_));
+    if (lastTotalN_ > lastReadN_) lastReadN_ = lastTotalN_;
+    sumValDone_->setText(QString::number(lastReadN_));
     qulonglong liveAnalyzed = 0;
     if (worker_) liveAnalyzed = (qulonglong)worker_->scanEngine().analyzedCount();
     sumValIndexed_->setText(QString::number(liveAnalyzed));

@@ -118,6 +118,7 @@ direct cause       GUI Stop unresponsiveness was fixed at engine level in 0.9.4.
                    Embedded image-path issues were fixed in 0.9.4.52.
                    Summary panel 3-row split was done in 0.9.4.53.
                    Live read counter was done in 0.9.4.54.
+                   Monotonic panel counters were done in 0.9.4.55.
                    The only remaining condition is real GUI screen/button
                    verification, which headless automation cannot close
 ```
