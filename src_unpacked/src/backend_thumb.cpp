@@ -37,4 +37,29 @@ JpegThumb encodeJpegGray(const unsigned char* gray, int w, int h, int quality) {
     return compress(w, h, gray, TJPF_GRAY, w, quality);
 }
 
+Argb32Image decodeJpegArgb32(const unsigned char* jpeg, std::size_t len) {
+    Argb32Image out;
+    if (!jpeg || len == 0) return out;
+    tjhandle hnd = tjInitDecompress();
+    if (!hnd) return out;
+    int w = 0, h = 0, subsamp = 0, colorspace = 0;
+    const int rc = tjDecompressHeader3(hnd, jpeg, (unsigned long)len, &w, &h, &subsamp, &colorspace);
+    if (rc != 0 || w <= 0 || h <= 0) {
+        tjDestroy(hnd);
+        return out;
+    }
+    out.bytes.resize((std::size_t)w * h * 4);
+    const int drc = tjDecompress2(hnd, jpeg, (unsigned long)len, out.bytes.data(), w, w * 4, h,
+                                  TJPF_BGRA, TJFLAG_FASTDCT);
+    tjDestroy(hnd);
+    if (drc != 0) {
+        out.bytes.clear();
+        return out;
+    }
+    out.width = w;
+    out.height = h;
+    out.ok = true;
+    return out;
+}
+
 } // namespace msf

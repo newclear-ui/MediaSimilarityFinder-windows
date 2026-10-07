@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 (프로세스 분리 종료) → 수동 GUI acceptance → 제품 acceptance 재확인
+> **작업 순서 요약:** 0.9.4.70 P4 완료 (프로세스 분리 종료) → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore 완료 → 수동 GUI acceptance → 제품 acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -102,6 +102,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | P2 BackendClient+Loopback | **완료(0.9.4.68)** | worker/thread/monitor 직접 소유 제거. pull→push, snapshot 캐시, requestThumb. ScanWorker 무수정. 신규 테스트 없음 |
 | P3 실 spawn+Supervisor+IPC | **완료(0.9.4.69)** | ScanWorker→src, 공용 Session, JSONL IPC, THUMBNAIL, 비동기 fileThumb, thumbDb 이동. E2E PID분리·restart·FAILED 실측 |
 | P4 hardening+acceptance | **완료(0.9.4.70)** | 잔여 decode를 FILE_META로 이전. GUI pixel decode 0. dumpbin Qt6Core-only. §15 전수 대조·숫자 확정 |
+| 백엔드 결함 수정+ThumbnailStore | **완료(0.9.4.71)** | 2차 재검토 확정 7건 수정(ExecutionPolicy IPC로 Maximum 복구, Index Complete=analyzed+unchanged, 요약 CPU/RAM 단일 의미, 느린 파일 cacheHit/0ms 제외, allMatches_ 해제, ThumbnailStore 엔진 art·디스크 DB·decode 체인 JPEG end-to-end, fileMeta in-place). 검증 중 Qt JPEG 플러그인 미배포 회귀 발견 → libjpeg-turbo 디코드 교체. CPU 116/116, GPU 117/117 |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -188,12 +189,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.70 (P4 hardening + final acceptance) |
+| 기준 코드 | 0.9.4.71 (backend defect fixes + ThumbnailStore) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.70 P4 완료 (프로세스 분리 종료)** — CPU 116/116, GPU 117/117, --version 0.9.4.70 양쪽 exe, warning/error/C4819 0건. 별도 표시 대화상자를 삭제하고 설정 일반 탭으로 통합했다. 남은 것은 실제 Windows 화면에서 설정/resize/filename을 확인하고 Tiles/ListMode 및 대규모 dataset traversal을 수동 확인하는 것. 0.9.4.62 crash-response 방어/관측 패치는 완료했고 root cause는 미확정이므로 다음 crash 발생 시 runbook 기반 증거 수집을 우선한다. XMP Orientation은 fixture PASS이나 real-dataset coverage가 없어 CONDITIONAL. `color_thumb` R1은 미착수. S5 infrastructure는 REVALIDATED, 실제 product benchmark는 Gate 대기. F-1은 CONDITIONAL/NVDEC production adoption NO. |
+| 현재 노드 | **0.9.4.71 백엔드 결함 수정 + ThumbnailStore 완료** — CPU 116/116, GPU 117/117, --version 0.9.4.71 양쪽 exe. 2차 독립 재검토 확정 7건 수정(ExecutionPolicy IPC로 Maximum 복구, Index Complete=analyzed+unchanged, 요약 CPU/RAM 단일 의미, 느린 파일 cacheHit/0ms 제외, allMatches_ 해제, ThumbnailStore JPEG end-to-end, fileMeta in-place) + Qt JPEG 플러그인 미배포 회귀(libjpeg-turbo 디코드 교체). 남은 것은 실제 Windows 화면에서 설정/resize/filename을 확인하고 Tiles/ListMode 및 대규모 dataset traversal을 수동 확인하는 것. 0.9.4.62 crash-response 방어/관측 패치는 완료했고 root cause는 미확정이므로 다음 crash 발생 시 runbook 기반 증거 수집을 우선한다. XMP Orientation은 fixture PASS이나 real-dataset coverage가 없어 CONDITIONAL. `color_thumb` R1은 미착수. S5 infrastructure는 REVALIDATED, 실제 product benchmark는 Gate 대기. F-1은 CONDITIONAL/NVDEC production adoption NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.70 |
+| 현재 버전 | 0.9.4.71 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

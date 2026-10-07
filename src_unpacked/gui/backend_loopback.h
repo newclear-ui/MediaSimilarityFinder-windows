@@ -30,6 +30,7 @@ public:
                       const msf::ResourcePolicy& policy) override;
     void stopMonitor() override { session_->stopMonitor(); }
     void setMonitorPolicy(const msf::ResourcePolicy& policy) override;
+    void updateResourcePolicy(const ExecutionPolicy& exec) override;
     void refreshMonitor() override { session_->refreshMonitor(); }
     void requestThumb(const QString& path, const QSize& size, bool isVideo,
                       quint64 requestId) override;

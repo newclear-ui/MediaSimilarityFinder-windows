@@ -24,18 +24,14 @@
 #include "monitor.h"
 #include "scan_worker.h"
 #include "file_meta.h"
+#include "thumbnail_store.h"
+#include "backend_thumb.h"
 
-// Raw thumbnail bytes from the engine (Type B payload before encoding).
-struct ThumbBytes {
-    std::vector<unsigned char> rgba;
-    int width = 0;
-    int height = 0;
-    bool ok = false;
-};
 
 // Pushed engine snapshot (Type C).
 struct SessionStatus {
     qulonglong analyzed = 0;
+    qulonglong unchanged = 0; // P4: valid index reused without analysis
     bool gpuActive = false;
     bool gpuAvailable = false;
     qulonglong gpuDone = 0;
@@ -53,7 +49,6 @@ struct SessionMonitorStatus {
     qulonglong pending = 0;
 };
 
-Q_DECLARE_METATYPE(ThumbBytes)
 Q_DECLARE_METATYPE(SessionStatus)
 Q_DECLARE_METATYPE(SessionMonitorStatus)
 Q_DECLARE_METATYPE(msf::MonitorEvent)
@@ -67,7 +62,13 @@ public:
     void startScan(const QString& root, const QString& appDir, int distance,
                    int cpu, int gpuPercent, bool gpuEnabled,
                    bool scanImages, bool scanVideos,
-                   const QSet<QString>& ignored, bool detailedLog);
+                   const QSet<QString>& ignored, bool detailedLog,
+                   int cpuMode, int strategy);
+    // Live policy refresh (P4): monitor applies immediately; the stored
+    // engine policy applies to the next scan (worker pool sizing is only
+    // safe at scan start). Reports through onPolicyApplied().
+    void updateResourcePolicy(int cpuMode, int cpuPercent, int gpuPercent,
+                              int strategy, bool gpuEnabled);
     void pause();
     void resume();
     void cancel();
@@ -79,7 +80,10 @@ public:
     void stopMonitor();
     void setMonitorPolicy(const msf::ResourcePolicy& policy);
     void refreshMonitor();
-    ThumbBytes requestThumb(const QString& path, bool isVideo);
+    // Thumbnail serving through the store (JPEG end-to-end). Callers decode
+    // (loopback via QImage) or forward bytes (backend_main base64) — never
+    // re-encode. desiredMaxDim caps decode work, not the served size.
+    msf::JpegThumb requestThumb(const QString& path, bool isVideo, int desiredMaxDim = 256);
     QVector<GuiFile> requestFiles();
     std::string telemetryJsonForTest() const;
     // Display metadata for the detail pane (P4): engine records first, then
@@ -113,6 +117,10 @@ signals:
     // Session lifecycle for STATE events (READY/SCANNING/PAUSED/CANCELLING/
     // SHUTTING_DOWN). The loopback ignores it; the backend server forwards it.
     void stateChanged(QString state);
+    // Policy application report (P4): partial=true means monitor-applied now,
+    // engine side deferred to the next scan. Never silent.
+    void policyApplied(bool partial, int mode, int cpuPercent, int gpuPercent,
+                       int strategy, bool gpuEnabled);
 
 private slots:
     void onMatchesArrived();
@@ -130,6 +138,9 @@ private:
     ScanWorker* worker_ = nullptr;
     std::unique_ptr<msf::MediaMonitor> monitor_;
     bool scanning_ = false;
+    msf::ThumbnailStore thumbs_;
+    QString lastAppDir_;
+    QString lastRoot_;
     SessionStatus lastStatus_;
     SessionMonitorStatus lastMonStatus_;
 };

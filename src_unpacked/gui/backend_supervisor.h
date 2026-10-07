@@ -58,6 +58,7 @@ public:
                       const msf::ResourcePolicy& policy) override;
     void stopMonitor() override;
     void setMonitorPolicy(const msf::ResourcePolicy& policy) override;
+    void updateResourcePolicy(const ExecutionPolicy& exec) override;
     void refreshMonitor() override {} // snapshots stream from the backend ticker
     void requestThumb(const QString& path, const QSize& size, bool isVideo,
                       quint64 requestId) override;

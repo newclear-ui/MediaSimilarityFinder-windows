@@ -56,7 +56,7 @@ A separate `workprogress` document is intentionally not created; this document i
 > **Boundary:** Do not reopen sparse production, NVDEC production adoption, or utilization-only GPU tuning.
 > Existing rejection/deferred evidence remains authoritative.
 >
-> **Execution summary:** 0.9.4.70 P4 done (process split complete) → manual GUI acceptance → final acceptance recheck
+> **Execution summary:** 0.9.4.70 P4 done (process split complete) → 0.9.4.71 backend defect fixes + ThumbnailStore done → manual GUI acceptance → final acceptance recheck
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode and traversal remain lower-priority work and must not block the main validation track.
 
@@ -101,6 +101,7 @@ This section keeps only a **compressed completion state** for long-term orientat
 | P2 BackendClient+Loopback | **done in 0.9.4.68** | Direct worker/thread/monitor ownership removed. Pull-to-push, snapshot cache, requestThumb. ScanWorker untouched. No new tests |
 | P3 real spawn+Supervisor+IPC | **done in 0.9.4.69** | ScanWorker to src, shared Session, JSONL IPC, THUMBNAIL, async fileThumb, thumbDb moved. E2E measures PID split, restart, FAILED |
 | P4 hardening+acceptance | **done in 0.9.4.70** | Remaining decoders to FILE_META. Zero GUI pixel decode. dumpbin Qt6Core-only. All §15 checked, numbers locked |
+| Backend defect fixes+ThumbnailStore | **done in 0.9.4.71** | Seven defects from the second review fixed (ExecutionPolicy over IPC restores Maximum, Index Complete=analyzed+unchanged, single CPU/RAM summary meaning, slowest-list cacheHit/0ms exclusion, allMatches_ release, ThumbnailStore engine art + disk DB + decode chain JPEG end-to-end, fileMeta in-place). Qt JPEG plugin deployment regression found during verification → libjpeg-turbo decode. CPU 116/116, GPU 117/117 |
 
 
 ## 2026-10-06 — 0.9.4.59 review and next correction order
@@ -185,12 +186,12 @@ This phase-2 GUI task must not change engine cancellation semantics. Scheduler/w
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.70 (P4 hardening + final acceptance) |
+| Reference code | 0.9.4.71 (backend defect fixes + ThumbnailStore) |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **0.9.4.70 P4 done (process split complete)** — CPU 116/116, GPU 117/117, --version 0.9.4.70 on both exes, warning/error/C4819 clean; separate display dialog removed and folded into the settings general tab). What remains is the real-Windows eyeball of settings/resize/filename plus Tiles/ListMode and large-dataset traversal. S4 implementation and visible UI are PASS, but final acceptance is tied to product acceptance and remains PENDING. The 0.9.4.62 crash-response containment/observability patch is complete, while the root cause remains unproven; the next crash must follow the runbook evidence order. XMP Orientation has fixture PASS but no real-dataset coverage, so production acceptance remains CONDITIONAL. `color_thumb` R1 is not started. S5 infrastructure is REVALIDATED and the real product benchmark remains gate-pending. F-1 remains CONDITIONAL with NVDEC production adoption NO. |
+| Current node | **0.9.4.71 backend defect fixes + ThumbnailStore done** — CPU 116/116, GPU 117/117, --version 0.9.4.71 on both exes. Fixes the seven defects confirmed by the second independent review (ExecutionPolicy over IPC restores Maximum, Index Complete=analyzed+unchanged, single CPU/RAM summary meaning, slowest-list cacheHit/0ms exclusion, allMatches_ release, ThumbnailStore JPEG end-to-end, fileMeta in-place) plus the Qt JPEG plugin deployment regression (replaced with libjpeg-turbo decode). What remains is the real-Windows eyeball of settings/resize/filename plus Tiles/ListMode and large-dataset traversal. S4 implementation and visible UI are PASS, but final acceptance is tied to product acceptance and remains PENDING. The 0.9.4.62 crash-response containment/observability patch is complete, while the root cause remains unproven; the next crash must follow the runbook evidence order. XMP Orientation has fixture PASS but no real-dataset coverage, so production acceptance remains CONDITIONAL. `color_thumb` R1 is not started. S5 infrastructure is REVALIDATED and the real product benchmark remains gate-pending. F-1 remains CONDITIONAL with NVDEC production adoption NO. |
 | Current phase | **P4 done → real GUI manual acceptance → final Search/Index/Comparison acceptance recheck → S4 → XMP/color_thumb → S5 → S6**. Manual GUI acceptance (incl. overlap re-check) → final acceptance recheck → S4 → XMP/color_thumb → S5 → S6 stay queued. The latest real-dataset acceptance audit still leaves Search/Index/Comparison **NOT ACCEPTED**, even though some execution paths are PASS, so S4/S5 must not be promoted to final PASS prematurely. On any new crash, collect logs/WER/Qt/dump evidence using `crash-response-runbook` before speculative code changes. F-1 remains `CONDITIONAL`, NVDEC production adoption remains `NO`, and sparse production remains blocked by `ExactnessPolicy::RefuseAll`. |
-| Current version | 0.9.4.70 |
+| Current version | 0.9.4.71 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |

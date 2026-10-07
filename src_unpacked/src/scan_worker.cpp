@@ -35,7 +35,7 @@ void ScanWorker::run() {
     // deterministically for the crash-handler regression test. Production
     // code never sets this variable, so the branch is dead otherwise.
     if (qEnvironmentVariableIsSet("MSF_TEST_THROW_NONSTD")) throw 42;
-    engine_.setResourcePolicy(msf::make_policy(msf::ResourceMode::Custom, cpu_, gpu_));
+    engine_.setResourcePolicy(msf::make_policy(resourceMode_, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     control_.telemetryEnabled = detailedLogEnabled_;
@@ -178,6 +178,12 @@ void ScanWorker::run() {
     // next scan of the same folder; a partial set on cancel keeps the last
     // completed checkpoint, matching the scan-side semantics.
     persistMatchesSnapshot();
+    // P4: the accumulated set has been persisted wholesale; retaining it
+    // would pin every match's strings until the next scan (hundreds of MB on
+    // match storms). Release it — nothing reads allMatches_ after this point
+    // (results come from r.matches; takePending() is untouched).
+    allMatches_.clear();
+    allMatches_.shrink_to_fit();
     // Diagnostic counters (ChatGPT step 1): where a video-heavy scan with few
     // results loses its pairs. Log-only (the finished message below is parsed
     // positionally and must not change shape).
@@ -218,6 +224,10 @@ void ScanWorker::run() {
     // are attempted independently; each swallows its own failure.
     try { persistMatchesSnapshot(); } catch (...) {}
     try { emit failed(e.what()); } catch (...) {}
+    // P4: same release as the normal path (persist already checkpointed).
+    // shrink_to_fit guarded: this handler must never throw (0.9.4.65 rule).
+    allMatches_.clear();
+    try { allMatches_.shrink_to_fit(); } catch (...) {}
   } catch (...) {
     // Fail-fast converted to a recorded failure (0.9.4.62): a non-standard
     // exception used to terminate the whole process with no record (the
@@ -229,6 +239,8 @@ void ScanWorker::run() {
     // re-enters terminate() -> abort() with no record.
     try { persistMatchesSnapshot(); } catch (...) {}
     try { emit failed("unhandled non-standard exception in scan worker"); } catch (...) {}
+    allMatches_.clear();
+    try { allMatches_.shrink_to_fit(); } catch (...) {}
   }
 }
 void ScanWorker::persistMatchesSnapshot() {

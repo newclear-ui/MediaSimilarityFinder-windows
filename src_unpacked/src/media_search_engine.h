@@ -130,6 +130,9 @@ const std::vector<MediaFile>& files() const { return files_; }
   // batches. Reset to 0 at the start of every scan().
   std::uint64_t gpuImagesProcessed() const { return gpuImagesProcessed_.load(); }
   std::uint64_t analyzedCount() const { return analyzedCount_.load(); }
+  // P4: files validly indexed without analysis this run (unchanged reuse).
+  // Index Complete = analyzed + unchanged; the GUI label shows that sum.
+  std::uint64_t unchangedCount() const { return unchangedCount_.load(); }
   bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
   bool hasTelemetry() const { return telemetry_.hasData(); }
   std::string telemetryJson() const { return telemetry_.toJson(); }
@@ -151,6 +154,9 @@ const std::vector<MediaFile>& files() const { return files_; }
   // exactly where r.analyzed increments, so the live value and the final
   // report agree by construction. Read-only atomic; no scan logic depends on it.
   std::atomic<std::uint64_t> analyzedCount_{0};
+  // Live unchanged-reuse count (P4): incremented exactly where nUnchanged
+  // increments. Index Complete = analyzed + unchanged.
+  std::atomic<std::uint64_t> unchangedCount_{0};
   mutable std::atomic<bool> gpuActive_{false};
   TelemetryRecorder telemetry_;
   // B1 Minimal Adaptive Allocation: decided per scan, re-evaluated at

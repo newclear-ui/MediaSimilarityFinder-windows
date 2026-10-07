@@ -4,13 +4,15 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
-#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QThread>
 #include <QUuid>
 
+#include <cstddef>
+
 #include "backend_ipc.h"
+#include "backend_thumb.h"
 
 using msf_ipc::Message;
 
@@ -98,6 +100,13 @@ void BackendSupervisor::startScan(const BackendScanConfig& cfg) {
     for (const auto& s : cfg.ignored) ig.push_back(s);
     p[QStringLiteral("ignored")] = ig;
     p[QStringLiteral("detailedLog")] = cfg.detailedLog;
+    QJsonObject exec;
+    exec[QStringLiteral("cpuMode")] = cfg.exec.cpuMode;
+    exec[QStringLiteral("cpuPercent")] = cfg.exec.cpuPercent;
+    exec[QStringLiteral("gpuPercent")] = cfg.exec.gpuPercent;
+    exec[QStringLiteral("strategy")] = cfg.exec.strategy;
+    exec[QStringLiteral("gpuEnabled")] = cfg.exec.gpuEnabled;
+    p[QStringLiteral("exec")] = exec;
     scanning_ = true;
     sendCommand(msf_ipc::kStartScan, p);
 }
@@ -191,6 +200,23 @@ void BackendSupervisor::setMonitorPolicy(const msf::ResourcePolicy& policy) {
     QJsonObject p;
     p[QStringLiteral("monitorPolicy")] = policyJson(policy);
     sendCommand(msf_ipc::kConfigure, p);
+}
+
+void BackendSupervisor::updateResourcePolicy(const ExecutionPolicy& exec) {
+    monPolicy_.mode = (exec.cpuMode >= 1 && exec.cpuMode <= 5)
+                          ? static_cast<msf::ResourceMode>(exec.cpuMode)
+                          : msf::ResourceMode::Custom;
+    monPolicy_.cpuPercent = exec.cpuPercent;
+    monPolicy_.gpuPercent = exec.gpuPercent;
+    monPolicy_.gpuEnabled = exec.gpuEnabled;
+    if (!backendReady_ || !processAlive()) return;
+    QJsonObject p;
+    p[QStringLiteral("cpuMode")] = exec.cpuMode;
+    p[QStringLiteral("cpuPercent")] = exec.cpuPercent;
+    p[QStringLiteral("gpuPercent")] = exec.gpuPercent;
+    p[QStringLiteral("strategy")] = exec.strategy;
+    p[QStringLiteral("gpuEnabled")] = exec.gpuEnabled;
+    sendCommand(msf_ipc::kUpdatePolicy, p);
 }
 
 void BackendSupervisor::requestThumb(const QString& path, const QSize& size, bool isVideo,
@@ -399,6 +425,14 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
                                       o.value("percent").toDouble()});
             }
             emit monitorEvent(ev);
+        } else if (st == QStringLiteral("POLICY_APPLIED")) {
+            emit backendLogLine(QStringLiteral("policy APPLIED partial=%1 mode=%2 cpu=%3 gpu=%4 strategy=%5 gpuOn=%6")
+                                    .arg(payload.value("partial").toBool(false))
+                                    .arg(payload.value("mode").toInt(0))
+                                    .arg(payload.value("cpuPercent").toInt(0))
+                                    .arg(payload.value("gpuPercent").toInt(0))
+                                    .arg(payload.value("strategy").toInt(0))
+                                    .arg(payload.value("gpuEnabled").toBool(false)));
         }
         // SHUTTING_DOWN/SHUTDOWN_ACK/SCANNING/PAUSED/... : informational only;
         // scan state stays MainWindow-owned.
@@ -454,11 +488,16 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
         return;
     }
     if (type == QLatin1String(kHealth)) {
-        return; // liveness already recorded; nothing to display per tick
+        // Own-process numbers ride the health ticker (P4 display contract).
+        lastStatus_.backendCpu = payload.value("backendCpu").toDouble(0.0);
+        lastStatus_.backendRssMB = payload.value("backendRssMB").toString().toULongLong();
+        emit statusSnapshot(lastStatus_);
+        return; // liveness already recorded; nothing else to display per tick
     }
     if (type == QLatin1String(kStatus)) {
         BackendStatus st;
         st.analyzed = payload.value("analyzed").toString().toULongLong();
+        st.unchanged = payload.value("unchanged").toString().toULongLong();
         st.gpuActive = payload.value("gpuActive").toBool(false);
         st.gpuAvailable = payload.value("gpuAvailable").toBool(false);
         st.gpuDone = payload.value("gpuDone").toString().toULongLong();
@@ -504,12 +543,15 @@ void BackendSupervisor::emitThumbReady(quint64 requestId, const QJsonObject& pay
     if (payload.value("ok").toBool(false)) {
         const QByteArray jpeg = QByteArray::fromBase64(payload.value("jpegBase64").toString().toLatin1());
         if (!jpeg.isEmpty() && jpeg.size() <= 1024 * 1024) {
-            const QImage im = QImage::fromData(jpeg);
-            if (!im.isNull()) {
-                const QImage argb = im.convertToFormat(QImage::Format_ARGB32);
-                r.rgba = QByteArray(reinterpret_cast<const char*>(argb.constBits()), argb.sizeInBytes());
-                r.width = argb.width();
-                r.height = argb.height();
+            // Shared libjpeg-turbo decode (see backend_thumb.h): Qt's JPEG
+            // plugin needs jpeg62.dll, which is not in the deployed set, so
+            // QImage::fromData returns null and no thumbnail would paint.
+            const msf::Argb32Image im = msf::decodeJpegArgb32(
+                reinterpret_cast<const unsigned char*>(jpeg.constData()), (std::size_t)jpeg.size());
+            if (im.ok) {
+                r.rgba = QByteArray(reinterpret_cast<const char*>(im.bytes.data()), (int)im.bytes.size());
+                r.width = im.width;
+                r.height = im.height;
                 r.ok = true;
             }
         }

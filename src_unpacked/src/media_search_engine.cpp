@@ -224,7 +224,7 @@ bool MediaSearchEngine::getColorThumb(const std::string& path, int& w, int& h, s
 bool MediaSearchEngine::getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const {
   return videoEngine_.peekThumb48(path, gray48);
 }
-SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); analyzedCount_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
+SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); analyzedCount_.store(0); unchangedCount_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
   auto old=db_.all();
   std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
   const bool videoRegrid=(db_.samplingGeneration()!=kSamplingGeneration);
@@ -593,7 +593,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(telemetryOn){ const std::size_t sampled = videoStats.cacheHit ? msf::TelemetryRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; telemetry_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled); telemetry_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); telemetry_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
+       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(telemetryOn){ const std::size_t sampled = videoStats.cacheHit ? msf::TelemetryRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; telemetry_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled, videoStats.cacheHit); telemetry_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); telemetry_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
      return j;
     }));
   }
@@ -651,7 +651,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(!changed){
    // A known analysis failure on identical content is not "changed": there is
    // nothing to redo. It stays out of added/modified and out of the search set.
-   ++nUnchanged; seen.insert(x.path); return;
+   ++nUnchanged; unchangedCount_.fetch_add(1, std::memory_order_relaxed); seen.insert(x.path); return;
   }
   // added/modified are counted at analysis OUTCOME, not at intent. Counting them
   // here reported a file as successfully indexed before any fingerprint existed.

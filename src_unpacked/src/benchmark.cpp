@@ -267,6 +267,10 @@ void TelemetryRecorder::addImage(std::uint64_t bytes, double decodeMs, double ha
   imgHashNs_.fetch_add((long long)(hashMs * 1e6), std::memory_order_relaxed);
   imgCropNs_.fetch_add((long long)(cropMs * 1e6), std::memory_order_relaxed);
   imgDecodeRecorded_ = imgHashRecorded_ = imgCropRecorded_ = true;
+  // P4: the slowest list ranks files that did real work only. Zero-cost
+  // entries (failed decodes measured as 0ms) would pad the list and hide
+  // genuine algorithmic outliers, which is what this list exists to find.
+  if (decodeMs + hashMs + cropMs <= 0.0) return;
   SlowFile item{path, decodeMs + hashMs + cropMs, bytes, 0, 0};
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowImages_, std::move(item));
@@ -340,7 +344,7 @@ void TelemetryRecorder::recordVideoRange(std::size_t files, double maxFileMs) {
   while (ns > prev && !vidRangeMaxNs_.compare_exchange_weak(prev, ns, std::memory_order_relaxed)) {}
 }
 void TelemetryRecorder::addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
-                                 std::size_t decodedFrames, std::size_t sampledFrames) {
+                                 std::size_t decodedFrames, std::size_t sampledFrames, bool cacheHit) {
   vidCount_.fetch_add(1, std::memory_order_relaxed);
   vidBytes_.fetch_add(bytes, std::memory_order_relaxed);
   vidFrames_.fetch_add(frames, std::memory_order_relaxed);
@@ -358,6 +362,11 @@ void TelemetryRecorder::addVideo(std::uint64_t bytes, double durationSec, double
   vidBuildNs_.fetch_add((long long)(buildMs * 1e6), std::memory_order_relaxed);
   double prev = vidPlaySec_.load(std::memory_order_relaxed);
   while (!vidPlaySec_.compare_exchange_weak(prev, prev + durationSec, std::memory_order_relaxed)) {}
+  // P4: the slowest list ranks files that did real work only. A cache-hit
+  // rebuild decodes nothing and costs ~0ms, so it would pad the list and hide
+  // genuine algorithmic outliers. The engine flags this explicitly (cacheHit);
+  // a caller that omits decoded/sampled is a real analysis and stays listed.
+  if (cacheHit) return;
   SlowFile item{path, buildMs, bytes, durationSec, frames};
   std::lock_guard<std::mutex> g(slowMutex_);
   appendSlow(slowVideos_, std::move(item));

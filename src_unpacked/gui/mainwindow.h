@@ -122,6 +122,8 @@ private slots:
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
   void groupViewChanged(int);
   void applyExecutionMode(); void updateKindSelection();
+  // P4: builds the two-axis ExecutionPolicy from policy_ + strategy box.
+  ExecutionPolicy currentExecPolicy() const;
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
   void setGroupMarked(int gi, bool on);
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
@@ -179,8 +181,7 @@ private:
   void updateGpuLabel();
   QString gpuStateText() const;
   void updateStatusCounts();
-  void updateSysLabels(); // process CPU%/RAM live + GPU state row
-  qint64 cpuPrevK_ = 0, cpuPrevU_ = 0, cpuPrevMs_ = 0; int cpuCount_ = 0;
+  void updateSysLabels(); // GPU state row (P4: CPU/RAM rows come from the status snapshot)
   void scanHeartbeat();
   void saveUiState();              // window geometry + splitter + header layouts
   void restoreUiState();           // counterpart applied after buildUi()
@@ -193,10 +194,14 @@ private:
   void onThumbReady(quint64 requestId, const ThumbResult& thumb);
   void onFileMetaReady(quint64 requestId, const FileMetaResult& meta);
   void requestFileMeta(const QString& path) const;
-  // FileMeta in flight (Type B dedup + stale-drop). Mutable: refreshDetail
-  // and fileResolution are const but trigger backend requests.
-  mutable QSet<QString> fileMetaPending_;
+  // FileMeta in flight, id-keyed like thumbnails (Type B dedup + stale-drop).
+  // Mutable: refreshDetail and fileResolution are const but trigger requests.
+  mutable QMap<quint64, QString> fileMetaPending_;
   mutable quint64 fileMetaRequestId_ = 0;
+  // In-place fileMeta paint, mirroring the 0.9.4.66 thumbnail pattern: update
+  // the matching grid cell / list row text without recreating widgets (which
+  // would destroy the user's selection — the P4 selection-lock regression).
+  void refreshFileMetaRow(const QString& path);
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
   void dropThumbCache(const QString& path); // exact + sized variants
   double pathBest(const QString&) const;

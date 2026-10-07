@@ -185,7 +185,8 @@ public:
   // waste (rangeWall - maxFile) is quantifiable from JSON alone.
   void recordVideoRange(std::size_t files, double maxFileMs);
   void addVideo(std::uint64_t bytes, double durationSec, double buildMs, std::size_t frames, const std::string& path,
-                std::size_t decodedFrames = kFramesNotProvided, std::size_t sampledFrames = kFramesNotProvided);
+                std::size_t decodedFrames = kFramesNotProvided, std::size_t sampledFrames = kFramesNotProvided,
+                bool cacheHit = false);
   void addVideoGpu(bool used, bool fallback, double gpuMs);
 // E-3B: records one planner decision for one video file. Called for every
 // analysed file, including cache hits, because the decision is cheap input

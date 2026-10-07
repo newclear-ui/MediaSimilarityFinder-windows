@@ -26,8 +26,24 @@
 
 #include "resource_policy.h" // msf::ResourcePolicy: plain config data (brief §10 payload class)
 
+// Execution policy (directive §9–14, P4): two independent axes cross the
+// boundary with identical meaning. Backend never reinterprets them:
+// - cpuMode/cpuPercent: ResourceMode aggressiveness + worker budget.
+// - strategy: 0=AUTO (scheduler auto-splits CPU/GPU), 1=CPU_ONLY (GPU lane
+//   forced off backend-side), 2=GPU_MAX (GPU allowed; scheduler auto-splits,
+//   no share boost exists in code — documented, not silently upgraded).
+// - gpuEnabled: effective GPU switch after strategy enforcement.
+struct ExecutionPolicy {
+    int cpuMode = 3; // ResourceMode::Balanced
+    int cpuPercent = 55;
+    int gpuPercent = 60;
+    int strategy = 0;
+    bool gpuEnabled = true;
+};
 // Scan configuration. Plain values copied from the existing UI model at
 // startScan time (brief §10: reuse the existing model, no new schema).
+// exec carries the two-axis policy; the scalar cpu/gpu fields stay for
+// backward-compatible readers.
 struct BackendScanConfig {
     QString root;
     QString appDir;
@@ -39,6 +55,7 @@ struct BackendScanConfig {
     bool scanVideos = true;
     QSet<QString> ignored;
     bool detailedLog = true;
+    ExecutionPolicy exec;
 };
 
 // One match for MATCHES_BATCH. Same shape as LiveMatch, encodable later.
@@ -78,12 +95,18 @@ struct FileMetaResult {
 };
 
 // Pushed engine snapshot (Type C). Updated by statusSnapshot; the GUI tick
-// reads lastStatus() and never touches the engine.
+// reads lastStatus() and never touches the engine. backendCpu/backendRss
+// are the WORKING process's own numbers (Backend in production, GUI process
+// under loopback) — the only CPU/RAM the summary panel shows (P4: one
+// meaning, no flip-flop).
 struct BackendStatus {
     qulonglong analyzed = 0;
+    qulonglong unchanged = 0; // P4: valid index reused (Index Complete = analyzed + unchanged)
     bool gpuActive = false;
     bool gpuAvailable = false;
     qulonglong gpuDone = 0;
+    double backendCpu = 0.0;
+    qulonglong backendRssMB = 0;
 };
 
 // Monitor snapshot (Type C). Mirrors the fields updateMonitorStatus shows.
@@ -152,6 +175,11 @@ public:
     // Live policy refresh (Type A). The monitor keeps sampling under the new
     // policy; no restart, no state loss.
     virtual void setMonitorPolicy(const msf::ResourcePolicy& policy) = 0;
+    // P4 live policy refresh: monitor applies immediately, engine side
+    // applies at the next scan (worker sizing is scan-start-only). Answers
+    // through the session policyApplied report (surfaced as a backend log
+    // line: never silent, explicit partial flag).
+    virtual void updateResourcePolicy(const ExecutionPolicy& exec) = 0;
     // Hint to push a fresh monitor snapshot (fire-and-forget; the snapshot
     // arrives via monitorSnapshot). Lets the GUI tick stay pull-free.
     virtual void refreshMonitor() = 0;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.70 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.71 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -133,6 +133,8 @@ add_library(msf_core STATIC
     src/backend_ipc.cpp
     src/backend_log.cpp
     src/backend_thumb.cpp
+    src/thumbnail_store.cpp
+    src/backend_sysinfo.cpp
     src/file_meta.cpp
     src/benchmark.cpp
     src/scheduler.cpp
@@ -829,10 +831,12 @@ endif()
 # still runs in-process in P1; spawning arrives in P3.
 find_package(Qt6 QUIET COMPONENTS Core)
 if(Qt6_FOUND)
-  # JPEG encoding for backend thumbnails (libjpeg-turbo, no QtGui per G13).
+  # JPEG encoding for backend thumbnails lives in msf_core now
+  # (ThumbnailStore serves JPEG end to end; no QtGui per G13).
   find_package(libjpeg-turbo CONFIG REQUIRED)
-  add_executable(MediaSimilarityFinderBackend src/backend_main.cpp src/backend_thumb.cpp)
-  target_link_libraries(MediaSimilarityFinderBackend PRIVATE msf_core Qt6::Core libjpeg-turbo::turbojpeg)
+  target_link_libraries(msf_core PUBLIC libjpeg-turbo::turbojpeg)
+  add_executable(MediaSimilarityFinderBackend src/backend_main.cpp)
+  target_link_libraries(MediaSimilarityFinderBackend PRIVATE msf_core Qt6::Core)
   target_include_directories(MediaSimilarityFinderBackend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   if(MSF_BUILD_TESTS)
     add_test(NAME backend_version COMMAND MediaSimilarityFinderBackend --version)

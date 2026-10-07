@@ -39,6 +39,7 @@ inline const char* kResume = "RESUME";
 inline const char* kCancel = "CANCEL";
 inline const char* kConfigure = "CONFIGURE";
 inline const char* kShutdown = "SHUTDOWN";
+inline const char* kUpdatePolicy = "UPDATE_RESOURCE_POLICY";
 inline const char* kGetThumbnail = "GET_THUMBNAIL";
 inline const char* kGetFileMeta = "GET_FILE_META";
 

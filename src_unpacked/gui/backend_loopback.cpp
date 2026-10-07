@@ -3,6 +3,8 @@
 // types. No engine logic lives here.
 #include "backend_loopback.h"
 
+#include "backend_sysinfo.h"
+
 LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(parent) {
     qRegisterMetaType<QVector<BackendMatch>>();
     qRegisterMetaType<QVector<BackendFile>>();
@@ -42,7 +44,13 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
             });
     connect(session_.get(), &BackendSession::statusSnapshot, this,
             [this](const SessionStatus& st) {
-                emit statusSnapshot({st.analyzed, st.gpuActive, st.gpuAvailable, st.gpuDone});
+                BackendStatus out;
+                out.analyzed = st.analyzed;
+                out.unchanged = st.unchanged;
+                out.gpuActive = st.gpuActive;
+                out.gpuAvailable = st.gpuAvailable;
+                out.gpuDone = st.gpuDone;
+                emit statusSnapshot(out);
             });
     connect(session_.get(), &BackendSession::monitorEvent, this,
             [this](const msf::MonitorEvent& e) {
@@ -67,12 +75,23 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
                 out.pending = s.pending;
                 emit monitorSnapshot(out);
             });
+    connect(session_.get(), &BackendSession::policyApplied, this,
+            [this](bool partial, int mode, int cpu, int gpu, int strategy, bool gpuOn) {
+                emit backendLogLine(QStringLiteral("policy APPLIED partial=%1 mode=%2 cpu=%3 gpu=%4 strategy=%5 gpuOn=%6")
+                                        .arg(partial)
+                                        .arg(mode)
+                                        .arg(cpu)
+                                        .arg(gpu)
+                                        .arg(strategy)
+                                        .arg(gpuOn));
+            });
 }
 
 void LoopbackBackendClient::startScan(const BackendScanConfig& cfg) {
     session_->startScan(cfg.root, cfg.appDir, cfg.distance, cfg.cpu, cfg.gpuPercent,
                         cfg.gpuEnabled, cfg.scanImages, cfg.scanVideos,
-                        cfg.ignored, cfg.detailedLog);
+                        cfg.ignored, cfg.detailedLog,
+                        cfg.exec.cpuMode, cfg.exec.strategy);
 }
 
 void LoopbackBackendClient::startMonitor(const QStringList& watchRoots, const QStringList& compareRoots,
@@ -87,19 +106,32 @@ void LoopbackBackendClient::setMonitorPolicy(const msf::ResourcePolicy& policy) 
     session_->setMonitorPolicy(policy);
 }
 
+void LoopbackBackendClient::updateResourcePolicy(const ExecutionPolicy& exec) {
+    session_->updateResourcePolicy(exec.cpuMode, exec.cpuPercent, exec.gpuPercent,
+                                   exec.strategy, exec.gpuEnabled);
+}
+
 void LoopbackBackendClient::requestThumb(const QString& path, const QSize& size, bool isVideo,
                                           quint64 requestId) {
     Q_UNUSED(size);
     // Uniform async contract: answer through thumbReady on the event loop,
     // never inline — the GUI must not depend on delivery timing (the real
-    // transport is always asynchronous).
+    // transport is always asynchronous). JPEG decoded with QtGui here;
+    // the real transport carries the same bytes base64.
     ThumbResult r;
-    const ThumbBytes b = session_->requestThumb(path, isVideo);
-    if (b.ok) {
-        r.rgba = QByteArray(reinterpret_cast<const char*>(b.rgba.data()), (int)b.rgba.size());
-        r.width = b.width;
-        r.height = b.height;
-        r.ok = true;
+    const msf::JpegThumb j = session_->requestThumb(path, isVideo);
+    if (j.ok && !j.bytes.empty()) {
+        // Decode with the shared libjpeg-turbo helper, not QtGui: the Qt JPEG
+        // plugin is not deployed (see backend_thumb.h), so QImage::fromData
+        // would silently fail and no thumbnail would ever paint.
+        const msf::Argb32Image im = msf::decodeJpegArgb32(j.bytes.data(), j.bytes.size());
+        if (im.ok) {
+            r.rgba = QByteArray(reinterpret_cast<const char*>(im.bytes.data()),
+                                (int)im.bytes.size());
+            r.width = im.width;
+            r.height = im.height;
+            r.ok = true;
+        }
     }
     QMetaObject::invokeMethod(
         this, [=, this] { emit thumbReady(requestId, r); }, Qt::QueuedConnection);
@@ -126,7 +158,14 @@ void LoopbackBackendClient::requestFileMeta(const QString& path, quint64 request
 
 BackendStatus LoopbackBackendClient::lastStatus() const {
     const SessionStatus s = session_->lastStatus();
-    return {s.analyzed, s.gpuActive, s.gpuAvailable, s.gpuDone};
+    BackendStatus out;
+    out.analyzed = s.analyzed;
+    out.unchanged = s.unchanged;
+    out.gpuActive = s.gpuActive;
+    out.gpuAvailable = s.gpuAvailable;
+    out.gpuDone = s.gpuDone;
+    msf::sampleOwnProcess(out.backendCpu, out.backendRssMB);
+    return out;
 }
 
 BackendMonitorStatus LoopbackBackendClient::lastMonitorStatus() const {

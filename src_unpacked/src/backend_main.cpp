@@ -22,6 +22,7 @@
 #include <thread>
 
 #include "backend_ipc.h"
+#include "backend_sysinfo.h"
 #include "backend_log.h"
 #include "backend_session.h"
 #include "backend_thumb.h"
@@ -78,6 +79,7 @@ public:
         connect(session_, &BackendSession::monitorEvent, this, &BackendServer::onMonitorEvent);
         connect(session_, &BackendSession::monitorSnapshot, this, &BackendServer::onMonitorSnapshot);
         connect(session_, &BackendSession::stateChanged, this, &BackendServer::onStateChanged);
+        connect(session_, &BackendSession::policyApplied, this, &BackendServer::onPolicyApplied);
         health_.setInterval(kHealthPeriodMs);
         connect(&health_, &QTimer::timeout, this, &BackendServer::onHealthTick);
         startMs_ = QDateTime::currentMSecsSinceEpoch();
@@ -165,6 +167,8 @@ private:
             session_->cancel();
         } else if (t == QLatin1String(msf_ipc::kConfigure)) {
             configureFrom(m);
+        } else if (t == QLatin1String(msf_ipc::kUpdatePolicy)) {
+            updatePolicyFrom(m);
         } else if (t == QLatin1String(msf_ipc::kGetThumbnail)) {
             serveThumbnail(m);
         } else if (t == QLatin1String(msf_ipc::kGetFileMeta)) {
@@ -195,19 +199,38 @@ private:
 
     void startScanFrom(const Message& m) {
         const QJsonObject p = m.payload;
+        const QJsonObject exec = p.value(QStringLiteral("exec")).toObject();
         const QStringList ignoredList =
             p.value(QStringLiteral("ignored")).toVariant().toStringList();
         const QSet<QString> ignored(ignoredList.begin(), ignoredList.end());
+        // P4: exec carries the two-axis policy with identical meaning (no
+        // Backend reinterpretation). Scalars stay as fallback for older senders.
         session_->startScan(p.value(QStringLiteral("root")).toString(),
                             p.value(QStringLiteral("appDir")).toString(),
                             p.value(QStringLiteral("distance")).toInt(8),
-                            p.value(QStringLiteral("cpu")).toInt(50),
-                            p.value(QStringLiteral("gpuPercent")).toInt(50),
-                            p.value(QStringLiteral("gpuEnabled")).toBool(false),
+                            exec.value(QStringLiteral("cpuPercent")).toInt(
+                                p.value(QStringLiteral("cpu")).toInt(50)),
+                            exec.value(QStringLiteral("gpuPercent")).toInt(
+                                p.value(QStringLiteral("gpuPercent")).toInt(50)),
+                            exec.value(QStringLiteral("gpuEnabled")).toBool(
+                                p.value(QStringLiteral("gpuEnabled")).toBool(false)),
                             p.value(QStringLiteral("scanImages")).toBool(true),
                             p.value(QStringLiteral("scanVideos")).toBool(true),
                             ignored,
-                            p.value(QStringLiteral("detailedLog")).toBool(true));
+                            p.value(QStringLiteral("detailedLog")).toBool(true),
+                            exec.value(QStringLiteral("cpuMode")).toInt(0),
+                            exec.value(QStringLiteral("strategy")).toInt(0));
+    }
+
+    void updatePolicyFrom(const Message& m) {
+        const QJsonObject p = m.payload;
+        session_->updateResourcePolicy(p.value(QStringLiteral("cpuMode")).toInt(0),
+                                       p.value(QStringLiteral("cpuPercent")).toInt(55),
+                                       p.value(QStringLiteral("gpuPercent")).toInt(60),
+                                       p.value(QStringLiteral("strategy")).toInt(0),
+                                       p.value(QStringLiteral("gpuEnabled")).toBool(true));
+        // APPLIED report is emitted by the session policyApplied signal
+        // (wired in run()).
     }
 
     void configureFrom(const Message& m) {
@@ -249,28 +272,22 @@ private:
         const QJsonObject p = m.payload;
         const QString path = p.value(QStringLiteral("path")).toString();
         const bool isVideo = p.value(QStringLiteral("isVideo")).toBool(false);
-        const ThumbBytes raw = session_->requestThumb(path, isVideo);
+        // Store serves finished JPEG end to end (no re-encode here).
+        const msf::JpegThumb jpg = session_->requestThumb(path, isVideo);
         Message out;
         out.type = QString::fromLatin1(msf_ipc::kThumbnail);
         out.requestId = m.requestId;
         QJsonObject op;
         op[QStringLiteral("path")] = path;
         op[QStringLiteral("ok")] = false;
-        if (raw.ok && !raw.rgba.empty()) {
-            msf::JpegThumb jpg;
-            if (isVideo)
-                jpg = msf::encodeJpegGray(raw.rgba.data(), raw.width, raw.height);
-            else if (raw.rgba.size() == (size_t)raw.width * raw.height * 4)
-                jpg = msf::encodeJpegThumb(raw.rgba.data(), raw.width, raw.height);
-            if (jpg.ok && (int)jpg.bytes.size() <= kMaxEncodedThumbBytes) {
-                op[QStringLiteral("ok")] = true;
-                op[QStringLiteral("width")] = jpg.width;
-                op[QStringLiteral("height")] = jpg.height;
-                op[QStringLiteral("jpegBase64")] = QString::fromLatin1(
-                    QByteArray(reinterpret_cast<const char*>(jpg.bytes.data()),
-                               (int)jpg.bytes.size())
-                        .toBase64());
-            }
+        if (jpg.ok && !jpg.bytes.empty() && (int)jpg.bytes.size() <= kMaxEncodedThumbBytes) {
+            op[QStringLiteral("ok")] = true;
+            op[QStringLiteral("width")] = jpg.width;
+            op[QStringLiteral("height")] = jpg.height;
+            op[QStringLiteral("jpegBase64")] = QString::fromLatin1(
+                QByteArray(reinterpret_cast<const char*>(jpg.bytes.data()),
+                           (int)jpg.bytes.size())
+                    .toBase64());
         }
         out.payload = op;
         send(out);
@@ -447,6 +464,7 @@ private:
         Message m;
         m.type = QString::fromLatin1(msf_ipc::kStatus);
         m.payload[QStringLiteral("analyzed")] = QString::number(st.analyzed);
+        m.payload[QStringLiteral("unchanged")] = QString::number(st.unchanged);
         m.payload[QStringLiteral("gpuActive")] = st.gpuActive;
         m.payload[QStringLiteral("gpuAvailable")] = st.gpuAvailable;
         m.payload[QStringLiteral("gpuDone")] = QString::number(st.gpuDone);
@@ -489,13 +507,30 @@ private:
         m.payload[QStringLiteral("state")] = state;
         send(m);
     }
+    void onPolicyApplied(bool partial, int mode, int cpu, int gpu, int strategy, bool gpuOn) {
+        Message m;
+        m.type = QString::fromLatin1(msf_ipc::kState);
+        m.payload[QStringLiteral("state")] = QStringLiteral("POLICY_APPLIED");
+        m.payload[QStringLiteral("partial")] = partial;
+        m.payload[QStringLiteral("mode")] = mode;
+        m.payload[QStringLiteral("cpuPercent")] = cpu;
+        m.payload[QStringLiteral("gpuPercent")] = gpu;
+        m.payload[QStringLiteral("strategy")] = strategy;
+        m.payload[QStringLiteral("gpuEnabled")] = gpuOn;
+        send(m);
+    }
     void onHealthTick() {
         if (session_->monitorRunning()) session_->refreshMonitor();
+        double cpu = 0.0;
+        unsigned long long rss = 0;
+        msf::sampleOwnProcess(cpu, rss);
         Message m;
         m.type = QString::fromLatin1(msf_ipc::kHealth);
         m.payload[QStringLiteral("state")] = sessionState_;
         m.payload[QStringLiteral("uptimeMs")] =
             QString::number(QDateTime::currentMSecsSinceEpoch() - startMs_);
+        m.payload[QStringLiteral("backendCpu")] = cpu;
+        m.payload[QStringLiteral("backendRssMB")] = QString::number(rss);
         send(m);
     }
 

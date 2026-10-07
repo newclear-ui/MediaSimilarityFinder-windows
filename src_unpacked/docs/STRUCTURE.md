@@ -59,10 +59,13 @@
 ## GUI (gui/)
 
 - mainwindow.cpp — 모든 위젯/트리스트/상태바.
-- 미리보기 fileThumb() — 메모리 캐시 → persistent SQLite thumbnail cache → Windows
-  IThumbnailCache(WTS_INCACHEONLY) fast lane → video는 VideoDecoder, image는 QImageReader/WIC 계열.
-  디코드 실패는 thumbFail_ skip-list로 기억한다.
-- 해상도 표시 — video는 VideoDecoder metadata, image는 QImageReader header 우선, 실패 시 ffprobe header probe 폴백.
+- 미리보기 fileThumb() — GUI는 메모리 캐시만 두고 miss는 Backend로 비동기 요청한다.
+  Backend의 ThumbnailStore(engine art → shell IThumbnailCache → WIC → FFmpeg → gray,
+  SQLite 영속 + 메모리 LRU256)가 JPEG을 만들어 THUMBNAIL로 보내고, GUI는
+  libjpeg-turbo(`msf::decodeJpegArgb32`)로 디코드해 표시한다. GUI는 media pixel
+  decode를 하지 않는다(P3/P4).
+- 해상도/길이 표시 — Backend FILE_META 응답(engine 기록 → video info →
+  dimensionsFast → ffprobe)을 사용한다. GUI는 문자열 메타데이터만 표시한다.
 - 상태바: 진행률 + GPU 라벨(gpuLbl_).
 
 ## 빌드/테스트
@@ -77,6 +80,7 @@
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - MediaSimilarityFinderBackend.exe --help/--version (0.9.4.67+, P1 진입점. src/backend_main.cpp, msf_core + Qt6::Core only. --backend는 P3 실 IPC 서빙). portable에 GUI 옆 동봉.
 - P3 backend IPC: src/backend_ipc.* (JSONL 코덱) + src/backend_session.* (스레드/워커/모니터 공용 세션) + gui/backend_supervisor.* (QProcess/Job Object/bounded restart) + gui/backend_client.h (인터페이스) + gui/backend_loopback.* (thin forwarder). E2E: tests/backend_e2e_test.cpp (Windows 실프로세스).
+- P4 backend 서비스: src/backend_thumb.* (JPEG 인코드/디코드, libjpeg-turbo) + src/thumbnail_store.* (썸네일 권위: SQLite + LRU + decode 체인) + src/backend_sysinfo.* (`msf::sampleOwnProcess` per-process CPU%/RSS) + src/file_meta.* (FileMeta/ffprobe). Backend는 여전히 Qt6::Core only.
 - 버전 상향 파일(검색용): CMakeLists.txt, vcpkg.json, gui/main.cpp, scripts/package_portable.ps1, src/index_manager.cpp.
 - Portable UI settings: `initAppSettings()` 가 organization `MediaSimilarityFinder-ui` + application `MediaSimilarityFinder` 로 INI 를 exe 옆에 기록한다. 0.9.4.24 이전의 `newclear-ui` 디렉터리는 첫 실행 시 1회 자동 migration 되며, 새 위치에 이미 파일이 있으면 덮어쓰지 않는다. QuickLook 레지스트리 조회는 `NativeFormat` + 명시 path 라서 이 identity 와 무관하다.
 

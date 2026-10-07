@@ -9,7 +9,6 @@
 BackendSession::BackendSession(QObject* parent) : QObject(parent) {
     qRegisterMetaType<QVector<LiveMatch>>();
     qRegisterMetaType<QVector<GuiFile>>();
-    qRegisterMetaType<ThumbBytes>();
     qRegisterMetaType<SessionStatus>();
     qRegisterMetaType<SessionMonitorStatus>();
     qRegisterMetaType<msf::MonitorEvent>();
@@ -35,11 +34,22 @@ void BackendSession::teardownWorker() {
 void BackendSession::startScan(const QString& root, const QString& appDir, int distance,
                               int cpu, int gpuPercent, bool gpuEnabled,
                               bool scanImages, bool scanVideos,
-                              const QSet<QString>& ignored, bool detailedLog) {
+                              const QSet<QString>& ignored, bool detailedLog,
+                              int cpuMode, int strategy) {
     teardownWorker();
+    lastAppDir_ = appDir;
+    lastRoot_ = root;
     thread_ = new QThread(this);
+    // P4: the two-axis policy crosses with identical meaning (no Backend
+    // reinterpretation). CPU_ONLY forces the GPU lane off here, backend-side;
+    // GPU_MAX keeps the scheduler auto-split (no share boost exists in code).
+    const bool gpuEff = gpuEnabled && strategy != 1;
     worker_ = new ScanWorker(root, appDir, distance, cpu, gpuPercent,
-                             gpuEnabled, scanImages, scanVideos);
+                             gpuEff, scanImages, scanVideos);
+    const auto mode = (cpuMode >= 1 && cpuMode <= 5)
+                          ? static_cast<msf::ResourceMode>(cpuMode)
+                          : msf::ResourceMode::Custom;
+    worker_->setResourceMode(mode);
     worker_->setIgnored(ignored);
     worker_->setDetailedLog(detailedLog);
     worker_->moveToThread(thread_);
@@ -95,6 +105,7 @@ void BackendSession::shutdown() {
     emit stateChanged(QStringLiteral("SHUTTING_DOWN"));
     teardownWorker();
     stopMonitor();
+    thumbs_.close();
 }
 
 void BackendSession::drainToGui() {
@@ -117,6 +128,7 @@ void BackendSession::onResults(QVector<GuiFile> files, QStringList matchRows) {
 void BackendSession::onFinished(QString msg) {
     scanning_ = false;
     drainToGui();
+    thumbs_.prune(); // drop disk thumbs whose files left the index
     emit finished(msg);
     emit stateChanged(QStringLiteral("READY"));
 }
@@ -124,6 +136,7 @@ void BackendSession::onFinished(QString msg) {
 void BackendSession::onFailed(QString msg) {
     scanning_ = false;
     drainToGui();
+    thumbs_.prune();
     emit failed(msg);
     emit stateChanged(QStringLiteral("READY"));
 }
@@ -134,37 +147,52 @@ void BackendSession::pushStatusSnapshot() {
     // engine exposes these counters for concurrent observation.
     const auto& engine = worker_->scanEngine();
     lastStatus_.analyzed = (qulonglong)engine.analyzedCount();
+    lastStatus_.unchanged = (qulonglong)engine.unchangedCount();
     lastStatus_.gpuActive = engine.gpuActive();
     lastStatus_.gpuAvailable = worker_->gpuAvailable();
     lastStatus_.gpuDone = worker_->gpuDone();
     emit statusSnapshot(lastStatus_);
 }
 
-ThumbBytes BackendSession::requestThumb(const QString& path, bool isVideo) {
-    ThumbBytes r;
-    if (!worker_) return r;
-    const auto& engine = worker_->scanEngine();
+msf::JpegThumb BackendSession::requestThumb(const QString& path, bool isVideo, int desiredMaxDim) {
+    msf::JpegThumb miss;
+    if (!worker_) return miss;
+    thumbs_.ensureOpen(lastAppDir_.toStdString(), lastRoot_.toStdString());
     const std::string p = path.toStdString();
-    if (isVideo) {
-        std::vector<unsigned char> px;
-        if (engine.getVideoThumb(p, px) && px.size() >= (std::size_t)48 * 48) {
-            r.rgba = std::move(px);
-            r.width = 48;
-            r.height = 48;
-            r.ok = true;
+    auto engineFetch = [&]() -> msf::RawArt {
+        msf::RawArt a;
+        if (!worker_) return a;
+        const auto& engine = worker_->scanEngine();
+        if (isVideo) {
+            std::vector<unsigned char> px;
+            if (engine.getVideoThumb(p, px) && px.size() >= (std::size_t)48 * 48) {
+                a.bgra = std::move(px);
+                a.width = 48;
+                a.height = 48;
+                a.gray = true;
+                a.ok = true;
+            }
+            return a;
         }
-        return r;
-    }
-    std::vector<unsigned char> px;
-    int pw = 0, ph = 0;
-    if (!engine.getColorThumb(p, pw, ph, px) || pw <= 0 || ph <= 0 ||
-        px.size() != (std::size_t)pw * ph * 4)
-        return r;
-    r.rgba = std::move(px);
-    r.width = pw;
-    r.height = ph;
-    r.ok = true;
-    return r;
+        std::vector<unsigned char> px;
+        int pw = 0, ph = 0;
+        if (!engine.getColorThumb(p, pw, ph, px) || pw <= 0 || ph <= 0 ||
+            px.size() != (std::size_t)pw * ph * 4)
+            return a;
+        a.bgra = std::move(px);
+        a.width = pw;
+        a.height = ph;
+        a.ok = true;
+        return a;
+    };
+    msf::StoredThumb s = thumbs_.fetch(p, desiredMaxDim, engineFetch);
+    if (!s.ok) return miss;
+    msf::JpegThumb out;
+    out.bytes = std::move(s.jpeg);
+    out.width = s.width;
+    out.height = s.height;
+    out.ok = true;
+    return out;
 }
 
 QVector<GuiFile> BackendSession::requestFiles() {
@@ -255,6 +283,23 @@ void BackendSession::startMonitor(const QStringList& watchRoots, const QStringLi
 
 void BackendSession::stopMonitor() {
     if (monitor_) monitor_->stop();
+}
+
+void BackendSession::updateResourcePolicy(int cpuMode, int cpuPercent, int gpuPercent,
+                                          int strategy, bool gpuEnabled) {
+    // Monitor applies immediately. The engine side applies at the next scan
+    // (worker pool sizing is only safe at scan start; the scheduler reads a
+    // per-scan hardware snapshot). partial=true tells the GUI exactly that.
+    msf::ResourcePolicy policy;
+    policy.mode = (cpuMode >= 1 && cpuMode <= 5)
+                      ? static_cast<msf::ResourceMode>(cpuMode)
+                      : msf::ResourceMode::Custom;
+    policy.cpuPercent = cpuPercent;
+    policy.gpuPercent = gpuPercent;
+    policy.gpuEnabled = gpuEnabled && strategy != 1;
+    if (monitor_) monitor_->setPolicy(policy);
+    emit policyApplied(scanning_, (int)policy.mode, cpuPercent, gpuPercent,
+                       strategy, policy.gpuEnabled);
 }
 
 bool BackendSession::monitorRunning() const {

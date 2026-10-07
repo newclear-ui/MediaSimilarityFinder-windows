@@ -379,6 +379,7 @@ static bool recycleFile(const QString& path) {
 
 // ------------------------------------------------------------ ScanWorker
 static QString fmtElapsed(qint64 ms);
+static QString pctText(double v, bool ref, UiLang l);
 static bool isVideoExt(const QString& path) {
   const QString e = QFileInfo(path).suffix().toLower();
   return e == "mp4" || e == "mkv" || e == "avi" || e == "mov" || e == "webm" || e == "m4v" || e == "wmv";
@@ -1297,6 +1298,7 @@ void MainWindow::startScan() {
   cfg.scanVideos = mediaVidBtn_->isChecked();
   cfg.ignored = ignored_;
   cfg.detailedLog = logTgl_->isChecked();
+  cfg.exec = currentExecPolicy();
   scanStartMs_ = QDateTime::currentMSecsSinceEpoch();
   pauseStartMs_ = 0; pausedAccumMs_ = 0;
   scanLog(QString("start folder=%1").arg(folder_->text()));
@@ -1649,10 +1651,23 @@ void MainWindow::resourceChanged(int i) {
     cpu_->blockSignals(false);
   }
   policy_ = msf::make_policy(m, cpu_->value(), policy_.gpuPercent);
-  if (backend_) backend_->setMonitorPolicy(policy_);
+  if (backend_) backend_->updateResourcePolicy(currentExecPolicy());
   cpu_->blockSignals(true);
   cpu_->setValue(policy_.cpuPercent);
   cpu_->blockSignals(false);
+}
+// P4: the two-axis policy in one struct. strategy comes from the execution
+// dropdown (AUTO/CPU_ONLY/GPU_MAX); mode+budgets come from policy_.
+ExecutionPolicy MainWindow::currentExecPolicy() const {
+  ExecutionPolicy e;
+  e.cpuMode = static_cast<int>(policy_.mode);
+  e.cpuPercent = policy_.cpuPercent;
+  e.gpuPercent = policy_.gpuPercent;
+  e.strategy = executionStrategy() == ExecutionResourceStrategy::CpuOnly
+                   ? 1
+                   : (executionStrategy() == ExecutionResourceStrategy::GpuMax ? 2 : 0);
+  e.gpuEnabled = gpuEnabled_ && gpuEnabled_->isChecked();
+  return e;
 }
 void MainWindow::clampCpuDigitSelection() {
   if (!cpu_ || !cpu_->findChild<QLineEdit*>()) return;
@@ -1722,7 +1737,7 @@ void MainWindow::customResourceChanged() {
   }
   if (preset_->currentIndex() != 4) preset_->setCurrentIndex(4);
   policy_ = msf::make_policy(msf::ResourceMode::Custom, cpu_->value(), policy_.gpuPercent);
-  if (backend_) backend_->setMonitorPolicy(policy_);
+  if (backend_) backend_->updateResourcePolicy(currentExecPolicy());
 }
 
 // ------------------------------------------------------------ folders (left)
@@ -2356,26 +2371,46 @@ QString MainWindow::fileResolution(const QString& path) const {
 }
 void MainWindow::requestFileMeta(const QString& path) const {
   if (path.isEmpty() || !backend_) return;
-  if (fileMetaPending_.contains(path)) return; // in flight: dedup
-  fileMetaPending_.insert(path);
-  backend_->requestFileMeta(path, ++fileMetaRequestId_);
+  if (fileMetaPending_.values().contains(path)) return; // in flight: dedup
+  const quint64 id = ++fileMetaRequestId_;
+  fileMetaPending_[id] = path;
+  backend_->requestFileMeta(path, id);
 }
 void MainWindow::onFileMetaReady(quint64 requestId, const FileMetaResult& meta) {
-  Q_UNUSED(requestId);
-  // Stale-drop by path presence: entries leave only when answered, so an
-  // arrival for an unrequested path is foreign and ignored.
-  if (!fileMetaPending_.remove(meta.path)) return;
-  if (!meta.ok) return;
+  auto it = fileMetaPending_.find(requestId);
+  if (it == fileMetaPending_.end()) return; // unknown or duplicate: drop
+  const QString path = it.value();
+  fileMetaPending_.erase(it);
+  if (!meta.ok || meta.path != path) return; // stale or failed: drop
   if (meta.width > 0 && meta.height > 0)
-    resCache_[meta.path] = QString("%1x%2").arg(meta.width).arg(meta.height);
-  if (meta.duration > 0) fileDur_[meta.path] = meta.duration;
-  // Repaint what shows this path: the detail pane for the current file, and
-  // the file list if it belongs to the current group.
-  bool inGroup = false;
-  if (currentGroup_ >= 0 && currentGroup_ < groups_.size())
-    inGroup = groups_[currentGroup_].paths.contains(meta.path);
-  if (currentFile_ == meta.path) refreshDetail();
-  if (inGroup) refreshFileViews();
+    resCache_[path] = QString("%1x%2").arg(meta.width).arg(meta.height);
+  if (meta.duration > 0) fileDur_[path] = meta.duration;
+  refreshFileMetaRow(path);
+  if (currentFile_ == path) refreshDetail();
+}
+void MainWindow::refreshFileMetaRow(const QString& path) {
+  // In-place text refresh for every surface showing this path's resolution.
+  // Widget identity (and therefore selection, scroll, and check state) is
+  // preserved — unlike refreshFileViews(), which recreates everything.
+  if (currentGroup_ < 0 || currentGroup_ >= groups_.size()) return;
+  const auto& g = groups_[currentGroup_];
+  const int gi = g.paths.indexOf(path);
+  if (gi < 0) return;
+  const bool ref = (gi == 0);
+  const double pct = ref ? 100.0 : g.pct.value(path, 0);
+  QFileInfo fi(path);
+  for (int r = 0; r < grid_->count(); ++r) {
+    auto* item = grid_->item(r);
+    if (!item || item->data(Qt::UserRole).toString() != path) continue;
+    const QFontMetrics fm(grid_->font());
+    const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width());
+    item->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(path) + "\n" + pctText(pct, ref, lang()));
+  }
+  for (int r = 0; r < list_->topLevelItemCount(); ++r) {
+    auto* item = list_->topLevelItem(r);
+    if (!item || item->data(1, Qt::UserRole).toString() != path) continue;
+    item->setText(3, fileResolution(path));
+  }
 }
 // (P3: shell thumbnail fast lane removed with the GUI decode paths. The
 // Backend owns every decoder now; the GUI shows placeholders until the
@@ -3050,31 +3085,12 @@ QString MainWindow::gpuStateText() const {
   return trStr(lang(), "gpuWait");
 }
 void MainWindow::updateSysLabels() {
-  // Process CPU% (compare against the High/Balanced preset) and working set,
-  // sampled live every UI tick. The GPU row always carries a state label:
-  // accelerating / stopped (paused) / idle (no CUDA work right now).
+  // P4 display contract: the CPU/RAM rows show the WORKING process only
+  // (Backend in production, GUI process under loopback) from the pushed
+  // status snapshot. This function keeps the GPU state label; CPU/RAM come
+  // from onStatusSnapshot so two writers never alternate meanings here.
   sumGpu_->setVisible(true); sumValGpu_->setVisible(true);
   sumValGpu_->setText(gpuStateText());
-#ifdef _WIN32
-  FILETIME fc, fe, fk, fu;
-  if (GetProcessTimes(GetCurrentProcess(), &fc, &fe, &fk, &fu)) {
-    ULARGE_INTEGER k, u;
-    k.LowPart = fk.dwLowDateTime; k.HighPart = fk.dwHighDateTime;
-    u.LowPart = fu.dwLowDateTime; u.HighPart = fu.dwHighDateTime;
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (cpuPrevMs_ > 0 && now > cpuPrevMs_) {
-      if (cpuCount_ <= 0) { SYSTEM_INFO si{}; GetSystemInfo(&si); cpuCount_ = (int)si.dwNumberOfProcessors; }
-      const double cpuMs = (double)(qint64)(k.QuadPart - (qulonglong)cpuPrevK_)
-                         + (double)(qint64)(u.QuadPart - (qulonglong)cpuPrevU_);
-      const double pct = cpuMs / 10000.0 * 100.0 / ((double)(now - cpuPrevMs_) * std::max(1, cpuCount_));
-      sumValCpu_->setText(QString("%1%").arg(std::clamp(pct, 0.0, 100.0), 0, 'f', 0));
-    }
-    cpuPrevK_ = (qint64)k.QuadPart; cpuPrevU_ = (qint64)u.QuadPart; cpuPrevMs_ = now;
-  }
-  PROCESS_MEMORY_COUNTERS pmc{};
-  if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
-    sumValRam_->setText(fmtSize((qulonglong)pmc.WorkingSetSize));
-#endif
 }
 void MainWindow::renameSelected() {
   const auto ps = selectedFiles();
@@ -3249,7 +3265,7 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
     if (lastTotalN_ > lastReadN_) lastReadN_ = lastTotalN_;
     sumValDone_->setText(QString::number(lastReadN_));
     qulonglong liveAnalyzed = 0;
-    if (backend_) liveAnalyzed = backendStatus_.analyzed;
+    if (backend_) liveAnalyzed = backendStatus_.analyzed + backendStatus_.unchanged;
     sumValIndexed_->setText(QString::number(liveAnalyzed));
     sumValGroups_->setText(QString::number(groups_.size()));
     sumValDup_->setText(QString::number(files));
@@ -3459,6 +3475,11 @@ void MainWindow::monitorEvent(const BackendMonitorEvent& e) {
 }
 void MainWindow::onStatusSnapshot(BackendStatus st) {
   backendStatus_ = st;
+  // P4 display contract: single meaning — the working process's own CPU%
+  // and Working Set. No system-wide percentages here, no GUI-process
+  // sampling here.
+  sumValCpu_->setText(QString("%1%").arg(std::clamp(st.backendCpu, 0.0, 100.0), 0, 'f', 0));
+  sumValRam_->setText(fmtSize(st.backendRssMB * 1024ULL * 1024ULL));
 }
 void MainWindow::onMonitorSnapshot(const BackendMonitorStatus& s) {
   backendMonStatus_ = s;
@@ -3471,8 +3492,9 @@ void MainWindow::onMonitorSnapshot(const BackendMonitorStatus& s) {
     }
   };
   const QString gpu = s.gpuPercent < 0 ? "n/a" : QString::number(s.gpuPercent, 'f', 0) + "%";
-  sumValCpu_->setText(QString("%1%").arg(s.cpuPercent, 0, 'f', 0));
-  sumValRam_->setText(QString("%1%").arg(s.memoryPercent, 0, 'f', 0));
+  // P4: the summary CPU/RAM rows belong to onStatusSnapshot (working-process
+  // numbers) — the monitor snapshot no longer overwrites them with
+  // system-wide percentages. Tray keeps monitor state (its own tooltip).
   tray_->setToolTip(QString("%1 | %2 | GPU %3 | Q %4").arg(state(s.loadState)).arg(s.analyzed).arg(gpu).arg(s.pending));
 }
 void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
