@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.65 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.66 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -759,9 +759,12 @@ if(MSF_BUILD_GUI)
       target_include_directories(msf_video_scan_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME video_scan_e2e_test COMMAND msf_video_scan_e2e_test)
       # View-mode round-trip probe: Tiles -> Icons must keep grid items
-      # visible (explicit grid size + delegate swap must fully reset).
-      add_executable(msf_view_mode_probe tests/view_mode_probe.cpp)
-      target_link_libraries(msf_view_mode_probe PRIVATE Qt6::Widgets)
+      # visible (explicit grid size + delegate swap must fully reset), plus
+      # the real MainWindow viewBox path (256 Icon -> List/Tiles -> 256 Icon
+      # must restore 256 geometry with no overlap).
+      add_executable(msf_view_mode_probe tests/view_mode_probe.cpp gui/mainwindow.cpp gui/mainwindow.h)
+      target_link_libraries(msf_view_mode_probe PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_view_mode_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME view_mode_probe COMMAND msf_view_mode_probe)
       add_executable(msf_thumb_layout_test tests/thumb_layout_test.cpp gui/mainwindow.cpp gui/mainwindow.h)
       target_link_libraries(msf_thumb_layout_test PRIVATE msf_core Qt6::Widgets)

@@ -2119,7 +2119,7 @@ void MainWindow::refreshStreaming(bool force) {
     refreshGroupList(); refreshFileViews();
     lastFillCostMs_ = t.elapsed();
   } else if (thumbStarved_ && !dataChanged && !sliderHeld_) {
-    thumbCatchUpVisible(); // in-place only; never touches layout or scroll
+    thumbCatchUpVisible(); // in-place only; never rebuilds or touches scroll
   }
   // Otherwise this tick does nothing: a scroll-gated tick keeps its pending
   // flags (groupsDirty_/lastFillSig_) for a later tick instead of rebuilding.
@@ -2138,10 +2138,20 @@ void MainWindow::thumbCatchUpVisible() {
   // (index math only for the rest), and decodes spend the shared per-tick
   // thumb budget via fileThumb. An icon is replaced only when it actually
   // changed (placeholder -> real thumb), so settled rows cost hash lookups.
+  // (0.9.4.66) When icons did change, the layout pass is forced explicitly:
+  // under uniformItemSizes+Batched, setIcon() alone leaves cells at their
+  // old size (probed: 256px art in 254x71 cells after a view-mode
+  // round-trip), so the new art paints outside its cells. Forcing is not a
+  // rebuild: no item is recreated and scroll position is untouched. (Note:
+  // scheduleDelayedItemsLayout() would be the deferred equivalent but is a
+  // protected member, so the public synchronous doItemsLayout() is used.
+  // It runs only when at least one icon actually changed, bounded by the
+  // per-tick thumb budget, and lays out index math — no widget churn.)
   QListWidget* grid = groupsList_;
   if (!grid || !grid->isVisible()) return;
   const QRect vis = grid->viewport()->rect();
   const QSize iconSize = grid->iconSize();
+  bool changed = false;
   for (int row = 0; row < grid->count(); ++row) {
     QListWidgetItem* item = grid->item(row);
     if (!item || !grid->visualItemRect(item).intersects(vis)) continue;
@@ -2150,9 +2160,11 @@ void MainWindow::thumbCatchUpVisible() {
     const QIcon fresh = fileThumb(groups_[gi].paths.front(), iconSize);
     if (fresh.cacheKey() != item->icon().cacheKey()) {
       item->setIcon(fresh);
+      changed = true;
       ++thumbInPlaceCount_;
     }
   }
+  if (changed) grid->doItemsLayout();
 }
 void MainWindow::updateGroupFoot() {
   // "전체 619 · 선택 116": total groups vs the 1-based selected group.
@@ -2363,6 +2375,10 @@ void MainWindow::groupViewChanged(int idx) {
     }
     for (int r = 0; r < grid->count(); ++r)
       if (grid->item(r)->data(Qt::UserRole).toInt() == currentGroup_) { grid->setCurrentRow(r); break; }
+    // (0.9.4.66) Delegate/size swaps must take effect even when Batched
+    // defers layout: force the pass explicitly. This never rebuilds
+    // items (see fillPair prohibition) and never touches scroll.
+    grid->doItemsLayout();
   } else {
     grid->setItemDelegate(defaultDelegate_);
     grid->setVisible(false); tree->setVisible(true);

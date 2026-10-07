@@ -144,6 +144,12 @@ public:
   // never calls these; they exist so offscreen tests can drive ticks
   // deterministically instead of waiting on wall-clock timer intervals.
   void testUiTick();
+  // View-mode regression test hook (0.9.4.66): run one thumbnail catch-up
+  // pass synchronously, exactly as the UI timer does. Production code never
+  // calls this; it exists so the offscreen probe can deliver icons through
+  // the real catch-up path (including its layout guarantee) instead of
+  // setting item icons directly and bypassing it.
+  void testThumbCatchUp() { thumbCatchUpVisible(); }
   qulonglong testFullRebuildCount() const { return fullRebuildCount_; }
   qulonglong testThumbInPlaceCount() const { return thumbInPlaceCount_; }
   static void scanLog(const QString& line); // process-wide scan log file
