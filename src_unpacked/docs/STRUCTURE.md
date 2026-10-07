@@ -105,6 +105,7 @@
 - docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — Node B staged Scheduler implementation scope and gate.
 - docs/implementation-briefs/C-calibration-profile.ko.md / .en.md — Node C profile/calibration reuse + extension scope.
 - docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — Node D pipeline/queue optimization scope.
+- docs/implementation-briefs/process-backend-isolation-0.9.4.ko.md / .en.md — 0.9.4.x GUI↔Backend process isolation implementation brief: ownership, IPC contract, lifecycle, watchdog/restart, SQLite authority, recovery semantics, migration boundaries, acceptance gates, and 0.9.5 deferrals.
 - docs/implementation-briefs/S4-gui-diagnostic-logging.ko.md / .en.md — current S4 GUI detailed-logging design.
 - docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — historical/superseded GUI benchmark execution design, retained for provenance.
 - docs/build-history/S4-phase3-4-verification.ko.md / .en.md — S4 Phase 3-1..3-4 regression record, real-engine GUI E2E results, and the two unresolved issues (Resource Policy not delivered to the benchmark, datasetFingerprint empty) that keep S4 from being CLOSED.
