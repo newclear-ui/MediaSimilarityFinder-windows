@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "backend_loopback.h"
 #include "video_decoder.h"
 #include "msf_build_version.h"
 #include "../src/image_decoder.h"
@@ -760,9 +761,29 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   buildUi();
   applyStaticTexts();
   restoreUiState();
-  monitor_ = std::make_unique<msf::MediaMonitor>();
+  // P2: the backend lives behind BackendClient; the loopback implementation
+  // runs the real ScanWorker/MediaMonitor in-process (P3 spawns it).
+  // Signal wiring is once-only: the backend object persists across scans,
+  // so per-scan connects would duplicate every delivery.
+  backend_ = new LoopbackBackendClient(this);
+  connect(backend_, &BackendClient::progress, this, &MainWindow::scanProgress);
+  connect(backend_, &BackendClient::progressCount, this, &MainWindow::onScanCounts);
+  connect(backend_, &BackendClient::walkedCount, this, &MainWindow::onWalkedCount);
+  connect(backend_, &BackendClient::fingerprintProgress, this, &MainWindow::onFingerprintProgress);
+  connect(backend_, &BackendClient::targetCount, this, &MainWindow::onTargetCount);
+  connect(backend_, &BackendClient::listingProgress, this, &MainWindow::onListingProgress);
+  connect(backend_, &BackendClient::matchesBatch, this, &MainWindow::onMatchesBatch);
+  connect(backend_, &BackendClient::quickLoaded, this, &MainWindow::onQuickLoaded);
+  connect(backend_, &BackendClient::revalidated, this, &MainWindow::onRevalidated);
+  connect(backend_, &BackendClient::results, this, &MainWindow::onResults);
+  connect(backend_, &BackendClient::telemetryReady, this, &MainWindow::onDetailedLog);
+  connect(backend_, &BackendClient::finished, this, &MainWindow::scanFinished);
+  connect(backend_, &BackendClient::failed, this, &MainWindow::scanFailed);
+  connect(backend_, &BackendClient::monitorEvent, this, &MainWindow::monitorEvent);
+  connect(backend_, &BackendClient::monitorSnapshot, this, &MainWindow::onMonitorSnapshot);
+  connect(backend_, &BackendClient::statusSnapshot, this, &MainWindow::onStatusSnapshot);
   monitorTimer_ = new QTimer(this); monitorTimer_->setInterval(1000);
-  connect(monitorTimer_, &QTimer::timeout, this, &MainWindow::updateMonitorStatus);
+  connect(monitorTimer_, &QTimer::timeout, this, [this] { backend_->refreshMonitor(); });
   monitorTimer_->start();
   uiTimer_ = new QTimer(this); uiTimer_->setInterval(600);
   connect(uiTimer_, &QTimer::timeout, this, &MainWindow::onUiTick);
@@ -779,7 +800,7 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
 void MainWindow::closeEvent(QCloseEvent* ev) {
   // While a scan (and its report rebuild) is in flight, closing would drop
   // the run silently. Nudge the user to wait instead; explicit confirm exits.
-  if (scanning_ && worker_) {
+  if (scanning_ && backend_) {
     const auto r = QMessageBox::question(this, trStr(lang(), "repWaitTitle"),
         trStr(lang(), "repWaitClose"), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (r != QMessageBox::Yes) { ev->ignore(); return; }
@@ -789,9 +810,7 @@ void MainWindow::closeEvent(QCloseEvent* ev) {
 MainWindow::~MainWindow() {
   saveUiState();
   thumbDb_.close(); thumbDbOpen_ = false;
-  if (worker_) worker_->cancel();
-  if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; }
-  if (monitor_) monitor_->stop();
+  if (backend_) backend_->shutdown();
 }
 void MainWindow::saveUiState() {
   QSettings st;
@@ -1488,7 +1507,7 @@ void MainWindow::startScan() {
       refreshFolders();
     }
   }
-  if (thread_) { thread_->quit(); thread_->wait(); delete worker_; delete thread_; thread_ = nullptr; worker_ = nullptr; }
+  // P2: previous worker teardown lives inside BackendClient::startScan.
   if (cancelWait_) { cancelWait_->close(); cancelWait_->deleteLater(); cancelWait_ = nullptr; }
   flushThumbPending();
   thumbStatMem_ = thumbStatDisk_ = thumbStatEngine_ = 0;
@@ -1499,60 +1518,54 @@ void MainWindow::startScan() {
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
   refreshGroupList(); refreshFileViews(); refreshDetail();
   QString appDir = QApplication::applicationDirPath();
-  thread_ = new QThread(this);
-  const int dist = 8;
-  worker_ = new ScanWorker(folder_->text(), appDir, dist, cpu_->value(), policy_.gpuPercent, gpuEnabled_->isChecked(),
-                             mediaImgBtn_->isChecked(), mediaVidBtn_->isChecked());
-  worker_->setIgnored(ignored_);
-  worker_->setDetailedLog(logTgl_->isChecked());
-  worker_->moveToThread(thread_);
-  connect(thread_, &QThread::started, worker_, &ScanWorker::run);
-  connect(worker_, &ScanWorker::progress, this, &MainWindow::scanProgress);
-  connect(worker_, &ScanWorker::progressCount, this, &MainWindow::onScanCounts);
-  connect(worker_, &ScanWorker::walkedCount, this, &MainWindow::onWalkedCount);
-  connect(worker_, &ScanWorker::fingerprintProgress, this, &MainWindow::onFingerprintProgress);
-  connect(worker_, &ScanWorker::targetCount, this, &MainWindow::onTargetCount);
-  connect(worker_, &ScanWorker::listingProgress, this, &MainWindow::onListingProgress);
-  connect(worker_, &ScanWorker::matchesArrived, this, &MainWindow::drainMatches);
-  connect(worker_, &ScanWorker::quickLoaded, this, &MainWindow::onQuickLoaded);
-  connect(worker_, &ScanWorker::revalidated, this, &MainWindow::onRevalidated);
-  connect(worker_, &ScanWorker::results, this, &MainWindow::onResults);
-  connect(worker_, &ScanWorker::telemetryReady, this, &MainWindow::onDetailedLog);
-  connect(worker_, &ScanWorker::finished, this, &MainWindow::scanFinished);
-  connect(worker_, &ScanWorker::failed, this, &MainWindow::scanFailed);
-  connect(worker_, &ScanWorker::finished, thread_, &QThread::quit);
-  connect(worker_, &ScanWorker::failed, thread_, &QThread::quit);
+  // P2: the scan lifecycle lives behind BackendClient. The loopback
+  // implementation tears down any previous worker internally, so the
+  // thread quit/wait/delete sequence formerly here is gone.
+  // Signal wiring lives in the constructor (persistent backend object:
+  // reconnecting per scan would duplicate every delivery).
+  BackendScanConfig cfg;
+  cfg.root = folder_->text();
+  cfg.appDir = appDir;
+  cfg.distance = 8;
+  cfg.cpu = cpu_->value();
+  cfg.gpuPercent = policy_.gpuPercent;
+  cfg.gpuEnabled = gpuEnabled_->isChecked();
+  cfg.scanImages = mediaImgBtn_->isChecked();
+  cfg.scanVideos = mediaVidBtn_->isChecked();
+  cfg.ignored = ignored_;
+  cfg.detailedLog = logTgl_->isChecked();
   scanStartMs_ = QDateTime::currentMSecsSinceEpoch();
   pauseStartMs_ = 0; pausedAccumMs_ = 0;
   scanLog(QString("start folder=%1").arg(folder_->text()));
   setRunning(true);
   statusMsg_->setText(trStr(lang(), "scanning"));
   statusProg_->setValue(0);
-  thread_->start();
+  backend_->startScan(cfg);
 }
 void MainWindow::togglePauseScan() {
-  if (!scanning_ || !worker_) return; // pause acts only while its own scan runs
+  if (!scanning_ || !backend_) return; // pause acts only while its own scan runs
   scanPaused_ = !scanPaused_;
   if (scanPaused_) pauseStartMs_ = QDateTime::currentMSecsSinceEpoch();
   else if (pauseStartMs_ > 0) { pausedAccumMs_ += QDateTime::currentMSecsSinceEpoch() - pauseStartMs_; pauseStartMs_ = 0; }
   // Direct call, NOT QueuedConnection: pause()/resume() only store atomics,
   // and a queued slot can never fire while run() occupies the worker thread's
   // event loop — which is exactly why pause appeared dead mid-scan.
-  if (scanPaused_) worker_->pause(); else worker_->resume();
+  // P2: the loopback drains streamed matches synchronously inside pause(),
+  // so the paused view is complete within the click (no separate drain).
+  if (scanPaused_) backend_->pause(); else backend_->resume();
   pause_->setChecked(scanPaused_);
   pause_->setText(scanPaused_ ? trStr(lang(), "resume") : QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   statusMsg_->setText(trStr(lang(), scanPaused_ ? "paused" : "scanning"));
-  // Freezing the frame immediately: drain everything streamed so far and force
-  // one full refresh, so the paused view is complete within the click instead
-  // of whenever the gate would next allow (the worker emits nothing paused).
-  drainMatches();
+  // Freezing the frame immediately: the loopback already delivered
+  // everything streamed so far synchronously inside pause(), so no separate
+  // drain is needed (the worker emits nothing paused).
   refreshStreaming(true);
 }
 void MainWindow::cancelScan() {
-  if (!scanning_ || !worker_) return;
+  if (!scanning_ || !backend_) return;
   // Direct call (see togglePauseScan): a queued cancel slot would only run
   // after run() returns, i.e. never in time to stop the scan.
-  worker_->cancel();
+  backend_->cancel();
   // Immediate feedback: the worker still needs a moment to wind down
   // in-flight analyses, so the wait notice appears on the click itself —
   // not seconds later when scanFinished arrives. scanFinished/onResults
@@ -1617,7 +1630,6 @@ void MainWindow::onFingerprintProgress(qulonglong n, qulonglong bytes, QString p
   sumValDone_->setText(QString::number(lastReadN_));
 }
 void MainWindow::onQuickLoaded(int n) {
-  drainMatches();
   statusMsg_->setText(trStr(lang(), "quickLoaded").arg(n));
 }
 void MainWindow::onRevalidated(int kept, int dropped) {
@@ -1785,7 +1797,6 @@ void MainWindow::scanFinished(QString msg) {
   // and returns the GUI to idle, even on an unexpected exception. Otherwise
   // a "writing report" popup stays open forever with no way back.
   try {
-  drainMatches();
   if (thumbDbOpen_) thumbDb_.pruneThumbs(); // drop thumbs of files gone from the index
   scanLog(QString("finish %1").arg(msg));
   scanLog(QString("thumbStat mem=%1 disk=%2 engine=%3 shell=%4 decode=%5 place=%6 fail=%7 pending=%8")
@@ -1833,7 +1844,6 @@ void MainWindow::scanFinished(QString msg) {
 void MainWindow::scanFailed(QString msg) {
   scanLog(QString("failed %1").arg(msg));
   // Keep matches streamed before the worker failure visible in the current UI.
-  drainMatches();
   rebuildGroups();
   refreshGroupList(); refreshFileViews(); refreshDetail();
   QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
@@ -1841,15 +1851,13 @@ void MainWindow::scanFailed(QString msg) {
   setRunning(false);
 }
 std::string MainWindow::telemetryJsonForTest() const {
-  if (!worker_) return {};
-  if (!worker_->scanEngine().hasTelemetry()) return {};
-  return worker_->scanEngine().telemetryJson();
+  if (!backend_) return {};
+  return backend_->telemetryJsonForTest();
 }
-void MainWindow::onResults(QVector<GuiFile> files, QStringList matchRows) {
+void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   QDialog* wait = cancelWait_;
   cancelWait_ = nullptr;
   if (!wait) wait = showReportWaitPopup(this, lang());
-  drainMatches();
   allPaths_.clear(); matchRows_ = matchRows;
   fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   for (const auto& f : files) {
@@ -1880,7 +1888,7 @@ void MainWindow::resourceChanged(int i) {
     cpu_->blockSignals(false);
   }
   policy_ = msf::make_policy(m, cpu_->value(), policy_.gpuPercent);
-  if (monitor_) monitor_->setPolicy(policy_);
+  if (backend_) backend_->setMonitorPolicy(policy_);
   cpu_->blockSignals(true);
   cpu_->setValue(policy_.cpuPercent);
   cpu_->blockSignals(false);
@@ -1953,7 +1961,7 @@ void MainWindow::customResourceChanged() {
   }
   if (preset_->currentIndex() != 4) preset_->setCurrentIndex(4);
   policy_ = msf::make_policy(msf::ResourceMode::Custom, cpu_->value(), policy_.gpuPercent);
-  if (monitor_) monitor_->setPolicy(policy_);
+  if (backend_) backend_->setMonitorPolicy(policy_);
 }
 
 // ------------------------------------------------------------ folders (left)
@@ -2061,11 +2069,13 @@ void MainWindow::addMatch(const QString& l, const QString& r, double pct, int ki
   if (!pathKind_.contains(l)) pathKind_[l] = kind;
   if (!pathKind_.contains(r)) pathKind_[r] = kind;
 }
-void MainWindow::drainMatches() {
-  if (!worker_) return;
-  const auto v = worker_->takePending();
-  if (v.isEmpty()) return;
-  for (const auto& m : v) addMatch(m.left, m.right, m.percent, m.kind);
+void MainWindow::onMatchesBatch(const QVector<BackendMatch>& batch) {
+  // P2: push-based delivery replaces the takePending() pull. The loopback
+  // drains the worker synchronously (including inside pause()), so by the
+  // time a batch arrives everything streamed so far is in it.
+  if (!backend_) return;
+  if (batch.isEmpty()) return;
+  for (const auto& m : batch) addMatch(m.left, m.right, m.percent, m.kind);
   groupsDirty_ = true;
 }
 void MainWindow::testUiTick() { onUiTick(); }
@@ -2076,11 +2086,10 @@ void MainWindow::onUiTick() {
   thumbBudget_ = kThumbBudgetPerTick;
   shellBudget_ = kShellBudgetPerTick;
   if (groupsDirty_) {
-    drainMatches(); // matches streamed since the last tick (also covers pause:
-                    // the worker emits nothing while paused, so without this
-                    // the final pre-pause matches would sit undrained).
-                    // groupsDirty_ clears inside rebuildGroups only, so a
-                    // scroll-gated tick retries later instead of dropping data.
+    // P2: matches arrive pushed via matchesBatch (the loopback drains the
+    // worker synchronously, including inside pause()), so there is nothing
+    // left to pull here. groupsDirty_ still clears inside rebuildGroups
+    // only, so a scroll-gated tick retries later instead of dropping data.
   }
   refreshStreaming(); // internally splits full rebuild vs thumbnail catch-up
   if (scanning_) updateStatusCounts();
@@ -2756,12 +2765,14 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   const bool isVid = isVideoExt(path);
   // Color engine thumb for images (unchanged fast path: fingerprint decode
   // is already color and must not leak gray into display).
-  if (worker_ && !isVid) {
-    std::vector<unsigned char> px; int pw = 0, ph = 0;
-    if (!worker_->scanEngine().getColorThumb(path.toStdString(), pw, ph, px)
-        || pw <= 0 || ph <= 0 || px.size() != (std::size_t)pw * ph * 4) px.clear();
-    if (!px.empty()) {
-      const QImage im(px.data(), pw, ph, pw * 4, QImage::Format_ARGB32);
+  // P2: the engine call travels through BackendClient (Type B request).
+  static quint64 thumbRequestId = 0;
+  if (backend_ && !isVid) {
+    const ThumbResult tr = backend_->requestThumb(path, size, false, ++thumbRequestId);
+    if (tr.ok && tr.width > 0 && tr.height > 0 &&
+        tr.rgba.size() == (qsizetype)tr.width * tr.height * 4) {
+      const QImage im(reinterpret_cast<const uchar*>(tr.rgba.constData()),
+                      tr.width, tr.height, tr.width * 4, QImage::Format_ARGB32);
       if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im.copy()); }
     }
   }
@@ -2827,11 +2838,12 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassB
   // Last resort for video: the gray 48x48 engine fingerprint thumb. It is
   // free (no budget spent) and always available after a scan, but it only
   // fills pm when every color source above missed — never ahead of them.
-  if (pm.isNull() && isVid && worker_) {
-    std::vector<unsigned char> px;
-    if (worker_->scanEngine().getVideoThumb(path.toStdString(), px)
-        && px.size() >= (std::size_t)48 * 48) {
-      const QImage im(px.data(), 48, 48, 48, QImage::Format_Grayscale8);
+  // P2: engine call travels through BackendClient (Type B request).
+  if (pm.isNull() && isVid && backend_) {
+    const ThumbResult tr = backend_->requestThumb(path, size, true, ++thumbRequestId);
+    if (tr.ok && tr.rgba.size() >= (qsizetype)48 * 48) {
+      const QImage im(reinterpret_cast<const uchar*>(tr.rgba.constData()),
+                      48, 48, 48, QImage::Format_Grayscale8);
       if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im.copy()); grayOnly = true; }
     }
   }
@@ -3004,12 +3016,12 @@ void MainWindow::refreshDetail() {
   detailForm_->addRow(trStr(lang(), "created"),
                       new QLabel(fi.birthTime().isValid() ? fi.birthTime().toString("yyyy-MM-dd hh:mm:ss") : "-", this));
   detailForm_->addRow(trStr(lang(), "resolution"), new QLabel(fileResolution(currentFile_), this));
-  double dur = fileDur_.value(currentFile_, 0.0);
-  if (dur <= 0 && worker_) {
+    double dur = fileDur_.value(currentFile_, 0.0);
+  if (dur <= 0 && backend_) {
     // Live or cancelled scans never reach onResults, so fileDur_ stays empty
-    // and the row shows "-". Fall back to the engine file list (cached).
-    for (const auto& f : worker_->scanEngine().files())
-      if (QString::fromStdString(f.path) == currentFile_ && f.duration > 0) {
+    // and the row shows "-". Fall back to the backend file list (Type B).
+    for (const auto& f : backend_->requestFiles())
+      if (f.path == currentFile_ && f.duration > 0) {
         dur = f.duration;
         fileDur_[currentFile_] = dur;
         break;
@@ -3478,7 +3490,7 @@ void MainWindow::revealPath(const QString& path) {
 }
 QString MainWindow::gpuStateText() const {
   if (scanning_ && scanPaused_) return trStr(lang(), "gpuStop");
-  if (scanning_ && worker_ && worker_->gpuActive()) return trStr(lang(), "gpuAccel");
+  if (scanning_ && backendStatus_.gpuActive) return trStr(lang(), "gpuAccel");
   return trStr(lang(), "gpuWait");
 }
 void MainWindow::updateSysLabels() {
@@ -3682,7 +3694,7 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
     if (lastTotalN_ > lastReadN_) lastReadN_ = lastTotalN_;
     sumValDone_->setText(QString::number(lastReadN_));
     qulonglong liveAnalyzed = 0;
-    if (worker_) liveAnalyzed = (qulonglong)worker_->scanEngine().analyzedCount();
+    if (backend_) liveAnalyzed = backendStatus_.analyzed;
     sumValIndexed_->setText(QString::number(liveAnalyzed));
     sumValGroups_->setText(QString::number(groups_.size()));
     sumValDup_->setText(QString::number(files));
@@ -3695,8 +3707,8 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
 void MainWindow::updateGpuLabel() {
   if (!gpuLbl_) return;
   const UiLang l = lang();
-  const bool avail = worker_ ? worker_->gpuAvailable() : false;
-  const qulonglong n = worker_ ? worker_->gpuDone() : 0;
+  const bool avail = backend_ ? backendStatus_.gpuAvailable : false;
+  const qulonglong n = backend_ ? backendStatus_.gpuDone : 0;
   QString txt;
   if (scanning_ && n > 0) txt = trStr(l, "gpuLive").arg(n);
   else if (gpuEnabled_ && gpuEnabled_->isChecked() && avail) txt = trStr(l, "gpuOn");
@@ -3839,7 +3851,7 @@ void MainWindow::toggleMonitor() {
         : QString());
   };
   if (monitorEnabled_) {
-    monitor_->stop(); monitorEnabled_ = false;
+    backend_->stopMonitor(); monitorEnabled_ = false;
     monBtn_->setChecked(false); paintMonBtn();
     tray_->setToolTip(trStr(lang(), "app"));
     statusMsg_->setText(trStr(lang(), "monStop"));
@@ -3849,40 +3861,41 @@ void MainWindow::toggleMonitor() {
   auto ws = st.value("monitor/watchRoots").toStringList();
   auto cs = st.value("monitor/compareRoots").toStringList();
   if (ws.isEmpty() || cs.isEmpty()) { statusMsg_->setText(trStr(lang(), "monNeedCfg")); return; }
-  msf::MonitorConfig c;
-  for (const auto& x : ws) c.watchRoots.push_back(x.toStdString());
-  for (const auto& x : cs) c.compareRoots.push_back(x.toStdString());
-  c.applicationDirectory = QApplication::applicationDirPath().toStdString();
-  c.thresholdPercent = st.value("monitor/thresholdPercent", 90).toDouble();
-  c.stableSeconds = st.value("monitor/stableSeconds", 3).toInt();
-  c.pollSeconds = st.value("monitor/pollSeconds", 2).toInt();
-  c.gpuEnabled = st.value("monitor/gpuEnabled", gpuEnabled_->isChecked()).toBool();
-  monitor_->start(c, policy_, [this](const msf::MonitorEvent& e) {
-    QMetaObject::invokeMethod(this, [this, e] { monitorEvent(e); }, Qt::QueuedConnection);
-  });
+  // P2: the monitor lives in the backend (loopback for now). Roots and
+  // thresholds travel as plain values; the policy object goes with them.
+  backend_->startMonitor(ws, cs, QApplication::applicationDirPath(),
+                         st.value("monitor/thresholdPercent", 90).toDouble(),
+                         st.value("monitor/stableSeconds", 3).toInt(),
+                         st.value("monitor/pollSeconds", 2).toInt(),
+                         st.value("monitor/gpuEnabled", gpuEnabled_->isChecked()).toBool(),
+                         policy_);
   monitorEnabled_ = true;
   monBtn_->setChecked(true); paintMonBtn();
   tray_->setToolTip(trStr(lang(), "monRun"));
   statusMsg_->setText(trStr(lang(), "monRun"));
 }
-void MainWindow::monitorEvent(const msf::MonitorEvent& e) {
-  if (e.type == msf::MonitorEvent::Type::Match) { showMonitorMatch(e); return; }
-  if (e.type == msf::MonitorEvent::Type::Deferred) {
-    statusMsg_->setText(QString("Monitor delayed: %1").arg(QString::fromStdString(e.path))); return;
+void MainWindow::monitorEvent(const BackendMonitorEvent& e) {
+  if (e.type == static_cast<int>(BackendMonitorEventType::Match)) { showMonitorMatch(e); return; }
+  if (e.type == static_cast<int>(BackendMonitorEventType::Deferred)) {
+    statusMsg_->setText(QString("Monitor delayed: %1").arg(e.path)); return;
   }
-  if (e.type == msf::MonitorEvent::Type::Error) {
-    statusMsg_->setText(QString("Monitor error: %1").arg(QString::fromStdString(e.path))); return;
+  if (e.type == static_cast<int>(BackendMonitorEventType::Error)) {
+    statusMsg_->setText(QString("Monitor error: %1").arg(e.path)); return;
   }
-  if (e.type == msf::MonitorEvent::Type::Started || e.type == msf::MonitorEvent::Type::Stopped)
-    statusMsg_->setText(QString::fromStdString(e.detail));
+  if (e.type == static_cast<int>(BackendMonitorEventType::Started) ||
+      e.type == static_cast<int>(BackendMonitorEventType::Stopped))
+    statusMsg_->setText(e.detail);
 }
-void MainWindow::updateMonitorStatus() {
-  if (!monitor_ || !monitor_->running()) return;
-  const auto s = monitor_->status();
-  auto state = [](msf::LoadState x) {
+void MainWindow::onStatusSnapshot(BackendStatus st) {
+  backendStatus_ = st;
+}
+void MainWindow::onMonitorSnapshot(const BackendMonitorStatus& s) {
+  backendMonStatus_ = s;
+  if (!monitorEnabled_) return;
+  auto state = [](int x) {
     switch (x) {
-    case msf::LoadState::Idle: return "Idle"; case msf::LoadState::Light: return "Light";
-    case msf::LoadState::Busy: return "Busy"; case msf::LoadState::Heavy: return "Heavy";
+    case 0: return "Idle"; case 1: return "Light";
+    case 2: return "Busy"; case 3: return "Heavy";
     default: return "Critical";
     }
   };
@@ -3891,11 +3904,11 @@ void MainWindow::updateMonitorStatus() {
   sumValRam_->setText(QString("%1%").arg(s.memoryPercent, 0, 'f', 0));
   tray_->setToolTip(QString("%1 | %2 | GPU %3 | Q %4").arg(state(s.loadState)).arg(s.analyzed).arg(gpu).arg(s.pending));
 }
-void MainWindow::showMonitorMatch(const msf::MonitorEvent& e) {
+void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
   if (e.matches.empty()) return;
-  QSettings st; const msf::MonitorMatch* selected = nullptr;
+  QSettings st; const BackendMonitorMatch* selected = nullptr;
   for (const auto& candidate : e.matches) {
-    QString raw = QString::fromStdString(candidate.newPath) + "|" + QString::fromStdString(candidate.existingPath);
+    QString raw = candidate.newPath + "|" + candidate.existingPath;
     QString key = QString::fromLatin1(QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex());
     if (!st.value("monitor/skipped/" + key, false).toBool()) { selected = &candidate; break; }
   }
@@ -3903,18 +3916,18 @@ void MainWindow::showMonitorMatch(const msf::MonitorEvent& e) {
   QMessageBox box(this);
   box.setWindowTitle(trStr(lang(), "dupTitle"));
   box.setText(QString("New file:\n%1\n\nExisting file:\n%2\n\nSimilarity: %3%")
-                  .arg(QString::fromStdString(m.newPath)).arg(QString::fromStdString(m.existingPath)).arg(m.percent, 0, 'f', 1));
+                  .arg(m.newPath).arg(m.existingPath).arg(m.percent, 0, 'f', 1));
   auto* openNew = box.addButton(trStr(lang(), "open"), QMessageBox::ActionRole);
   auto* openOld = box.addButton(trStr(lang(), "reveal"), QMessageBox::ActionRole);
   auto* delNew = box.addButton(trStr(lang(), "del"), QMessageBox::DestructiveRole);
   auto* skip = box.addButton("Skip", QMessageBox::RejectRole);
   box.exec();
-  if (box.clickedButton() == openNew) QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(m.newPath)));
+  if (box.clickedButton() == openNew) QDesktopServices::openUrl(QUrl::fromLocalFile(m.newPath));
   else if (box.clickedButton() == openOld)
-    revealPath(QString::fromStdString(m.existingPath));
+    revealPath(m.existingPath);
 #ifdef _WIN32
   else if (box.clickedButton() == delNew) {
-    if (!recycleFile(QString::fromStdString(m.newPath)))
+    if (!recycleFile(m.newPath))
       QMessageBox::warning(this, trStr(lang(), "del"), trStr(lang(), "delFail"));
   }
 #else
@@ -3922,7 +3935,7 @@ void MainWindow::showMonitorMatch(const msf::MonitorEvent& e) {
     QMessageBox::information(this, trStr(lang(), "del"), trStr(lang(), "delFail"));
 #endif
   else if (box.clickedButton() == skip) {
-    QString raw = QString::fromStdString(m.newPath) + "|" + QString::fromStdString(m.existingPath);
+    QString raw = m.newPath + "|" + m.existingPath;
     QString key = QString::fromLatin1(QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex());
     st.setValue("monitor/skipped/" + key, true);
   }

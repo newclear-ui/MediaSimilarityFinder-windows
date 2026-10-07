@@ -5,7 +5,6 @@
 //  live streaming results during scan.
 #include <QMainWindow>
 #include <QObject>
-#include <QThread>
 #include <QMutex>
 #include <QComboBox>
 #include <QIcon>
@@ -14,13 +13,12 @@
 #include <QHash>
 #include <QSet>
 #include <atomic>
-#include <memory>
 #include <string>
 #include <vector>
 #include "../src/media_search_engine.h"
 #include "../src/database.h"
 #include "../src/resource_policy.h"
-#include "../src/monitor.h"
+#include "backend_client.h"
 
 // GUI execution resource strategy (user's real-search resource choice, exactly
 // one selected). This is intentionally NOT the CLI benchmark comparison mode:
@@ -157,13 +155,14 @@ public:
 private slots:
   // scan
   void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
-  void scanProgress(int,QString); void drainMatches(); void scanFinished(QString); void scanFailed(QString);
+  void scanProgress(int,QString); void onMatchesBatch(const QVector<BackendMatch>&); void scanFinished(QString); void scanFailed(QString);
+  void onStatusSnapshot(BackendStatus);
   void onScanCounts(qulonglong,qulonglong);
   void onFingerprintProgress(qulonglong,qulonglong,QString);
   void onTargetCount(qulonglong);
   void onWalkedCount(qulonglong);
   void onListingProgress(std::size_t);
-  void onResults(QVector<GuiFile> files, QStringList matchRows);
+  void onResults(QVector<BackendFile> files, QStringList matchRows);
   void onQuickLoaded(int);
   void onRevalidated(int,int);
     void onDetailedLog(QString);
@@ -190,7 +189,8 @@ private slots:
   void detailTabChanged(int); void fileActivated(QListWidgetItem*);
   // monitor
   void configureMonitor(); void toggleMonitor();
-  void monitorEvent(const msf::MonitorEvent&); void showMonitorMatch(const msf::MonitorEvent&); void updateMonitorStatus();
+  void monitorEvent(const BackendMonitorEvent&); void showMonitorMatch(const BackendMonitorEvent&); void
+  onMonitorSnapshot(const BackendMonitorStatus&);
   // misc
   void setLanguage(int); void showHelp(); void applyStaticTexts();
 private:
@@ -244,8 +244,11 @@ private:
   double pathBest(const QString&) const;
   void addMatch(const QString&, const QString&, double, int kind);
   QString findRoot(const QString&); // union-find over pathParent_
-  // scan state
-  QThread* thread_=nullptr; ScanWorker* worker_=nullptr; QDialog* cancelWait_=nullptr; msf::ResourcePolicy policy_;
+  // scan state (P2: the backend lives behind BackendClient; the loopback
+  // implementation runs the real ScanWorker/MediaMonitor in-process)
+  BackendClient* backend_ = nullptr; QDialog* cancelWait_=nullptr; msf::ResourcePolicy policy_;
+  BackendStatus backendStatus_; // pushed snapshot cache (Type C): ticks read this, never the engine
+  BackendMonitorStatus backendMonStatus_; // pushed monitor snapshot cache (Type C)
   QVector<DupGroup> groups_;                   // built incrementally from streamed matches
   QHash<QString,int> pathGroup_;               // path -> group index
   QHash<QString,QString> pathParent_;           // union-find parent
@@ -360,8 +363,8 @@ private:
   QStatusBar* statusBar_=nullptr; QLabel* statusMsg_=nullptr; QLabel* statusCount_=nullptr;
   QLabel* gpuLbl_=nullptr;
   QProgressBar* statusProg_=nullptr;
-  // monitor
-  std::unique_ptr<msf::MediaMonitor> monitor_; QSystemTrayIcon* tray_=nullptr; QTimer* monitorTimer_=nullptr;
+  // monitor (P2: owned by the backend; GUI keeps presentation + snapshot cache)
+  QSystemTrayIcon* tray_=nullptr; QTimer* monitorTimer_=nullptr;
   bool monitorEnabled_=false;
   QTimer* uiTimer_=nullptr; // throttled refresh while scanning
 };
