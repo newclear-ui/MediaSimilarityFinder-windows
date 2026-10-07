@@ -11,6 +11,7 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
     qRegisterMetaType<BackendMonitorStatus>();
     qRegisterMetaType<BackendMonitorMatch>();
     qRegisterMetaType<BackendMonitorEvent>();
+    qRegisterMetaType<FileMetaResult>();
     session_ = std::make_unique<BackendSession>(this);
     // Same signal shapes where possible; conversion where the contract type
     // differs from the core type. Queued automatically across threads.
@@ -109,6 +110,18 @@ QVector<BackendFile> LoopbackBackendClient::requestFiles() {
     for (const auto& f : session_->requestFiles())
         out.push_back({f.path, f.size, f.fpHex, f.duration});
     return out;
+}
+
+void LoopbackBackendClient::requestFileMeta(const QString& path, quint64 requestId) {
+    const msf::FileMeta m = session_->requestFileMeta(path.toStdString());
+    FileMetaResult r;
+    r.path = path;
+    r.width = m.width;
+    r.height = m.height;
+    r.duration = m.duration;
+    r.ok = m.ok;
+    QMetaObject::invokeMethod(
+        this, [=, this] { emit fileMetaReady(requestId, r); }, Qt::QueuedConnection);
 }
 
 BackendStatus LoopbackBackendClient::lastStatus() const {

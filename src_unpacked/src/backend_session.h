@@ -23,6 +23,7 @@
 
 #include "monitor.h"
 #include "scan_worker.h"
+#include "file_meta.h"
 
 // Raw thumbnail bytes from the engine (Type B payload before encoding).
 struct ThumbBytes {
@@ -81,6 +82,10 @@ public:
     ThumbBytes requestThumb(const QString& path, bool isVideo);
     QVector<GuiFile> requestFiles();
     std::string telemetryJsonForTest() const;
+    // Display metadata for the detail pane (P4): engine records first, then
+    // one Backend-side decode chain (video info / dimensionsFast / ffprobe).
+    // Synchronous here; the IPC boundary makes it async for the GUI.
+    msf::FileMeta requestFileMeta(const std::string& path);
     // True while a scan worker exists and has not reported terminal state.
     // Used by the backend server's bounded shutdown wait.
     bool scanActive() const { return scanning_; }

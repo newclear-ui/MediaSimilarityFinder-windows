@@ -61,6 +61,7 @@ public:
     void refreshMonitor() override {} // snapshots stream from the backend ticker
     void requestThumb(const QString& path, const QSize& size, bool isVideo,
                       quint64 requestId) override;
+    void requestFileMeta(const QString& path, quint64 requestId) override;
     QVector<BackendFile> requestFiles() override { return lastFiles_; }
     BackendStatus lastStatus() const override { return lastStatus_; }
     BackendMonitorStatus lastMonitorStatus() const override { return lastMonStatus_; }

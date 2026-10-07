@@ -22,6 +22,7 @@
 #include <QSettings>
 #include <QThread>
 #include <QTimer>
+#include <QLabel>
 #include <QTreeWidget>
 #include <filesystem>
 #include <fstream>
@@ -176,6 +177,25 @@ int main(int argc, char** argv) {
     if (!gOk) return 3;
     check(grid->count() >= 2, "test1 groups displayed");
     std::cout << "  [info] guiPid=" << guiPid << " backendPid=" << pid1 << "\n";
+    // FileMeta over IPC: select the first group/file and expect the detail
+    // pane to resolve "8x8" through GET_FILE_META/FILE_META (no GUI decode).
+    {
+        auto* tree = w.findChild<QTreeWidget*>("imgTree");
+        auto* files = w.findChild<QListWidget*>("fileGrid");
+        if (tree && files && tree->topLevelItemCount() > 0) {
+            tree->setCurrentItem(tree->topLevelItem(0));
+            QApplication::processEvents();
+            if (files->count() > 0) files->setCurrentRow(0);
+            pumpUntil(
+                [&] {
+                    for (auto* lb : w.findChildren<QLabel*>()) {
+                        if (lb->text() == QStringLiteral("8x8")) return true;
+                    }
+                    return false;
+                },
+                30000, "test1 detail shows 8x8 via fileMeta");
+        }
+    }
 
     // ---- Test 2: forced kill right after scan start -> restart -> rescan. ----
     // The kill lands deterministically with no wait at all: supervisor.scanning_

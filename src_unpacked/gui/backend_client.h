@@ -67,6 +67,16 @@ struct ThumbResult {
     bool ok = false;
 };
 
+// Display metadata for the detail pane and file lists (Type B, async like
+// thumbnails: requestFileMeta + fileMetaReady; stale arrivals dropped).
+struct FileMetaResult {
+    QString path;
+    int width = 0;
+    int height = 0;
+    double duration = 0.0;
+    bool ok = false;
+};
+
 // Pushed engine snapshot (Type C). Updated by statusSnapshot; the GUI tick
 // reads lastStatus() and never touches the engine.
 struct BackendStatus {
@@ -115,6 +125,7 @@ Q_DECLARE_METATYPE(BackendStatus)
 Q_DECLARE_METATYPE(BackendMonitorStatus)
 Q_DECLARE_METATYPE(BackendMonitorMatch)
 Q_DECLARE_METATYPE(BackendMonitorEvent)
+Q_DECLARE_METATYPE(FileMetaResult)
 Q_DECLARE_METATYPE(QVector<BackendMatch>)
 Q_DECLARE_METATYPE(QVector<BackendFile>)
 
@@ -157,6 +168,9 @@ public:
     // last completed scan's file list snapshot (loopback answers inline from
     // the engine; same semantics: only finished-scan data).
     virtual QVector<BackendFile> requestFiles() = 0;
+    // File metadata (Type B, async): dimensions + duration for paths the
+    // engine may never have analyzed. Answers via fileMetaReady.
+    virtual void requestFileMeta(const QString& path, quint64 requestId) = 0;
 
     // ---- Type C: cached snapshots (updated by signals, never polled) ----
     virtual BackendStatus lastStatus() const = 0;
@@ -184,6 +198,7 @@ signals:
     void finished(QString msg);
     void failed(QString msg);
     void thumbReady(quint64 requestId, ThumbResult thumb);
+    void fileMetaReady(quint64 requestId, FileMetaResult meta);
     void statusSnapshot(BackendStatus st);
     void monitorEvent(BackendMonitorEvent ev);
     void monitorSnapshot(BackendMonitorStatus st);

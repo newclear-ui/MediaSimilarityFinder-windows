@@ -40,6 +40,7 @@ inline const char* kCancel = "CANCEL";
 inline const char* kConfigure = "CONFIGURE";
 inline const char* kShutdown = "SHUTDOWN";
 inline const char* kGetThumbnail = "GET_THUMBNAIL";
+inline const char* kGetFileMeta = "GET_FILE_META";
 
 // Event types (Backend → GUI).
 inline const char* kHelloAck = "HELLO_ACK";
@@ -56,6 +57,7 @@ inline const char* kHealth = "HEALTH";
 inline const char* kStatus = "STATUS";
 inline const char* kMonitorStatus = "MONITOR_STATUS";
 inline const char* kThumbnail = "THUMBNAIL";
+inline const char* kFileMeta = "FILE_META";
 inline const char* kError = "ERROR";
 
 } // namespace msf_ipc

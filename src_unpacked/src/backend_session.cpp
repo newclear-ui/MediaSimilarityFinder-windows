@@ -1,7 +1,10 @@
 // BackendSession implementation (P3a: 0.9.4.69). See backend_session.h.
 #include "backend_session.h"
 
+#include "file_meta.h"
 #include "gpu_backend.h"
+#include "image_decoder.h"
+#include "video_decoder.h"
 
 BackendSession::BackendSession(QObject* parent) : QObject(parent) {
     qRegisterMetaType<QVector<LiveMatch>>();
@@ -181,6 +184,54 @@ QVector<GuiFile> BackendSession::requestFiles() {
 std::string BackendSession::telemetryJsonForTest() const {
     if (!worker_ || !worker_->scanEngine().hasTelemetry()) return {};
     return worker_->scanEngine().telemetryJson();
+}
+
+msf::FileMeta BackendSession::requestFileMeta(const std::string& path) {
+    msf::FileMeta m;
+    if (worker_) {
+        for (const auto& f : worker_->scanEngine().files()) {
+            if (f.path != path) continue;
+            m.duration = f.duration;
+            m.ok = true;
+            break;
+        }
+    }
+    const std::string ext = [&] {
+        const size_t dot = path.find_last_of('.');
+        std::string e = (dot == std::string::npos) ? std::string() : path.substr(dot + 1);
+        for (auto& ch : e) ch = (char)tolower((unsigned char)ch);
+        return e;
+    }();
+    const bool isVid = ext == "mp4" || ext == "mkv" || ext == "avi" ||
+                       ext == "mov" || ext == "webm" || ext == "m4v" || ext == "wmv";
+    if (isVid) {
+        msf::VideoDecoder dec;
+        if (dec.open(path)) {
+            msf::VideoInfo vi;
+            if (dec.info(vi) && vi.width > 0 && vi.height > 0) {
+                m.width = vi.width;
+                m.height = vi.height;
+            }
+            if (vi.duration > 0) m.duration = vi.duration;
+            if (m.width > 0) m.ok = true;
+            dec.close();
+        }
+        return m;
+    }
+    msf::ImageDecoder dec;
+    int w = 0, h = 0;
+    if (dec.dimensionsFast(path, w, h) && w > 0 && h > 0) {
+        m.width = w;
+        m.height = h;
+        m.ok = true;
+        return m;
+    }
+    if (msf::ffprobeSize(path, w, h)) {
+        m.width = w;
+        m.height = h;
+        m.ok = true;
+    }
+    return m;
 }
 
 void BackendSession::startMonitor(const QStringList& watchRoots, const QStringList& compareRoots,

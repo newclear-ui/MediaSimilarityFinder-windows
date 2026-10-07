@@ -207,6 +207,16 @@ void BackendSupervisor::requestThumb(const QString& path, const QSize& size, boo
     sendCommand(msf_ipc::kGetThumbnail, p, requestId);
 }
 
+void BackendSupervisor::requestFileMeta(const QString& path, quint64 requestId) {
+    if (!backendReady_ || !processAlive()) {
+        emit fileMetaReady(requestId, FileMetaResult());
+        return;
+    }
+    QJsonObject p;
+    p[QStringLiteral("path")] = path;
+    sendCommand(msf_ipc::kGetFileMeta, p, requestId);
+}
+
 // ---- lifecycle ----
 
 void BackendSupervisor::spawn() {
@@ -471,6 +481,16 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
     }
     if (type == QLatin1String(kThumbnail)) {
         emitThumbReady(requestId, payload);
+        return;
+    }
+    if (type == QLatin1String(kFileMeta)) {
+        FileMetaResult r;
+        r.path = S(payload.value("path"));
+        r.width = payload.value("width").toInt(0);
+        r.height = payload.value("height").toInt(0);
+        r.duration = payload.value("duration").toDouble(0.0);
+        r.ok = payload.value("ok").toBool(false);
+        emit fileMetaReady(requestId, r);
         return;
     }
     if (type == QLatin1String(kError)) {

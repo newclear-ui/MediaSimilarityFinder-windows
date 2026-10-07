@@ -544,6 +544,7 @@ MainWindow::MainWindow(QWidget* p, BackendClient* backend) : QMainWindow(p) {
   connect(backend_, &BackendClient::monitorSnapshot, this, &MainWindow::onMonitorSnapshot);
   connect(backend_, &BackendClient::statusSnapshot, this, &MainWindow::onStatusSnapshot);
   connect(backend_, &BackendClient::thumbReady, this, &MainWindow::onThumbReady);
+  connect(backend_, &BackendClient::fileMetaReady, this, &MainWindow::onFileMetaReady);
   connect(backend_, &BackendClient::backendConnection, this, &MainWindow::onBackendConnection);
   connect(backend_, &BackendClient::backendLogLine, this,
           [this](const QString& line) { scanLog(line); });
@@ -2342,54 +2343,39 @@ void MainWindow::groupSelected(QTreeWidgetItem* cur, QTreeWidgetItem*) {
 }
 void MainWindow::groupSearchChanged(const QString&) { refreshGroupList(); }
 // ------------------------------------------------------------ right pane: files + detail
-// Last-resort dimensions via ffprobe (no decode), for formats nothing else
-// can read the size of. Windowless spawn (captureSilent): plain _popen lets
-// console-subsystem children flash a terminal on GUI apps — one flash plus a
-// ~100ms stall per file, directly on the UI thread. Cached by the caller, so
-// at most one spawn per path ever.
-static QSize ffprobeSize(const QString& path) {
-  // Local 8-bit (not UTF-8): console children parse non-ASCII paths in the
-  // system code page, so Korean filenames keep working as before.
-  const QByteArray cmd = (QStringLiteral("ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"") + path + '"').toLocal8Bit();
-  std::string out;
-  // Metadata class: 30 s budget (local probe, normally < 2 s; cached per path).
-  if (!msf::captureSilent(std::string(cmd.constData(), (std::size_t)cmd.size()), out, 30000)) return QSize();
-  const QStringList parts = QString::fromLocal8Bit(out.c_str()).trimmed().split(',');
-  if (parts.size() != 2) return QSize();
-  bool okW = false, okH = false;
-  const int w = parts[0].trimmed().toInt(&okW), h = parts[1].trimmed().toInt(&okH);
-  if (!okW || !okH || w <= 0 || h <= 0) return QSize();
-  return QSize(w, h);
+// (P4: ffprobe dimension probing moved to src/file_meta.cpp with the rest of
+// the Backend-owned decode chain. The GUI only renders EXIF text tags.)
+QString MainWindow::fileResolution(const QString& path) const {
+  auto it = resCache_.find(path);
+  if (it != resCache_.cend()) return it.value();
+  // P4: dimensions come from the backend (Type B, async) like thumbnails.
+  // No WIC/FFmpeg/QImageReader/ffprobe probing here anymore (directive §3):
+  // EXIF text tags below are string metadata, not pixel decode, and stay.
+  requestFileMeta(path);
+  return QStringLiteral("-");
 }
-QString MainWindow::fileResolution(const QString& path) const {  auto it = resCache_.find(path);
-  if (it != resCache_.cend()) return it.value();  QString r = "-";
-  if (isVideoExt(path)) {
-    msf::VideoDecoder dec;
-    if (dec.open(path.toStdString())) {
-      msf::VideoInfo vi;
-      if (dec.info(vi) && vi.width > 0 && vi.height > 0)
-        r = QString("%1x%2").arg(vi.width).arg(vi.height);
-      dec.close();
-    }
-  } else {
-    QImageReader rd(path);
-    const QSize s = rd.size();
-    if (s.isValid()) r = QString("%1x%2").arg(s.width()).arg(s.height());
-    else {
-      // Header parse first (PNG IHDR / JPEG SOF, microseconds, no process):
-      // covers exactly the formats Qt ships without plugins for. ffprobe stays
-      // as the last resort (one windowless spawn, one-time via the cache).
-      msf::ImageDecoder dec; int w = 0, h = 0;
-      if (dec.dimensionsFast(path.toStdString(), w, h) && w > 0 && h > 0)
-        r = QString("%1x%2").arg(w).arg(h);
-      else {
-        const QSize probe = ffprobeSize(path);
-        if (probe.isValid()) r = QString("%1x%2").arg(probe.width()).arg(probe.height());
-      }
-    }
-  }
-  resCache_[path] = r;
-  return r;
+void MainWindow::requestFileMeta(const QString& path) const {
+  if (path.isEmpty() || !backend_) return;
+  if (fileMetaPending_.contains(path)) return; // in flight: dedup
+  fileMetaPending_.insert(path);
+  backend_->requestFileMeta(path, ++fileMetaRequestId_);
+}
+void MainWindow::onFileMetaReady(quint64 requestId, const FileMetaResult& meta) {
+  Q_UNUSED(requestId);
+  // Stale-drop by path presence: entries leave only when answered, so an
+  // arrival for an unrequested path is foreign and ignored.
+  if (!fileMetaPending_.remove(meta.path)) return;
+  if (!meta.ok) return;
+  if (meta.width > 0 && meta.height > 0)
+    resCache_[meta.path] = QString("%1x%2").arg(meta.width).arg(meta.height);
+  if (meta.duration > 0) fileDur_[meta.path] = meta.duration;
+  // Repaint what shows this path: the detail pane for the current file, and
+  // the file list if it belongs to the current group.
+  bool inGroup = false;
+  if (currentGroup_ >= 0 && currentGroup_ < groups_.size())
+    inGroup = groups_[currentGroup_].paths.contains(meta.path);
+  if (currentFile_ == meta.path) refreshDetail();
+  if (inGroup) refreshFileViews();
 }
 // (P3: shell thumbnail fast lane removed with the GUI decode paths. The
 // Backend owns every decoder now; the GUI shows placeholders until the
@@ -2601,26 +2587,14 @@ void MainWindow::refreshDetail() {
     double dur = fileDur_.value(currentFile_, 0.0);
   if (dur <= 0 && backend_) {
     // Live or cancelled scans never reach onResults, so fileDur_ stays empty
-    // and the row shows "-". Fall back to the backend file list (Type B).
+    // and the row shows "-" until the backend answer arrives (Type B).
     for (const auto& f : backend_->requestFiles())
       if (f.path == currentFile_ && f.duration > 0) {
         dur = f.duration;
         fileDur_[currentFile_] = dur;
         break;
       }
-  }
-  if (dur <= 0 && isVideoExt(currentFile_)) {
-    // Last resort: read the container duration directly (~30ms, cached).
-    // Covers files whose scan record never carried a duration.
-    msf::VideoDecoder dec;
-    if (dec.open(currentFile_.toStdString())) {
-      msf::VideoInfo vi;
-      if (dec.info(vi) && vi.duration > 0) {
-        dur = vi.duration;
-        fileDur_[currentFile_] = dur;
-      }
-      dec.close();
-    }
+    if (dur <= 0) requestFileMeta(currentFile_);
   }
   detailForm_->addRow(trStr(lang(), "duration"),
                       new QLabel(dur > 0 ? QString("%1:%2").arg(int(dur) / 60, 2, 10, QChar('0')).arg(int(dur) % 60, 2, 10, QChar('0')) : "-", this));

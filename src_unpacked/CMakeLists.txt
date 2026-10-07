@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.69 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.70 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -133,6 +133,7 @@ add_library(msf_core STATIC
     src/backend_ipc.cpp
     src/backend_log.cpp
     src/backend_thumb.cpp
+    src/file_meta.cpp
     src/benchmark.cpp
     src/scheduler.cpp
     src/profile.cpp

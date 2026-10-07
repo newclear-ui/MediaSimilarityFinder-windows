@@ -187,10 +187,16 @@ private:
   QString fmtSize(qulonglong) const;
   QString scanStatusText(qulonglong done, qulonglong total, int pct, const QString& path, qint64 elapsedMs) const;
   qint64 elapsedActiveMs() const; // scan clock minus paused intervals
-  QString fileResolution(const QString&) const; // cached QImageReader::size
+  QString fileResolution(const QString&) const; // cached backend dimensions (P4: no GUI decode)
   qulonglong filePixels(const QString&) const;
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
   void onThumbReady(quint64 requestId, const ThumbResult& thumb);
+  void onFileMetaReady(quint64 requestId, const FileMetaResult& meta);
+  void requestFileMeta(const QString& path) const;
+  // FileMeta in flight (Type B dedup + stale-drop). Mutable: refreshDetail
+  // and fileResolution are const but trigger backend requests.
+  mutable QSet<QString> fileMetaPending_;
+  mutable quint64 fileMetaRequestId_ = 0;
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
   void dropThumbCache(const QString& path); // exact + sized variants
   double pathBest(const QString&) const;

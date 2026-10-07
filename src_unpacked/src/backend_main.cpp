@@ -167,6 +167,18 @@ private:
             configureFrom(m);
         } else if (t == QLatin1String(msf_ipc::kGetThumbnail)) {
             serveThumbnail(m);
+        } else if (t == QLatin1String(msf_ipc::kGetFileMeta)) {
+            const msf::FileMeta fm =
+                session_->requestFileMeta(m.payload.value(QStringLiteral("path")).toString().toStdString());
+            Message out;
+            out.type = QString::fromLatin1(msf_ipc::kFileMeta);
+            out.requestId = m.requestId;
+            out.payload[QStringLiteral("path")] = m.payload.value(QStringLiteral("path")).toString();
+            out.payload[QStringLiteral("width")] = fm.width;
+            out.payload[QStringLiteral("height")] = fm.height;
+            out.payload[QStringLiteral("duration")] = fm.duration;
+            out.payload[QStringLiteral("ok")] = fm.ok;
+            send(out);
         } else if (t == QLatin1String(msf_ipc::kShutdown)) {
             onShutdown(m.requestId);
         } else {

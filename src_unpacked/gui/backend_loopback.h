@@ -34,6 +34,7 @@ public:
     void requestThumb(const QString& path, const QSize& size, bool isVideo,
                       quint64 requestId) override;
     QVector<BackendFile> requestFiles() override;
+    void requestFileMeta(const QString& path, quint64 requestId) override;
     BackendStatus lastStatus() const override;
     BackendMonitorStatus lastMonitorStatus() const override;
     std::string telemetryJsonForTest() const override;
