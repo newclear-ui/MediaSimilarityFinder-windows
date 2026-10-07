@@ -1001,3 +1001,136 @@ OpenCode가 구현 중 설계 충돌을 발견하면 다음 우선순위를 따�
 실제 source code는 이 두 문서의 계약을 만족하는 범위에서 구현 세부를 선택한다.
 
 이 문서는 0.9.4.x 구현 중 발견되는 중요한 설계 변경 또는 acceptance 결과에 따라 갱신할 수 있으나, 과거 실행 기록을 소급 변경하지 않고 변경 사유와 검증 결과를 별도 worklog/build-history에 남긴다.
+
+---
+
+## 29. 보완 확정사항 (G1–G13, 추가 지시 반영)
+
+아래는 기존 §1–§28을 대체하지 않는다. 구현 착수 전 확정된 해석과 hard rule만 추가한다.
+
+### 29.1 G1 — Backend authoritative thumbnail + GUI memory cache
+
+- 정상 경로: `GUI → GET_THUMBNAIL → Backend(getColorThumb/WIC/FFmpeg) → THUMBNAIL/THUMB_BATCH → GUI memory cache → 표시`.
+- GUI memory cache는 이미 전달받은 완성형 thumb의 재사용처이며, decode authority가 아니다. GUI에 WIC/FFmpeg/engine `getColorThumb` fallback을 만들지 않는다 (A 경로 실패 → GUI decode 우회가 아님).
+- IPC 허용: 최대 256px·200KB의 bounded derived payload (`GET_THUMBNAIL`, `THUMBNAIL`/`THUMB_BATCH`). raw frame·WIC/FFmpeg/GPU 객체는 계속 금지. 수치는 acceptance 실측 후 조정 가능.
+- Backend unavailable 시: cache된 thumb은 계속 표시, 신규 요청 불가, placeholder 표시. GUI가 직접 decode하지 않는다.
+- 현재 `MainWindow::thumbDb_`는 memory cache가 아니라 index DB 직접 open/write + thumbnail persistence/prune을 수행하므로 그대로 GUI에 남기지 않는다. Backend가 authoritative SQLite/thumbnail persistence를 소유하고, GUI는 memory presentation cache만 둔다. `thumbDb_` 사용처 전수 결과는 §32 P0 inventory 참조.
+
+### 29.2 G2 — 호출점 3분류 (Type A/B/C)
+
+- Type A (fire-and-forget): pause/resume/cancel/configure/shutdown. 단방향, GUI는 응답을 기다리지 않는다.
+- Type B (request/response): thumbnail, 선택 항목 detail, 진단값. `requestId` + generation/version을 달고, 응답 generation이 현재 요청과 다르면 stale로 폐기한다.
+- Type C (tick getter): 기존 polling을 remote polling으로 옮기지 않는다. Backend가 STATE/HEALTH/progress/counter/telemetry snapshot을 push하고 GUI tick은 local snapshot만 읽는다.
+- 분류표는 §32 P0 inventory 참조.
+
+### 29.3 G3 — GUI thread 비차단 hard rule
+
+- Production GUI 경로에 synchronous wait API를 만들지 않는다 (`waitFor*`, blocking read/receive, `QProcess::execute`, `startScanAndWait()`/`waitForReady()`/`requestAndWait()`류 금지).
+- 허용: command, signal/event, callback, state transition, QTimer 기반 timeout. 테스트 harness 전용 blocking wait는 production 경로에 두지 않는다.
+
+### 29.4 G4 — 비대칭 backpressure
+
+- GUI 소비가 느려도 scan engine은 IPC 속도에 종속되지 않는다. Backend→GUI bounded outgoing queue (초기 후보: 약 1000 messages / 64MB, acceptance 실측 후 조정).
+- Coalescible (최신값으로 합침): PROGRESS, LISTING_PROGRESS, FINGERPRINT_PROGRESS, TELEMETRY, HEALTH.
+- Lossless (유실 금지): MATCHES_BATCH, FINISHED, FAILED. 과도한 MATCHES는 batch coalescing으로 줄이고, overflow로 match를 버리지 않는다. disk spool 같은 구조는 처음에 만들지 않는다.
+
+### 29.5 G5 — terminate → kill → verify 후 spawn
+
+- old Backend가 살아 있는 동안 new Backend를 spawn하지 않는다 (SQLite double-writer 방지 hard rule).
+- 순서는 terminate 요청 → 비동기 grace → finished 확인 → 필요하면 kill → finished 확인 → spawn. 3초/5초는 blocking wait가 아니라 QTimer 기반 asynchronous escalation timeout이다 (G3와 충돌하지 않게).
+
+### 29.6 G6 — Job Object + channel-loss self-exit
+
+- GUI는 Backend를 Windows Job Object에 넣고 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`를 설정한다 (GUI 비정상 종료 시 OS가 Backend 정리).
+- Backend는 control channel 단절(stdin/transport EOF, 부모·연결 상실)을 감지하면 정상 종료를 시도한다. 기준은 "30초 command 없음" 같은 inactivity가 아니라 실제 연결 상실이다 (장시간 scan은 정상적으로 command가 없을 수 있음).
+
+### 29.7 G7 — UTF-8 + flush per message
+
+- Wire encoding은 UTF-8. malformed/invalid UTF-8·framing 오류는 정상 메시지로 처리하지 않고 reject한다 (0.9.4.47 재발 방지).
+- 송신 측은 메시지마다 flush (또는 동등한 unbuffered transport).
+
+### 29.8 G8 — 3층 테스트 확정
+
+- 순수 GUI: `MainWindow → FakeBackendClient` (splitter/selection/dialog/display-only).
+- GUI + 실제 BackendCore: `MainWindow → LoopbackBackendClient → real BackendCore`. Loopback은 fake가 아니라 OS process만 분리하지 않는 과도기/테스트 경로다. 기존 search-oriented GUI 테스트를 최대한 이 방식으로 유지한다.
+- 실프로세스 acceptance: `MainWindow → real BackendClient → Backend.exe` (PID/crash/restart/Job Object/SQLite reopen).
+- 기존 GUI 테스트를 삭제하여 검증을 대체하지 않는다.
+
+### 29.9 G9 — P0→P4 순서 고정
+
+- P0: 호출점/ownership inventory (읽기·분석, 동작 변경 최소화).
+- P1: `BackendCore` library 추출 + `backend_main` 진입점 (동일 프로세스, 기존 CTest 전부 통과).
+- P2: `BackendClient` abstraction + Loopback (동일 프로세스에서 실제 BackendCore 사용).
+- P3: 실 Backend spawn + Supervisor + IPC + crash injection.
+- P4: hardening (thumbnail/backpressure/nonce/Job Object/escalation/health/UTF-8/stale event/final acceptance).
+- 각 단계 종료점마다 build/test 가능한 상태를 유지하고, 문제를 다음 단계로 넘기며 숨기지 않는다.
+
+### 29.10 G10 — 버전 분할
+
+- P1/P2/P3/P4를 하나의 patch에 몰아넣지 않는다. 각 patch는 독립적으로 build/retest/rollback 가능해야 하며, `phase → implementation → build → tests → evidence → next phase` 순서를 지킨다.
+- 정확한 patch 번호는 branch/HEAD 확인 후 확정하고 문서에 미리 소급 기록하지 않는다 (현재 HEAD `0.9.4.66` 다음부터 순차 배정 후보).
+
+### 29.11 G11 — backendInstanceNonce
+
+- 0.9.5 formal task protocol이 아닌 0.9.4 전용 최소 process-instance identity. Supervisor가 spawn마다 random nonce를 만들어 Backend 시작 인자로 전달하고, Backend는 전 event에 echo한다.
+- GUI는 현재 nonce와 다른 event를 폐기한다 (old Backend delayed event가 새 Backend 실행 중에 늦게 도착하는 경우).
+
+### 29.12 G12 — READY timeout + STARTING health
+
+- Startup READY timeout 초기 후보 약 15초를 유지하되, spawn 후 무조건 kill이 아니라 Backend가 startup 중 `STATE=STARTING`/HEALTH를 주기 송신하여 "느리지만 살아 있음"과 "멈춤"을 구분한다. 숫자는 대형 DB reopen 실측 후 조정.
+
+### 29.13 G13 — Backend Qt dependency
+
+- Backend는 `Qt6::Core`까지만 링크하고 `Qt6::Widgets`/`Qt6::Gui`를 직접 dependency로 연결하지 않는다. 우회가 필요해 보이면 dependency 자체를 재조사한다. Acceptance에서 target link + packaged binary dependency를 모두 확인한다.
+
+## 30. Command ordering / terminal once-only (§14)
+
+- 0.9.5 formal task protocol 없이, 단일 Backend session 안의 command/event 순서는 deterministic해야 한다 (`START_SCAN`→`PAUSE`→`RESUME`→`CANCEL`이 짧은 시간에 들어와도 정의된 순서대로 처리).
+- `FINISHED`/`FAILED`/`CANCELLED` 중 동일 session의 최종 상태는 중복·역전 terminalize하지 않는다 (terminal state once-only).
+- 최소 보존: command sequence, session generation/state, terminal once-only, event sequence.
+
+## 31. 구현 완료 전 추가 확인 (§15 체크리스트)
+
+1. GUI가 기존 index DB의 thumbnail table/cache를 직접 open/write하지 않는가?
+2. GUI thumbnail 경로가 Backend decode 경로와 충돌하지 않는가?
+3. GUI에 WIC/FFmpeg thumbnail fallback이 생기지 않았는가?
+4. BackendClient에 synchronous wait API가 존재하지 않는가?
+5. GUI thread에서 waitFor*/blocking read가 발생하지 않는가?
+6. scan engine이 IPC queue 때문에 block되지 않는가?
+7. MATCHES_BATCH/FINISHED/FAILED가 overflow 때문에 유실되지 않는가?
+8. old Backend가 살아 있는 동안 new Backend를 spawn하지 않는가?
+9. restart escalation이 GUI thread를 block하지 않는가?
+10. GUI 종료 시 Backend orphan이 남지 않는가?
+11. UTF-8 path와 message framing이 엄격하게 처리되는가?
+12. old Backend의 stale event가 nonce로 폐기되는가?
+13. Backend가 Qt6::Widgets/Qt6::Gui에 의존하지 않는가?
+14. Loopback test와 real-process acceptance가 명확히 분리되어 있는가?
+15. P1→P2→P3→P4 각 단계가 독립적으로 검증 가능한가?
+
+## 32. P0 inventory — Backend 이동 대상 호출점 (HEAD 0.9.4.66 기준)
+
+`ScanWorker::run()` 본문(L421–620)의 `engine_.*` 호출은 worker와 함께 Backend로 이동하므로 IPC가 필요 없다 (local 유지). 아래는 `MainWindow` GUI 측에서 IPC adapter로 바뀌어야 할 접점이다.
+
+| # | 위치 | 호출 | Type | 비고 |
+|---|------|------|------|------|
+| 1 | L1541 | `worker_->pause()` / `resume()` | A | 단방향 command |
+| 2 | L1555 | `worker_->cancel()` | A | 단방향 command |
+| 3 | L1506–1508 | `setIgnored/setDetailedLog/moveToThread` + thread 생성 | A+연결 | CONFIGURE + START_SCAN으로 대체, QThread 제거 |
+| 4 | L792, L1479 | thread quit/wait/delete | 제거 | process lifecycle로 대체 |
+| 5 | L2761, L2832 | `scanEngine().getColorThumb/getVideoThumb` | B | GET_THUMBNAIL (§29.1). GUI decode fallback 금지 |
+| 6 | L3011 | `scanEngine().files()` | B | 선택 항목 detail 요청 |
+| 7 | L1845–1846 | `telemetryJsonForTest()` | B | test hook. loopback 전용 유지 검토 |
+| 8 | L3481 | `worker_->gpuActive()` | C | STATE/HEALTH push 스냅샷으로 대체 |
+| 9 | L3685 | `scanEngine().analyzedCount()` | C | 동상 |
+| 10 | L3698–3699 | `gpuAvailable/gpuDone` | C | 동상 |
+| 11 | L1883, L1956 | `monitor_->setPolicy()` | A | monitor가 Backend로 이동하므로 CONFIGURE에 포함 |
+| 12 | L3842, L3860 | `monitor_->stop/start` | A+연결 | Backend 소유로 이동, GUI는 상태 event로 수신 |
+| 13 | L3880–3881 | `monitor_->running/status` | C | HEALTH 스냅샷으로 대체 |
+| 14 | L2066 | `takePending()` + `pending_` queue | 대체 | MATCHES_BATCH로 대체 (동일 프로세스 큐 제거) |
+| 15 | L1468–1474 | `thumbDb_.open/initialize` (index DB 직접 open) | Backend 이동 | G1.3 위반. GUI에 남기지 않음 |
+| 16 | L791, L1789 | `thumbDb_.close/pruneThumbs` | Backend 이동 | persistence op |
+| 17 | L2724–2726 | `thumbDb_.getThumb` | B | miss 시 GET_THUMBNAIL (GUI는 memory cache만) |
+| 18 | L2847, L2857, L2885–2886 | `thumbDb_.putThumb` + flush | Backend 이동 | write는 Backend만 |
+| 19 | L3825–3827 | `watchRoots/compareRoots/applicationDirectory` 수집 | A | START_SCAN/CONFIGURE payload (기존 모델 재사용, §10) |
+
+`thumbBudget_/thumbStarved_`는 decode 지출 책임이 Backend로 가므로 Backend 측으로 이동 검토 (GUI memory-cache 적중 통계만 GUI에 남김). `control_`/`pending_`/`allMatches_` 등 worker 내부 상태는 Backend로 통째로 이동한다.

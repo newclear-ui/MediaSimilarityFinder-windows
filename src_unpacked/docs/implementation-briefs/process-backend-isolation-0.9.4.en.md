@@ -995,3 +995,136 @@ This brief turns those decisions into an **implementation contract**.
 Source code may choose implementation details only while satisfying both documents.
 
 During 0.9.4.x implementation this brief may be amended when a significant design or acceptance finding is discovered, but historical execution records must not be rewritten retroactively; the reason and evidence belong in worklog/build-history.
+
+---
+
+## 29. Supplemental decisions (G1–G13, reflecting the additional directive)
+
+The following does not replace §1–§28 above. It only adds interpretations and hard rules confirmed before implementation starts.
+
+### 29.1 G1 — Backend authoritative thumbnail + GUI memory cache
+
+- Canonical path: `GUI → GET_THUMBNAIL → Backend (getColorThumb/WIC/FFmpeg) → THUMBNAIL/THUMB_BATCH → GUI memory cache → paint`.
+- The GUI memory cache reuses already-delivered finished thumbnails. It is not a decode authority. Never build a GUI WIC/FFmpeg/engine-`getColorThumb` fallback (an A-path failure must not detour into GUI decoding).
+- IPC allowance: bounded derived payloads up to 256px / 200KB (`GET_THUMBNAIL`, `THUMBNAIL`/`THUMB_BATCH`). Raw frames, WIC/FFmpeg/GPU objects stay banned. Numbers may move after acceptance measurements.
+- Backend unavailable: cached thumbs keep painting, new requests impossible, placeholders shown. The GUI never decodes around the failure.
+- The current `MainWindow::thumbDb_` is not a memory cache: it opens the managed index DB directly and does thumbnail persistence/prune/writes. Do not leave it in the GUI. Per the single-DB-authority principle the Backend owns authoritative SQLite/thumbnail persistence; the GUI keeps a memory presentation cache only. See the §32 P0 inventory for every `thumbDb_` use.
+
+### 29.2 G2 — Call-site taxonomy (Type A/B/C)
+
+- Type A (fire-and-forget): pause/resume/cancel/configure/shutdown. One way; the GUI never waits for a response.
+- Type B (request/response): thumbnails, selected-item detail, diagnostic values. Carry `requestId` plus generation/version; drop a response whose generation does not match the current request as stale.
+- Type C (tick getters): do not move existing polling to remote polling. The Backend pushes STATE/HEALTH/progress/counter/telemetry snapshots and GUI ticks read the local snapshot only.
+- See the §32 P0 inventory for the table.
+
+### 29.3 G3 — GUI-thread non-blocking hard rule
+
+- No synchronous wait API on the production GUI path (`waitFor*`, blocking read/receive, `QProcess::execute`, `startScanAndWait()`/`waitForReady()`/`requestAndWait()` style calls are banned).
+- Allowed: command, signal/event, callback, state transition, QTimer-based timeout. Blocking waits needed only by test harnesses stay out of the production path.
+
+### 29.4 G4 — Asymmetric backpressure
+
+- A slow GUI must never make the scan engine depend on IPC speed. Bounded outgoing Backend→GUI queue (initial candidates: about 1000 messages / 64MB; adjust after acceptance workload measurements).
+- Coalescible (merge to latest): PROGRESS, LISTING_PROGRESS, FINGERPRINT_PROGRESS, TELEMETRY, HEALTH.
+- Lossless (must not drop): MATCHES_BATCH, FINISHED, FAILED. Shrink excessive MATCHES by batch coalescing first; never drop matches on queue overflow. No disk spool up front.
+
+### 29.5 G5 — Spawn only after terminate → kill → verify
+
+- Never spawn a new Backend while the old one is alive (SQLite double-writer prevention hard rule).
+- Order: terminate request → asynchronous grace period → check finished → kill if needed → check finished → spawn. The 3s/5s figures are QTimer-based asynchronous escalation timeouts, not blocking waits (no conflict with G3).
+
+### 29.6 G6 — Job Object + channel-loss self-exit
+
+- The GUI puts the Backend in a Windows Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (the OS cleans up the Backend when the GUI dies abnormally).
+- The Backend attempts orderly exit when it detects control-channel loss (stdin/transport EOF, parent/connection loss). The criterion is real connection loss, not "no command for 30s" (a long scan legitimately has no commands).
+
+### 29.7 G7 — UTF-8 + flush per message
+
+- Wire encoding is UTF-8. Malformed/invalid UTF-8 or framing errors are rejected, never processed as normal messages (no repeat of 0.9.4.47).
+- Senders flush per message (or an equivalent unbuffered transport).
+
+### 29.8 G8 — Three test layers, confirmed
+
+- Pure GUI: `MainWindow → FakeBackendClient` (splitter/selection/dialog/display-only).
+- GUI + real BackendCore: `MainWindow → LoopbackBackendClient → real BackendCore`. Loopback is not a fake; it is the transitional/test path that skips only the OS process split. Keep existing search-oriented GUI tests on it wherever possible.
+- Real-process acceptance: `MainWindow → real BackendClient → Backend.exe` (PID/crash/restart/Job Object/SQLite reopen).
+- Never delete existing GUI tests to fake verification coverage.
+
+### 29.9 G9 — Fixed P0→P4 order
+
+- P0: call-site/ownership inventory (read/analyze, minimal behavior change).
+- P1: `BackendCore` library extraction + `backend_main` entry (same process, all existing CTest green).
+- P2: `BackendClient` abstraction + Loopback (real BackendCore in the same process).
+- P3: real Backend spawn + Supervisor + IPC + crash injection.
+- P4: hardening (thumbnail/backpressure/nonce/Job Object/escalation/health/UTF-8/stale event/final acceptance).
+- Keep every phase-endpoint buildable and testable; never hide a phase's problem by moving on.
+
+### 29.10 G10 — Version split
+
+- Do not pack P1/P2/P3/P4 into one giant patch. Each patch must stay independently buildable, retestable, and rollbackable, following `phase → implementation → build → tests → evidence → next phase`.
+- Exact patch numbers are fixed after checking branch/HEAD, never pre-recorded retroactively (sequential candidates after the current HEAD `0.9.4.66`).
+
+### 29.11 G11 — backendInstanceNonce
+
+- A minimal 0.9.4-only process-instance identity, not the 0.9.5 formal task protocol. The supervisor mints a random nonce per spawn, passes it as a Backend start argument, and the Backend echoes it in every event.
+- The GUI drops events whose nonce does not match the current instance (a late event from an old Backend arriving while the new one runs).
+
+### 29.12 G12 — READY timeout + STARTING health
+
+- Keep the initial ~15s startup READY timeout candidate, but not as an unconditional kill 15s after spawn. During startup the Backend periodically sends `STATE=STARTING`/HEALTH so "slow but alive" and "stuck" stay distinguishable. Numbers move after large-DB reopen measurements.
+
+### 29.13 G13 — Backend Qt dependency
+
+- The Backend links only up to `Qt6::Core`; never wire `Qt6::Widgets`/`Qt6::Gui` as direct dependencies. If some Backend feature seems to need them, re-investigate the dependency itself first. Verify both target links and packaged binary dependencies at acceptance.
+
+## 30. Command ordering / terminal once-only (§14)
+
+- Without the 0.9.5 formal task protocol, command/event order inside one Backend session must still be deterministic (`START_SCAN`→`PAUSE`→`RESUME`→`CANCEL` arriving in quick succession are processed in the defined order).
+- The terminal state of one session (`FINISHED`/`FAILED`/`CANCELLED`) is never terminalized twice or out of order (terminal state once-only).
+- Minimum preserved: command sequence, session generation/state, terminal once-only, event sequence.
+
+## 31. Pre-completion checklist (§15)
+
+1. The GUI does not open/write the existing index DB's thumbnail table/cache directly?
+2. The GUI thumbnail path does not collide with the Backend decode path?
+3. No WIC/FFmpeg thumbnail fallback appeared in the GUI?
+4. No synchronous wait API exists on BackendClient?
+5. No waitFor*/blocking read happens on the GUI thread?
+6. The scan engine cannot block on the IPC queue?
+7. MATCHES_BATCH/FINISHED/FAILED cannot be lost to overflow?
+8. A new Backend is never spawned while the old one is alive?
+9. Restart escalation never blocks the GUI thread?
+10. No orphaned Backend remains when the GUI exits?
+11. UTF-8 paths and message framing handled strictly?
+12. Stale events from the old Backend dropped by nonce?
+13. The Backend does not depend on Qt6::Widgets/Qt6::Gui?
+14. Loopback tests and real-process acceptance clearly separated?
+15. Each of P1→P2→P3→P4 independently verifiable?
+
+## 32. P0 inventory — call sites moving to the Backend (at HEAD 0.9.4.66)
+
+`engine_.*` calls inside the `ScanWorker::run()` body (L421–620) move with the worker to the Backend, so they need no IPC (stay local). Below are the `MainWindow` GUI-side junctions that must become IPC adapters.
+
+| # | Location | Call | Type | Note |
+|---|----------|------|------|------|
+| 1 | L1541 | `worker_->pause()` / `resume()` | A | one-way command |
+| 2 | L1555 | `worker_->cancel()` | A | one-way command |
+| 3 | L1506–1508 | `setIgnored/setDetailedLog/moveToThread` + thread creation | A+connect | replaced by CONFIGURE + START_SCAN; QThread goes away |
+| 4 | L792, L1479 | thread quit/wait/delete | removed | replaced by process lifecycle |
+| 5 | L2761, L2832 | `scanEngine().getColorThumb/getVideoThumb` | B | GET_THUMBNAIL (§29.1). No GUI decode fallback |
+| 6 | L3011 | `scanEngine().files()` | B | selected-item detail request |
+| 7 | L1845–1846 | `telemetryJsonForTest()` | B | test hook; keep loopback-only under review |
+| 8 | L3481 | `worker_->gpuActive()` | C | replaced by STATE/HEALTH push snapshot |
+| 9 | L3685 | `scanEngine().analyzedCount()` | C | same |
+| 10 | L3698–3699 | `gpuAvailable/gpuDone` | C | same |
+| 11 | L1883, L1956 | `monitor_->setPolicy()` | A | monitor moves to Backend; fold into CONFIGURE |
+| 12 | L3842, L3860 | `monitor_->stop/start` | A+connect | Backend-owned; GUI receives state events |
+| 13 | L3880–3881 | `monitor_->running/status` | C | replaced by HEALTH snapshot |
+| 14 | L2066 | `takePending()` + `pending_` queue | replaced | replaced by MATCHES_BATCH (same-process queue removed) |
+| 15 | L1468–1474 | `thumbDb_.open/initialize` (index DB opened directly) | move to Backend | violates G1.3. Must not stay in the GUI |
+| 16 | L791, L1789 | `thumbDb_.close/pruneThumbs` | move to Backend | persistence ops |
+| 17 | L2724–2726 | `thumbDb_.getThumb` | B | GET_THUMBNAIL on miss (GUI keeps memory cache only) |
+| 18 | L2847, L2857, L2885–2886 | `thumbDb_.putThumb` + flush | move to Backend | writes are Backend-only |
+| 19 | L3825–3827 | `watchRoots/compareRoots/applicationDirectory` collection | A | START_SCAN/CONFIGURE payload (reuse existing model, §10) |
+
+`thumbBudget_/thumbStarved_` move to the Backend side under review (decode spend lives there); only GUI memory-cache hit statistics stay GUI-side. Worker-internal state (`control_`, `pending_`, `allMatches_`, …) moves to the Backend whole.
