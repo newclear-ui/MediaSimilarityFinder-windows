@@ -11,6 +11,7 @@
 #include <QStringList>
 #include <QVector>
 #include <QHash>
+#include <QMap>
 #include <QSet>
 #include <atomic>
 #include <string>
@@ -55,71 +56,9 @@ QPixmap squareFittedPixmap(const QPixmap& src, const QSize& size);
 // main() before any default-constructed QSettings is used.
 void initAppSettings(const QString& portableDir);
 
-// A single streamed match (paths resolved in the worker thread).
-struct LiveMatch { QString left, right; double percent=0; int kind=1; };
-// Per-file data snapshot handed to the GUI thread when a scan finishes.
-struct GuiFile { QString path; qulonglong size=0; QString fpHex; double duration=0; };
-Q_DECLARE_METATYPE(GuiFile)
-
-// ---------------------------------------------------------------- worker
-class ScanWorker : public QObject {
-  Q_OBJECT
-public:
-  // Node A: gpu ctor param is deprecated (kept for signature compatibility;
-  // the GPU % UI is removed — GPU is ON/OFF only, internal cap unchanged).
-  ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled,
-             bool scanImages=true, bool scanVideos=true);
-public slots:
-  void run(); void pause(); void resume(); void cancel();
-  void setIgnored(const QSet<QString>& s);
-  void setDetailedLog(bool b) { detailedLogEnabled_ = b; }
-  // D3-Minimal test hook: walker-queue capacity override (0 = production
-  // default). Lets regression tests force the bounded path with small file
-  // sets. Never set by production UI code.
-  void setWalkerQueueCapacity(std::size_t n) { walkerCapOverride_ = n; }
-  QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
-  const msf::MediaSearchEngine& scanEngine() const { return engine_; }
-  qulonglong gpuDone() const { return gpuDone_.load(); }
-  bool gpuAvailable() const { return gpuAvail_; }
-  bool gpuActive() const { return engine_.gpuActive(); }
-signals:
-  void progress(int,QString);
-  void progressCount(qulonglong,qulonglong);
-  void walkedCount(qulonglong);
-  void telemetryReady(QString);
-  void listingProgress(std::size_t);
-  // Fingerprint-phase live progress (files hashed, bytes hashed, path).
-  // Separate from progress()/progressCount() so the walk/analysis percent
-  // math is untouched; the fingerprint has no known total.
-  void fingerprintProgress(qulonglong,qulonglong,QString);
-  void matchesArrived();            // throttled; call takePending()
-  void quickLoaded(int);            // stored matches reloaded from the index
-  void revalidated(int,int);        // old-engine pairs re-checked: kept, dropped
-  void results(QVector<GuiFile> files, QStringList matchRows);
-  void targetCount(qulonglong);   // pre-walk file total (fixed denominator)
-  void finished(QString);
-  void failed(QString);
-private:
-  QString root_, appDir_; int distance_, cpu_, gpu_; bool gpuEnabled_;
-  bool scanImages_, scanVideos_;
-  msf::ScanControl control_; msf::MediaSearchEngine engine_;
-  QMutex pendingMutex_; QVector<LiveMatch> pending_;
-  QVector<LiveMatch> allMatches_;   // worker-thread only; checkpointed incrementally + at the end
-  void persistMatchesSnapshot();    // save the full accumulated set (worker thread only)
-  int matchesSinceSave_=0; qint64 lastSaveMs_=0; // incremental-checkpoint throttle
-  qint64 lastEmitMs_=0;
-  // Progress-signal throttle (worker thread only): the engine reports every
-  // analyzed file, but the GUI is updated at most every ~150ms so a fast
-  // Maximum scan cannot flood the event loop and freeze the UI.
-  qint64 lastProgMs_=0; std::size_t lastProgDone_=0, lastProgTotal_=0; std::string lastProgPath_;
-  qint64 lastListMs_=0; std::size_t lastListN_=0;
-  qint64 lastWalkedMs_=0; std::size_t lastWalkedN_=0;
-  qint64 lastFpMs_=0;
-  std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
-  bool gpuAvail_=false;                // CUDA backend present at construction
-  bool detailedLogEnabled_=true;
-  std::size_t walkerCapOverride_=0; // see setWalkerQueueCapacity
-};
+// ScanWorker/MediaMonitor thumbnail session types live in BackendCore now
+// (P3a: src/scan_worker.h, src/monitor.h). This header keeps GUI-side
+// presentation models only.
 
 // A duplicate group built incrementally from streamed matches.
 struct DupGroup {
@@ -132,7 +71,10 @@ struct DupGroup {
 class MainWindow : public QMainWindow {
   Q_OBJECT
 public:
-  explicit MainWindow(QWidget* parent=nullptr); ~MainWindow();
+  // P3: production constructs with a real BackendSupervisor; tests and
+  // loopback paths pass nothing (a LoopbackBackendClient is created).
+  // MainWindow takes ownership of a passed client.
+  explicit MainWindow(QWidget* parent = nullptr, BackendClient* backend = nullptr); ~MainWindow();
   // Test hook: last scan's telemetry JSON (empty when no scan ran or the
   // worker is gone). Lets acceptance tests assert the detailed-log result
   // of a real MainWindow scan without touching private state.
@@ -142,14 +84,21 @@ public:
   // never calls these; they exist so offscreen tests can drive ticks
   // deterministically instead of waiting on wall-clock timer intervals.
   void testUiTick();
+  // Painted-thumbnail counter for the scroll regression test (replaces the
+  // retired in-place count: arrivals, not synchronous sets, do the painting).
+  qulonglong testThumbPaintedCount() const { return thumbPaintedCount_; }
+  // Deterministic repaint trigger for the scroll test: drops the memory
+  // cache (and outstanding request ids) so the next catch-up ticks
+  // re-request and re-paint through the real async path.
+  void testDropThumbCache() { thumbCache_.clear(); thumbPendingReq_.clear(); }
+  qulonglong testThumbPendingCount() const { return (qulonglong)thumbPendingReq_.size(); }
   // View-mode regression test hook (0.9.4.66): run one thumbnail catch-up
   // pass synchronously, exactly as the UI timer does. Production code never
-  // calls this; it exists so the offscreen probe can deliver icons through
-  // the real catch-up path (including its layout guarantee) instead of
-  // setting item icons directly and bypassing it.
+  // calls this; it exists so the offscreen probe can drive thumbnail
+  // requests through the real catch-up path instead of setting item icons
+  // directly and bypassing it. Arrivals paint via onThumbReady.
   void testThumbCatchUp() { thumbCatchUpVisible(); }
   qulonglong testFullRebuildCount() const { return fullRebuildCount_; }
-  qulonglong testThumbInPlaceCount() const { return thumbInPlaceCount_; }
   static void scanLog(const QString& line); // process-wide scan log file
   static void sortTiedReferencePaths(QStringList&, const QHash<QString,qulonglong>&, const QHash<QString,qulonglong>&);
 private slots:
@@ -191,11 +140,13 @@ private slots:
   void configureMonitor(); void toggleMonitor();
   void monitorEvent(const BackendMonitorEvent&); void showMonitorMatch(const BackendMonitorEvent&); void
   onMonitorSnapshot(const BackendMonitorStatus&);
+  void onBackendConnection(bool available, QString message);
   // misc
   void setLanguage(int); void showHelp(); void applyStaticTexts();
 private:
   UiLang lang() const;
   void closeEvent(QCloseEvent*) override;
+  void showEvent(QShowEvent*) override; // first show boots the backend (ensureRunning, idempotent)
 
   // --- GUI execution resource strategy --------------------------------------
   // The single-select strategy checkboxes. Read through executionStrategy();
@@ -239,6 +190,7 @@ private:
   QString fileResolution(const QString&) const; // cached QImageReader::size
   qulonglong filePixels(const QString&) const;
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
+  void onThumbReady(quint64 requestId, const ThumbResult& thumb);
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
   void dropThumbCache(const QString& path); // exact + sized variants
   double pathBest(const QString&) const;
@@ -247,6 +199,7 @@ private:
   // scan state (P2: the backend lives behind BackendClient; the loopback
   // implementation runs the real ScanWorker/MediaMonitor in-process)
   BackendClient* backend_ = nullptr; QDialog* cancelWait_=nullptr; msf::ResourcePolicy policy_;
+  bool backendAvailable_ = true; // supervisor connection state (§21 guard)
   BackendStatus backendStatus_; // pushed snapshot cache (Type C): ticks read this, never the engine
   BackendMonitorStatus backendMonStatus_; // pushed monitor snapshot cache (Type C)
   QVector<DupGroup> groups_;                   // built incrementally from streamed matches
@@ -255,8 +208,8 @@ private:
   QStringList allPaths_; QStringList matchRows_;
   QHash<QString,QString> fileSize_; QHash<QString,QString> fileFp_;
   qulonglong fileSizeCached(const QString&); // index value, else live stat
-  mutable msf::Database thumbDb_; bool thumbDbOpen_ = false; // disk thumbnail cache
-  // (mutable: fileThumb is const but fills both caches on miss)
+  // P3: thumbnail persistence lives in the Backend (G1.3). The GUI keeps
+  // the memory presentation cache above plus file metadata maps.
   mutable QHash<QString,QString> resCache_;
   QString currentFile_; int currentGroup_=-1;
   int lastPct_=0; QString lastPath_; int maxPctShown_=0;
@@ -287,27 +240,26 @@ private:
   qint64 lastUserScrollMs_=0;
   bool sliderHeld_=false;
   // Test-only instrumentation (never exposed to telemetry/benchmark schemas):
-  // full refills vs in-place thumbnail updates, asserted by the regression test.
+  // full refills, asserted by the regression test. Thumbnail arrivals are
+  // counted separately below (testThumbPaintedCount).
   mutable qulonglong fullRebuildCount_=0;
-  mutable qulonglong thumbInPlaceCount_=0;
   QStringList lastStats_; // scanned|analyzed|unchanged|groups|candidates from finished()
   qint64 repElapsedMs_=0;
   QHash<QString,double> bestPct_; QSet<QString> marked_;
   QHash<QString,int> pathKind_; QHash<QString,double> fileDur_;
-  mutable QHash<QString,QIcon> thumbCache_;
+  mutable QHash<QString,QIcon> thumbCache_; // memory presentation cache (P3: disk cache lives in Backend)
   mutable QHash<QString,QIcon> phCache_; // placeholder icons by lowercase suffix
-  mutable QSet<QString> thumbFail_; // paths whose heavy decode already failed (skip-list)
-  // Per-tick fresh-decode budget (see fileThumb): bounds GUI-thread blockage
-  // so pause/cancel/close stay responsive during huge scans. Reset each tick.
-  // Shell thumbnails (cheap COM) get their own wider lane.
-  mutable int thumbBudget_ = 0;
-  mutable int shellBudget_ = 0;
-  mutable bool thumbStarved_ = false;
-  struct PendingThumb { std::string path; std::int64_t modified; std::uint64_t size; std::vector<unsigned char> jpeg; };
-  mutable std::vector<PendingThumb> thumbPending_;
-  void flushThumbPending();
-  mutable qulonglong thumbStatMem_ = 0, thumbStatDisk_ = 0, thumbStatEngine_ = 0;
-  mutable qulonglong thumbStatShell_ = 0, thumbStatDecode_ = 0, thumbStatPlace_ = 0, thumbStatFail_ = 0;
+  // P3: async thumbnail requests in flight (Type B). Keyed by requestId;
+  // the arrival paints only surfaces still wanting that size (stale-drop).
+  // Capped: a lost backend must not grow this without bound.
+  struct ThumbReq { QString path; QSize size; };
+  mutable QMap<quint64, ThumbReq> thumbPendingReq_;
+  mutable quint64 thumbRequestId_ = 0;
+  // P3: GUI no longer decodes (all decode is Backend-side), so the per-tick
+  // budgets and the starvation flag are gone. Miss accounting lives in the
+  // pending-request map; arrivals paint via onThumbReady.
+  mutable qulonglong thumbStatMem_ = 0, thumbStatBackend_ = 0, thumbStatPlace_ = 0;
+  mutable qulonglong thumbPaintedCount_ = 0;
   QSet<QString> ignored_;
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar

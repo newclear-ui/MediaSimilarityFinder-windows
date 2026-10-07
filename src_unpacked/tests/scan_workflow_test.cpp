@@ -21,6 +21,7 @@
 //   git-ignored build-*), same as a real run. Temp media uses a fresh dir
 //   per run, so no state leaks between runs.
 #include "mainwindow.h"
+#include "scan_worker.h"
 #include <QApplication>
 #include <QDialog>
 #include <QElapsedTimer>

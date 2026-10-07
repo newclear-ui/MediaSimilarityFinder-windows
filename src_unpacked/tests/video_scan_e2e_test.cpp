@@ -5,6 +5,7 @@
 // the re-encode are found as matches of the original, and the stranger is not.
 // Also asserts the videoStats counters flow through the report.
 #include "mainwindow.h"
+#include "scan_worker.h"
 #include "media_search_engine.h"
 #include <QCoreApplication>
 #include <filesystem>

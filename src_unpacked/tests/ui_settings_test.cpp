@@ -163,6 +163,8 @@ int main(int argc, char** argv) {
       "detailLogTotal", "detailLogTimeSplit", "detailLogMatching",
       // fingerprint-phase live progress (indeterminate bar + file/byte text)
       "fpProgress",
+      // backend availability guard (P3 supervisor states)
+      "backendDown",
       // left summary panel rows: total / read-complete / index-complete split
       "readDone", "indexDone",
     };

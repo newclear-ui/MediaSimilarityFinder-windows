@@ -16,6 +16,7 @@
 //      slot). Driven by MSF_TEST_THROW_PERSIST on top of the NONSTD seam;
 //      production never sets either.
 #include "mainwindow.h"
+#include "scan_worker.h"
 #include <QCoreApplication>
 #include <QFile>
 #include <QTextStream>

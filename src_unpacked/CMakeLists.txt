@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.68 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.69 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -128,6 +128,11 @@ add_library(msf_core STATIC
     src/benchmark_data_comparison_metrics.cpp
     src/media_search_engine.cpp
     src/monitor.cpp
+    src/scan_worker.cpp
+    src/backend_session.cpp
+    src/backend_ipc.cpp
+    src/backend_log.cpp
+    src/backend_thumb.cpp
     src/benchmark.cpp
     src/scheduler.cpp
     src/profile.cpp
@@ -135,6 +140,17 @@ add_library(msf_core STATIC
     src/walker_queue.cpp
 )
 target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# P3a: ScanWorker/backend_log moved into BackendCore and use QtCore
+# (QObject/signals/QString/QDateTime — never Widgets/Gui). Qt6::Core comes
+# from the same project-local vcpkg tree as everything else.
+find_package(Qt6 QUIET COMPONENTS Core)
+if(Qt6_FOUND)
+    target_link_libraries(msf_core PUBLIC Qt6::Core)
+    # ScanWorker carries Q_OBJECT signals: moc its header like the GUI does.
+    set_target_properties(msf_core PROPERTIES AUTOMOC ON)
+else()
+    message(WARNING "Qt6 Core not found; BackendCore Qt-dependent sources will not compile")
+endif()
 # S1: expose the generated build version header (msf_build_version.h) to msf_core
 # consumers, i.e. the GUI executable, without hardcoding a version anywhere.
 target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -172,6 +188,11 @@ endif()
 
 if(MSF_BUILD_TESTS)
     enable_testing()
+    # P3b: IPC codec unit test (QtCore only — the exact framing both ends share).
+    add_executable(msf_backend_ipc_test tests/backend_ipc_test.cpp)
+    target_link_libraries(msf_backend_ipc_test PRIVATE msf_core Qt6::Core)
+    target_include_directories(msf_backend_ipc_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME backend_ipc_test COMMAND msf_backend_ipc_test)
     add_executable(msf_core_test tests/core_test.cpp)
     add_executable(msf_fingerprint_fast_test tests/fingerprint_fast_test.cpp)
     add_executable(msf_resource_gpu_test tests/resource_gpu_test.cpp)
@@ -417,7 +438,7 @@ if(MSF_BUILD_TESTS)
     # MainWindow, the single-select gate, the [Detailed Logs] toggle, and the
     # absence of any benchmark run/stop/status workflow.
     add_executable(msf_ui_detailed_log_test tests/ui_detailed_log_test.cpp
-                   gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+                   gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
     target_link_libraries(msf_ui_detailed_log_test PRIVATE msf_core Qt6::Widgets)
     target_include_directories(msf_ui_detailed_log_test PRIVATE
                                ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
@@ -641,6 +662,7 @@ if(MSF_BUILD_GUI)
     qt_standard_project_setup()
     qt_add_executable(MediaSimilarityFinder
       gui/main.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h
+      gui/backend_supervisor.cpp gui/backend_supervisor.h
       # S4 benchmark worker. Listed for AUTOMOC; MainWindow does not use it yet,
       # which is why no layout or control was touched in this stage.
      )
@@ -681,7 +703,7 @@ if(MSF_BUILD_GUI)
     # Same-process read-back would hit QSettings' in-memory cache, so the two
     # phases run as separate processes to genuinely prove disk persistence.
     if(MSF_BUILD_TESTS)
-      add_executable(msf_ui_settings_test tests/ui_settings_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_ui_settings_test tests/ui_settings_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_ui_settings_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_ui_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       set(MSF_UI_SETTINGS_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-probe")
@@ -714,12 +736,12 @@ if(MSF_BUILD_GUI)
       add_test(NAME ui_settings_migrate_none_verify COMMAND msf_ui_settings_test --migrate-none-verify "${MSF_MIGRATE_NONE_DIR}")
       # Worker streaming + persistence probe: real scan over identical BMPs,
       # asserts live matches stream AND survive in a fresh engine handle.
-      add_executable(msf_scan_streaming_test tests/scan_streaming_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_scan_streaming_test tests/scan_streaming_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_scan_streaming_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_streaming_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_streaming_test COMMAND msf_scan_streaming_test)
       # D3-Minimal: bounded walker queue (unit mechanism + live integration).
-      add_executable(msf_walker_queue_test tests/walker_queue_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_walker_queue_test tests/walker_queue_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_walker_queue_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_walker_queue_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME walker_queue_test COMMAND msf_walker_queue_test)
@@ -727,39 +749,39 @@ if(MSF_BUILD_GUI)
       # (folder -> startScan -> worker -> drainMatches -> group render),
       # offscreen with isolated QSettings. Covers what --smoke (window only)
       # and ScanWorker-level tests leave open.
-      add_executable(msf_scan_workflow_test tests/scan_workflow_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_scan_workflow_test tests/scan_workflow_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_scan_workflow_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_workflow_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_workflow_test COMMAND msf_scan_workflow_test)
       # 0.9.4.61 GUI scroll regression: thumbnail starvation must drive
       # in-place catch-up only (never a full list rebuild mid-scroll), with a
       # scroll gate deferring data-change rebuilds during interaction.
-      add_executable(msf_ui_scroll_regression_test tests/ui_scroll_regression_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_ui_scroll_regression_test tests/ui_scroll_regression_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_ui_scroll_regression_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_ui_scroll_regression_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME ui_scroll_regression_test COMMAND msf_ui_scroll_regression_test)
       # 0.9.4.63 GUI usability: display-settings round-trip, splitter
       # middle-first growth, filename selectability.
-      add_executable(msf_ui_usability_test tests/ui_usability_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_ui_usability_test tests/ui_usability_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_ui_usability_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_ui_usability_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME ui_usability_test COMMAND msf_ui_usability_test)
       # 0.9.4.62 crash diagnostics: Qt message file sink plus scan-worker
       # catch-all (non-standard exceptions become failed(), not terminate).
-      add_executable(msf_crash_diagnostics_test tests/crash_diagnostics_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_crash_diagnostics_test tests/crash_diagnostics_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_crash_diagnostics_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_crash_diagnostics_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME crash_diagnostics_test COMMAND msf_crash_diagnostics_test)
       # S4 functional Detailed Logs acceptance: real MainWindow scan with
       # [Detailed Logs] on, asserting the produced telemetry (purpose,
       # counts, fingerprint, dialog path) instead of only the dialog.
-      add_executable(msf_scan_detailed_log_acceptance_test tests/scan_detailed_log_acceptance_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_scan_detailed_log_acceptance_test tests/scan_detailed_log_acceptance_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_scan_detailed_log_acceptance_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_detailed_log_acceptance_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_detailed_log_acceptance_test COMMAND msf_scan_detailed_log_acceptance_test)
       # E2E video probe: copy + libx264 re-encode + trim + stranger through a
       # real scan (full XOR -> CandidateIndex incl. L1 anchors -> temporal).
-      add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_video_scan_e2e_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_video_scan_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME video_scan_e2e_test COMMAND msf_video_scan_e2e_test)
@@ -767,25 +789,32 @@ if(MSF_BUILD_GUI)
       # visible (explicit grid size + delegate swap must fully reset), plus
       # the real MainWindow viewBox path (256 Icon -> List/Tiles -> 256 Icon
       # must restore 256 geometry with no overlap).
-      add_executable(msf_view_mode_probe tests/view_mode_probe.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_view_mode_probe tests/view_mode_probe.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_view_mode_probe PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_view_mode_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME view_mode_probe COMMAND msf_view_mode_probe)
-      add_executable(msf_thumb_layout_test tests/thumb_layout_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_thumb_layout_test tests/thumb_layout_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_thumb_layout_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_thumb_layout_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME thumb_layout_test COMMAND msf_thumb_layout_test)
       # QuickLook pipe protocol probe (fake in-process server, exact-bytes check).
-      add_executable(msf_quicklook_test tests/quicklook_pipe_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+      add_executable(msf_quicklook_test tests/quicklook_pipe_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_quicklook_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_quicklook_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME quicklook_pipe_test COMMAND msf_quicklook_test)
       if(WIN32)
-        add_executable(msf_reveal_window_test tests/reveal_window_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h)
+        add_executable(msf_reveal_window_test tests/reveal_window_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
         target_link_libraries(msf_reveal_window_test PRIVATE msf_core Qt6::Widgets)
         target_include_directories(msf_reveal_window_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
         add_test(NAME reveal_window_test COMMAND msf_reveal_window_test)
         set_tests_properties(reveal_window_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
+        # P3 backend process E2E + crash injection (Windows-only: TerminateProcess).
+        # Real MainWindow + real supervisor + real backend OS process.
+        add_executable(msf_backend_e2e_test tests/backend_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
+        target_link_libraries(msf_backend_e2e_test PRIVATE msf_core Qt6::Widgets)
+        target_include_directories(msf_backend_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+        add_test(NAME backend_e2e_test COMMAND msf_backend_e2e_test)
+        set_tests_properties(backend_e2e_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
       endif()
       set_tests_properties(ui_settings_write ui_settings_verify ui_reference_order_test ui_settings_migrate_plant ui_settings_migrate_verify ui_settings_migrate_both_plant ui_settings_migrate_both_verify ui_settings_migrate_none_verify scan_streaming_test scan_workflow_test walker_queue_test video_scan_e2e_test view_mode_probe thumb_layout_test quicklook_pipe_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
     endif()
@@ -799,8 +828,10 @@ endif()
 # still runs in-process in P1; spawning arrives in P3.
 find_package(Qt6 QUIET COMPONENTS Core)
 if(Qt6_FOUND)
-  add_executable(MediaSimilarityFinderBackend src/backend_main.cpp)
-  target_link_libraries(MediaSimilarityFinderBackend PRIVATE msf_core Qt6::Core)
+  # JPEG encoding for backend thumbnails (libjpeg-turbo, no QtGui per G13).
+  find_package(libjpeg-turbo CONFIG REQUIRED)
+  add_executable(MediaSimilarityFinderBackend src/backend_main.cpp src/backend_thumb.cpp)
+  target_link_libraries(MediaSimilarityFinderBackend PRIVATE msf_core Qt6::Core libjpeg-turbo::turbojpeg)
   target_include_directories(MediaSimilarityFinderBackend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   if(MSF_BUILD_TESTS)
     add_test(NAME backend_version COMMAND MediaSimilarityFinderBackend --version)

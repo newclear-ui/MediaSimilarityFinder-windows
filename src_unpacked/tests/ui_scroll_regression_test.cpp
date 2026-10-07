@@ -159,6 +159,8 @@ int main(int argc, char** argv) {
     check(tree->topLevelItemCount() == n, "tree and grid agree on group count");
 
     // Phase 2: thumbnail catch-up ticks rebuild nothing but fill icons.
+    // P3 async model: catch-up requests misses, arrivals paint via
+    // onThumbReady (queued through the event loop the ticks pump).
     grid->scrollToBottom();
     grid->doItemsLayout(); // Batched layout finishes asynchronously; force it so itemAt works
     QApplication::processEvents();
@@ -168,10 +170,14 @@ int main(int argc, char** argv) {
     const int curBefore = grid->currentRow();
     auto* itemBefore = grid->currentItem();
     check(topBefore >= 0, "bottom scroll shows a real top item");
-    const qulonglong p0 = w.testThumbInPlaceCount();
+    // Deterministic repaint: drop the memory cache so catch-up ticks
+    // re-request through the backend and arrivals repaint (async model).
+    w.testDropThumbCache();
+    QApplication::processEvents();
+    const qulonglong p0 = w.testThumbPaintedCount();
     for (int i = 0; i < 6; ++i) { w.testUiTick(); QApplication::processEvents(); }
     check(w.testFullRebuildCount() == f0, "6 catch-up ticks: zero full rebuilds");
-    check(w.testThumbInPlaceCount() > p0, "6 catch-up ticks: icons filled in place");
+    check(w.testThumbPaintedCount() > p0, "6 catch-up ticks: thumbnails painted on arrival");
     check(topGroupIndex(grid) == topBefore, "viewport top identity preserved");
     if (bar) check(bar->value() == barBefore, "scrollbar value preserved");
     check(grid->currentRow() == curBefore, "selection row preserved");

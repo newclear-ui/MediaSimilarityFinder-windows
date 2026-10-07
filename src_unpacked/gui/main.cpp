@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "backend_supervisor.h"
 #include "command_line.h"
 #include "console_benchmark_cli.h"
 #include "media_search_engine.h"
@@ -271,7 +272,10 @@ int main(int argc, char** argv) {
         return rc;
     }
 
-    MainWindow w;
+    // P3: production runs behind a real supervisor (separate Backend OS
+    // process). The smoke path above keeps the loopback default (no spawn).
+    auto* supervisor = new BackendSupervisor(&app);
+    MainWindow w(nullptr, supervisor);
     w.show();
     return app.exec();
 }

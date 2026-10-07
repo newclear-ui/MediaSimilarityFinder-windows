@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+﻿#include "mainwindow.h"
 #include "backend_loopback.h"
 #include "video_decoder.h"
 #include "msf_build_version.h"
@@ -266,6 +266,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"monRun")) return S("실시간 모니터 실행 중","Real-time monitor running");
   if (!std::strcmp(key,"monStop")) return S("실시간 모니터 중지됨","Real-time monitor stopped");
   if (!std::strcmp(key,"monNeedCfg")) return S("모니터 미시작: 감시/비교 폴더를 설정하세요","Monitor not started: configure watched and comparison folders");
+  if (!std::strcmp(key,"backendDown")) return S("백엔드 사용 불가: 재시작 중입니다","Backend unavailable: restarting");
   if (!std::strcmp(key,"dupTitle")) return S("중복 가능성 감지","Possible duplicate detected");
   if (!std::strcmp(key,"delTitle")) return S("삭제","Delete");
   if (!std::strcmp(key,"delAsk")) return S("선택한 %1개 파일을 삭제할까요? (휴지통으로 이동)","Delete %1 selected file(s)? (moves to Recycle Bin)");
@@ -382,20 +383,7 @@ static bool isVideoExt(const QString& path) {
   const QString e = QFileInfo(path).suffix().toLower();
   return e == "mp4" || e == "mkv" || e == "avi" || e == "mov" || e == "webm" || e == "m4v" || e == "wmv";
 }
-ScanWorker::ScanWorker(QString root, QString appDir, int distance, int cpu, int gpu, bool gpuEnabled,
-                     bool scanImages, bool scanVideos)
-  : root_(std::move(root)), appDir_(std::move(appDir)), distance_(distance),
-    cpu_(cpu), gpu_(gpu), gpuEnabled_(gpuEnabled), scanImages_(scanImages), scanVideos_(scanVideos) {
-  qRegisterMetaType<QVector<GuiFile>>();
-  gpuAvail_ = msf::GpuBackend().available();
-}
 
-// Fresh thumbnail decodes allowed per 600ms UI tick (see fileThumb below).
-// Cache hits are free; the rest show file-type icons until a later tick.
-// Keeps pause/cancel/close responsive even when thousands of new groups
-// stream in during a scan.
-constexpr int kThumbBudgetPerTick = 4;
-constexpr int kShellBudgetPerTick = 24;
 // Post-navigation full-rebuild cooldown (0.9.4.61): after a wheel/keyboard
 // navigation event or a scrollbar release, full list refills wait this long
 // so they never land mid-gesture. Short on purpose (inside one 600ms timer
@@ -419,236 +407,6 @@ QIcon MainWindow::placeholderIcon(const QString& path) const {
   return ic;
 }
 
-void ScanWorker::run() {
-  try {
-    // Test-only fault injection (0.9.4.62): drives the catch-all below
-    // deterministically for the crash-handler regression test. Production
-    // code never sets this variable, so the branch is dead otherwise.
-    if (qEnvironmentVariableIsSet("MSF_TEST_THROW_NONSTD")) throw 42;
-    engine_.setResourcePolicy(msf::make_policy(msf::ResourceMode::Custom, cpu_, gpu_));
-    auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
-    control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
-    control_.telemetryEnabled = detailedLogEnabled_;
-    control_.walkerQueueCapacity = walkerCapOverride_;
-    control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
-    if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
-      throw std::runtime_error("Portable index open failed");
-    {
-      msf::IndexPaths paths;
-      std::string excluded;
-      if (msf::IndexManager::resolve(msf::path_from_utf8(appDir_.toStdString()),
-                                     msf::path_from_utf8(root_.toStdString()), paths))
-        excluded = msf::path_to_utf8(paths.directory.parent_path());
-      const qulonglong total = msf::Scanner().count(root_.toStdString(), excluded,
-                                                    scanImages_, scanVideos_,
-                                                    control_.ignoredPaths, &control_.cancel);
-      emit targetCount(total);
-    }
-    // Engine-version gate: pairs stored by an older verdict generation are
-    // re-checked with the current logic (no rescan) before anything displays
-    // them. Drops old false positives, keeps the rest, stamps the version.
-    // Cancelled here means: stop before touching results.
-    {
-      int kept = 0, dropped = 0;
-      msf::TelemetryConfig bcfg;
-      bcfg.root = root_.toStdString();
-      bcfg.build = QCoreApplication::applicationVersion().toStdString();
-      bcfg.engine = msf::MediaSearchEngine::kEngineVersion;
-      bcfg.db = msf::Database::kDatabaseVersion;
-      bcfg.distance = (unsigned)distance_;
-      bcfg.scanImages = scanImages_; bcfg.scanVideos = scanVideos_;
-      bcfg.gpuEnabled = gpuEnabled_; bcfg.detail = detailedLogEnabled_;
-      engine_.beginTelemetry(bcfg, detailedLogEnabled_);
-      const qint64 revT0 = QDateTime::currentMSecsSinceEpoch();
-      if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
-        engine_.abortTelemetry();
-        if (detailedLogEnabled_ && engine_.hasTelemetry())
-          emit telemetryReady(QString::fromStdString(engine_.telemetryJson()));
-        emit finished(QString("CANCELLED|0|0")); return;
-      }
-      control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
-      if (kept + dropped > 0) emit revalidated(kept, dropped);
-    }
-    // Quick load: the scan button restores the stored duplicate groups before
-    // analyzing anything, so a repeat scan of the same folder shows previous
-    // results immediately, then appends only files that changed meanwhile.
-    {
-      const auto stored = engine_.loadMatches();
-      int loaded = 0;
-      for (const auto& m : stored) {
-        const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-        const bool video = isVideoExt(l) || isVideoExt(r);
-        const LiveMatch lm{l, r, m.percent, video ? 2 : 1};
-        allMatches_.push_back(lm);
-        if ((video && !scanVideos_) || (!video && !scanImages_)) continue;
-        if (control_.ignoredPaths.find(m.leftPath) != control_.ignoredPaths.end() ||
-            control_.ignoredPaths.find(m.rightPath) != control_.ignoredPaths.end()) continue;
-        { QMutexLocker g(&pendingMutex_); pending_.push_back(lm); }
-        ++loaded;
-      }
-      if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
-    }
-    // Progress signals arrive once per analyzed file; a fast Maximum scan would
-    // flood the GUI event loop (setText per file) and freeze the window —
-    // no pause/cancel/move possible. Throttle display updates to ~7Hz; the
-    // latest values are kept and flushed when the scan returns, so pause,
-    // cancel, and close stay responsive no matter the scan speed.
-    lastProgMs_ = 0; lastProgDone_ = 0; lastProgTotal_ = 0; lastProgPath_.clear();
-    lastListMs_ = 0; lastListN_ = 0; lastWalkedMs_ = 0; lastWalkedN_ = 0;
-    lastFpMs_ = 0;
-    // Fingerprint-phase live progress. Same 150 ms throttle as the walk
-    // callbacks: the fingerprint can hash thousands of files per second.
-    // Separate signal so the walk/analysis percent math is untouched.
-    control_.fingerprintProgress = [this](std::size_t n, std::uint64_t b, const std::string& path) {
-      const qint64 now = QDateTime::currentMSecsSinceEpoch();
-      if (now - lastFpMs_ > 150) {
-        lastFpMs_ = now;
-        emit fingerprintProgress((qulonglong)n, (qulonglong)b, QString::fromStdString(path));
-      }
-    };
-    control_.progress = [this](std::size_t done, std::size_t total, const std::string& path) {
-      lastProgDone_ = done; lastProgTotal_ = total; lastProgPath_ = path;
-      gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
-      const qint64 now = QDateTime::currentMSecsSinceEpoch();
-      if (now - lastProgMs_ > 150) {
-        lastProgMs_ = now;
-        emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(path));
-        emit progressCount((qulonglong)done, (qulonglong)total);
-      }
-    };
-    control_.listing = [this](std::size_t n) {
-      lastListN_ = n;
-      const qint64 now = QDateTime::currentMSecsSinceEpoch();
-      if (now - lastListMs_ > 150) { lastListMs_ = now; emit listingProgress(n); }
-    };
-    control_.walked = [this](std::size_t n) {
-      lastWalkedN_ = n;
-      const qint64 now = QDateTime::currentMSecsSinceEpoch();
-      if (now - lastWalkedMs_ > 150 || n == 0) { lastWalkedMs_ = now; emit walkedCount((qulonglong)n); }
-    };
-    control_.onMatch = [this](const msf::SearchMatch& m) {
-      { QMutexLocker g(&pendingMutex_);
-        const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-        pending_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1});
-      }
-      const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-      allMatches_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1});
-      ++matchesSinceSave_;
-      const qint64 now = QDateTime::currentMSecsSinceEpoch();
-      if (now - lastEmitMs_ > 200) { lastEmitMs_ = now; emit matchesArrived(); }
-      // Incremental checkpoint: persist the FULL accumulated set (loaded + new,
-      // including pairs whose files are currently missing from disk) so that a
-      // kill, crash, or early close still leaves every match found so far in the
-      // index. Time-gated from the very first match (no count gate), so even a
-      // scan stopped after a handful of matches keeps them; the 5s cadence
-      // bounds the cost on million-match scans. Must stay wholesale (never a
-      // partial set): saveMatches deletes rows absent from the saved set.
-      if (matchesSinceSave_ > 0 && now - lastSaveMs_ > 5000) {
-        lastSaveMs_ = now; matchesSinceSave_ = 0;
-        persistMatchesSnapshot();
-      }
-    };
-    // Streaming-only delivery: on million-match scans, retaining every match
-    // (two path strings each) costs hundreds of MB. The GUI accumulates
-    // groups incrementally from onMatch and needs no retained vector.
-    control_.retainMatches = false;
-    auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
-    const QString telemetryJson = engine_.hasTelemetry() ? QString::fromStdString(engine_.telemetryJson()) : QString();
-    gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
-    // Flush the throttled progress display with the final counts.
-    {
-      const std::size_t done = lastProgDone_, total = lastProgTotal_;
-      emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(lastProgPath_));
-      emit progressCount((qulonglong)done, (qulonglong)total);
-      if (lastListN_ > 0) emit listingProgress(lastListN_);
-    }
-    // Final persist of the accumulated match set (loaded + new, including pairs
-    // whose files are currently missing from disk). Wholesale replacement keeps
-    // every pair ever found, so unfinished work on those files resumes on the
-    // next scan of the same folder; a partial set on cancel keeps the last
-    // completed checkpoint, matching the scan-side semantics.
-    persistMatchesSnapshot();
-    // Diagnostic counters (ChatGPT step 1): where a video-heavy scan with few
-    // results loses its pairs. Log-only (the finished message below is parsed
-    // positionally and must not change shape).
-    MainWindow::scanLog(QString("videoStats indexedVideos=%1 pairs=%2 temporal=%3 matches=%4")
-                .arg(r.indexedVideos).arg(r.videoCandidatePairs)
-                .arg(r.videoTemporalChecks).arg(r.videoMatches));
-    { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
-    if (control_.cancel.load()) { if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson); emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
-    const auto& fs = engine_.files();
-    QVector<GuiFile> files; files.reserve((int)fs.size());
-    for (const auto& f : fs) {
-      GuiFile g;
-      g.path = QString::fromStdString(f.path);
-      g.size = (qulonglong)f.size;
-      g.fpHex = QString("%1").arg((qulonglong)f.fingerprint, 16, 16, QChar('0'));
-      g.duration = f.duration;
-      files.push_back(g);
-    }
-    QStringList matches;
-    for (const auto& m : r.matches)
-      matches << (QString::fromStdString(m.leftPath) + "\t" + QString::fromStdString(m.rightPath)
-                  + "\t" + QString::number(m.percent, 'f', 1));
-    emit results(files, matches);
-    if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson);
-    // Analysis failures are a settled state, not silently dropped files. Surface
-    // them in the completion message so a scan that skipped nothing still says so.
-    emit finished(QString("Scan complete: %1 files, %2 analyzed, %3 candidates, %4 groups%5")
-                      .arg(r.scanned).arg(r.analyzed).arg(r.candidates).arg(r.groups)
-                      .arg(r.failed ? QString(", %1 could not be analyzed").arg(r.failed) : QString())
-                  + QString("|%1|%2|%3|%4|%5").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates));
-  } catch (const std::exception& e) {
-    // A failed scan must not discard what it already found: checkpoint first
-    // so the next scan of the same folder quick-loads the partial results.
-    // (0.9.4.65) Neither step may throw out of this handler: run() is a Qt
-    // slot, so an escaping exception crosses Qt internals into terminate() ->
-    // abort() (the 0xC0000409 signature, proven by the 2026-10-07 dump whose
-    // fault stack sits in this handler's persist path). Persist and report
-    // are attempted independently; each swallows its own failure.
-    try { persistMatchesSnapshot(); } catch (...) {}
-    try { emit failed(e.what()); } catch (...) {}
-  } catch (...) {
-    // Fail-fast converted to a recorded failure (0.9.4.62): a non-standard
-    // exception used to terminate the whole process with no record (the
-    // 0xC0000409 signature seen in real crashes). Persist partial matches
-    // and report failed instead. SEH access violations still crash: MSVC
-    // builds without /EHa do not unwind those through catch(...), so real
-    // memory corruption keeps failing fast instead of being masked.
-    // (0.9.4.65) Same no-throw rule as above: the handler itself throwing
-    // re-enters terminate() -> abort() with no record.
-    try { persistMatchesSnapshot(); } catch (...) {}
-    try { emit failed("unhandled non-standard exception in scan worker"); } catch (...) {}
-  }
-}
-void ScanWorker::persistMatchesSnapshot() {
-  // Test-only fault injection (0.9.4.65): makes the failure-handler path
-  // throw deterministically, proving the handler itself never lets an
-  // exception escape the worker slot (terminate -> abort). Production code
-  // never sets this variable, so the branch is dead otherwise.
-  if (qEnvironmentVariableIsSet("MSF_TEST_THROW_PERSIST")) throw std::runtime_error("MSF_TEST_THROW_PERSIST");
-  std::vector<msf::SearchMatch> all; all.reserve((std::size_t)allMatches_.size());
-  for (const auto& m : allMatches_) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
-  engine_.saveMatches(all);
-}
-void ScanWorker::pause() { control_.pause.store(true); }
-void ScanWorker::resume() { control_.pause.store(false); }
-void ScanWorker::cancel() { control_.cancel.store(true); control_.pause.store(false); }
-void ScanWorker::setIgnored(const QSet<QString>& s) {
-  control_.ignoredPaths.clear();
-  for (const auto& p : s) {
-    const QString clean = QDir::cleanPath(p);
-    std::error_code ec;
-    const auto native = msf::path_from_utf8(clean.toUtf8().toStdString());
-    auto absolute = std::filesystem::absolute(native, ec);
-    if (ec) absolute = native;
-    control_.ignoredPaths.insert(msf::path_to_utf8(absolute.lexically_normal()));
-  }
-}
-QVector<LiveMatch> ScanWorker::takePending() {
-  QMutexLocker g(&pendingMutex_);
-  QVector<LiveMatch> out = pending_; pending_.clear(); return out;
-}
 
 // ------------------------------------------------------------ MainWindow core
 // One-time QSettings identity + storage bootstrap. MUST run before any
@@ -755,7 +513,7 @@ void installQtMessageLog(const QString& path) {
   g_qtMsgPath = p;
   qInstallMessageHandler(qtMessageLogHandler);
 }
-MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
+MainWindow::MainWindow(QWidget* p, BackendClient* backend) : QMainWindow(p) {
   const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
   ignored_ = QSet<QString>(ig0.begin(), ig0.end());
   buildUi();
@@ -763,9 +521,12 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   restoreUiState();
   // P2: the backend lives behind BackendClient; the loopback implementation
   // runs the real ScanWorker/MediaMonitor in-process (P3 spawns it).
+  // A passed client (production supervisor) is adopted; tests pass nothing
+  // and get the loopback default, so existing GUI tests are unchanged.
   // Signal wiring is once-only: the backend object persists across scans,
   // so per-scan connects would duplicate every delivery.
-  backend_ = new LoopbackBackendClient(this);
+  backend_ = backend ? backend : new LoopbackBackendClient(this);
+  if (backend_ != backend) { /* owns the default */ } else backend_->setParent(this);
   connect(backend_, &BackendClient::progress, this, &MainWindow::scanProgress);
   connect(backend_, &BackendClient::progressCount, this, &MainWindow::onScanCounts);
   connect(backend_, &BackendClient::walkedCount, this, &MainWindow::onWalkedCount);
@@ -782,6 +543,10 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   connect(backend_, &BackendClient::monitorEvent, this, &MainWindow::monitorEvent);
   connect(backend_, &BackendClient::monitorSnapshot, this, &MainWindow::onMonitorSnapshot);
   connect(backend_, &BackendClient::statusSnapshot, this, &MainWindow::onStatusSnapshot);
+  connect(backend_, &BackendClient::thumbReady, this, &MainWindow::onThumbReady);
+  connect(backend_, &BackendClient::backendConnection, this, &MainWindow::onBackendConnection);
+  connect(backend_, &BackendClient::backendLogLine, this,
+          [this](const QString& line) { scanLog(line); });
   monitorTimer_ = new QTimer(this); monitorTimer_->setInterval(1000);
   connect(monitorTimer_, &QTimer::timeout, this, [this] { backend_->refreshMonitor(); });
   monitorTimer_->start();
@@ -797,6 +562,10 @@ MainWindow::MainWindow(QWidget* p) : QMainWindow(p) {
   setRunning(false);
   statusMsg_->setText(trStr(lang(), "ready"));
 }
+void MainWindow::showEvent(QShowEvent* ev) {
+  QMainWindow::showEvent(ev);
+  if (backend_) backend_->ensureRunning();
+}
 void MainWindow::closeEvent(QCloseEvent* ev) {
   // While a scan (and its report rebuild) is in flight, closing would drop
   // the run silently. Nudge the user to wait instead; explicit confirm exits.
@@ -809,7 +578,6 @@ void MainWindow::closeEvent(QCloseEvent* ev) {
 }
 MainWindow::~MainWindow() {
   saveUiState();
-  thumbDb_.close(); thumbDbOpen_ = false;
   if (backend_) backend_->shutdown();
 }
 void MainWindow::saveUiState() {
@@ -1463,7 +1231,9 @@ void MainWindow::setRunning(bool v) {
     scanPaused_ = false;
   }
   scanning_ = v;
-  scan_->setEnabled(!v); refresh_->setEnabled(!v);
+  // P3 backend guard (§21): the Start button stays disabled while the backend
+  // is unavailable, so a dead backend can never be mistaken for idle.
+  scan_->setEnabled(!v && backendAvailable_); refresh_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   if (!v) scan_->setFocus(); // return the highlight to Start, as at launch
@@ -1480,18 +1250,13 @@ void MainWindow::setRunning(bool v) {
 }
 void MainWindow::startScan() {
   if (scanning_) return;
-  if (folder_->text().isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
-  // Thumbnail disk cache: a second connection to the managed index DB
-  // (WAL-safe). Lets rescans reuse decoded thumbs instead of burning the
-  // per-tick budget. Silent no-op when the index cannot be opened.
-  thumbDb_.close(); thumbDbOpen_ = false;
-  {
-    msf::IndexPaths paths;
-    if (msf::IndexManager::resolve(msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
-                                   msf::path_from_utf8(folder_->text().toStdString()), paths) &&
-        thumbDb_.open(msf::path_to_utf8(paths.database)) && thumbDb_.initialize())
-      thumbDbOpen_ = true;
+  if (!backendAvailable_) {
+    statusMsg_->setText(trStr(lang(), "backendDown"));
+    return;
   }
+  if (folder_->text().isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
+  // P3: thumbnail persistence lives in the Backend (G1.3). The GUI keeps
+  // its memory presentation cache only; nothing opens the index DB here.
   // Remember the most-recently scanned folders (max 2) for the favorites list.
   // Compare normalized so separator/trailing-slash variants of one folder
   // cannot duplicate the entry.
@@ -1509,11 +1274,8 @@ void MainWindow::startScan() {
   }
   // P2: previous worker teardown lives inside BackendClient::startScan.
   if (cancelWait_) { cancelWait_->close(); cancelWait_->deleteLater(); cancelWait_ = nullptr; }
-  flushThumbPending();
-  thumbStatMem_ = thumbStatDisk_ = thumbStatEngine_ = 0;
-  thumbStatShell_ = thumbStatDecode_ = thumbStatPlace_ = thumbStatFail_ = 0;
-  groups_.clear(); pathGroup_.clear(); pathParent_.clear();
-  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear(); thumbFail_.clear();
+  thumbStatMem_ = thumbStatBackend_ = thumbStatPlace_ = 0;
+  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
   refreshGroupList(); refreshFileViews(); refreshDetail();
@@ -1797,12 +1559,10 @@ void MainWindow::scanFinished(QString msg) {
   // and returns the GUI to idle, even on an unexpected exception. Otherwise
   // a "writing report" popup stays open forever with no way back.
   try {
-  if (thumbDbOpen_) thumbDb_.pruneThumbs(); // drop thumbs of files gone from the index
   scanLog(QString("finish %1").arg(msg));
-  scanLog(QString("thumbStat mem=%1 disk=%2 engine=%3 shell=%4 decode=%5 place=%6 fail=%7 pending=%8")
-      .arg(thumbStatMem_).arg(thumbStatDisk_).arg(thumbStatEngine_).arg(thumbStatShell_)
-      .arg(thumbStatDecode_).arg(thumbStatPlace_).arg(thumbStatFail_).arg((qulonglong)thumbPending_.size()));
-  flushThumbPending();
+  scanLog(QString("thumbStat mem=%1 backend=%2 place=%3 pending=%4")
+      .arg(thumbStatMem_).arg(thumbStatBackend_)
+      .arg(thumbStatPlace_).arg((qulonglong)thumbPendingReq_.size()));
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail();
   if (msg.startsWith(QStringLiteral("CANCELLED"))) {
     // Partial progress is kept by design (checkpoints): report what survived.
@@ -2080,11 +1840,10 @@ void MainWindow::onMatchesBatch(const QVector<BackendMatch>& batch) {
 }
 void MainWindow::testUiTick() { onUiTick(); }
 void MainWindow::onUiTick() {
-  // Fresh decode budget every tick: list refreshes below may request
-  // hundreds of uncached thumbs; only the first few decode now, the rest
-  // show file-type icons until a later tick. Cache hits are always free.
-  thumbBudget_ = kThumbBudgetPerTick;
-  shellBudget_ = kShellBudgetPerTick;
+  // P3: no decode happens on the GUI thread anymore (all decode is
+  // Backend-side), so there is no per-tick decode budget to refresh.
+  // Thumbnail misses ask the backend asynchronously; arrivals paint via
+  // onThumbReady. Cache hits are always free.
   if (groupsDirty_) {
     // P2: matches arrive pushed via matchesBatch (the loopback drains the
     // worker synchronously, including inside pause()), so there is nothing
@@ -2127,8 +1886,12 @@ void MainWindow::refreshStreaming(bool force) {
     QElapsedTimer t; t.start();
     refreshGroupList(); refreshFileViews();
     lastFillCostMs_ = t.elapsed();
-  } else if (thumbStarved_ && !dataChanged && !sliderHeld_) {
-    thumbCatchUpVisible(); // in-place only; never rebuilds or touches scroll
+  } else if (!dataChanged && !sliderHeld_) {
+    // P3: thumbnail requests are cheap hash lookups now (misses ask the
+    // backend asynchronously; arrivals paint via onThumbReady), so catch-up
+    // runs every idle tick. It still never rebuilds or touches scroll: that
+    // was the scroll regression, and the gate above is untouched.
+    thumbCatchUpVisible();
   }
   // Otherwise this tick does nothing: a scroll-gated tick keeps its pending
   // flags (groupsDirty_/lastFillSig_) for a later tick instead of rebuilding.
@@ -2144,36 +1907,22 @@ bool MainWindow::scrollGateActive() const {
 void MainWindow::thumbCatchUpVisible() {
   // Tree rows carry no thumbnails, so only the visible grid participates.
   // Bounded by construction: the loop covers at most the viewport's items
-  // (index math only for the rest), and decodes spend the shared per-tick
-  // thumb budget via fileThumb. An icon is replaced only when it actually
-  // changed (placeholder -> real thumb), so settled rows cost hash lookups.
-  // (0.9.4.66) When icons did change, the layout pass is forced explicitly:
-  // under uniformItemSizes+Batched, setIcon() alone leaves cells at their
-  // old size (probed: 256px art in 254x71 cells after a view-mode
-  // round-trip), so the new art paints outside its cells. Forcing is not a
-  // rebuild: no item is recreated and scroll position is untouched. (Note:
-  // scheduleDelayedItemsLayout() would be the deferred equivalent but is a
-  // protected member, so the public synchronous doItemsLayout() is used.
-  // It runs only when at least one icon actually changed, bounded by the
-  // per-tick thumb budget, and lays out index math — no widget churn.)
+  // (index math only for the rest).
+  // P3: this is the request pump, not the painter. fileThumb() serves the
+  // memory cache or records a backend request and returns a placeholder;
+  // arrivals paint through onThumbReady (which forces the 0.9.4.66 layout
+  // pass). Nothing here rebuilds, and scroll position is untouched.
   QListWidget* grid = groupsList_;
   if (!grid || !grid->isVisible()) return;
   const QRect vis = grid->viewport()->rect();
   const QSize iconSize = grid->iconSize();
-  bool changed = false;
   for (int row = 0; row < grid->count(); ++row) {
     QListWidgetItem* item = grid->item(row);
     if (!item || !grid->visualItemRect(item).intersects(vis)) continue;
     const int gi = item->data(Qt::UserRole).toInt();
     if (gi < 0 || gi >= groups_.size() || groups_[gi].paths.isEmpty()) continue;
-    const QIcon fresh = fileThumb(groups_[gi].paths.front(), iconSize);
-    if (fresh.cacheKey() != item->icon().cacheKey()) {
-      item->setIcon(fresh);
-      changed = true;
-      ++thumbInPlaceCount_;
-    }
+    fileThumb(groups_[gi].paths.front(), iconSize);
   }
-  if (changed) grid->doItemsLayout();
 }
 void MainWindow::updateGroupFoot() {
   // "전체 619 · 선택 116": total groups vs the 1-based selected group.
@@ -2514,7 +2263,6 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   tree->blockSignals(false); grid->blockSignals(false);
 }
 void MainWindow::refreshGroupList() {
-  thumbStarved_ = false;
   // Test-only instrumentation: every destructive middle-pane refill passes
   // through here (timer path and direct user-action callers alike), while
   // thumbnail-only catch-up never does. Lets the regression test assert
@@ -2643,59 +2391,9 @@ QString MainWindow::fileResolution(const QString& path) const {  auto it = resCa
   resCache_[path] = r;
   return r;
 }
-#ifdef _WIN32
-// Best-effort shell thumbnail from the persistent IThumbnailCache. Returns a
-// null image on any failure (no cached entry, thumbnail service missing, ...);
-// callers then fall through to their normal decode path.
-// CLSID_ThumbnailCache is only declared when INITGUID is defined; spell the
-// well-known GUID out to keep this TU header-local.
-static const GUID kThumbnailCacheClsid = {0xc8199035, 0xdb49, 0x4e95, {0x91, 0xb7, 0x7e, 0x86, 0x2f, 0x12, 0x04, 0x59}};
-static QImage shellThumbnailImage(const QString& path) {
-  QImage out;
-  const std::wstring wpath = path.toStdWString();
-  IShellItem* item = nullptr;
-  if (FAILED(SHCreateItemFromParsingName(wpath.c_str(), nullptr, IID_PPV_ARGS(&item)))) return out;
-  IThumbnailCache* cache = nullptr;
-  if (FAILED(CoCreateInstance(kThumbnailCacheClsid, nullptr, CLSCTX_INPROC_SERVER,
-                              IID_PPV_ARGS(&cache)))) { item->Release(); return out; }
-  ISharedBitmap* sb = nullptr;
-  const HRESULT hr = cache->GetThumbnail(item, 256, WTS_INCACHEONLY | WTS_SCALETOREQUESTEDSIZE,
-                                         &sb, nullptr, nullptr);
-  if (SUCCEEDED(hr) && sb) {
-    HBITMAP hb = nullptr;
-    if (SUCCEEDED(sb->GetSharedBitmap(&hb)) && hb) {
-      BITMAP bm{};
-      if (::GetObject(hb, sizeof(bm), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
-        BITMAPINFO bi{};
-        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bi.bmiHeader.biWidth = bm.bmWidth;
-        bi.bmiHeader.biHeight = -bm.bmHeight; // top-down, matches QImage scanlines
-        bi.bmiHeader.biPlanes = 1;
-        bi.bmiHeader.biBitCount = 32;
-        bi.bmiHeader.biCompression = BI_RGB;
-        const int nPix = bm.bmWidth * bm.bmHeight;
-        std::vector<unsigned char> buf((std::size_t)nPix * 4);
-        const HDC dc = ::GetDC(nullptr);
-        if (dc && ::GetDIBits(dc, hb, 0, (UINT)bm.bmHeight, buf.data(), &bi, DIB_RGB_COLORS) == bm.bmHeight) {
-          // Alpha from the DIB is 0; RGB32 requires 0xff in the MSB so the
-          // preview does not render as transparent black.
-          for (int i = 3; i < nPix * 4; i += 4) buf[i] = 0xff;
-          QImage img(buf.data(), bm.bmWidth, bm.bmHeight, bm.bmWidth * 4, QImage::Format_RGB32);
-          out = img.copy();
-        }
-        if (dc) ::ReleaseDC(nullptr, dc);
-      }
-      // The HBITMAP is owned by the shared bitmap; do not DeleteObject it here.
-    }
-    sb->Release();
-  }
-  cache->Release();
-  item->Release();
-  return out;
-}
-#else
-static QImage shellThumbnailImage(const QString&) { return QImage(); }
-#endif
+// (P3: shell thumbnail fast lane removed with the GUI decode paths. The
+// Backend owns every decoder now; the GUI shows placeholders until the
+// bounded THUMBNAIL arrives.)
 QPixmap squareFittedPixmap(const QPixmap& src, const QSize& size) {
   QPixmap canvas(size);
   canvas.fill(Qt::transparent);
@@ -2715,188 +2413,72 @@ void MainWindow::dropThumbCache(const QString& path) {
     else ++it;
   }
 }
-QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool bypassBudget) const {
+QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool /*bypassBudget*/) const {
   // Cache key carries the requested size: cells follow the delivered pixmap
   // size (probed 90x91..262x283 for one view), so sharing one pixmap across
   // sizes would keep cells uneven.
   const QString key = path + '|' + QString::number(size.width()) + 'x' + QString::number(size.height());
   auto tc = thumbCache_.find(key);
   if (tc != thumbCache_.cend()) { ++thumbStatMem_; return tc.value(); }
-  // Disk cache first: a fast indexed read, no budget spent. Thumbs decoded in
-  // any earlier scan reappear instantly on rescan instead of re-burning the
-  // per-tick budget (the reason loaded groups showed generic icons).
-  const QFileInfo fi(path);
-  // Match scanner/database timestamp precision (milliseconds) so a same-size file
-   // replaced within the same second cannot accidentally reuse an old thumbnail.
-   const qint64 mtime = fi.lastModified().toMSecsSinceEpoch();
-  const qulonglong fsize = (qulonglong)fi.size();
-  if (thumbDbOpen_) {
-    std::vector<unsigned char> bytes;
-    if (thumbDb_.getThumb(path.toStdString(), mtime, fsize, bytes)) {
-      const QImage disk = QImage::fromData(bytes.data(), (int)bytes.size());
-      // Legacy gray engine thumbs persisted by older builds must not stick:
-      // a grayscale disk entry falls through to the color decoders below.
-      if (!disk.isNull() && !disk.isGrayscale()) {
-        ++thumbStatDisk_;
-        QIcon ic = QIcon(squareFittedPixmap(QPixmap::fromImage(disk), size));
-        thumbCache_[key] = ic;
-        if (thumbCache_.size() > 3000) {
-          auto it = thumbCache_.begin();
-          for (int n = 0; n < 750 && it != thumbCache_.end(); ++n) it = thumbCache_.erase(it);
-        }
-        return ic;
-      }
-    }
+  // P3: a miss goes to the backend (Type B, async). No disk/shell/decode
+  // happens here anymore (G1.5): the backend owns the disk cache and every
+  // decoder and answers with a bounded THUMBNAIL; the arrival paints through
+  // onThumbReady. Record the pending request so it paints exactly the
+  // requested size (stale-drop); cap the map so a lost backend cannot grow
+  // it without bound.
+  if (backend_) {
+    const quint64 id = ++thumbRequestId_;
+    if (thumbPendingReq_.size() > 2000) thumbPendingReq_.erase(thumbPendingReq_.begin());
+    thumbPendingReq_[id] = {path, size};
+    backend_->requestThumb(path, size, isVideoExt(path), id);
   }
-  // Skip-list (Similarity-inspired): a path whose heavy decode already failed
-  // returns the cheap file-type icon immediately without spending the shared
-  // per-tick budget, so corrupt/undecodable files cannot starve live thumbs.
-  if (thumbFail_.contains(path)) { ++thumbStatPlace_; return placeholderIcon(path); }
-  // Check the budget before touching the engine or decoder. Both cache misses
-  // can still perform synchronous work, especially for video thumbnails.
-  if (!bypassBudget && thumbBudget_ <= 0) {
-    thumbStarved_ = true;
-    ++thumbStatPlace_;
-    return placeholderIcon(path);
-  }
-  QPixmap pm;
-  bool grayOnly = false; // engine fingerprint thumb: display fallback only,
-                         // never persisted (a gray disk entry would stick)
-  const bool isVid = isVideoExt(path);
-  // Color engine thumb for images (unchanged fast path: fingerprint decode
-  // is already color and must not leak gray into display).
-  // P2: the engine call travels through BackendClient (Type B request).
-  static quint64 thumbRequestId = 0;
-  if (backend_ && !isVid) {
-    const ThumbResult tr = backend_->requestThumb(path, size, false, ++thumbRequestId);
-    if (tr.ok && tr.width > 0 && tr.height > 0 &&
-        tr.rgba.size() == (qsizetype)tr.width * tr.height * 4) {
-      const QImage im(reinterpret_cast<const uchar*>(tr.rgba.constData()),
-                      tr.width, tr.height, tr.width * 4, QImage::Format_ARGB32);
-      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im.copy()); }
-    }
-  }
-  // Decode budget: each cache miss (shell COM, image decode, FFmpeg seek) can
-  // block the GUI thread for milliseconds-to-seconds. Over budget, return a
-  // cheap file-type icon WITHOUT caching it, so the real thumb is retried on
-  // a later tick. The explicitly selected file (detail pane) bypasses.
-  // Shell thumbnails (cheap COM) get a wider lane than heavy decodes so
-  // Explorer-cached thumbs fill ~10x faster.
-  if (!bypassBudget) {
-    --thumbBudget_;
-  }
-  // Shell thumbnail cache is the fast lane: Explorer already stored a rendered
-  // thumb for most media (video frames, Office documents, HEIC/WebP). Using it
-  // first sidesteps a full engine decode for the preview pane and, unlike WIC,
-  // works for container/sidecar files that ship no decodable pixel stream.
-  // WTS_INCACHEONLY keeps this read-only: a missing entry falls through to the
-  // normal decoders instead of writing the cache back from this thread.
-  if (bypassBudget || shellBudget_ > 0) {
-    if (!bypassBudget) --shellBudget_;
-    const QImage shell = shellThumbnailImage(path);
-    if (!shell.isNull()) { ++thumbStatShell_; pm = QPixmap::fromImage(shell); }
-  }
-  // Video color decode (FFmpeg) runs before the gray engine thumb: the gray
-  // 48x48 fingerprint used to fill pm first and the `isNull` gate below then
-  // skipped the color decode entirely, pinning previews to black and white.
-  if (pm.isNull()) {
-    if (isVideoExt(path)) {
-      msf::VideoDecoder dec;
-      if (dec.open(path.toStdString())) {
-        msf::ColorFrame cf;
-        const int dim = std::max(size.width(), size.height());
-        if (dec.frameAtColor(0.5, dim, dim, cf) && cf.rgb.size() == (size_t)cf.width * cf.height * 3 && cf.width > 0 && cf.height > 0) {
-          QImage im(cf.rgb.data(), cf.width, cf.height, cf.width * 3, QImage::Format_RGB888);
-          pm = QPixmap::fromImage(im.copy());
-          grayOnly = false;
-          ++thumbStatDecode_;
-        }
-        dec.close();
-      }
-    } else {
-      QImageReader rd(path);
-      QImage im;
-      if (rd.canRead()) {
-        rd.setAutoTransform(true);
-        im = rd.read();
-      }
-      if (im.isNull()) {
-        // Qt image-format plugins (e.g. qpng) may be absent from a portable
-        // deployment while WIC is always present. Decode color through WIC so
-        // previews stay color (the gray engine decode is fingerprint-only and
-        // must not leak into display).
-        msf::ImageDecoder dec;
-        msf::ColorImage c;
-        if (dec.decodeColorAspect(path.toStdString(), 256, c) && c.width > 0 && c.height > 0 &&
-            c.bgra.size() == (size_t)c.width * c.height * 4) {
-          im = QImage(c.bgra.data(), c.width, c.height, c.width * 4, QImage::Format_ARGB32).copy();
-        }
-      }
-      if (!im.isNull()) { ++thumbStatDecode_; pm = QPixmap::fromImage(im); }
-    }
-  }
-  // Last resort for video: the gray 48x48 engine fingerprint thumb. It is
-  // free (no budget spent) and always available after a scan, but it only
-  // fills pm when every color source above missed — never ahead of them.
-  // P2: engine call travels through BackendClient (Type B request).
-  if (pm.isNull() && isVid && backend_) {
-    const ThumbResult tr = backend_->requestThumb(path, size, true, ++thumbRequestId);
-    if (tr.ok && tr.rgba.size() >= (qsizetype)48 * 48) {
-      const QImage im(reinterpret_cast<const uchar*>(tr.rgba.constData()),
-                      48, 48, 48, QImage::Format_Grayscale8);
-      if (!im.isNull()) { ++thumbStatEngine_; pm = QPixmap::fromImage(im.copy()); grayOnly = true; }
-    }
-  }
-  QIcon ic;
-  if (!pm.isNull()) {
-    // Normalize to the exact requested rect: identical cells regardless of
-    // source aspect/size (Explorer-like uniform grid), never distorted.
-    ic = QIcon(squareFittedPixmap(pm, size));
-    // Persist for future rescans (best effort): 192px JPEG keeps the DB small
-    // while staying recognizable up to XL views. A gray-only engine thumb is
-    // never persisted: it would stick as a B&W disk entry and hide the color
-    // decoders on every later view.
-    if (thumbDbOpen_ && !grayOnly) {
-      QImage store = squareFittedPixmap(pm, QSize(192, 192)).toImage();
-      QByteArray ba; QBuffer buf(&ba); buf.open(QIODevice::WriteOnly);
-      if (buf.isOpen() && store.save(&buf, "JPG", 70) && !ba.isEmpty()) {
-        if (scanning_) {
-          if (thumbPending_.size() < 1000)
-            thumbPending_.push_back({path.toStdString(), mtime, fsize,
-                                     std::vector<unsigned char>(ba.cbegin(), ba.cend())});
-        } else {
-          std::vector<unsigned char> v(ba.cbegin(), ba.cend());
-          thumbDb_.putThumb(path.toStdString(), mtime, fsize, v);
-        }
-      }
-    }
-  } else {
-    ic = placeholderIcon(path);
-    ++thumbStatPlace_;
-    if (!scanning_) {
-      ++thumbStatFail_;
-      if (thumbFail_.size() > 2000) {
-        auto it = thumbFail_.begin();
-        for (int n = 0; n < 500 && it != thumbFail_.end(); ++n) it = thumbFail_.erase(it);
-      }
-      thumbFail_.insert(path);
-    }
-  }
-  // Bound the cache: group-list refreshes re-request the same representatives,
-  // but an unbounded cache over a 100k+ scan would cost gigabytes. Evict a
-  // chunk, never all: a full clear on huge scans caused a perpetual re-decode
-  // storm (every refresh re-decoded thousands of thumbs, freezing the UI).
-  if (thumbCache_.size() > 3000) {
-    auto it = thumbCache_.begin();
-    for (int n = 0; n < 750 && it != thumbCache_.end(); ++n) it = thumbCache_.erase(it);
-  }
-  thumbCache_[key] = ic;
-  return ic;
+  ++thumbStatPlace_;
+  return placeholderIcon(path);
 }
-void MainWindow::flushThumbPending() {
-  if (thumbPending_.empty() || !thumbDbOpen_) { thumbPending_.clear(); return; }
-  for (const auto& p : thumbPending_) thumbDb_.putThumb(p.path, p.modified, p.size, p.jpeg);
-  thumbPending_.clear();
+void MainWindow::onThumbReady(quint64 requestId, const ThumbResult& thumb) {
+  auto it = thumbPendingReq_.find(requestId);
+  if (it == thumbPendingReq_.end()) return; // unknown or duplicate: drop
+  const QString path = it->path;
+  const QSize size = it->size;
+  thumbPendingReq_.erase(it);
+  if (!thumb.ok) return;
+  const QImage im(reinterpret_cast<const uchar*>(thumb.rgba.constData()),
+                  thumb.width, thumb.height, thumb.width * 4, QImage::Format_ARGB32);
+  if (im.isNull()) return;
+  // Normalize to the exact requested rect: identical cells regardless of
+  // source aspect/size (Explorer-like uniform grid), never distorted.
+  const QIcon ic = QIcon(squareFittedPixmap(QPixmap::fromImage(im.copy()), size));
+  thumbCache_[path + '|' + QString::number(size.width()) + 'x' + QString::number(size.height())] = ic;
+  if (thumbCache_.size() > 3000) {
+    auto jt = thumbCache_.begin();
+    for (int n = 0; n < 750 && jt != thumbCache_.end(); ++n) jt = thumbCache_.erase(jt);
+  }
+  ++thumbStatBackend_;
+  // Stale-drop + paint (0.9.4.66 pattern: a layout pass must follow icon
+  // changes under uniformItemSizes+Batched, or art paints outside its cell).
+  bool painted = false;
+  QListWidget* grids[2] = {imgGrid_, vidGrid_};
+  for (auto* grid : grids) {
+    if (!grid || grid->iconSize() != size) continue;
+    bool gridPainted = false;
+    for (int r = 0; r < grid->count(); ++r) {
+      auto* item = grid->item(r);
+      const int gi = item->data(Qt::UserRole).toInt();
+      if (gi < 0 || gi >= groups_.size() || groups_[gi].paths.isEmpty()) continue;
+      if (groups_[gi].paths.front() != path) continue;
+      if (item->icon().cacheKey() == ic.cacheKey()) continue;
+      item->setIcon(ic);
+      gridPainted = true;
+    }
+    if (gridPainted) { grid->doItemsLayout(); painted = true; }
+  }
+  if (currentFile_ == path && size == QSize(220, 190)) {
+    preview_->setPixmap(ic.pixmap(QSize(220, 190)));
+    painted = true;
+  }
+  // The right-pane file list recreates its items on every selection, so it
+  // heals through the memory cache on next refresh without special handling.
+  if (painted) ++thumbPaintedCount_;
 }
 void MainWindow::setViewMode(int i) {
   viewGrid_->setChecked(i == 0); viewList_->setChecked(i == 1);
@@ -3595,7 +3177,6 @@ void MainWindow::prunePaths(const QSet<QString>& gone) {
   for (const auto& p : gone) {
     marked_.remove(p); resCache_.remove(p); fileSize_.remove(p); fileFp_.remove(p);
     fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p); dropThumbCache(p);
-    thumbFail_.remove(p);
     pathParent_.remove(p);
     if (currentFile_ == p) currentFile_.clear();
   }
@@ -3873,6 +3454,22 @@ void MainWindow::toggleMonitor() {
   monBtn_->setChecked(true); paintMonBtn();
   tray_->setToolTip(trStr(lang(), "monRun"));
   statusMsg_->setText(trStr(lang(), "monRun"));
+}
+void MainWindow::onBackendConnection(bool available, QString message) {
+  backendAvailable_ = available;
+  if (!available) {
+    statusMsg_->setText(message);
+    if (scanning_) {
+      // The scan died with the backend: surface it through the normal failure
+      // path (popup + idle state) instead of hanging mid-scan.
+      scanFailed(message);
+    } else {
+      scan_->setEnabled(false);
+    }
+  } else {
+    if (!scanning_) scan_->setEnabled(true);
+    statusMsg_->setText(message);
+  }
 }
 void MainWindow::monitorEvent(const BackendMonitorEvent& e) {
   if (e.type == static_cast<int>(BackendMonitorEventType::Match)) { showMonitorMatch(e); return; }

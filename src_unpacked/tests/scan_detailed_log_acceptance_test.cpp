@@ -17,6 +17,7 @@
 // rendering of the dialog (headless environment).
 
 #include "mainwindow.h"
+#include "scan_worker.h"
 #include "dataset_fingerprint.h"
 
 #include <QApplication>

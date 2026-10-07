@@ -6,6 +6,7 @@
 // matches stream during the scan, and they survive in a fresh engine handle
 // (the "previous results reappear" path). QCoreApplication suffices (no GUI).
 #include "mainwindow.h"
+#include "scan_worker.h"
 #include "media_search_engine.h"
 #include <QCoreApplication>
 #include <QObject>

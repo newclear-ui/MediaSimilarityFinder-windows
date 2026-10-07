@@ -8,6 +8,7 @@
 // background pause toggles (pause transparency + parity).
 #include "walker_queue.h"
 #include "mainwindow.h"
+#include "scan_worker.h"
 #include "media_search_engine.h"
 #include <QCoreApplication>
 #include <atomic>

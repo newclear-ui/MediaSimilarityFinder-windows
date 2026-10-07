@@ -125,6 +125,9 @@ public:
     ~BackendClient() override = default;
 
     // ---- Type A: fire-and-forget commands (never block, never wait) ----
+    // ensureRunning boots the backend on first GUI show (supervisor spawns;
+    // loopback is a no-op). Idempotent: safe to call on every show.
+    virtual void ensureRunning() = 0;
     virtual void startScan(const BackendScanConfig& cfg) = 0;
     virtual void pause() = 0;
     virtual void resume() = 0;
@@ -143,13 +146,16 @@ public:
     virtual void refreshMonitor() = 0;
 
     // ---- Type B: request/response ----
-    // requestId correlation: the GUI assigns per request; the P3 transport
-    // echoes it so stale responses can be dropped. Loopback answers inline
-    // and ignores it.
-    virtual ThumbResult requestThumb(const QString& path, const QSize& size, bool isVideo,
-                                     quint64 requestId) = 0;
+    // Thumbnails are fire-and-forget requests; the answer arrives via
+    // thumbReady (uniform async contract — even the loopback answers
+    // asynchronously, so the GUI never depends on timing). requestId
+    // correlates; the transport echoes it. The GUI drops stale arrivals
+    // (size no longer wanted) and unknown ids.
+    virtual void requestThumb(const QString& path, const QSize& size, bool isVideo,
+                              quint64 requestId) = 0;
     // Indexed-file metadata for the detail pane (Type B). Served from the
-    // engine's file list; loopback answers inline.
+    // last completed scan's file list snapshot (loopback answers inline from
+    // the engine; same semantics: only finished-scan data).
     virtual QVector<BackendFile> requestFiles() = 0;
 
     // ---- Type C: cached snapshots (updated by signals, never polled) ----
@@ -158,6 +164,10 @@ public:
 
     // Test-only hook (loopback implements it; the real client reports empty).
     virtual std::string telemetryJsonForTest() const { return {}; }
+    // Acceptance hook: OS PID of the current backend process, -1 when there
+    // is none (loopback: always -1, same process). Used by crash-injection
+    // tests to prove GUI PID != Backend PID across restarts.
+    virtual qint64 backendPid() const { return -1; }
 
 signals:
     void progress(int pct, QString path);
@@ -173,7 +183,15 @@ signals:
     void telemetryReady(QString json);
     void finished(QString msg);
     void failed(QString msg);
+    void thumbReady(quint64 requestId, ThumbResult thumb);
     void statusSnapshot(BackendStatus st);
     void monitorEvent(BackendMonitorEvent ev);
     void monitorSnapshot(BackendMonitorStatus st);
+    // Backend availability for the UI guard (brief §15/§21): true = READY or
+    // running normally; false with a reason while restarting/unavailable or
+    // FAILED. Loopback never emits (always available).
+    void backendConnection(bool available, QString message);
+    // Backend stderr/diagnostics surfacing (the GUI appends these to
+    // msf_scan.log; the backend never writes that file itself).
+    void backendLogLine(const QString& line);
 };

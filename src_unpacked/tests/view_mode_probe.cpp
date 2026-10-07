@@ -313,63 +313,58 @@ int main(int argc, char** argv) {
           if (mode == 1) {
               QApplication::processEvents(); // one pump only: layout in flight
           } else if (mode == 2) {
-              // Catch-up-driven contract (0.9.4.66): uniform sizes follow
-              // the MAXIMUM item art, so nulling a subset can never move the
-              // maximum while green items remain. Null EVERYTHING through
-              // the real product path: prime all items, then walk the whole
-              // list in viewport steps running testThumbCatchUp() at each.
-              // Headless fileThumb yields null, which differs from the prime.
-              // Pre-fix no layout pass runs (vbar frozen at the green-era
-              // maximum); post-fix every changing catch-up forces recompute.
+              // Catch-up-driven contract (0.9.4.66 geometry guarantee, P3 async
+              // delivery): prime non-null icons to force misses everywhere,
+              // then walk the whole list running the REAL product catch-up
+              // (requests fire), pump for the queued answers, and assert the
+              // arrivals converged: pending empty, paints happened, geometry
+              // matches a forced layout, vbar shrank at 256 (large art out,
+              // small art in). Every item is visited (fixed strides proved
+              // layout-dependent).
               if (grid->isVisible()) {
-                  QPixmap prime(256, 256); prime.fill(Qt::darkGreen);
-                  const QIcon primeIcon(prime);
-                  const quint64 primeKey = primeIcon.cacheKey();
-                  for (int i = 0; i < grid->count(); ++i) grid->item(i)->setIcon(primeIcon);
-                  grid->doItemsLayout(); // reference only: all-green maximum
+                  // Cold cache so every step genuinely requests through the
+                  // backend (otherwise earlier arrivals satisfy fileThumb
+                  // from memory and nothing paints — correct behavior, but
+                  // a vacuous assertion).
+                  w.testDropThumbCache();
                   QApplication::processEvents();
-                  const int maxGreen = grid->verticalScrollBar()->maximum();
-                  const qulonglong changedBefore = w.testThumbInPlaceCount();
-                  // Sweep every item so the viewport (and therefore catch-up)
-                  // covers the whole list however the layout sliced it. Fixed
-                  // strides proved layout-dependent (GPU content heights
-                  // differ from CPU), leaving green stragglers behind.
-                  for (int sweep = 0; sweep < 3; ++sweep) {
-                      for (int pos = 0; pos < grid->count(); ++pos) {
-                          grid->scrollToItem(grid->item(pos));
-                          QApplication::processEvents();
-                          w.testThumbCatchUp(); // production path + layout guarantee
-                      }
-                      int greenLeft = 0;
-                      for (int i = 0; i < grid->count(); ++i)
-                          if (grid->item(i)->icon().cacheKey() == primeKey) ++greenLeft;
-                      if (greenLeft == 0) break;
+                  // Prime with SMALL art: arrivals carry large engine art, so
+                  // a layout pass must GROW the cells. Frozen small cells are
+                  // exactly the user-visible overlap (large art in small
+                  // cells). Priming large would make growth unobservable.
+                  QPixmap prime(32, 32); prime.fill(Qt::darkRed);
+                  const QIcon primeIcon(prime);
+                  for (int i = 0; i < grid->count(); ++i) grid->item(i)->setIcon(primeIcon);
+                  grid->doItemsLayout(); // reference only: all-prime maximum
+                  QApplication::processEvents();
+                  const int maxPrime = grid->verticalScrollBar()->maximum();
+                  const qulonglong paintedBefore = w.testThumbPaintedCount();
+                  for (int pos = 0; pos < grid->count(); ++pos) {
+                      grid->scrollToItem(grid->item(pos));
+                      QApplication::processEvents();
+                      w.testThumbCatchUp(); // production path: requests fire
                   }
-                  const bool replaced = w.testThumbInPlaceCount() > changedBefore;
-                  check(replaced, "catch-up replaced icons through the product path");
-                  int greenLeft = 0;
-                  for (int i = 0; i < grid->count(); ++i)
-                      if (grid->item(i)->icon().cacheKey() == primeKey) ++greenLeft;
-                  check(greenLeft == 0, "catch-up sweep covered every item (no green stragglers)");
                   if (!settle(grid, name.c_str())) settled = false;
+                  QApplication::processEvents(); // drain queued arrivals
                   last = snapshot(grid);
                   printSnap(("step idx=" + std::to_string(idx)).c_str(), last);
                   const int maxAfter = grid->verticalScrollBar()->maximum();
-                  int nullN = 0, pxMin = INT_MAX, pxMax = 0, greenN = 0;
+                  const qulonglong pendingLeft = w.testThumbPendingCount();
+                  const bool painted = w.testThumbPaintedCount() > paintedBefore;
+                  int pxMin = INT_MAX, pxMax = 0;
                   for (int i = 0; i < grid->count(); ++i) {
-                      const QIcon ic = grid->item(i)->icon();
-                      if (ic.cacheKey() == primeKey) ++greenN;
-                      const auto sizes = ic.availableSizes();
-                      if (sizes.isEmpty()) ++nullN;
-                      else { pxMin = std::min(pxMin, sizes.first().width()); pxMax = std::max(pxMax, sizes.first().width()); }
+                      const auto sizes = grid->item(i)->icon().availableSizes();
+                      if (!sizes.isEmpty()) { pxMin = std::min(pxMin, sizes.first().width()); pxMax = std::max(pxMax, sizes.first().width()); }
                   }
-                  std::cout << "  [info] catchup vbarMax green=" << maxGreen
-                            << " after=" << maxAfter << " replaced=" << replaced
-                            << " nullN=" << nullN << " greenN=" << greenN
+                  std::cout << "  [info] catchup vbarMax prime=" << maxPrime
+                            << " after=" << maxAfter << " painted=" << painted
+                            << " pending=" << pendingLeft
                             << " pxMin=" << (pxMin == INT_MAX ? -1 : pxMin)
                             << " pxMax=" << pxMax << std::endl;
-                  if (replaced && idx == 0)
-                      check(maxAfter < maxGreen, ("layout passes ran after catch-up at idx=" + std::to_string(idx)).c_str());
+                  check(pendingLeft == 0, "every thumbnail request answered");
+                  check(painted, "arrivals painted through the product path");
+                  if (idx == 0)
+                      check(maxAfter > maxPrime, ("layout passes ran after catch-up at idx=" + std::to_string(idx)).c_str());
               } else {
                   if (!settle(grid, name.c_str())) settled = false;
               }
