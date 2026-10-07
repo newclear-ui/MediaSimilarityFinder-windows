@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.61` / HEAD `21313fd` - CPU CTest 109/109 - GPU CTest 110/110
-Last updated: 2026-10-07
+Baseline: `0.9.4.71` (process split P1–P4 complete + defect fixes) - CPU CTest 116/116 - GPU CTest 117/117
+Last updated: 2026-10-08
 
 ## Role of this document
 
@@ -109,12 +109,17 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        S4 real-screen acceptance (0.9.4.63 usability trio done, Test Mode and traversal deferred)
-next               S4 real-screen acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
-current verdict    The 0.9.4.61 similar-group scroll regression behaves normally in current real Windows GUI testing.
-                   The core starvation-only destructive rebuild was removed; the 0.9.3.10 anchor remains as fallback.
-remaining risk     thumbCatchUpVisible() decodes/updates only visible items, but currently scans the entire list each tick
-                   to find them. This is not the present correctness blocker and is intentionally deferred.
+active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), 0.9.4.71 defect fixes + ThumbnailStore done
+next               Real Windows manual GUI acceptance (preview display, selection, kill UI guard,
+                   restart recovery, Tiles/ListMode, large-dataset traversal) -> final acceptance recheck
+                   -> S4 real-screen acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
+current verdict    0.9.4.71 fixed the seven defects from the second independent review (ExecutionPolicy over IPC,
+                   Index Complete, single summary meaning, slowest-list exclusion, allMatches_ release,
+                   ThumbnailStore JPEG end-to-end, fileMeta in-place). During verification a Qt JPEG plugin
+                   deployment regression was found and replaced with shared libjpeg-turbo decode.
+remaining risk     GUI preview/selection/recovery cannot be eyeballed headless -> manual acceptance needed.
+                   GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each
+                   tick but is not the present correctness blocker, so it stays a lower-priority perf item.
 immediate         0.9.4.63: Detailed Logs visibility setting, right-pane width cap / center-pane expansion, filename selection: done.
 later             Test Mode reintroduction review and visible-range traversal optimization: reviewed, deferred with rationale recorded.
                    Post-1.0 burst-shot and scheduler/pipeline throughput work remains separate.
@@ -157,4 +162,4 @@ stay in the origin documents.
 ## Version invariance check
 
 `kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.4` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9` — unchanged at the 0.9.4.45 baseline.
+`kCacheFormatVersion 9` — unchanged at the 0.9.4.71 baseline.

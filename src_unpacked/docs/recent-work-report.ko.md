@@ -1,7 +1,7 @@
-# 최근 중요 3건 작업 결과 보고 (2026-10-04)
+# 최근 중요 3건 작업 결과 보고 (2026-10-08)
 
-기준 커밋: `619f74a` (`origin/main`과 동기화 완료)
-버전: `0.9.4.45` / HEAD `619f74a` / CPU CTest 102/102 / GPU CTest 103/103
+기준 커밋: `8f3ba47` (`origin/main`과 동기화 완료)
+버전: `0.9.4.71` / CPU CTest 116/116 / GPU CTest 117/117
 
 이 문서는 최근 완료된 중요 작업 3건을 **한 문서에서 확인**하기 위한 요약 보고다.
 각 작업의 상세 근거는 Build History / Work Log에 이미 있고, 이 문서는
@@ -9,189 +9,103 @@
 
 ---
 
-## 작업 1 — `--version` 콘솔 출력 오류 수정
+## 작업 1 — `0.9.4.69` P3: 실 Backend 프로세스 spawn + Supervisor + IPC
 
-커밋 `619f74a` / 파일 `src_unpacked/gui/main.cpp`
-
-### 무엇을 했나
-
-`MediaSimilarityFinder.exe --version`이 **PowerShell에서 아무것도 출력하지
-않았다.** CMD에서는 정상이었다.
-
-원인은 `gui/main.cpp::attachParentConsole()` 안의 판정 함수
-`streamIsRedirected()`였다. 실행 파일은 GUI subsystem(`WIN32_EXECUTABLE TRUE`)
-이라 `GetConsoleWindow()`가 null이면 `AttachConsole(ATTACH_PARENT_PROCESS)`를
-시도하고, 이때 리다이렉션이 있으면 `CONOUT$` 재오픈을 건너뛴다.
-
-문제는 그 판정이 **"스트림을 쓸 수 없다"는 상태를 "리다이렉션되어 있다"로
-착각했다**는 점이었다.
-
-| 조건 | 이전 판정 | 의미였던 것 |
-|---|---|---|
-| `fd < 0` | `true` (잘못됨) | 디스크립터 없음 = **사용 불가** |
-| `_get_osfhandle()`가 `-1` 또는 `0` | `true` (잘못됨) | 유효 OS 핸들 없음 = **사용 불가** |
-| `GetFileType()`가 `FILE_TYPE_UNKNOWN` | 마지막 `FILE_TYPE_DISK`/`FILE_TYPE_PIPE` 비교까지 흘러가므로 `false` | 무효 핸들 = **사용 불가** |
-
-즉 `true`로 잘못 처리된 것은 **두 가지**였다. `FILE_TYPE_UNKNOWN`은 이미 `false`로
-귀결되었으나 명시적 판정이 아니라 마지막 비교에 흘러간 결과였기에, 이번 수정에서
-그 경로도 드러내도록 했다.
-
-그래서 PowerShell 실행 시 실제 출력 대상이 아닌 `stdout`/`stderr`를 리다이렉션으로
-판정해 `AttachConsole`이 건너뛰어지고, `std::cout`에 쓰기 대상이 없어졌었다.
-
-### 수정은 무엇이었나
-
-세 경우 모두를 명시적인 `false`(사용 불가)로 바꿨다. 그 결과 **유효한
-`FILE_TYPE_DISK`/`FILE_TYPE_PIPE`만 리다이렉션으로 남는다.**
-
-이게 중요한 이유는, "실제 리다이렉션은 반드시 보존한다"는 기존 설계 의도를
-그대로 유지하면서 **판정 오류만 제거**했다는 점이다. 무조건 `AttachConsole`을
-부르는 방식과 다르다. 파일/파이프로의 리다이렉션은 그대로 보존되고, 출력 자체가
-불가능한 상태만 `AttachConsole` + `CONOUT$` 경로로 넘어간다.
-
-### 결과
-
-- `--version`, `--help`, `cmd /c`, 잘못된 옵션(stderr + EXIT=2) 전부 정상.
-- OS 수준 리다이렉션(`cmd /c "exe --version > file"`) 45바이트 정상 기록.
-- `Start-Process -Wait -RedirectStandardOutput` 45바이트, EXIT=0.
-- 검색/인덱스/비교 로직과 GUI 동작은 영향 없음.
-
-### 검증 중 나온 주의사항 하나
-
-PowerShell에서 `--version > file`이 0바이트가 되는 현상이 함께 확인됐다.
-**이것은 이번 수정이 만든 회귀가 아니다.** 수정 전 exe에서도 똑같이 재현되며,
-`$LASTEXITCODE`가 비어 있다. 원인은 PowerShell이 GUI subsystem exe를 기다리지
-않는다는 점이다.
-
-앞으로 콘솔 출력 검증은 **OS 수준 리다이렉션**을 기준으로 해야 한다.
-(`cmd /c` 또는 `Start-Process -Wait`)
-
----
-
-## 작업 2 — CUDA `C4819` 인코딩 경고 제거
-
-커밋 `619f74a` / 파일 `src_unpacked/CMakeLists.txt`
+커밋 `9985ac2` / 상세 `docs/build-history/0.9.4.69.{ko,en}.md`
 
 ### 무엇을 했나
 
-GPU 빌드 로그에 MSVC `warning C4819`가 CUDA 헤더(`driver_types.h`,
-`cuda_runtime_api.h`)에서 반복해서 나왔다.
+P2까지의 `BackendClient` 추상화는 in-process `LoopbackBackendClient`만 있었다.
+P3는 **GUI와 검색 엔진을 서로 다른 OS 프로세스로 분리**하고, 그 사이를
+line-oriented JSON IPC로 연결했다.
 
-**중요: 이건 CUDA 문법 오류도 링크 오류도 아니었다.** 코드 페이지 949가 CUDA
-헤더 안의 비ASCII 문자를 표현하지 못해서 나는 인코딩 경고이며, 빌드 자체는
-성공했고 GPU CTest도 103/103으로 통과했다.
+- GUI 프로세스: `MainWindow` + `BackendClient` + `BackendSupervisor`.
+- Backend 프로세스: `MediaSimilarityFinderBackend.exe` (`msf_core` + `Qt6::Core`만 링크).
+- `ScanWorker`를 `src/scan_worker.*`로 이동, `BackendSession`이 스레드/워커/모니터를
+  소유하는 공용 세션. Loopback은 그 위의 thin forwarder.
+- IPC 계약: stdin 명령 / stdout JSONL 이벤트(메시지마다 flush) / stderr 진단.
+  spawn마다 nonce를 발급하고 stale 이벤트는 nonce 불일치로 폐기. MATCHES 500/batch,
+  RESULTS 2000/page chunking. `THUMBNAIL`(JPEG base64) 전달.
 
-원인은 `/utf-8` 적용 범위였다. 기존에는 이것 하나뿐이었다.
+### Supervisor 안전장치
 
-```cmake
-add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
-```
+- QProcess spawn(shell 조립 없음), Win32 Job Object `KILL_ON_JOB_CLOSE`.
+- bounded restart 3회 / backoff 2s·5s·10s, terminate→kill 에스컬레이션은 QTimer 기반(비차단).
+- health 1s / heartbeat timeout 10s / READY timeout 15s.
+- `shutdown()`만 3초 bounded 대기(문서화된 G3 예외).
 
-즉 MSVC C++ 컴파일에만 `/utf-8`가 들어갔고, CUDA는 host compiler가 별도이므로
-그 플래그를 전달받지 못했다.
+### 결과 / 검증
 
-### 수정은 무엇이었나
-
-`nvcc`는 `/utf-8`를 직접 받지 못하므로 MSVC host compiler에 `-Xcompiler`로
-경유시킨다.
-
-```cmake
-add_compile_options($<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>>:-Xcompiler=/utf-8>)
-```
-
-**여기서 첫 시도는 실패했고, 그 실패가 기록-worthy였다.** 처음에는
-`COMPILE_LANG_AND_ID:CUDA,MSVC`를 썼는데 매칭이 되지 않았다. CUDA의 compiler id는
-`NVIDIA`이고 `MSVC`는 frontend variant이기 때문이다. 즉 언어는 CUDA인데 id는
-MSVC라고 동시에 말할 수 없는 상황이었다. `COMPILE_LANGUAGE:CUDA`와
-`CXX_COMPILER_ID:MSVC`를 조합하니 nvcc 명령줄에
-`-Xcompiler="/EHsc -Ob2 /utf-8"`가 실제로 들어가는 것을 확인했다.
-
-### 결과
-
-- `cuda_backend.cu` 강제 재컴파일: `C4819=0` / `warning=0` / `error=0`.
-- `msf_cuda.lib` 정상 생성.
-- GPU 전체 빌드 + CTest **103/103 PASS**, 경고 0건.
-- CUDA architecture(`compute_75/86/89`)와 runtime 동작 불변.
-- 소스/ABI 변경 없음. 빌드 옵션 추가뿐.
+- `backend_ipc_test` 7 checks(UTF-8 경로 round-trip, malformed/oversize/protocol reject).
+- `backend_e2e_test`(Windows 실프로세스): PID 분리, kill→restart, FAILED, DB reopen 실측.
+- `MSF_TEST_BACKEND_FAIL_FAST` / `MSF_TEST_BACKEND_SILENT` crash-injection seam.
+- CPU CTest 116/116, GPU CTest 117/117.
 
 ---
 
-## 작업 3 — XMP Orientation Fallback 구현 + 독립 검수 정정
+## 작업 2 — `0.9.4.70` P4: hardening + FILE_META
 
-커밋 `97db24f`(구현) + `392a4c2`(검수 정정 및 `color_thumb` 사전 등록)
+커밋 `ed4c0c1` / 상세 `docs/build-history/0.9.4.70.{ko,en}.md`
 
-관련 문서: `docs/implementation-briefs/I-xmp-orientation-fallback.{ko,en}.md`
+### 무엇을 했나
 
-### 무엇을 했나 — 1단계: 구현
+P3 종료 시점에 GUI에 decoder 잔재 2건(상세 pane의 resolution/duration 직접 probe)이
+남아 있었다. 지시의 FFmpeg 직접 호출 금지에 따라 Backend 요청으로 옮겼다.
 
-이미지가 회전해 보이는데 EXIF Orientation이 없는 파일에서 방향을 잃는 문제를
-해결했다.
+- 신규 `src/file_meta.*` (`FileMeta`, std `ffprobeSize`).
+- `BackendSession::requestFileMeta`: engine 기록 → video info → dimensionsFast →
+  ffprobe 순으로 Backend에서 수행.
+- IPC `GET_FILE_META`/`FILE_META` + supervisor 전달 + GUI `requestFileMeta`/
+  `onFileMetaReady`(pending 맵, stale-drop, 도착 시 repaint). 썸네일과 동일한 Type B 패턴.
+- GUI에 남는 QtGui 사용은 표현용으로 한정(QIcon 표시, EXIF text tag — 픽셀 decode 아님).
 
-- EXIF `VT_UI2` 값 `1..8`이면 EXIF를 적용한다(XMP는 조회조차 안 함).
-- EXIF가 없거나 실패하거나 타입이 잘못되었거나 범위 밖이면 XMP로 넘어간다.
-- XMP는 WIC 경로 `/xmp/tiff:Orientation`을 쓴다. **실측 결과 `VT_LPWSTR`
-  문자열**로 나타났고, 정수 VARIANT도 함께 정규화한다.
-- EXIF와 XMP가 충돌하면 **EXIF 우선**.
-- 양쪽의 출력 경로(`decodeBoth` fingerprint, color display lane)가 **같은
-  resolver를 공유**하므로 변환 의미가 갈라지지 않는다.
-- invalid XMP는 identity로 처리한다. telemetry 필드는 추가하지 않았다.
+### 결과 / 검증
 
-### 무엇을 했나 — 2단계: 독립 검수와 정정
+- **GUI 프로세스는 어떤 media pixel decode도 수행하지 않는다.** WIC/FFmpeg/CUDA/native
+  decode는 전부 Backend에 있다.
+- §15 15항 체크리스트를 증거와 대조하고 숫자(heartbeat/backoff/cap)를 확정.
+- **dumpbin 실측: Backend 의존성 = `Qt6Core.dll` + `turbojpeg.dll` (+ffmpeg/sqlite).
+  `Qt6Widgets`/`Qt6Gui` 없음.**
+- CPU CTest 116/116, GPU CTest 117/117.
 
-구현이 끝났다고 "통과"로 칠 필요가 없다는 IndependENT REVIEW가 지적해서
-fixture를 실제로 보강했다. 처음 14 checks였던 fixture를 **38 checks**로 늘렸고,
-검수 시 **NOT VERIFIED**였던 항목을 실제로 채웠다.
+---
 
-| 검수 지적 항목 | 지적 당시 | 이번 결과 |
+## 작업 3 — `0.9.4.71` 백엔드 결함 수정 + ThumbnailStore
+
+커밋 `8f3ba47` / 상세 `docs/build-history/0.9.4.71.{ko,en}.md`
+
+### 무엇을 했나
+
+P3/P4 프로세스 분리 후 2차 독립 재검토에서 확정된 결함 7건을 수정했다.
+
+| # | 결함 | 수정 |
 |---|---|---|
-| mapping `1/3/6/8` | PASS | PASS 유지 |
-| mapping `2/4/5/7` | **NOT VERIFIED** | **PASS** (H2/H4/H5/H7) |
-| 90/270 방향 | 기하 `32x16<->16x32` 뿐이라 미검증 | **PASS** (사분면 평균으로 방향 구분) |
-| 180 변환 | 기하 불변이라 미검증 | **PASS** (좌우 사분면 평균 교환) |
-| EXIF 범위 밖 fallback | 미검증 | **PASS** (I9: EXIF=9 → XMP=6 적용) |
-| EXIF 타입 오류 fallback | 미검증 | **PASS** (IT: type=ASCII → XMP=8 적용) |
-| full scan regression | 미시연 | **DEFERRED** |
-| 표준 dataset XMP coverage | 보고만 있음 | **보고만 있음, 유지** |
+| 1 | 분리 이후 GUI 자원 모드가 IPC로 전달되지 않아 워커가 항상 `make_policy(Custom)` | `ExecutionPolicy` 신설 → `START_SCAN.exec` → `ScanWorker::setResourceMode` → `make_policy(mode)`. 라이브 갱신은 `UPDATE_RESOURCE_POLICY`/`POLICY_APPLIED`(partial) |
+| 2 | "Index Complete"가 `analyzedCount_`만 표시 | 엔진 `unchangedCount_` + `BackendStatus.unchanged`, GUI `liveAnalyzed = analyzed + unchanged` |
+| 3 | 요약 CPU/RAM 라벨을 GUI 프로세스/시스템 전체가 번갈아 덮어씀 | `updateSysLabels`는 GPU 전용, CPU/RAM은 작업 프로세스 status snapshot 단일 writer(`sampleOwnProcess`) |
+| 4 | 느린 파일 목록에 cache-hit(~0ms)/실패 decode(0ms) 패딩 | `addImage` 0-cost 제외, `addVideo` `cacheHit` 제외 |
+| 5 | `ScanWorker::allMatches_`가 최종 persist 후에도 상주 | `clear()` + `shrink_to_fit()`(정상·실패 경로, 핸들러 무throw 규칙 준수) |
+| 6 | Backend 썸네일이 엔진 `thumbMap_`만 조회 → 분리 후 대부분 빈 미리보기 | 신규 `src/thumbnail_store.*`(engine art → shell `IThumbnailCache` → WIC → FFmpeg → gray, SQLite 영속 + LRU256) + `backend_thumb` msf_core 이동 + JPEG end-to-end |
+| 7 | `onFileMetaReady`가 `refreshFileViews()` 전체 재생성 → 선택 파괴 | `QMap<id,path>` dedup + `refreshFileMetaRow` in-place, 위젯 재생성 0 |
 
-fixture BMP를 **사분면 이미지**(레벨 `0/85/170/255`)로 바꿨다. 기존 fixture는
-좌우 두 덩어리뿐이라 상하 방향 구분이 불가능했다. BMP는 행이 bottom-up이라
-단언은 디코딩된 이미지 좌표로 작성했다. `5`와 `7`은 `6`/`8`과 기하가 같으므로
-방향을 주장하지 않고, **동일 transform을 거친 EXIF 경로와의 byte identity**로
-고정했다(`XMP=5` == `EXIF=5`, `XMP=7` == `EXIF=7`).
+### 검증 중 발견한 회귀 — Qt JPEG 플러그인 미배포
 
-### 현재 판정 — 여기를 구분해야 한다
+ThumbnailStore 도입 후 `ui_scroll_regression_test`/`view_mode_probe`가 실패했다.
+원인은 loopback/supervisor가 JPEG을 `QImage::fromData`로 디코드하는데,
+Qt JPEG 플러그인(`qjpeg.dll`)이 의존하는 **`jpeg62.dll`이 배포 세트에 없어**
+`QImageReader::supportedImageFormats()`에 jpeg가 없고 디코드가 null을 반환한 것이었다.
 
-```text
-XMP code implementation        PASS
-XMP fixture (1..8 + pixel)    PASS
-XMP real-dataset coverage     NOT_AVAILABLE  (표준 dataset에 XMP 파일 0, 미검증)
-full Search/Scan regression   DEFERRED       (S4 functional acceptance / S5 benchmark 의존)
-XMP production acceptance     CONDITIONAL
-```
+- 수정: 신규 `msf::decodeJpegArgb32`(libjpeg-turbo, 이미 동봉된 `turbojpeg.dll`)로
+  loopback·supervisor를 교체. Qt JPEG 플러그인 의존을 완전히 제거.
+- 재확인: 두 GUI 테스트 통과.
 
-fixture가 구현 정합성(1..8 + pixel 방향 + EXIF invalid fallback)을 증명하지만,
-full scan regression과 real-dataset coverage가 없으므로 production acceptance는
-CONDITIONAL이다. `docs/build-history/0.9.4.45.*`는 소급 수정하지 않고 이 문서와
-Work Log에 정정을 기록한다.
+### 결과 / 검증
 
-### 부수 산출물 — `color_thumb` audit 사전 등록
-
-같은 커밋에서 `docs/implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`
-를 새로 만들었다. **audit만 하고 production 수정은 하지 않았다.**
-
-핵심 결론: classification은 단일 확장자 규칙이며 **FFmpeg 상태 세 가지 모두에서
-동일**하다. decoder capability 부재가 media type을 바꾸어서는 안 된다는 것이
-계약 후보다.
-
-확정 위험 요소:
-- **R1(high)**: no-FFmpeg 빌드에서 `color_thumb_test`가 항상 실패한다
-  (무조건 CMake 등록 + skip 처리 없음 + `frameAtColor` 무조건 `false`).
-  worklog run 082의 미분류 `exit 5`를 분류한다.
-- **R2(medium)**: `kindOf()`(확장자)와 DB `x.kind`가 이중 진실원이고 교차 검증 없음.
-- **R3(medium)**: 확장자 목록이 4곳에 중복(`scanner`, `monitor` 3곳, GUI).
-- **R4(medium)**: shell thumbnail가 `isNull()` 가드 없이 엔진 color thumbnail를
-  덮어써 `thumbStatEngine_`를 오염시킨다.
-- **R5/R6(low)**: configure 메시지 과장 / magic-number `MediaKind` 매핑.
+- CPU CTest **116/116**, GPU CTest **117/117**.
+- 양쪽 GUI/Backend exe `--version 0.9.4.71`.
+- 변경 소스 U+FFFD 0 / CJK 0.
+- 소스 zip 774파일 HEAD와 byte 단위 일치(0 mismatches), portable zip 86 엔트리
+  (GUI+Backend exe + turbojpeg), smoke PASS.
 
 ---
 
@@ -199,32 +113,36 @@ Work Log에 정정을 기록한다.
 
 | 항목 | 상태 |
 |---|---|
-| 버전 | `0.9.4.45` (bump 없음) |
-| 커밋 | `619f74a`, `origin/main`과 동기화 |
-| CPU CTest | 102/102 PASS |
-| GPU CTest | 103/103 PASS |
-| CUDA 경고 | 0건 |
+| 버전 | `0.9.4.71` |
+| 커밋 | `8f3ba47`, `origin/main`과 동기화 |
+| CPU CTest | 116/116 PASS |
+| GPU CTest | 117/117 PASS |
+| 프로세스 분리 | P1–P4 완료 |
+| Backend Qt 의존성 | Qt6Core only (dumpbin 실측) |
 | XMP production acceptance | CONDITIONAL |
 | `color_thumb` production 수정 | 미수행 (사전 등록만) |
-| S4 최종 GUI visual/save acceptance | DEFERRED |
+| S4 최종 GUI visual/save acceptance | DEFERRED (수동 acceptance 필요) |
 | S5 product benchmark | DEFERRED |
 | S6 | DEFERRED |
-| NVDEC production adoption | DEFERRED |
+| NVDEC production adoption | NO (F-1 CONDITIONAL) |
 
 ## 남은 후보 / 다음 단계
 
-- 콘솔 출력 전용 회귀 테스트 추가 (현재는 수동 검증만 존재).
-- nvcc 자체 경고를 release gate에 등록할지 결정.
-- `color_thumb` R1 fixture 및 skip/pass 처리 구현 → 그다음 R2~R6은 별도 결정.
+- 실제 Windows GUI manual acceptance: 미리보기 표시, selection, kill 시 UI 가드,
+  restart 후 복귀, Tiles/ListMode, 대규모 dataset traversal.
+- GPU MAX의 GPU share boost 미구현(문서화된 공백) 검토.
+- Backend 400MB의 정확한 비중은 VMMap/힙 스냅샷 필요.
+- `color_thumb` R1 fixture 및 skip/pass 처리 → 그다음 R2~R6은 별도 결정.
 - XMP full scan regression — S4 functional acceptance 완료 후.
-- 지시 2항의 백업 zip(`backup_src.ps1` / `package_portable.ps1`)은 이 변경에서
-  수행하지 않았다. 두 스크립트 모두 미커밋 tracked 변경 0건을 요구하는데,
-  `.gitattributes` 2개가 CRLF 정규화 때문에 `M`으로 표시되어 있어 선결정이 필요하다.
+- 백업 zip(`backup_src.ps1` / `package_portable.ps1`)은 0.9.4.71에서 수행 완료
+  (src·portable 각 3개 유지, `.68` portable 회전).
 
 ## 관련 문서
 
-- `docs/build-history/0.9.4.45.{ko,en}.md`
+- `docs/build-history/0.9.4.69.{ko,en}.md`
+- `docs/build-history/0.9.4.70.{ko,en}.md`
+- `docs/build-history/0.9.4.71.{ko,en}.md`
 - `docs/worklog/0.9.4.{ko,en}.md`
-- `docs/implementation-briefs/I-xmp-orientation-fallback.{ko,en}.md`
-- `docs/implementation-briefs/I-color-thumb-no-ffmpeg-classification.{ko,en}.md`
+- `docs/architecture/process-architecture-0.9.4.{ko,en}.md`
+- `docs/implementation-briefs/process-backend-isolation-0.9.4.{ko,en}.md`
 - `docs/development-progress.{ko,en}.md`

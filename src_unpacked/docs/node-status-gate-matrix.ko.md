@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.61` / HEAD `21313fd` · CPU CTest 109/109 · GPU CTest 110/110
-최종 갱신: 2026-10-07
+기준: `0.9.4.71` (프로세스 분리 P1–P4 완료 + 결함 수정) · CPU CTest 116/116 · GPU CTest 117/117
+최종 갱신: 2026-10-08
 
 ## 이 문서의 역할
 
@@ -106,15 +106,19 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        S4 real-screen acceptance (0.9.4.63 usability 3종 완료, Test Mode·traversal DEFERRED)
-다음             S4 real-screen acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
-현재 판단        0.9.4.61의 scroll regression은 실제 Windows GUI에서 현재 정상 동작으로 관찰되었다.
-                 핵심 starvation-only destructive rebuild 제거와 in-place catch-up/scroll gate는 유지한다.
-잔여 위험        thumbCatchUpVisible()은 decode는 visible item에 제한하지만 item 목록 전체를 매 tick 순회해
-                 visible 여부를 찾는다. 현재 correctness blocker가 아니므로 후순위 성능 검토로 둔다.
+활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71 결함 수정 + ThumbnailStore 완료
+다음             실제 Windows GUI manual acceptance (미리보기 표시, selection, kill 시 UI 가드,
+                 restart 복귀, Tiles/ListMode, 대규모 dataset traversal) → 제품 acceptance 재확인
+                 → S4 real-screen acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
+현재 판단        0.9.4.71은 2차 독립 재검토 확정 7건(ExecutionPolicy IPC, Index Complete, 요약 단일 의미,
+                 느린 파일 제외, allMatches_ 해제, ThumbnailStore JPEG end-to-end, fileMeta in-place)을
+                 수정했다. 검증 중 Qt JPEG 플러그인 미배포 회귀를 발견해 공용 libjpeg-turbo 디코드로 교체했다.
+잔여 위험        GUI 미리보기/선택/복귀는 headless에서 육안 검증 불가 → 수동 acceptance 필요.
+                 GPU MAX share boost는 문서화된 미구현 공백. thumbCatchUpVisible()은 매 tick 전체 목록을
+                 순회하지만 correctness blocker가 아니므로 후순위 성능 검토로 둔다.
 후속             상세 로그 표시 설정, splitter 폭 정책, filename selection은 0.9.4.63에서 완료.
-                  Test Mode 재도입 검토와 full-traversal 최적화는 설계 검토 후 DEFERRED로 분리했다.
-                  1.0 이후 Burst-shot / scheduler-pipeline 성능 백로그는 계속 별도 유지한다.
+                 Test Mode 재도입 검토와 full-traversal 최적화는 설계 검토 후 DEFERRED로 분리했다.
+                 1.0 이후 Burst-shot / scheduler-pipeline 성능 백로그는 계속 별도 유지한다.
 ```
 
 **S4 acceptance 가 막히지 않는 이유**: 이 환경은 headless 이며, 결과 다이얼로그의
@@ -153,4 +157,4 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 ## 버전 불변 확인
 
 `kEngineVersion 1.5.0` · `kDatabaseVersion 1.0.4` · `kBenchmarkSchemaVersion 9` ·
-`kCacheFormatVersion 9` — 0.9.4.45 기준 변경 없음.
+`kCacheFormatVersion 9` — 0.9.4.71 기준 변경 없음.

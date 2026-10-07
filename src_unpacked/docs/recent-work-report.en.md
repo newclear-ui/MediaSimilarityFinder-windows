@@ -1,244 +1,157 @@
-# Report on the Three Most Recent Important Changes (2026-10-04)
+# Recent Three Significant Work Items — Result Report (2026-10-08)
 
-Baseline commit: `619f74a` (synchronized with `origin/main`)
-Version: `0.9.4.45` / HEAD `619f74a` / CPU CTest 102/102 / GPU CTest 103/103
+Baseline commit: `8f3ba47` (synchronized with `origin/main`)
+Version: `0.9.4.71` / CPU CTest 116/116 / GPU CTest 117/117
 
-This document is a single-place summary of three recently completed important
-changes. The detailed evidence for each already lives in Build History / Work
-Log; this document only gathers **what was done and what the state is now**,
-without duplicating that evidence.
+This document is a summary report that lets the three most recently completed
+significant work items be checked **in one place**. The detailed evidence for
+each already lives in Build History / Work Log; this document only collects
+"what was done and where things stand" without duplication.
 
 ---
 
-## Change 1 — `--version` console output fix
+## Item 1 — `0.9.4.69` P3: real Backend process spawn + Supervisor + IPC
 
-Commit `619f74a` / file `src_unpacked/gui/main.cpp`
+Commit `9985ac2` / details `docs/build-history/0.9.4.69.{ko,en}.md`
 
 ### What was done
 
-`MediaSimilarityFinder.exe --version` **printed nothing from PowerShell.** It
-worked correctly from CMD.
+Up to P2 the `BackendClient` abstraction had only the in-process
+`LoopbackBackendClient`. P3 **split the GUI and the search engine into separate
+OS processes** and connected them with line-oriented JSON IPC.
 
-The cause was the predicate `streamIsRedirected()` inside
-`gui/main.cpp::attachParentConsole()`. Because the executable is GUI subsystem
-(`WIN32_EXECUTABLE TRUE`), a null `GetConsoleWindow()` leads to
-`AttachConsole(ATTACH_PARENT_PROCESS)`, and that path skips the `CONOUT$` reopen
-when it believes the streams are redirected.
+- GUI process: `MainWindow` + `BackendClient` + `BackendSupervisor`.
+- Backend process: `MediaSimilarityFinderBackend.exe` (`msf_core` + `Qt6::Core` only).
+- `ScanWorker` moved to `src/scan_worker.*`; `BackendSession` is the shared
+  session owning the thread/worker/monitor. Loopback is a thin forwarder over it.
+- IPC contract: stdin commands / stdout JSONL events (flush per message) / stderr
+  diagnostics. A nonce is issued per spawn and stale events are dropped on nonce
+  mismatch. MATCHES 500/batch, RESULTS 2000/page chunking. `THUMBNAIL` (JPEG base64).
 
-The bug was that this predicate **mistook "the stream cannot be written to" for
-"the stream is redirected".**
+### Supervisor safety
 
-| Condition | Previous verdict | What it actually meant |
-|---|---|---|
-| `fd < 0` | `true` (wrong) | no descriptor = **unusable** |
-| `_get_osfhandle()` is `-1` or `0` | `true` (wrong) | no usable OS handle = **unusable** |
-| `GetFileType()` is `FILE_TYPE_UNKNOWN` | fell through to the `FILE_TYPE_DISK`/`FILE_TYPE_PIPE` test, so `false` | invalid handle = **unusable** |
+- QProcess spawn (no shell assembly), Win32 Job Object `KILL_ON_JOB_CLOSE`.
+- Bounded restart 3 times / backoff 2s, 5s, 10s; terminate-to-kill escalation is
+  QTimer-based (non-blocking).
+- health 1s / heartbeat timeout 10s / READY timeout 15s.
+- Only `shutdown()` waits up to 3s (documented G3 exception).
 
-So two cases were wrongly reported as `true`. `FILE_TYPE_UNKNOWN` already resolved
-to `false`, but only by falling through the final comparison rather than by a
-deliberate check, so this fix also made that path explicit.
+### Result / verification
 
-So a PowerShell launch whose `stdout`/`stderr` were not real output targets was
-classified as redirected, `AttachConsole` was skipped, and `std::cout` had
-nowhere to write.
-
-### What the fix was
-
-All three cases are now explicit `false` (unusable). Only a genuinely usable
-`FILE_TYPE_DISK`/`FILE_TYPE_PIPE` counts as redirected.
-
-Why that matters: it keeps the original design intent — **real redirection must
-always be preserved** — and removes only the misdetection. This is not the same
-as calling `AttachConsole` unconditionally. File/pipe redirection is preserved
-as-is, and only genuinely unwritable streams fall through to
-`AttachConsole` + `CONOUT$`.
-
-### Result
-
-- `--version`, `--help`, `cmd /c`, and a bad option (stderr + EXIT=2) all correct.
-- OS-level redirection (`cmd /c "exe --version > file"`) records 45 bytes.
-- `Start-Process -Wait -RedirectStandardOutput`: 45 bytes, EXIT=0.
-- No impact on search/index/comparison logic or GUI behavior.
-
-### One caveat found during verification
-
-`--version > file` yielding 0 bytes from PowerShell was observed alongside this.
-**That is not a regression introduced by this fix.** It reproduces identically on
-the pre-fix binary and leaves `$LASTEXITCODE` empty. The cause is that PowerShell
-does not wait for GUI-subsystem executables.
-
-Console output verification should therefore use **OS-level redirection** as the
-criterion (`cmd /c` or `Start-Process -Wait`).
+- `backend_ipc_test` 7 checks (UTF-8 path round-trip, malformed/oversize/protocol reject).
+- `backend_e2e_test` (real Windows process): PID split, kill-to-restart, FAILED, DB reopen measured.
+- `MSF_TEST_BACKEND_FAIL_FAST` / `MSF_TEST_BACKEND_SILENT` crash-injection seams.
+- CPU CTest 116/116, GPU CTest 117/117.
 
 ---
 
-## Change 2 — CUDA `C4819` encoding warning removal
+## Item 2 — `0.9.4.70` P4: hardening + FILE_META
 
-Commit `619f74a` / file `src_unpacked/CMakeLists.txt`
+Commit `ed4c0c1` / details `docs/build-history/0.9.4.70.{ko,en}.md`
 
 ### What was done
 
-GPU build logs repeatedly emitted MSVC `warning C4819` from the CUDA headers
-(`driver_types.h`, `cuda_runtime_api.h`).
+At the end of P3 two decoder remnants were still in the GUI (the detail pane's
+direct resolution/duration probe). Following the directive's ban on direct
+FFmpeg calls, they were moved to Backend requests.
 
-**Important: this was neither a CUDA syntax error nor a link error.** It is an
-encoding warning: code page 949 cannot represent non-ASCII characters inside the
-CUDA headers. The build itself succeeded and GPU CTest passed 103/103.
+- New `src/file_meta.*` (`FileMeta`, std `ffprobeSize`).
+- `BackendSession::requestFileMeta`: engine record then video info then
+  dimensionsFast then ffprobe, all Backend-side.
+- IPC `GET_FILE_META`/`FILE_META` plus supervisor forwarding plus GUI
+  `requestFileMeta`/`onFileMetaReady` (pending map, stale-drop, repaint on
+  arrival). The same Type B pattern as thumbnails.
+- QtGui remaining in the GUI is presentation-only (QIcon display, EXIF text tag —
+  no pixel decode).
 
-The cause was the scope of `/utf-8`. Previously there was only this:
+### Result / verification
 
-```cmake
-add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
-```
-
-So `/utf-8` reached MSVC C++ compilation only. CUDA uses a separate host
-compiler and never received the flag.
-
-### What the fix was
-
-`nvcc` does not accept `/utf-8` directly, so it is forwarded to the MSVC host
-compiler via `-Xcompiler`.
-
-```cmake
-add_compile_options($<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>>:-Xcompiler=/utf-8>)
-```
-
-**The first attempt failed, and that failure is worth recording.** It initially
-used `COMPILE_LANG_AND_ID:CUDA,MSVC`, which did not match: CUDA reports compiler
-id `NVIDIA`, while `MSVC` is the frontend variant. The language is CUDA but the
-id is not MSVC, so the two cannot be asserted at once. Combining
-`COMPILE_LANGUAGE:CUDA` with `CXX_COMPILER_ID:MSVC` puts
-`-Xcompiler="/EHsc -Ob2 /utf-8"` on the actual nvcc command line, which was
-verified.
-
-### Result
-
-- Forced recompile of `cuda_backend.cu`: `C4819=0` / `warning=0` / `error=0`.
-- `msf_cuda.lib` produced normally.
-- GPU full build + CTest **103/103 PASS**, zero warnings.
-- CUDA architectures (`compute_75/86/89`) and runtime behavior unchanged.
-- No source/ABI change. Build option only.
+- **The GUI process performs no media pixel decode.** WIC/FFmpeg/CUDA/native
+  decode is all in the Backend.
+- The §15 15-item checklist was reconciled with evidence and the numbers
+  (heartbeat/backoff/cap) locked.
+- **dumpbin measured: Backend dependencies = `Qt6Core.dll` + `turbojpeg.dll`
+  (+ffmpeg/sqlite). No `Qt6Widgets`/`Qt6Gui`.**
+- CPU CTest 116/116, GPU CTest 117/117.
 
 ---
 
-## Change 3 — XMP Orientation Fallback implementation + independent review correction
+## Item 3 — `0.9.4.71` backend defect fixes + ThumbnailStore
 
-Commits `97db24f` (implementation) + `392a4c2` (review correction and
-`color_thumb` pre-register)
+Commit `8f3ba47` / details `docs/build-history/0.9.4.71.{ko,en}.md`
 
-Related documents: `docs/implementation-briefs/I-xmp-orientation-fallback.{ko,en}.md`
+### What was done
 
-### What was done — stage 1: implementation
+Fixed the seven defects confirmed by the second independent review after the
+P3/P4 process split.
 
-Fixed files that appeared rotated because EXIF Orientation was absent.
-
-- EXIF `VT_UI2` value `1..8` applies EXIF (XMP is not queried at all).
-- If EXIF is absent, fails, has the wrong type, or is out of range, XMP is tried.
-- XMP uses the WIC path `/xmp/tiff:Orientation`. It was **measured as a
-  `VT_LPWSTR` string**, and integer VARIANTs are normalized as well.
-- On an EXIF/XMP conflict, **EXIF wins**.
-- Both output paths (`decodeBoth` fingerprint, color display lane) **share one
-  resolver**, so transform semantics cannot diverge.
-- An invalid XMP is treated as identity. No telemetry field was added.
-
-### What was done — stage 2: independent review and correction
-
-An independent review pointed out that "implemented" does not mean "passed", so
-the fixture was actually strengthened. It grew from **14 checks to 38 checks**,
-filling items the review had marked **NOT VERIFIED**.
-
-| Review item | At review time | This result |
+| # | Defect | Fix |
 |---|---|---|
-| mapping `1/3/6/8` | PASS | PASS kept |
-| mapping `2/4/5/7` | **NOT VERIFIED** | **PASS** (H2/H4/H5/H7) |
-| 90/270 direction | geometry `32x16<->16x32` only, so unverified | **PASS** (quadrant means discriminate direction) |
-| 180 transform | geometry unchanged, so unverified | **PASS** (left/right swapped quadrant means) |
-| EXIF out-of-range fallback | unverified | **PASS** (I9: EXIF=9 → XMP=6 applies) |
-| EXIF wrong-type fallback | unverified | **PASS** (IT: type=ASCII → XMP=8 applies) |
-| full scan regression | undemonstrated | **DEFERRED** |
-| standard dataset XMP coverage | reported only | **reported only, kept** |
+| 1 | After the split the GUI resource mode was not delivered over IPC, so the worker always ran `make_policy(Custom)` | New `ExecutionPolicy` to `START_SCAN.exec` to `ScanWorker::setResourceMode` to `make_policy(mode)`. Live refresh via `UPDATE_RESOURCE_POLICY`/`POLICY_APPLIED` (partial) |
+| 2 | "Index Complete" showed only `analyzedCount_` | Engine `unchangedCount_` + `BackendStatus.unchanged`, GUI `liveAnalyzed = analyzed + unchanged` |
+| 3 | Summary CPU/RAM labels overwritten alternately by GUI process / system-wide | `updateSysLabels` GPU-only; CPU/RAM from the single working-process status snapshot writer (`sampleOwnProcess`) |
+| 4 | Slowest-file list padded by cache-hit (~0ms) / failed decode (0ms) | `addImage` excludes 0-cost, `addVideo` excludes `cacheHit` |
+| 5 | `ScanWorker::allMatches_` stayed resident after final persist | `clear()` + `shrink_to_fit()` (normal and failure paths, honoring the no-throw handler rule) |
+| 6 | Backend thumbnails read only the engine `thumbMap_` -> most previews empty after the split | New `src/thumbnail_store.*` (engine art -> shell `IThumbnailCache` -> WIC -> FFmpeg -> gray, SQLite persistence + LRU256) + `backend_thumb` moved to msf_core + JPEG end-to-end |
+| 7 | `onFileMetaReady` called `refreshFileViews()` (full recreation) -> selection destroyed | `QMap<id,path>` dedup + `refreshFileMetaRow` in-place, zero widget recreation |
 
-The fixture BMP became a **four-quadrant image** (levels `0/85/170/255`). The old
-fixture had only two left/right halves, so top/bottom discrimination was
-impossible. BMP rows are bottom-up, so the assertions use decoded-image
-coordinates. `5` and `7` share geometry with `6` and `8`, so instead of claiming
-a direction they are pinned by **byte identity with the EXIF path through the
-same transform** (`XMP=5` == `EXIF=5`, `XMP=7` == `EXIF=7`).
+### Regression found during verification — Qt JPEG plugin not deployed
 
-### Current verdict — this distinction matters
+After ThumbnailStore, `ui_scroll_regression_test`/`view_mode_probe` failed. The
+cause was that loopback/supervisor decoded JPEG with `QImage::fromData`, but the
+Qt JPEG plugin (`qjpeg.dll`) depends on **`jpeg62.dll`, which is not in the
+deployed set**, so jpeg was absent from `QImageReader::supportedImageFormats()`
+and decode returned null.
 
-```text
-XMP code implementation        PASS
-XMP fixture (1..8 + pixel)    PASS
-XMP real-dataset coverage     NOT_AVAILABLE  (standard dataset has 0 XMP files, unverified)
-full Search/Scan regression   DEFERRED       (depends on S4 functional acceptance / S5 benchmark)
-XMP production acceptance     CONDITIONAL
-```
+- Fix: new `msf::decodeJpegArgb32` (libjpeg-turbo, using the already shipped
+  `turbojpeg.dll`) replaced it in loopback and supervisor, fully removing the Qt
+  JPEG plugin dependency.
+- Re-checked: both GUI tests pass.
 
-The fixture proves implementation correctness (1..8 plus pixel direction plus
-EXIF invalid fallback), but without full scan regression and real-dataset
-coverage the production acceptance is CONDITIONAL. `docs/build-history/0.9.4.45.*`
-is not rewritten retroactively; the correction is recorded in this document and
-in the Work Log.
+### Result / verification
 
-### Side output — `color_thumb` audit pre-register
-
-The same commit added
-`docs/implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`.
-**Audit only; no production correction was made.**
-
-Core conclusion: classification is a single extension rule and is **identical
-across all three FFmpeg states.** The absence of decoder capability must not
-change the media type; that is the contract candidate.
-
-Confirmed risks:
-- **R1 (high)**: `color_thumb_test` always fails in a no-FFmpeg build
-  (unconditional CMake registration, no skip handling, `frameAtColor`
-  unconditionally `false`). This classifies the previously unclassified
-  `exit 5` from worklog run 082.
-- **R2 (medium)**: `kindOf()` (extension) and DB `x.kind` are dual sources of
-  truth with no cross-check.
-- **R3 (medium)**: the extension list is duplicated four times (`scanner`, three
-  places in `monitor`, GUI).
-- **R4 (medium)**: the shell thumbnail overwrites the engine color thumbnail
-  without an `isNull()` guard, polluting `thumbStatEngine_`.
-- **R5/R6 (low)**: overstated configure message / magic-number `MediaKind`
-  mapping.
+- CPU CTest **116/116**, GPU CTest **117/117**.
+- Both GUI/Backend exes `--version 0.9.4.71`.
+- Changed source U+FFFD 0 / CJK 0.
+- Source zip 774 files byte-identical to HEAD (0 mismatches); portable zip 86
+  entries (GUI + Backend exe + turbojpeg), smoke PASS.
 
 ---
 
-## Overall Current State
+## Current overall status
 
 | Item | Status |
 |---|---|
-| Version | `0.9.4.45` (no bump) |
-| Commit | `619f74a`, synchronized with `origin/main` |
-| CPU CTest | 102/102 PASS |
-| GPU CTest | 103/103 PASS |
-| CUDA warnings | 0 |
+| Version | `0.9.4.71` |
+| Commit | `8f3ba47`, synchronized with `origin/main` |
+| CPU CTest | 116/116 PASS |
+| GPU CTest | 117/117 PASS |
+| Process split | P1-P4 complete |
+| Backend Qt dependency | Qt6Core only (dumpbin measured) |
 | XMP production acceptance | CONDITIONAL |
-| `color_thumb` production correction | NOT performed (pre-register only) |
-| S4 final GUI visual/save acceptance | DEFERRED |
+| `color_thumb` production correction | not performed (pre-registered only) |
+| S4 final GUI visual/save acceptance | DEFERRED (manual acceptance required) |
 | S5 product benchmark | DEFERRED |
 | S6 | DEFERRED |
-| NVDEC production adoption | DEFERRED |
+| NVDEC production adoption | NO (F-1 CONDITIONAL) |
 
-## Remaining Candidates / Next Steps
+## Remaining candidates / next steps
 
-- Add a dedicated console-output regression test (currently manual verification only).
-- Decide whether nvcc warnings join the release gate.
-- Implement the `color_thumb` R1 fixture plus skip/pass handling; R2 through R6
-  stay separate decisions.
-- XMP full scan regression — after S4 functional acceptance completes.
-- The backup zip rule (`backup_src.ps1` / `package_portable.ps1`) was not run for
-  this change. Both scripts require zero uncommitted tracked changes, but the two
-  `.gitattributes` files show as `M` purely from CRLF normalization, so a decision
-  is needed first.
+- Real Windows manual GUI acceptance: preview display, selection, kill UI guard,
+  recovery after restart, Tiles/ListMode, large-dataset traversal.
+- Review the unimplemented GPU MAX GPU share boost (documented gap).
+- The exact split of the backend 400MB needs a VMMap/heap snapshot.
+- `color_thumb` R1 fixture and skip/pass handling, then R2-R6 separately.
+- XMP full scan regression after S4 functional acceptance.
+- Backup zips (`backup_src.ps1` / `package_portable.ps1`) were produced for
+  0.9.4.71 (3 per kind kept, `.68` portable recycled).
 
-## Related Documents
+## Related documents
 
-- `docs/build-history/0.9.4.45.{ko,en}.md`
+- `docs/build-history/0.9.4.69.{ko,en}.md`
+- `docs/build-history/0.9.4.70.{ko,en}.md`
+- `docs/build-history/0.9.4.71.{ko,en}.md`
 - `docs/worklog/0.9.4.{ko,en}.md`
-- `docs/implementation-briefs/I-xmp-orientation-fallback.{ko,en}.md`
-- `docs/implementation-briefs/I-color-thumb-no-ffmpeg-classification.{ko,en}.md`
+- `docs/architecture/process-architecture-0.9.4.{ko,en}.md`
+- `docs/implementation-briefs/process-backend-isolation-0.9.4.{ko,en}.md`
 - `docs/development-progress.{ko,en}.md`
