@@ -56,7 +56,7 @@ A separate `workprogress` document is intentionally not created; this document i
 > **Boundary:** Do not reopen sparse production, NVDEC production adoption, or utilization-only GPU tuning.
 > Existing rejection/deferred evidence remains authoritative.
 >
-> **Execution summary:** 0.9.4.66 overlap fix done → manual GUI acceptance (incl. overlap re-check) → final Search/Index/Comparison acceptance recheck
+> **Execution summary:** 0.9.4.67 P1 done → P2 BackendClient+Loopback → manual GUI acceptance → final acceptance recheck
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode and traversal remain lower-priority work and must not block the main validation track.
 
@@ -97,6 +97,7 @@ This section keeps only a **compressed completion state** for long-term orientat
 | Display-option settings consolidation | **done in 0.9.4.64** | Separate display dialog removed, moved to the settings general tab. Round-trip unchanged. Test closer-race fix. Usability 13 checks |
 | Non-throwing scan failure handlers | **done in 0.9.4.65** | Third 0xC0000409 dump pinned the handler persist path. Independent try/catch on persist and emit in both handlers. Crashdiag 7 checks |
 | View-mode overlap fix | **done in 0.9.4.66** | Post-switch thumb arrival ran no layout pass, pinned by probe. doItemsLayout on catch-up change and at switch end. Viewmode 18 scenarios 201 checks |
+| P1 BackendCore boundary | **done in 0.9.4.67** | msf_core confirmed Qt-free, boundary declared. Backend exe (Qt6::Core only, --help/--version). GUI behavior unchanged. 3 backend tests |
 
 
 ## 2026-10-06 — 0.9.4.59 review and next correction order
@@ -181,12 +182,12 @@ This phase-2 GUI task must not change engine cancellation semantics. Scheduler/w
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.66 (bumped from 0.9.4.65 after the view-mode overlap fix) |
+| Reference code | 0.9.4.67 (P1 BackendCore boundary + Backend entry point, no behavior change) |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **0.9.4.66 view-mode overlap fix done → manual GUI acceptance continues (incl. overlap re-check)** — 0.9.4.66 implementation and automated verification are complete (view_mode_probe 18 scenarios 201 checks, ui_usability_test 13 checks, crash_diagnostics_test 7 checks, CPU 111/111, GPU 112/112, --version 0.9.4.66, warning/error/C4819 clean; separate display dialog removed and folded into the settings general tab). What remains is the real-Windows eyeball of settings/resize/filename plus Tiles/ListMode and large-dataset traversal. S4 implementation and visible UI are PASS, but final acceptance is tied to product acceptance and remains PENDING. The 0.9.4.62 crash-response containment/observability patch is complete, while the root cause remains unproven; the next crash must follow the runbook evidence order. XMP Orientation has fixture PASS but no real-dataset coverage, so production acceptance remains CONDITIONAL. `color_thumb` R1 is not started. S5 infrastructure is REVALIDATED and the real product benchmark remains gate-pending. F-1 remains CONDITIONAL with NVDEC production adoption NO. |
-| Current phase | **0.9.4.66 overlap fix done → real GUI manual acceptance (overlap re-check) → final Search/Index/Comparison acceptance recheck → S4 final acceptance → XMP/color_thumb → S5 → S6**. The latest real-dataset acceptance audit still leaves Search/Index/Comparison **NOT ACCEPTED**, even though some execution paths are PASS, so S4/S5 must not be promoted to final PASS prematurely. On any new crash, collect logs/WER/Qt/dump evidence using `crash-response-runbook` before speculative code changes. F-1 remains `CONDITIONAL`, NVDEC production adoption remains `NO`, and sparse production remains blocked by `ExactnessPolicy::RefuseAll`. |
-| Current version | 0.9.4.66 |
+| Current node | **0.9.4.67 P1 done → P2 BackendClient+Loopback next** — backend_version/help/refuse trio, CPU 114/114, GPU 115/115, --version 0.9.4.67 on both exes, warning/error/C4819 clean; separate display dialog removed and folded into the settings general tab). What remains is the real-Windows eyeball of settings/resize/filename plus Tiles/ListMode and large-dataset traversal. S4 implementation and visible UI are PASS, but final acceptance is tied to product acceptance and remains PENDING. The 0.9.4.62 crash-response containment/observability patch is complete, while the root cause remains unproven; the next crash must follow the runbook evidence order. XMP Orientation has fixture PASS but no real-dataset coverage, so production acceptance remains CONDITIONAL. `color_thumb` R1 is not started. S5 infrastructure is REVALIDATED and the real product benchmark remains gate-pending. F-1 remains CONDITIONAL with NVDEC production adoption NO. |
+| Current phase | **P1 done → P2 BackendClient+Loopback → P3 spawn+Supervisor+IPC → P4 hardening** for the process split. Manual GUI acceptance (incl. overlap re-check) → final acceptance recheck → S4 → XMP/color_thumb → S5 → S6 stay queued. The latest real-dataset acceptance audit still leaves Search/Index/Comparison **NOT ACCEPTED**, even though some execution paths are PASS, so S4/S5 must not be promoted to final PASS prematurely. On any new crash, collect logs/WER/Qt/dump evidence using `crash-response-runbook` before speculative code changes. F-1 remains `CONDITIONAL`, NVDEC production adoption remains `NO`, and sparse production remains blocked by `ExactnessPolicy::RefuseAll`. |
+| Current version | 0.9.4.67 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |

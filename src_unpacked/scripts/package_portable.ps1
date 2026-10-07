@@ -15,6 +15,11 @@ if (-not (Test-Path $exe)) { throw "Executable not found: $exe" }
 Remove-Item $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $OutputDir, (Join-Path $OutputDir "Index") -Force | Out-Null
 Copy-Item $exe $OutputDir -Force
+# P1 (0.9.4.67): the Backend executable ships beside the GUI executable so
+# the supervisor can find it via the application directory (no PATH search,
+# no shell command assembly). Present from P1 on; spawning arrives in P3.
+$backendExe = Join-Path (Split-Path $exe -Parent) "MediaSimilarityFinderBackend.exe"
+if (Test-Path $backendExe) { Copy-Item $backendExe $OutputDir -Force }
 $qtBin = Split-Path $exe -Parent
 # Project-local vcpkg prefix used by the current Windows build.
 $vcpkgTripletRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "vcpkg_installed\x64-windows"

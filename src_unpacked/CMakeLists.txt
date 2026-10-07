@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.66 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.67 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -53,6 +53,11 @@ set(MSF_CUDA_ARCHITECTURES "75;86;89" CACHE STRING "CUDA SM architectures to com
 option(MSF_BUILD_TESTS "Build tests" ON)
 
 add_library(msf_core STATIC
+# P1 (0.9.4.67): msf_core IS the BackendCore library from the process
+# isolation brief (engine, database, monitor, scanner, decoders). It carries
+# no Qt linkage and no src header includes Qt, so a Qt6::Core-only Backend
+# executable can link it without dragging GUI dependencies. Keep it that
+# way: Backend must never gain Qt6::Widgets/Gui (verified at acceptance).
     src/fingerprint.cpp
     src/crop_fingerprint.cpp
     src/similarity.cpp
@@ -787,4 +792,26 @@ if(MSF_BUILD_GUI)
   else()
     message(STATUS "Qt6 not found; GUI target skipped")
   endif()
+endif()
+# P1 (0.9.4.67): Backend executable. Links BackendCore (msf_core) with
+# Qt6::Core only — never Widgets/Gui (G13). Console subsystem so stdio works
+# for --help/--version now and the line-oriented IPC channel in P3. The GUI
+# still runs in-process in P1; spawning arrives in P3.
+find_package(Qt6 QUIET COMPONENTS Core)
+if(Qt6_FOUND)
+  add_executable(MediaSimilarityFinderBackend src/backend_main.cpp)
+  target_link_libraries(MediaSimilarityFinderBackend PRIVATE msf_core Qt6::Core)
+  target_include_directories(MediaSimilarityFinderBackend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  if(MSF_BUILD_TESTS)
+    add_test(NAME backend_version COMMAND MediaSimilarityFinderBackend --version)
+    set_tests_properties(backend_version PROPERTIES PASS_REGULAR_EXPRESSION "MediaSimilarityFinderBackend ${PROJECT_VERSION}")
+    add_test(NAME backend_help COMMAND MediaSimilarityFinderBackend --help)
+    set_tests_properties(backend_help PROPERTIES PASS_REGULAR_EXPRESSION "--backend")
+    # Transitional: the IPC endpoint arrives in P3, so --backend refuses.
+    # WILL_FAIL documents the expectation; P3 removes it when serving starts.
+    add_test(NAME backend_refuses_before_p3 COMMAND MediaSimilarityFinderBackend --backend)
+    set_tests_properties(backend_refuses_before_p3 PROPERTIES WILL_FAIL TRUE)
+  endif()
+else()
+  message(STATUS "Qt6 Core not found; Backend target skipped")
 endif()
