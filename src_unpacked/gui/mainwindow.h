@@ -103,7 +103,7 @@ public:
   static void sortTiedReferencePaths(QStringList&, const QHash<QString,qulonglong>&, const QHash<QString,qulonglong>&);
 private slots:
   // scan
-  void chooseFolder(); void startScan(); void togglePauseScan(); void cancelScan();
+  void chooseFolder(); void startScan(); void beginScan(); void togglePauseScan(); void cancelScan();
   void scanProgress(int,QString); void onMatchesBatch(const QVector<BackendMatch>&); void scanFinished(QString); void scanFailed(QString);
   void onStatusSnapshot(BackendStatus);
   void onScanCounts(qulonglong,qulonglong);
@@ -235,6 +235,11 @@ private:
   QString qlPendingPath_; int qlPollLeft_ = 0; // pending preview while its server starts
   QStringList cutPaths_;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
+  // Backend-crash auto-resume. A backend crash mid-scan aborts the scan; when
+  // the supervisor brings a fresh backend back to READY, the GUI re-issues the
+  // scan once (bounded) so the user does not have to press Start again. The
+  // engine checkpoints progress, so the re-walk skips already-indexed files.
+  bool scanCrashed_=false; int autoResumeTries_=0;
   qint64 pauseStartMs_=0, pausedAccumMs_=0; // ETR excludes paused time (see elapsedActiveMs)
   // Live-refresh streaming state: full list rebuilds cost up to ~1s at 11k
   // groups, so they are throttled adaptively (see refreshStreaming) instead of

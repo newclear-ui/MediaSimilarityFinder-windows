@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.72 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.73 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -35,6 +35,16 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/generated/msf_build_version.h"
   @ONLY)
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
+# Crash-response runbook: Release builds must keep a Program Database so a crash
+# dump can be symbolized. Without PDBs a dump only yields module+offset and the
+# fault function cannot be resolved (the runbook requires a fault stack). /Zi
+# and the linker /DEBUG add debug info only; codegen is unchanged.
+if(MSVC)
+  # CXX only: passing /Zi to nvcc breaks the CUDA compile (MSB3721). The fault
+  # path is host C++ code, so host-object PDBs are what the runbook needs.
+  add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,MSVC>:$<$<CONFIG:Release>:/Zi>>")
+  add_link_options("$<$<CONFIG:Release>:/DEBUG>")
+endif()
 # CUDA host compiler needs /utf-8 too. nvcc does not accept /utf-8 directly; the
 # flag must be forwarded to the MSVC host compiler via -Xcompiler. Without this
 # the CUDA headers trip MSVC warning C4819 (code page 949) under CMAKE_CUDA_FLAGS.

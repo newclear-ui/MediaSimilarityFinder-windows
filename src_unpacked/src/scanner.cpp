@@ -75,19 +75,30 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
  std::vector<fs::path> bpaths; bpaths.reserve(kHashBatch);
  auto flushBatch=[&](){
   if(batch.empty()) return;
-  const unsigned jobs=std::min<unsigned>(walkHw,(unsigned)batch.size());
-  const std::size_t chunk=(batch.size()+jobs-1)/jobs;
-  std::vector<std::future<void>> futs; futs.reserve(jobs);
-  for(unsigned j=0;j<jobs;++j){
-   const std::size_t b=j*chunk, e=std::min(batch.size(),b+chunk);
-   if(b>=e) break;
-   futs.emplace_back(std::async(std::launch::async,[&,b,e]{
-    // A worker must never terminate the walk: a failed read becomes an empty
-    // quick hash for that slot, exactly as the serial quick() did.
-    try{ for(std::size_t i=b;i<e;++i) batch[i].quickHash=quick(bpaths[i]); }catch(...){}
-   }));
+  // Compute the 64 KB content hash for the batch. Prefer the bounded pool, but
+  // never let a scheduling failure (std::async throwing under resource
+  // pressure) escape: on any failure fall back to a serial pass so the walk
+  // always makes progress and no exception can terminate the walker thread.
+  bool parallelDone=false;
+  try{
+   const unsigned jobs=std::min<unsigned>(walkHw,(unsigned)batch.size());
+   const std::size_t chunk=(batch.size()+jobs-1)/jobs;
+   std::vector<std::future<void>> futs; futs.reserve(jobs);
+   for(unsigned j=0;j<jobs;++j){
+    const std::size_t b=j*chunk, e=std::min(batch.size(),b+chunk);
+    if(b>=e) break;
+    futs.emplace_back(std::async(std::launch::async,[&,b,e]{
+     // A worker must never terminate the walk: a failed read becomes an empty
+     // quick hash for that slot, exactly as the serial quick() did.
+     try{ for(std::size_t i=b;i<e;++i) batch[i].quickHash=quick(bpaths[i]); }catch(...){}
+    }));
+   }
+   for(auto& f:futs) f.get();
+   parallelDone=true;
+  }catch(...){ parallelDone=false; }
+  if(!parallelDone){
+   for(std::size_t i=0;i<batch.size();++i){ try{ batch[i].quickHash=quick(bpaths[i]); }catch(...){} }
   }
-  for(auto& f:futs) f.get();
   for(auto& s:batch){
    ++n;
    if(cb.onProgress && (n%2000)==0) cb.onProgress(n);

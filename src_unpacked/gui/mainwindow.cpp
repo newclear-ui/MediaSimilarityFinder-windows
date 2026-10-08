@@ -1251,6 +1251,12 @@ void MainWindow::setRunning(bool v) {
   updateExecutionUiState();
 }
 void MainWindow::startScan() {
+  // User-initiated start: reset the crash auto-resume budget.
+  autoResumeTries_ = 0;
+  scanCrashed_ = false;
+  beginScan();
+}
+void MainWindow::beginScan() {
   if (scanning_) return;
   if (!backendAvailable_) {
     statusMsg_->setText(trStr(lang(), "backendDown"));
@@ -3458,7 +3464,10 @@ void MainWindow::onBackendConnection(bool available, QString message) {
     statusMsg_->setText(message);
     if (scanning_) {
       // The scan died with the backend: surface it through the normal failure
-      // path (popup + idle state) instead of hanging mid-scan.
+      // path (popup + idle state) instead of hanging mid-scan. Remember that
+      // the backend (not the user) ended the scan so a READY reconnect can
+      // resume it automatically.
+      scanCrashed_ = true;
       scanFailed(message);
     } else {
       scan_->setEnabled(false);
@@ -3466,6 +3475,15 @@ void MainWindow::onBackendConnection(bool available, QString message) {
   } else {
     if (!scanning_) scan_->setEnabled(true);
     statusMsg_->setText(message);
+    // Auto-resume a scan the backend crash aborted, once, now that the
+    // supervisor has proven a fresh backend READY. The engine checkpoints
+    // progress, so the re-walk skips indexed files and continues the update.
+    if (scanCrashed_ && autoResumeTries_ < 1) {
+      ++autoResumeTries_;
+      scanCrashed_ = false;
+      scanLog(QStringLiteral("auto-resume scan after backend restart (attempt %1)").arg(autoResumeTries_));
+      beginScan();
+    }
   }
 }
 void MainWindow::monitorEvent(const BackendMonitorEvent& e) {

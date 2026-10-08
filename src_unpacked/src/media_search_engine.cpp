@@ -504,6 +504,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
                                                             : WalkerQueue::kDefaultCapacity);
   telemetry_.setWalkerCapacity(queue.capacity());
   std::atomic_bool walkDone{false};
+ // Set when the walker thread caught an exception (e.g. a resource failure in
+ // the parallel hash fan-out). The consumer turns it into a recorded `failed`
+ // scan instead of letting an exception escape the walker thread, where it
+ // would hit std::terminate -> abort (0xC0000409).
+ std::atomic_bool walkError{false};
  bool failed=false, cancelled=false, walkCompleted=false;
  std::size_t lastCommitDone=0, lastCommitScanned=0;
  // Checkpoints persist completed work so interruption (cancel/crash) never
@@ -686,6 +691,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // work overlaps the directory walk instead of waiting for it.
   if (!cancelRequested()) telemetry_.setPhase("walk");
   std::thread walker([&]{
+  try{
   Scanner s; Scanner::ScanCallbacks cb;
   if(control){
    cb.onProgress=[control](std::size_t n){ if(control->listing) control->listing(n); };
@@ -701,6 +707,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     if(pr==WalkerQueue::PushResult::Pushed) telemetry_.recordWalkerEnqueue(queue.size());
    };
    s.scan_stream(root, excl, cb);
+  }catch(...){ walkError.store(true); }
    walkDone.store(true); queue.shutdown();
   });
   while(!failed && !cancelled){
@@ -716,6 +723,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   if(stopped(control)) cancelled=true;
   else if(walkDone.load() && queue.empty()){ if(!telemetryWalkTimed){ telemetryWalkTimed=true; telemetry_.addWalkMs(telemetryMsSince()); } walkCompleted=true; break; }
  }
+  if(walkError.load()) failed=true;
   if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
    // Drain-on-cancel: Stop means "read no new files", not "discard work already
    // read". Admitted-but-unanalyzed images (bounded batch, seconds of work)
