@@ -189,12 +189,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.72 (스캔 정체 수정: walk/analyze 병렬화 + 표시/ETR 결함) |
+| 기준 코드 | 0.9.4.73 (백엔드 크래시 방어 + PDB 활성화 + 스캔 자동 재개) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.72 스캔 정체 수정 완료** — CPU 116/116, GPU 117/117, --version 0.9.4.72 양쪽 exe. 사용자 보고(<1% CPU·ETR 7000분+·0% 정지)를 headless --scan으로 재현해 두 단일 스레드 병목을 확정: (1) `Scanner::scan_stream`의 파일별 64KB `quick()` 읽기를 bounded pool(≤8)로 병렬화(순서 보존, G: ~10.6→~55MB/s), (2) `ScanPipeline::analyze` 후보 쌍 루프를 group 경계 샤딩으로 병렬화(순서 보존·판정 패리티, D9a 불변식 verify cap). 표시/공식 결함 2건(백엔드 CPU/RSS 0화, ETR 초반 폭주)도 수정. 남은 것은 실제 Windows 화면에서 설정/resize/filename을 확인하고 Tiles/ListMode 및 대규모 dataset traversal을 수동 확인하는 것. 0.9.4.62 crash-response 방어/관측 패치는 완료했고 root cause는 미확정이므로 다음 crash 발생 시 runbook 기반 증거 수집을 우선한다. XMP Orientation은 fixture PASS이나 real-dataset coverage가 없어 CONDITIONAL. `color_thumb` R1은 미착수. S5 infrastructure는 REVALIDATED, 실제 product benchmark는 Gate 대기. F-1은 CONDITIONAL/NVDEC production adoption NO. |
+| 현재 노드 | **0.9.4.73 백엔드 크래시 방어 + PDB 활성화 + 스캔 자동 재개 완료** — CPU 116/116, GPU 117/117, --version 0.9.4.73 양쪽 exe. 사용자 보고(스캔 중 백엔드 비정상 종료 "backend process exited unexpectedly", 재시작 후 검색 미재개)를 덤프 분석: 0xC0000409 FAST_FAIL_FATAL_APP_EXIT = std::terminate/abort(ucrtbase+0xA527E, 런북 3-2와 동일), walk 미완료 후 사망. 수정: walker 스레드 try/catch+walkError(미처리 예외→기록된 실패), flushBatch std::async 실패 시 순차 fallback, CMake Release PDB(/Zi CXX 전용 + /DEBUG), 백엔드 재시작 후 스캔 1회 자동 재개. 크래시 root cause 미확정(PDB 확보로 다음 재현 시 심볼 분석 예정). stall(저 CPU·신규 파일 진행 정지)은 별도 추적 필요. 남은 것은 실제 Windows 화면 acceptance와 Tiles/ListMode·대규모 dataset traversal 수동 확인. 0.9.4.62 crash-response 방어/관측 패치 완료. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.72 |
+| 현재 버전 | 0.9.4.73 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
