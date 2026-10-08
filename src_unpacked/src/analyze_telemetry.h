@@ -115,4 +115,29 @@ struct AnalyzeTelemetry {
     std::uint64_t cacheMutexAcquires = 0;
 };
 
+// Additive merge for telemetry accumulated independently on worker threads
+// (parallel analyze). All timers and counters add; the two entry flags OR. The
+// recorder renders the merged struct exactly as it rendered the sequential one.
+inline void addAnalyzeTelemetry(AnalyzeTelemetry& d, const AnalyzeTelemetry& s) {
+    d.indexMs += s.indexMs; d.scanMs += s.scanMs; d.verifyMs += s.verifyMs; d.videoMs += s.videoMs;
+    d.verifyCalls += s.verifyCalls; d.verifyDecodeMisses += s.verifyDecodeMisses;
+    d.verifyCacheHits += s.verifyCacheHits; d.ssimEvals += s.ssimEvals;
+    d.frameSsimEvals += s.frameSsimEvals; d.videoTemporalPairs += s.videoTemporalPairs;
+    d.analyzeRan = d.analyzeRan || s.analyzeRan;
+    d.videoStageEntered = d.videoStageEntered || s.videoStageEntered;
+    d.verifyKeyMs += s.verifyKeyMs; d.verifyDecodeMs += s.verifyDecodeMs;
+    d.verifyCacheStoreMs += s.verifyCacheStoreMs; d.verifyCacheCopyMs += s.verifyCacheCopyMs;
+    d.verifyCropMs += s.verifyCropMs; d.verifyFlipMs += s.verifyFlipMs;
+    d.verifyFrameSsimMs += s.verifyFrameSsimMs; d.verifyOtherMs += s.verifyOtherMs;
+    d.verifyBufferLookups += s.verifyBufferLookups; d.verifyQuickHashReads += s.verifyQuickHashReads;
+    d.verifyQuickHashBytes += s.verifyQuickHashBytes; d.verifyDecodes += s.verifyDecodes;
+    d.verifyCacheCopies += s.verifyCacheCopies; d.verifyCropCalls += s.verifyCropCalls;
+    d.verifyFlipCalls += s.verifyFlipCalls;
+    addDecodeTelemetry(d.decode, s.decode);
+    addDecodeTelemetry(d.decodeFull, s.decodeFull);
+    addDecodeTelemetry(d.decodeAspect, s.decodeAspect);
+    d.cacheMutexWaitMs += s.cacheMutexWaitMs; d.cacheMutexHoldMs += s.cacheMutexHoldMs;
+    d.cacheMutexAcquires += s.cacheMutexAcquires;
+}
+
 }

@@ -50,6 +50,10 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
                 out.gpuActive = st.gpuActive;
                 out.gpuAvailable = st.gpuAvailable;
                 out.gpuDone = st.gpuDone;
+                // Loopback has no Health ticker, so sample the GUI process here
+                // (the working process under loopback); otherwise the summary
+                // CPU/RAM rows would always read 0.
+                msf::sampleOwnProcess(out.backendCpu, out.backendRssMB);
                 emit statusSnapshot(out);
             });
     connect(session_.get(), &BackendSession::monitorEvent, this,

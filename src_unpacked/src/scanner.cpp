@@ -1,9 +1,11 @@
 #include "scanner.h"
 #include "path_utils.h"
 #include "scan_pipeline.h"  // MediaKind, so the walker can report the kind it already decided
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <cctype>
 #include <thread>
 namespace fs=std::filesystem;
@@ -60,6 +62,39 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
  fs::recursive_directory_iterator it(path_from_utf8(root),fs::directory_options::skip_permission_denied,ec),end;
  std::size_t n=0;
  auto cancelled=[&]{ return cb.cancel && cb.cancel->load(); };
+ // The per-file 64KB content hash (quick) is the walk's dominant cost and is
+ // latency-bound on the file open, not CPU. Keep enumeration and metadata on
+ // this thread, but fan the reads out over a bounded pool so a large or
+ // latency-heavy tree no longer serializes the whole walk behind one core.
+ // Batches flush in enumeration order, so emission order (and therefore
+ // results, progress and determinism) is unchanged.
+ unsigned walkHw=std::thread::hardware_concurrency();
+ if(walkHw<1) walkHw=1; if(walkHw>8) walkHw=8;
+ constexpr std::size_t kHashBatch=256;
+ std::vector<FileState> batch; batch.reserve(kHashBatch);
+ std::vector<fs::path> bpaths; bpaths.reserve(kHashBatch);
+ auto flushBatch=[&](){
+  if(batch.empty()) return;
+  const unsigned jobs=std::min<unsigned>(walkHw,(unsigned)batch.size());
+  const std::size_t chunk=(batch.size()+jobs-1)/jobs;
+  std::vector<std::future<void>> futs; futs.reserve(jobs);
+  for(unsigned j=0;j<jobs;++j){
+   const std::size_t b=j*chunk, e=std::min(batch.size(),b+chunk);
+   if(b>=e) break;
+   futs.emplace_back(std::async(std::launch::async,[&,b,e]{
+    // A worker must never terminate the walk: a failed read becomes an empty
+    // quick hash for that slot, exactly as the serial quick() did.
+    try{ for(std::size_t i=b;i<e;++i) batch[i].quickHash=quick(bpaths[i]); }catch(...){}
+   }));
+  }
+  for(auto& f:futs) f.get();
+  for(auto& s:batch){
+   ++n;
+   if(cb.onProgress && (n%2000)==0) cb.onProgress(n);
+   if(cb.onFile) cb.onFile(std::move(s)); else o.push_back(std::move(s));
+  }
+  batch.clear(); bpaths.clear();
+ };
  for(;it!=end;it.increment(ec)){
   if(cancelled()) break;
   while(cb.pause && cb.pause->load() && !cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(80));
@@ -71,7 +106,7 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
    if(!e && p==excluded){it.disable_recursion_pending();continue;}
   }
   if(!it->is_regular_file(e)||!media(it->path()))continue;
-  FileState s;s.path=path_to_utf8(fs::absolute(it->path(),ec).lexically_normal());s.size=it->file_size(e);s.modified=stamp(it->path());s.quickHash=quick(it->path());
+  FileState s;s.path=path_to_utf8(fs::absolute(it->path(),ec).lexically_normal());s.size=it->file_size(e);s.modified=stamp(it->path());
   // Media kind was left at Unknown here, which made any consumer of the returned
   // FileState unable to tell an image from a video. The classifier is the one the
   // rest of the product already uses (media_search_engine's kindOf() is built on
@@ -80,10 +115,11 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
   // Unknown. The production scan path is unaffected either way, because
   // MediaSearchEngine::processOne() recomputes the kind from the path itself.
   s.kind=(int)(isVideoPath(it->path())?MediaKind::Video:MediaKind::Image);
-  ++n;
-  if(cb.onProgress && (n%2000)==0) cb.onProgress(n);
-  if(cb.onFile) cb.onFile(std::move(s)); else o.push_back(std::move(s));
+  bpaths.push_back(it->path());
+  batch.push_back(std::move(s));
+  if(batch.size()>=kHashBatch) flushBatch();
  }
+ flushBatch();
  if(cb.onProgress) cb.onProgress(cb.onFile ? n : o.size());
  return o;
 }

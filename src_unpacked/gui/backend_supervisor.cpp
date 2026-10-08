@@ -495,7 +495,11 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
         return; // liveness already recorded; nothing else to display per tick
     }
     if (type == QLatin1String(kStatus)) {
-        BackendStatus st;
+        // Carry the last Health-sampled own-process CPU/RSS forward: this
+        // message only carries engine counters, so a fresh BackendStatus would
+        // zero backendCpu/backendRssMB and the summary would flip to 0% between
+        // health ticks (the 0.9.4.72 display defect).
+        BackendStatus st = lastStatus_;
         st.analyzed = payload.value("analyzed").toString().toULongLong();
         st.unchanged = payload.value("unchanged").toString().toULongLong();
         st.gpuActive = payload.value("gpuActive").toBool(false);

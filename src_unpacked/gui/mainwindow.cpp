@@ -3187,7 +3187,14 @@ static QString fmtElapsed(qint64 ms) {
 QString MainWindow::scanStatusText(qulonglong done, qulonglong total, int pct,
                                    const QString& path, qint64 elapsedMs) const {  const QString base = QString("%1 / %2 (%3%) — %4 — %5").arg(done).arg(total).arg(pct)
                            .arg(QFileInfo(path).fileName()).arg(fmtElapsed(elapsedMs));
-  if (elapsedMs < 1000 || done == 0 || total <= done) return base;
+  // ETR is a naive linear extrapolation; early in a scan `done` is tiny against
+  // `total`, so the raw ratio reported absurd values (7000+ minutes). Only
+  // publish it once there is a meaningful sample: at least 3 s elapsed and
+  // about 2% of the work done. Below that, show the count line alone
+  // (0.9.4.72).
+  if (elapsedMs < 3000 || done == 0 || total <= done) return base;
+  const qulonglong minDone = std::max<qulonglong>(20, total / 50);
+  if (done < minDone) return base;
   const qint64 remainMs = elapsedMs * (qint64)(total - done) / (qint64)done;
   return base + QString(" — %1 %2").arg(trStr(lang(), "remain")).arg(fmtElapsed(remainMs));
 }

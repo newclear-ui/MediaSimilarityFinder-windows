@@ -266,10 +266,69 @@ if(isVideo){
     }
  };
   const auto consume=[&](const CandidateIndex& idx){idx.forEachCandidatePair(maxDistance,process);};
+  // Parallel full-image pass. Image candidate enumeration is the analyze hot
+  // loop on duplicate-heavy datasets: for every candidate it recomputes a pure
+  // Hamming verdict (bestMatch is read-only; verifyImagePair is internally
+  // synchronized) and, for grey-zone pairs, runs verification. The work is
+  // sharded across cores at group (file) boundaries, so each unordered pair is
+  // still emitted exactly once. Workers keep thread-local counters, telemetry
+  // and match buffers; shards are merged back in order, so the emitted match
+  // sequence, the counters and the telemetry sums are identical to the
+  // sequential pass (verdict parity, deterministic order).
+  auto consumeImageParallel=[&](){
+   const std::size_t total=imageIdx_.size();
+   if(total==0) return;
+   const std::vector<std::size_t> bounds=imageIdx_.groupBoundaries();
+   const std::size_t groups=bounds.size()>0?bounds.size()-1:0;
+   if(groups==0) return;
+   unsigned hw=std::thread::hardware_concurrency(); if(hw<1)hw=1; if(hw>16)hw=16;
+   const std::size_t jobs=std::min<std::size_t>(hw,groups);
+   struct Part {
+     std::size_t candidates=0;
+     double verifyMs=0;
+     AnalyzeTelemetry tel;
+     std::vector<MediaMatch> matches;
+   };
+   std::vector<Part> parts(jobs);
+   std::vector<std::future<void>> futs; futs.reserve(jobs);
+   const std::size_t groupsPerJob=(groups+jobs-1)/jobs;
+   for(std::size_t p=0;p<jobs;++p){
+    const std::size_t g0=p*groupsPerJob;
+    const std::size_t g1=std::min(groups,g0+groupsPerJob);
+    if(g0>=g1) continue;
+    const std::size_t b=bounds[g0], e=bounds[g1];
+    futs.emplace_back(std::async(std::launch::async,[&,p,b,e]{
+     Part& pr=parts[p];
+     std::size_t sincePoll=0;
+     try{
+      imageIdx_.forEachCandidatePairInRange(b,e,maxDistance,[&](std::size_t i,const Candidate& c){
+       if(stop && ((++sincePoll & 1023)==0) && stop()) throw LocalCancel{};
+       auto j=c.index; if(i==j) return; if(i>j) std::swap(i,j);
+       ++pr.candidates;
+       if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind) return;
+       const double sim=best(files_[i],files_[j]);
+       if(sim>=threshold){
+        const auto vt1=std::chrono::steady_clock::now();
+        const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&pr.tel);
+        pr.verifyMs+=msSince(vt1);
+        if(v>=threshold) pr.matches.push_back(MediaMatch{i,j,v});
+       }
+      });
+     }catch(const LocalCancel&){}
+    }));
+   }
+   for(auto& f:futs) f.get();
+   for(Part& pr:parts){
+    s.candidates+=pr.candidates;
+    verifyMs+=pr.verifyMs;
+    addAnalyzeTelemetry(tel,pr.tel);
+    for(const auto& m:pr.matches){ if(onMatch) onMatch(m); else s.matches.push_back(m); ++s.groups; }
+   }
+  };
   // Full indexes are authoritative first. If they already cover every possible pair
   // of a media kind, crop indexes cannot add anything and are skipped entirely.
   try {
-  const auto imageBefore=s.candidates; consume(imageIdx_); imageFullCandidates=s.candidates-imageBefore;
+  const auto imageBefore=s.candidates; consumeImageParallel(); imageFullCandidates=s.candidates-imageBefore;
   const auto videoBefore=s.candidates; consume(videoIdx_); videoFullCandidates=s.candidates-videoBefore;
   const std::size_t imagePossible=possible(imageMap_.size()), videoPossible=possible(videoMap_.size());
   const bool imageComplete=(imageFullCandidates>=imagePossible), videoComplete=(videoFullCandidates>=videoPossible);
@@ -299,6 +358,13 @@ if(isVideo){
   // control overhead (poll, callbacks, bookkeeping) rather than pretending
   // that overhead belongs to a stage it was never measured in.
   const double totalMs=msSince(analyzeT0);
+  // D9a: the four slices must stay non-overlapping and sum to at most the
+  // analyze total. Parallel verify wall times are summed across workers, so on
+  // a saturated machine they can add up past that total; cap verify at the
+  // budget still available so the slices keep the sequential invariant by
+  // construction (scan is then the non-negative remainder as before).
+  const double verifyCap=std::max(0.0,totalMs-indexMs-videoMs);
+  if(verifyMs>verifyCap) verifyMs=verifyCap;
   double scanMs=totalMs-indexMs-verifyMs-videoMs;
   if(scanMs<0) scanMs=0;   // timer noise guard; never report negative time
   s.analyze.indexMs=indexMs;

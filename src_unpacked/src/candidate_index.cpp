@@ -51,15 +51,29 @@ std::vector<Candidate> CandidateIndex::query(std::uint64_t h,unsigned maxDistanc
   return r;
 }
 std::vector<std::vector<Candidate>> CandidateIndex::queryAll(const std::vector<std::uint64_t>& hashes,unsigned maxDistance) const{std::vector<std::vector<Candidate>>out;out.reserve(hashes.size());for(auto h:hashes)out.push_back(query(h,maxDistance));return out;}
+std::vector<std::size_t> CandidateIndex::groupBoundaries() const{
+  std::vector<std::size_t> out;
+  if(entries_.empty()) return out;
+  out.push_back(0);
+  for(std::size_t pos=1;pos<entries_.size();++pos)
+    if(entries_[pos].group!=entries_[pos-1].group) out.push_back(pos);
+  out.push_back(entries_.size());
+  return out;
+}
 void CandidateIndex::forEachCandidatePair(unsigned maxDistance, const std::function<void(std::size_t,const Candidate&)>& visitor) const{
+  forEachCandidatePairInRange(0, entries_.size(), maxDistance, visitor);
+}
+void CandidateIndex::forEachCandidatePairInRange(std::size_t posBegin, std::size_t posEnd, unsigned maxDistance, const std::function<void(std::size_t,const Candidate&)>& visitor) const{
   if(entries_.empty() || !visitor) return;
+  if(posEnd>entries_.size()) posEnd=entries_.size();
+  if(posBegin>=posEnd) return;
   maxDistance=std::min<unsigned>(64,maxDistance);
   if(maxDistance<=8){
     std::vector<std::size_t> seen(entries_.size(),std::numeric_limits<std::size_t>::max());
     std::size_t generation=0;
     std::size_t lastGroup=std::numeric_limits<std::size_t>::max();
     std::vector<std::size_t> seenGroups(indexGroups_.size(),std::numeric_limits<std::size_t>::max());
-    for(std::size_t pos=0;pos<entries_.size();++pos){
+    for(std::size_t pos=posBegin;pos<posEnd;++pos){
       const auto&e=entries_[pos];
       if(e.group!=lastGroup){
         ++generation;
@@ -107,7 +121,8 @@ void CandidateIndex::forEachCandidatePair(unsigned maxDistance, const std::funct
       }
     }
   } else {
-    for(const auto&e:entries_){
+    for(std::size_t pos=posBegin;pos<posEnd;++pos){
+      const auto&e=entries_[pos];
       auto c=query(e.hash,maxDistance);
       for(const auto&x:c) if(x.index>e.index) visitor(e.index,x);
     }

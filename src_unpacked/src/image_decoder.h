@@ -100,6 +100,25 @@ inline void mergeDecodeTelemetry(DecodeTelemetry& dst, const DecodeTelemetry& a,
   dst.openHrFirstFailCode = a.openHrFirstFailCode ? a.openHrFirstFailCode : b.openHrFirstFailCode;
 }
 
+// Additive merge used when decode telemetry was accumulated independently on
+// several worker threads (parallel analyze). Every timer and counter adds; the
+// two "first failure" codes keep the first non-zero seen.
+inline void addDecodeTelemetry(DecodeTelemetry& dst, const DecodeTelemetry& s) {
+  dst.totalMs += s.totalMs; dst.comInitMs += s.comInitMs; dst.factoryMs += s.factoryMs;
+  dst.openMs += s.openMs; dst.metadataMs += s.metadataMs; dst.orientMs += s.orientMs;
+  dst.resizeMs += s.resizeMs; dst.convertMs += s.convertMs; dst.copyMs += s.copyMs;
+  dst.otherMs += s.otherMs; dst.pgmFallbackMs += s.pgmFallbackMs;
+  dst.calls += s.calls; dst.aspectCalls += s.aspectCalls; dst.wicSucceeded += s.wicSucceeded;
+  dst.pgmFallbacks += s.pgmFallbacks; dst.orientApplied += s.orientApplied; dst.failures += s.failures;
+  dst.factory2Attempts += s.factory2Attempts; dst.factory2Successes += s.factory2Successes;
+  dst.factory2Fallbacks += s.factory2Fallbacks;
+  if (!dst.factory2FirstFailHr) dst.factory2FirstFailHr = s.factory2FirstFailHr;
+  dst.factory2Ms += s.factory2Ms; dst.factoryFallbackMs += s.factoryFallbackMs;
+  dst.osFileOpenProbeMs += s.osFileOpenProbeMs; dst.osFileOpenProbeCount += s.osFileOpenProbeCount;
+  dst.osFileOpenProbeFails += s.osFileOpenProbeFails; dst.openHrFailCount += s.openHrFailCount;
+  if (!dst.openHrFirstFailCode) dst.openHrFirstFailCode = s.openHrFirstFailCode;
+}
+
 // ---------------------------------------------------------------- D2
 // Measurement-only probe. It is a separate entry point on purpose: it is never
 // called from decode()/decodePreserveAspect(), and it does not change what

@@ -25,6 +25,16 @@ public:
  std::vector<std::vector<Candidate>> queryAll(const std::vector<std::uint64_t>& hashes,unsigned maxDistance=8) const;
  std::vector<std::pair<std::size_t,Candidate>> candidatePairs(unsigned maxDistance=8) const;
  void forEachCandidatePair(unsigned maxDistance, const std::function<void(std::size_t,const Candidate&)>& visitor) const;
+ // Outer-entry positions where a new group (file) begins, plus entries_.size()
+ // as the final sentinel. Pair enumeration may be sharded at these boundaries
+ // without splitting a group, which would otherwise re-emit that group's pairs
+ // from two shards.
+ std::vector<std::size_t> groupBoundaries() const;
+ // Like forEachCandidatePair, but visits only the outer entries in
+ // [posBegin, posEnd). Callers must pass group boundaries: an inner pair is
+ // emitted exactly once, by its smaller outer entry, so shards that align to
+ // groups partition the pair set with no overlap and no miss.
+ void forEachCandidatePairInRange(std::size_t posBegin, std::size_t posEnd, unsigned maxDistance, const std::function<void(std::size_t,const Candidate&)>& visitor) const;
  std::size_t size() const { return entries_.size(); }
  std::size_t nodeCount() const { return entries_.size(); }
  Stats stats() const;
