@@ -41,6 +41,19 @@ C:\MediaSimilarityFinder\
 분석 전에 skeleton 행을 쓴다. 분석 진행 중 stale fingerprint 가 파일에 남아 있는
 상태를 방지한다.
 
+### 스켈레톤 행의 설계 의미와 크래시 프론티어 (0.9.4.76)
+
+- `files` 테이블의 스켈레톤 행(`fingerprint = 0`, `analysisFailed = false`)은
+  “스캔이 이 파일을 받아들였으나 아직 분석하지 못했다”는 의미다. 분석 실패
+  확정(`analysisFailed = true`)과 다르며, 매칭에는 보이지 않고 다음 스캔의
+  `pendingAnalysis` 규칙이 재분석 대상으로 삼는다.
+- 스켈레톤은 배치 작업 전에 checkpoint 로 커밋된다. 배치 중 kill/액세스 위반이
+  나도 admitted-but-unanalyzed 프론티어가 DB에 남으므로, 다음에 죽은 위치를
+  경로 목록으로 좁힐 수 있다. 반대로 커밋되지 않은 열린 트랜잭션은 롤백되며,
+  첫 배치 완료 전 사망은 프론티어를 남기지 않는다 (0xC0000005 2연속 충돌에서
+  실측 확인).
+- 상세: `docs/build-history/0.9.4.76.ko.md`.
+
 ## 썸네일 캐시
 
 `index.sqlite` 는 `thumbs` 테이블에 GUI 썸네일 캐시를 영구 저장한다.

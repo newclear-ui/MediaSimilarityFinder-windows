@@ -129,6 +129,25 @@ WER LocalDumps 키는 이미지별이므로 GUI와 별도 프로세스인
   Backend 덤프에 심볼이 없어 이것이 유일한 사용자 트리거였다고 단정하지 않는다.
   다음 재현은 0.9.4.74 PDB로 확인한다.
 
+### 3-5. 2026-10-09 — Backend 0xC0000005 2연속 (ntdll, 오프셋 분산) + 스켈레톤 프론티어 대책
+
+- 제품 GPU 빌드 0.9.4.75 (`build-windows-gpu\Release`, 타임스탬프 `0x6AC7C8FB`),
+  `G:\Downloads\ss_twit` 스캔 중 2회 연속. 현재 사용자 테스트 기준은 이 GPU
+  빌드 경로이며, 인덱스는 그 안의 `Index\` 아래에 있다.
+- 1차: 02:11:56 시작, walked=24에서 장시간 정체 후 02:26:57 종료. 자동 재개 1회 소진.
+- 2차: 02:27:06 재개, walked=14983까지 진행 후 정체, 02:32:35 종료. 자동 재개
+  예산 소진으로 모달 표시. 로그에 `finish CANCELLED`가 없으므로 Stop 완료가
+  아니라 정지→충돌→재개→재충돌이다.
+- 이벤트 1000 4건: fault 모듈 `ntdll.dll`, 코드 `0xc0000005`, 오프셋 `0x1a12d` /
+  `0x1d868` 분산 — 결정적 abort가 아닌 힙 손상 계열. 두 run 모두 heartbeat
+  `lastPath`가 끝까지 비어 분석 완료 0건이었다.
+- Backend 덤프는 확보되지 않았다 (LocalDumps 미설정). 복사본 DB 직접 조회:
+  integrity ok, `fingerprint=0` 0건, `analysis_failed` 0건. 첫 배치 완료 전
+  사망이라 열린 트랜잭션이 롤백되며 프론티어가 사라진 것이다.
+- 대응: 0.9.4.76에서 배치 진입 checkpoint 로 admission 스켈레톤을 확정한다.
+  다음 동급 충돌부터는 fingerprint-0 프론티어로 poison 후보를 경로 목록으로
+  좁힐 수 있다. 상세: `docs/build-history/0.9.4.76.ko.md`.
+
 ## 4. 방어 패치 내역 (0.9.4.62, 0.9.4.65)
 
 - `ScanWorker::run`에 `catch (...)` 추가. 부분 매치 checkpoint 후
@@ -168,6 +187,7 @@ WER LocalDumps 키는 이미지별이므로 GUI와 별도 프로세스인
 - `docs/build-history/0.9.4.62.{ko,en}.md` — 패치 상세와 검증 수치.
 - `docs/build-history/0.9.4.65.{ko,en}.md` — 핸들러 무throw 패치와 덤프 분석.
 - `docs/build-history/0.9.4.74.{ko,en}.md` — telemetry sampler RAII 수정, walk 진행률, 재시작 후 재개.
+- `docs/build-history/0.9.4.76.{ko,en}.md` — 배치 진입 checkpoint 로 admission 스켈레톤 확정, 크래시 프론티어 내구성.
 - `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 항목 (원인·실측).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — 별개 주제
   (유사 판정). 크래시와 무관하므로 혼동하지 말 것.

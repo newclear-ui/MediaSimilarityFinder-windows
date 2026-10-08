@@ -41,6 +41,19 @@ When a previously indexed file changes, its old database row is removed before
 re-analysis and a skeleton row is written before fingerprint analysis. This prevents
 stale fingerprints from remaining associated with a file while analysis is in progress.
 
+### Skeleton-row semantics and the crash frontier (0.9.4.76)
+
+- A skeleton row in `files` (`fingerprint = 0`, `analysisFailed = false`) means
+  "this scan admitted the file but has not analyzed it yet". It differs from a
+  settled analysis failure (`analysisFailed = true`), stays invisible to
+  matching, and the next scan's `pendingAnalysis` rule picks it up for analysis.
+- Skeletons commit via checkpoint before batch work starts. A mid-batch
+  kill/access violation therefore leaves the admitted-but-unanalyzed frontier
+  in the DB, so the next death can be narrowed to a path list. Conversely, an
+  uncommitted open transaction rolls back, and death before the first batch
+  completes leaves no frontier (measured in two consecutive 0xC0000005 crashes).
+- Details: `docs/build-history/0.9.4.76.en.md`.
+
 ## Thumbnail cache
 
 `index.sqlite` also contains the persistent GUI thumbnail cache in the `thumbs` table.

@@ -140,6 +140,31 @@ faulting thread and stack.
   symptom, but the old backend dump cannot prove it was the sole trigger. The
   0.9.4.74 PDBs are enabled for the next reproduction.
 
+### 3-5. 2026-10-09 — Two consecutive Backend 0xC0000005 crashes (ntdll, scattered offsets) plus skeleton-frontier response
+
+- Product GPU build 0.9.4.75 (`build-windows-gpu\Release`, timestamp
+  `0x6AC7C8FB`), twice in a row during a `G:\Downloads\ss_twit` scan. The
+  current user-test baseline is this GPU build path, and its index lives in
+  the `Index\` directory inside it.
+- First: started 02:11:56, stalled at walked=24 for a long time, exited at
+  02:26:57. Consumed the one auto-resume.
+- Second: resumed 02:27:06, advanced to walked=14983, stalled, exited at
+  02:32:35. Auto-resume budget exhausted, so the modal appeared. The log has
+  no `finish CANCELLED`, so this was stall → crash → resume → crash, not a
+  completed Stop.
+- Four Event 1000 records: fault module `ntdll.dll`, code `0xc0000005`,
+  scattered offsets `0x1a12d` / `0x1d868` — heap-corruption family, not a
+  deterministic abort. Both runs kept an empty heartbeat `lastPath` to the
+  end: zero completed files.
+- No backend dump was captured (LocalDumps not configured). Direct probe of a
+  copied DB: integrity ok, zero `fingerprint=0` rows, zero `analysis_failed`
+  rows. Death before the first batch completed rolled the open transaction
+  back, erasing the frontier.
+- Response: 0.9.4.76 commits admission skeletons at the batch-entry
+  checkpoint. The next crash of this class leaves a fingerprint-0 frontier to
+  narrow poison candidates to a path list. Details:
+  `docs/build-history/0.9.4.76.en.md`.
+
 ## 4. Defense patch history (0.9.4.62, 0.9.4.65)
 
 - Added `catch (...)` to `ScanWorker::run`. Checkpoints partial matches and
@@ -182,6 +207,7 @@ faulting thread and stack.
 - `docs/build-history/0.9.4.62.{ko,en}.md` — patch detail and verification numbers.
 - `docs/build-history/0.9.4.65.{ko,en}.md` — non-throwing handler patch and dump analysis.
 - `docs/build-history/0.9.4.74.{ko,en}.md` — telemetry sampler RAII fix, walk progress, and restart resume.
+- `docs/build-history/0.9.4.76.{ko,en}.md` — admission skeletons committed at the batch-entry checkpoint; crash-frontier durability.
 - `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 entries (cause, measurements).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — separate topic
   (similarity verdicts). Do not confuse with crashes.
