@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## Current development version: 0.9.4.71 (engine 1.5.0, DB 1.0.4; official baseline 0.9.2.32; development line 0.9.4; process split P1–P4 complete; S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL)
+## Current development version: 0.9.4.72 (engine 1.5.0, DB 1.0.4; official baseline 0.9.2.32; development line 0.9.4; process split P1–P4 complete; scan stall fix: walk/analyze parallelization + display/ETR; S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL)
 
 Windows 11 x64 media duplicate/similarity search engine under active CPU + GPU development; the current concrete GPU backend is NVIDIA CUDA.
 
