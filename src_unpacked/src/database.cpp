@@ -1,4 +1,5 @@
 #include "database.h"
+#include "path_utils.h"
 #include <sqlite3.h>
 #include <set>
 #include <string>
@@ -8,7 +9,7 @@ static sqlite3* D(void* p){return reinterpret_cast<sqlite3*>(p);}
 static sqlite3_stmt* S(void* p){return reinterpret_cast<sqlite3_stmt*>(p);}
 
 static std::string pairKey(const std::string& a,const std::string& b){return a<=b?a+"\x1f"+b:b+"\x1f"+a;}
-static std::string thumbQuickHash(const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
+static std::string thumbQuickHash(const std::string& path){std::ifstream f(path_from_utf8(path),std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
 
 Database::~Database(){ close(); }
 

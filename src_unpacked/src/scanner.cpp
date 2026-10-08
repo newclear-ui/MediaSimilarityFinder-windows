@@ -12,13 +12,15 @@ namespace fs=std::filesystem;
 namespace msf {
 static bool media(const fs::path&p){return Scanner::isMediaPath(p);}
 bool Scanner::isVideoPath(const fs::path& p) {
-  auto e=p.extension().string();
+  // Extension-only conversion through UTF-8: a narrow .string() would throw
+  // "No mapping..." for names outside the ANSI code page (0.9.4.77).
+  auto e=path_to_utf8(p.extension());
   for(auto&c:e)c=char(std::tolower((unsigned char)c));
   return e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv";
 }
 bool Scanner::isMediaPath(const fs::path& p) {
   if (isVideoPath(p)) return true;
-  auto e=p.extension().string();
+  auto e=path_to_utf8(p.extension());
   for(auto&c:e)c=char(std::tolower((unsigned char)c));
   return e==".jpg"||e==".jpeg"||e==".png"||e==".bmp"||e==".webp"||e==".gif"||e==".tif"||e==".tiff";
 }

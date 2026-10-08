@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.76` (크래시 프론티어 확정) · CPU CTest 118/118 · GPU CTest 119/119
+기준: `0.9.4.77` (ANSI 밖 파일명 수정) · CPU CTest 118/118 · GPU CTest 119/119
 최종 갱신: 2026-10-08
 
 ## 이 문서의 역할
@@ -106,14 +106,15 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71~.76 corrective builds 완료
+활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71~.77 corrective builds 완료
 다음             실제 Windows GUI manual acceptance (미리보기 표시, selection, crash 후 자동 재개,
                  Test Mode 토글·scratch 격리, Tiles/ListMode, 대규모 dataset traversal) → 제품 acceptance 재확인
                  → S4 real-screen acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
 현재 판단        0.9.4.72 walk/analyze 병렬화와 표시/ETR 수정, 0.9.4.73 crash defense/PDB/auto-resume,
                  0.9.4.74 telemetry sampler 종료 abort 재현·수정 + count/read progress + READY 재개 검증,
                  0.9.4.75 Test Mode 재도입 + 스크롤 gate/썸네일 burst/앵커 후속 수정,
-                 0.9.4.76 admission 스켈레톤 배치 진입 checkpoint 확정.
+                 0.9.4.76 admission 스켈레톤 배치 진입 checkpoint 확정,
+                 0.9.4.77 ANSI 밖 파일명 narrow 경로 수정.
                  사용자의 .72 dump는 PDB 부재로 exact caller 미확정. stdout backpressure는 가설로 보류.
 잔여 위험        GUI 미리보기/선택/복귀/Test Mode 체감은 headless에서 육안 검증 불가 → 수동 acceptance 필요.
                  GPU MAX share boost는 문서화된 미구현 공백. thumbCatchUpVisible()은 매 tick 전체 목록을
@@ -159,4 +160,4 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 ## 버전 불변 확인
 
 `kEngineVersion 1.5.0` · `kDatabaseVersion 1.0.4` · `kBenchmarkSchemaVersion 9` ·
-`kCacheFormatVersion 9` — 0.9.4.76 기준 변경 없음.
+`kCacheFormatVersion 9` — 0.9.4.77 기준 변경 없음.

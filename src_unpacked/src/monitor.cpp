@@ -115,7 +115,7 @@ bool MediaMonitor::paused() const { return paused_.load(); }
 MonitorStatus MediaMonitor::status() const { std::lock_guard<std::mutex> g(mutex_); auto s=status_; s.running=running_.load(); s.pending=pending_.size(); s.paused=paused_.load(); return s; }
 void MediaMonitor::enqueuePath(const std::string& path, bool notify){
     std::error_code ec; if(!fs::is_regular_file(path_from_utf8(path),ec)) return;
-    auto ext=path_from_utf8(path).extension().string(); std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return(char)std::tolower(c);});
+    auto ext=path_to_utf8(path_from_utf8(path).extension()); std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return(char)std::tolower(c);});
     static const char* exts[]={".jpg",".jpeg",".png",".bmp",".gif",".webp",".tif",".tiff",".mp4",".mkv",".avi",".mov",".webm",".m4v",".wmv"};
     if(std::find(std::begin(exts),std::end(exts),ext)==std::end(exts)) return;
     if(notify){
@@ -240,7 +240,7 @@ void MediaMonitor::windowsWatchLoop(const std::string& root, bool notify){
 static bool isWithinRoot(const std::string& path,const std::string& root){ std::error_code ec1,ec2; auto p=fs::weakly_canonical(path_from_utf8(path),ec1); auto r=fs::weakly_canonical(path_from_utf8(root),ec2); if(ec1||ec2) return false; auto rel=fs::relative(p,r,ec1); if(ec1) return false; return rel.empty() || (rel!=fs::path("..") && *rel.begin()!=fs::path("..")); }
 static std::uint64_t fileKey(const std::string& p){std::error_code ec;const fs::path fp=path_from_utf8(p);auto sz=fs::file_size(fp,ec);auto mt=fs::last_write_time(fp,ec);if(ec)return 0;return (std::uint64_t)sz ^ (std::uint64_t)mt.time_since_epoch().count();}
 static std::uint64_t foldVideoHashes(const std::vector<std::uint64_t>& values){std::uint64_t h=0x9e3779b97f4a7c15ULL;for(const auto v:values){h^=v+0x9e3779b97f4a7c15ULL+(h<<6)+(h>>2);h=(h<<13)|(h>>51);}return h?h:1;}
-static bool mediaFile(const fs::path&p){auto e=p.extension().string();std::transform(e.begin(),e.end(),e.begin(),[](unsigned char c){return(char)std::tolower(c);});return e==".jpg"||e==".jpeg"||e==".png"||e==".bmp"||e==".gif"||e==".webp"||e==".tif"||e==".tiff"||e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv";}
+static bool mediaFile(const fs::path&p){auto e=path_to_utf8(p.extension());std::transform(e.begin(),e.end(),e.begin(),[](unsigned char c){return(char)std::tolower(c);});return e==".jpg"||e==".jpeg"||e==".png"||e==".bmp"||e==".gif"||e==".webp"||e==".tif"||e==".tiff"||e==".mp4"||e==".mkv"||e==".avi"||e==".mov"||e==".webm"||e==".m4v"||e==".wmv";}
 
 void MediaMonitor::loop(){
 #ifdef _WIN32
@@ -316,7 +316,7 @@ void MediaMonitor::loop(){
         };
         if(!stable_.isStable(path,config_.stableSeconds)){defer("Waiting for file copy/write activity to settle",250); continue;}
         auto load=load_.sample(); { std::lock_guard<std::mutex> g(mutex_); status_.loadState=load.state; status_.cpuPercent=load.cpuPercent; status_.memoryPercent=load.memoryPercent; status_.gpuPercent=load.gpuPercent; } if(!load_.allowAnalysis(policy_,load)){defer("Analysis paused to protect foreground workload",500);continue;}
-        auto ext=path_from_utf8(path).extension().string();std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return(char)std::tolower(c);});
+        auto ext=path_to_utf8(path_from_utf8(path).extension());std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return(char)std::tolower(c);});
         const bool image=ext==".jpg"||ext==".jpeg"||ext==".png"||ext==".bmp"||ext==".gif"||ext==".webp"||ext==".tif"||ext==".tiff";
          std::uint64_t fp=0, mirrorFp=0; CropFingerprints crops{}; bool ok=false;if(image){ok=imagePipeline_.image(path,fp,&mirrorFp); ImageDecoder d; GrayImage original; if(ok&&d.decodePreserveAspect(path,128,original)) crops=cropFingerprints(original);}else{VideoFingerprint vf;if(videoEngine_.build(path,vf,policy_.gpuEnabled?&videoGpu_:nullptr)){fp=foldVideoHashes(vf.hashes);mirrorFp=foldVideoHashes(vf.mirrorHashes);crops.a4x3=vf.crop4x3;crops.a1x1=vf.crop1x1;crops.a9x16=vf.crop9x16;crops.mirrorA4x3=vf.mirrorCrop4x3;crops.mirrorA1x1=vf.mirrorCrop1x1;crops.mirrorA9x16=vf.mirrorCrop9x16;ok=!vf.hashes.empty();}}
         if(!ok){ { std::lock_guard<std::mutex> g(mutex_); ++status_.errors; status_.lastErrorPath=path; status_.lastError="Media fingerprinting failed"; } MonitorEvent e;e.type=MonitorEvent::Type::Error;e.path=path;e.detail="Media fingerprinting failed";emitEvent(e);continue;}

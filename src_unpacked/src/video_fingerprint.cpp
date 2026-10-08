@@ -17,7 +17,7 @@
 #include <cstdlib>
 namespace msf {
 static sqlite3* VDB(void* p){return reinterpret_cast<sqlite3*>(p);}
-static std::string quickIdentity(const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
+static std::string quickIdentity(const std::string& path){std::ifstream f(path_from_utf8(path),std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
 bool VideoFingerprintEngine::preparePersistentStatements() const{
  sqlite3* db=VDB(cacheDb_); if(!db)return false;
   const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND quick_hash=? AND cache_version=?";

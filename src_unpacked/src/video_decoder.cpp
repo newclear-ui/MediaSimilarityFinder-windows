@@ -1,4 +1,5 @@
 #include "video_decoder.h"
+#include "path_utils.h"
 #include "proc_capture.h"
 #include <fstream>
 #include <algorithm>
@@ -36,7 +37,7 @@ bool VideoDecoder::open(const std::string&p){
     info_.duration=st->duration>0?st->duration*av_q2d(st->time_base):(fmt->duration>0?fmt->duration/(double)AV_TIME_BASE:0);
     return true;
 #else
-    std::ifstream f(p,std::ios::binary);if(!f)return false;
+    std::ifstream f(path_from_utf8(p),std::ios::binary);if(!f)return false;
     path_=p; info_={};
     std::string q="ffprobe -v error -select_streams v:0 -show_entries stream=width,height,duration,r_frame_rate -of default=noprint_wrappers=1 \""+p+"\"";
     // Metadata class: 30 s budget (local probe, normally < 2 s).

@@ -164,6 +164,13 @@ faulting thread and stack.
   checkpoint. The next crash of this class leaves a fingerprint-0 frontier to
   narrow poison candidates to a path list. Details:
   `docs/build-history/0.9.4.76.en.md`.
+- Follow-up (0.9.4.77): the "No mapping ..." modal crash reported around the
+  same time was pinned to a separate cause. Six narrow UTF-8 path sites
+  (thumbnail quick-hash, verify key, video identity, no-FFmpeg branch,
+  extension checks) threw on filenames outside the ANSI code page. 1,778
+  CP949-unmappable names confirmed in the dataset; the pre-fix regression run
+  dies with 0xC0000409 and passes post-fix. Details:
+  `docs/build-history/0.9.4.77.en.md`.
 
 ## 4. Defense patch history (0.9.4.62, 0.9.4.65)
 

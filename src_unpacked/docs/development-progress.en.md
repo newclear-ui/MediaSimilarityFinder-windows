@@ -56,7 +56,7 @@ A separate `workprogress` document is intentionally not created; this document i
 > **Boundary:** Do not reopen sparse production, NVDEC production adoption, or utilization-only GPU tuning.
 > Existing rejection/deferred evidence remains authoritative.
 >
-> **Execution summary:** 0.9.4.70 P4 done → 0.9.4.71 backend defects + ThumbnailStore → 0.9.4.72 walk/analyze parallelization + display/ETR → 0.9.4.73 crash hardening/PDB/auto-resume → 0.9.4.74 telemetry-exit fix + read progress + validated resume → 0.9.4.75 Test Mode reintroduction + scroll/thumbnail follow-up → 0.9.4.76 crash-frontier durability → manual GUI acceptance → final acceptance recheck
+> **Execution summary:** 0.9.4.70 P4 done → 0.9.4.71 backend defects + ThumbnailStore → 0.9.4.72 walk/analyze parallelization + display/ETR → 0.9.4.73 crash hardening/PDB/auto-resume → 0.9.4.74 telemetry-exit fix + read progress + validated resume → 0.9.4.75 Test Mode reintroduction + scroll/thumbnail follow-up → 0.9.4.76 crash-frontier durability → 0.9.4.77 non-ANSI filename fix → manual GUI acceptance → final acceptance recheck
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode and traversal remain lower-priority work and must not block the main validation track.
 
@@ -107,6 +107,7 @@ This section keeps only a **compressed completion state** for long-term orientat
 | Merged audit / telemetry unwind / progress correction | **done in 0.9.4.74** | Deterministic walker exception reproduced 0xC0000409 at joinable `TelemetryRecorder` sampler destruction; RAII stop/join + `abortTelemetry`, pre-count progress, producer `readProgress` separate from consumer `walked`, restart-before-failure UI, saved-config resume. CPU 116/116, GPU 117/117 |
 | Test Mode reintroduction plus scroll/thumbnail follow-up | **done in 0.9.4.75** | `Test` toggle next to Settings plus full execution of the existing search path in a unique scratch app dir. Existing index bytes unchanged. Wider scroll gate, thumbnail dedup/coalesced layout, center-anchor restoration. CPU/scheduler untouched. CPU 117/117, GPU 118/118 |
 | Crash-frontier durability | **done in 0.9.4.76** | Admission skeletons commit at batch-entry checkpoint. Mid-batch kill/AV leaves a fingerprint-0, not-failed frontier for the next scan to retry. `MSF_TEST_THROW_BATCH` seam. Verdict/schema/versions unchanged. CPU 118/118, GPU 119/119 |
+| Non-ANSI filename fix | **done in 0.9.4.77** | Six narrow UTF-8 path sites moved to the wide path. Reproduced and fixed the 89% failure on a dataset with 1,778 CP949-unmappable names. `unicode_path_test` gained a U+20000 fixture (verified dying with 0xC0000409 pre-fix). Verdict/schema/versions unchanged. CPU 118/118, GPU 119/119 |
 
 
 ## 2026-10-06 — 0.9.4.59 review and next correction order
@@ -191,12 +192,12 @@ This phase-2 GUI task must not change engine cancellation semantics. Scheduler/w
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.76 (crash-frontier durability) |
+| Reference code | 0.9.4.77 (non-ANSI filename fix) |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **0.9.4.76 crash-frontier durability done** — CPU 118/118, GPU 119/119. Batch-entry checkpoints commit admission skeletons, with unwind durability proven by `MSF_TEST_THROW_BATCH` (scan_crash_frontier 11 checks). The next crash leaves fingerprint-0 frontier rows to narrow poison candidates. Verdict/schema/versions unchanged. Remaining: LocalDumps+PDB capture, real-Windows UI acceptance, user-dataset phase logs. XMP Orientation CONDITIONAL. `color_thumb` R1 not started. S5 infrastructure REVALIDATED and the real product benchmark remains gate-pending. F-1 CONDITIONAL with NVDEC production NO. |
+| Current node | **0.9.4.77 non-ANSI filename fix done** — CPU 118/118, GPU 119/119. Six narrow UTF-8 path sites moved to the wide path, with a U+20000 fixture in `unicode_path_test` (verified dying with 0xC0000409 pre-fix). Verdict/schema/versions unchanged. Remaining: LocalDumps+PDB capture, real-Windows UI acceptance, full user-dataset rescan check. XMP Orientation CONDITIONAL. `color_thumb` R1 not started. S5 infrastructure REVALIDATED and the real product benchmark remains gate-pending. F-1 CONDITIONAL with NVDEC production NO. |
 | Current phase | **P4 done → real GUI manual acceptance → final Search/Index/Comparison acceptance recheck → S4 → XMP/color_thumb → S5 → S6**. Manual GUI acceptance (incl. overlap re-check) → final acceptance recheck → S4 → XMP/color_thumb → S5 → S6 stay queued. The latest real-dataset acceptance audit still leaves Search/Index/Comparison **NOT ACCEPTED**, even though some execution paths are PASS, so S4/S5 must not be promoted to final PASS prematurely. On any new crash, collect logs/WER/Qt/dump evidence using `crash-response-runbook` before speculative code changes. F-1 remains `CONDITIONAL`, NVDEC production adoption remains `NO`, and sparse production remains blocked by `ExactnessPolicy::RefuseAll`. |
-| Current version | 0.9.4.76 |
+| Current version | 0.9.4.77 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |

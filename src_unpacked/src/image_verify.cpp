@@ -1,6 +1,7 @@
 #include "image_verify.h"
 #include "image_decoder.h"
 #include "crop_fingerprint.h"
+#include "path_utils.h"
 #include "video_fingerprint.h" // frame_ssim
 #include <algorithm>
 #include <chrono>
@@ -38,11 +39,15 @@ bool verifyBuffersFor(const std::string& path, GrayImage& full, GrayImage& asp,
   // turns out to be the dominant stage is exactly what D9c exists to measure.
   const auto tKey0 = std::chrono::steady_clock::now();
   std::error_code ec;
-  const std::uint64_t sz = std::filesystem::file_size(path, ec);
+  // Narrow UTF-8 bytes must not reach the filesystem API directly: MSVC
+  // reinterprets them as the ANSI code page and throws "No mapping for the
+  // Unicode character..." for names outside it (0.9.4.77 crash).
+  const std::filesystem::path widePath = path_from_utf8(path);
+  const std::uint64_t sz = std::filesystem::file_size(widePath, ec);
   if(ec) return false;
-  const std::uint64_t mt = (std::uint64_t)std::filesystem::last_write_time(path, ec).time_since_epoch().count();
+  const std::uint64_t mt = (std::uint64_t)std::filesystem::last_write_time(widePath, ec).time_since_epoch().count();
   if(ec) return false;
-  std::ifstream qf(path,std::ios::binary); unsigned char b[65536]; qf.read(reinterpret_cast<char*>(b),sizeof(b)); const std::size_t n=static_cast<std::size_t>(qf.gcount()); std::uint64_t q=1469598103934665603ULL; for(std::size_t i=0;i<n;++i){q^=b[i];q*=1099511628211ULL;}
+  std::ifstream qf(widePath,std::ios::binary); unsigned char b[65536]; qf.read(reinterpret_cast<char*>(b),sizeof(b)); const std::size_t n=static_cast<std::size_t>(qf.gcount()); std::uint64_t q=1469598103934665603ULL; for(std::size_t i=0;i<n;++i){q^=b[i];q*=1099511628211ULL;}
   const VerifyCacheKey key{path, sz, mt, std::to_string(q)};
   if(tel){
     tel->verifyKeyMs += msSince(tKey0);

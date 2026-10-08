@@ -147,6 +147,11 @@ WER LocalDumps 키는 이미지별이므로 GUI와 별도 프로세스인
 - 대응: 0.9.4.76에서 배치 진입 checkpoint 로 admission 스켈레톤을 확정한다.
   다음 동급 충돌부터는 fingerprint-0 프론티어로 poison 후보를 경로 목록으로
   좁힐 수 있다. 상세: `docs/build-history/0.9.4.76.ko.md`.
+- 후속 (0.9.4.77): 같은 시기 보고된 “No mapping ...” 모달 크래시는 별개 원인으로
+  확정됐다. narrow UTF-8 경로 6곳(썸네일 quick-hash·verify key·video identity·
+  no-FFmpeg 분기·확장자 판정)이 ANSI 코드페이지 밖 파일명에서 던진 것이다.
+  데이터셋에 CP949 매핑 불가 1,778개 실재 확인, 수정 전 회귀가 0xC0000409로
+  사망·수정 후 PASS. 상세: `docs/build-history/0.9.4.77.ko.md`.
 
 ## 4. 방어 패치 내역 (0.9.4.62, 0.9.4.65)
 

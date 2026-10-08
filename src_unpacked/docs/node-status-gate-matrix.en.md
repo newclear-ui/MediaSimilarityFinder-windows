@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.76` (crash-frontier durability) - CPU CTest 118/118 - GPU CTest 119/119
+Baseline: `0.9.4.77` (non-ANSI filename fix) - CPU CTest 118/118 - GPU CTest 119/119
 Last updated: 2026-10-08
 
 ## Role of this document
@@ -109,7 +109,7 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.76 done
+active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.77 done
 next               Real Windows manual GUI acceptance (new-file read progress, auto-resume after crash,
                    preview display, selection, Test Mode toggle/scratch isolation, Tiles/ListMode,
                    large-dataset traversal) -> final acceptance recheck
@@ -118,7 +118,8 @@ current verdict    0.9.4.72 parallelized walk/analyze and fixed display/ETR; 0.9
                    0.9.4.74 reproduced and fixed the telemetry-sampler destructor abort path, exposed count/read progress,
                    corrected restart-before-modal ordering, and verified one-shot saved-config auto-resume;
                    0.9.4.75 reintroduced Test Mode plus scroll-gate/thumbnail-burst/anchor follow-up;
-                   0.9.4.76 commits admission skeletons at batch-entry checkpoints. The user's
+                   0.9.4.76 commits admission skeletons at batch-entry checkpoints;
+                   0.9.4.77 moves narrow UTF-8 path sites to the wide path. The user's
                    old .72 dump lacks PDB, so exact crash caller remains unproven.
 remaining risk     GUI preview/selection/recovery/Test Mode feel cannot be eyeballed headless -> manual acceptance needed.
                    GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each
@@ -165,4 +166,4 @@ stay in the origin documents.
 ## Version invariance check
 
 `kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.4` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9` — unchanged at the 0.9.4.76 baseline.
+`kCacheFormatVersion 9` — unchanged at the 0.9.4.77 baseline.

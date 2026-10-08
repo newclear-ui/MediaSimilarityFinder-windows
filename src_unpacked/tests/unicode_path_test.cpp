@@ -7,7 +7,9 @@
 // the test is independent of the compiler's source-file encoding.
 #include "database.h"
 #include "dataset_fingerprint.h"
+#include "image_verify.h"
 #include "media_pipeline.h"
+#include "media_search_engine.h"
 #include "path_utils.h"
 #include "scanner.h"
 #include "video_fingerprint.h"
@@ -77,6 +79,56 @@ int main() {
   {
     const auto fp = msf::computeDatasetFingerprint(msf::path_to_utf8(d));
     if (fp.state != "measured" || fp.fileCount < 2 || fp.fingerprint.empty()) return 6;
+  }
+  // 7-10. Names outside the ANSI code page entirely (0.9.4.77). Korean names
+  // above are representable in CP949, so they never exercised the throwing
+  // narrow conversions in verifyBuffersFor/thumbQuickHash/quickIdentity. U+20000
+  // (CJK Extension B, UTF-8 F0 A0 80 80) is not mappable to CP949: pre-fix,
+  // analyzing such a file threw filesystem_error and failed the whole scan.
+  {
+    const auto deep = d / "deep";
+    fs::create_directories(deep, ec);
+    // "deep_<U+20000>_a.bmp": explicit UTF-8 escapes, encoding-independent.
+    const std::string deepName = std::string("deep_\xF0\xA0\x80\x80_");
+    const fs::path bmpA = deep / fs::path(std::u8string(deepName.begin(), deepName.end()) + u8"a.bmp");
+    const fs::path bmpB = deep / fs::path(std::u8string(deepName.begin(), deepName.end()) + u8"b.bmp");
+    writeBmp(bmpA);
+    { std::error_code c2; fs::copy_file(bmpA, bmpB, c2); if (c2) return 7; }
+    const std::string utfA = msf::path_to_utf8(bmpA);
+    // 7. Walker finds both files.
+    msf::Scanner sc2;
+    if (sc2.scan(msf::path_to_utf8(deep)).size() < 2) return 7;
+    // 8. verifyImagePair in the grey zone must not throw: it decodes both
+    // files through verifyBuffersFor (used to die in the 64KiB key read).
+    // hammingSim 90 is below the >=97 near-identical shortcut, forcing decode.
+    msf::verifyImagePair(utfA, msf::path_to_utf8(bmpB), true, 90.0, 80.0, nullptr);
+    // 9. Thumbnail quick-hash roundtrip must not throw (Database::putThumb).
+    {
+      msf::Database db2;
+      const fs::path tdb = d / "deep.sqlite";
+      if (!db2.open(msf::path_to_utf8(tdb)) || !db2.initialize()) return 9;
+      std::error_code se;
+      const auto sz = (std::uint64_t)fs::file_size(bmpA, se);
+      const auto mt = (std::int64_t)fs::last_write_time(bmpA, se).time_since_epoch().count();
+      if (se) return 9;
+      const std::vector<unsigned char> jpeg{0xFF, 0xD8, 0xFF, 0xD9};
+      if (!db2.putThumb(utfA, mt, sz, jpeg)) return 9;
+      std::vector<unsigned char> back;
+      if (!db2.getThumb(utfA, mt, sz, back) || back != jpeg) return 9;
+      db2.close();
+    }
+    // 10. A full engine scan over unmappable names completes and indexes.
+    {
+      msf::MediaSearchEngine eng;
+      const std::string ad = msf::path_to_utf8(d / "deepidx");
+      if (!eng.openIndexForRoot(msf::path_to_utf8(deep), ad)) return 10;
+      const auto r = eng.scan(msf::path_to_utf8(deep));
+      if (!r.completed || r.analyzed != 2) return 10;
+      // Match persistence is the ScanWorker's job; mirror it here so the
+      // stored-pair read path is also covered on unmappable names.
+      if (!eng.saveMatches(r.matches)) return 10;
+      if (eng.loadMatches().size() < 1) return 10;
+    }
   }
   fs::remove_all(d, ec);
   std::cout << "unicode_path=ok\n";
