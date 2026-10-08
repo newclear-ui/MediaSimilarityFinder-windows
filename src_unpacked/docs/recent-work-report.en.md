@@ -1,6 +1,6 @@
 # Recent Significant Work and Audit Report (2026-10-08)
 
-Baseline commit: `578a89d` (0.9.4.74 code; docs-only sync will follow)
+Baseline commit: `578a89d` (0.9.4.74 code; docs/backup records are also synchronized to origin/main)
 Version: `0.9.4.74` / CPU CTest 116/116 / GPU CTest 117/117
 
 This document is a summary report that lets the three most recently completed
