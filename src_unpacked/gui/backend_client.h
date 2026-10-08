@@ -55,6 +55,10 @@ struct BackendScanConfig {
     bool scanVideos = true;
     QSet<QString> ignored;
     bool detailedLog = true;
+    // Test Mode (0.9.4.75): run the full scan pipeline inside an isolated
+    // scratch index directory. The production index/database is never opened
+    // for writing by a test scan.
+    bool testMode = false;
     ExecutionPolicy exec;
 };
 

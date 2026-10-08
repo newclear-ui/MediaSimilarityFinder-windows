@@ -1,9 +1,17 @@
 // BackendSession implementation (P3a: 0.9.4.69). See backend_session.h.
 #include "backend_session.h"
 
+#include <QDateTime>
+#include <QDir>
+#include <QUuid>
+#include <functional>
+#include <sstream>
+
 #include "file_meta.h"
 #include "gpu_backend.h"
 #include "image_decoder.h"
+#include "index_manager.h"
+#include "path_utils.h"
 #include "video_decoder.h"
 
 BackendSession::BackendSession(QObject* parent) : QObject(parent) {
@@ -31,20 +39,42 @@ void BackendSession::teardownWorker() {
     }
 }
 
+// Test Mode uses the same worker/engine path as a production scan, but points
+// it at a fresh per-run scratch application directory. A unique leaf keeps
+// every Test Mode run cold (full reprocessing) and keeps the production
+// <appDir>/Index tree, video cache, profile, and thumbnails untouched.
+static QString testScratchAppDir(const QString& appDir, const QString& root) {
+    const std::string canonical =
+        msf::IndexManager::canonicalRoot(msf::path_from_utf8(root.toStdString()));
+    std::string id;
+    if (!canonical.empty()) {
+        id = msf::IndexManager::folderId(canonical);
+    } else {
+        std::ostringstream out;
+        out << std::hex << std::hash<std::string>{}(root.toStdString());
+        id = "unresolved-" + out.str();
+    }
+    const QString stamp = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-hhmmss-zzz"));
+    const QString nonce = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
+    return QDir(appDir).filePath(QStringLiteral("TestMode/") + QString::fromStdString(id) +
+                                  QLatin1Char('-') + stamp + QLatin1Char('-') + nonce);
+}
+
 void BackendSession::startScan(const QString& root, const QString& appDir, int distance,
                               int cpu, int gpuPercent, bool gpuEnabled,
                               bool scanImages, bool scanVideos,
                               const QSet<QString>& ignored, bool detailedLog,
-                              int cpuMode, int strategy) {
+                              int cpuMode, int strategy, bool testMode) {
     teardownWorker();
-    lastAppDir_ = appDir;
+    const QString effectiveAppDir = testMode ? testScratchAppDir(appDir, root) : appDir;
+    lastAppDir_ = effectiveAppDir;
     lastRoot_ = root;
     thread_ = new QThread(this);
     // P4: the two-axis policy crosses with identical meaning (no Backend
     // reinterpretation). CPU_ONLY forces the GPU lane off here, backend-side;
     // GPU_MAX keeps the scheduler auto-split (no share boost exists in code).
     const bool gpuEff = gpuEnabled && strategy != 1;
-    worker_ = new ScanWorker(root, appDir, distance, cpu, gpuPercent,
+    worker_ = new ScanWorker(root, effectiveAppDir, distance, cpu, gpuPercent,
                              gpuEff, scanImages, scanVideos);
     const auto mode = (cpuMode >= 1 && cpuMode <= 5)
                           ? static_cast<msf::ResourceMode>(cpuMode)

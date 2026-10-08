@@ -34,7 +34,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
 | --- | --- | --- | --- | --- |
-| 0 | **0.9.4.64+** | **GUI usability 수동 acceptance (0.9.4.66 포함)** | 설정 대화상자 일반 탭(상세 로그 표시), 창 resize 체감, filename selection, Tiles/ListMode, 대규모 dataset traversal 확인 + 보기 전환 겹침 재확인 | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
+| 0 | **0.9.4.64+** | **GUI usability 수동 acceptance (0.9.4.66·0.9.4.75 포함)** | 설정 대화상자 일반 탭(상세 로그 표시), 창 resize 체감, filename selection, Tiles/ListMode, 대규모 dataset traversal 확인 + 보기 전환 겹침 재확인 + Test Mode 토글·scratch 격리 수동 확인 | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
 | 1 | **0.9.4.74** | **Crash-response follow-up** | telemetry sampler destructor abort 경로 결정적 재현·수정 완료. 원래 .72 Backend dump caller는 PDB 부재로 미확정; 다음 재현 시 .74 PDB로 fault thread/function 특정 | **GUARDRAIL / 다음 dump에서 root cause 확정** |
 | 2 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance 재확인** | 실제 dataset에서 분석 실패 파일 포함 edge-case의 silent indexing/modified semantics를 최종 확정 | **NOT ACCEPTED / UI 작업 후 재검증** |
 | 3 | S4 | **GUI Detailed Logs 실제 화면 + 저장 최종 acceptance** | Search/Update → Detailed Logs → 저장/종료까지 사용자 경로 확인 | **PENDING / product acceptance와 연계** |
@@ -47,7 +47,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 | 분류 | 작업 | 현재 상태 / 원칙 |
 | --- | --- | --- |
-| 개발 기능 | **GUI Test Mode** | 기존 GUI Benchmark를 부활하지 않음. 조사 결과 UI 표면·scratch 수명주기·telemetry 구분·acceptance 설계가 필요하여 이번 빌드에서는 **DEFERRED**. 명칭만 KO ‘테스트 모드’ / EN ‘Test Mode’로 확정. 재개 전 별도 버전과 acceptance 필요. |
+| 개발 기능 | **GUI Test Mode** | 0.9.4.75에서 별도 버전으로 재도입 완료. 기존 GUI Benchmark를 부활하지 않고 같은 검색 경로를 scratch app dir에서 실행한다. `ui/testMode` 저장·복원·하이라이트, 스캔 중 잠금, saved config 자동 재개 유지. **IMPLEMENTED / MANUAL ACCEPTANCE PENDING**. |
 | GUI 성능 | **thumbnail catch-up visible-range traversal** | 실제 decode는 visible item에 한정되지만 매 tick 전체 list를 훑음. 기능 blocker가 아니므로 안전한 visible-range 접근법이 있을 때만 개선. **DEFERRED / risk-contained** |
 | 제품 기능 | **Video comparison semantics / GUI video acceptance** | video comparison 알고리즘과 이에 대한 실사용 acceptance가 이미지 경로만큼 닫히지 않음. GUI scroll acceptance도 영상은 별도 판정. **DEFERRED** |
 | 1.0 이후 | **Burst-shot similarity refinement** | burst shot을 일반 near-duplicate와 구분하고 Settings에서 알고리즘 선택 가능하게 하는 방향. 상세 권위는 `docs/architecture/image-burst-shot-similarity.{ko,en}.md`. **POST-1.0** |
@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 수동 GUI acceptance → 제품 acceptance 재확인
+> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 수동 GUI acceptance → 제품 acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -106,6 +106,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 스캔 정체 수정 | **완료(0.9.4.72)** | walk quickHash 병렬화(지연 드라이브에서 ~5배), analyze 후보 루프 병렬화, CPU/RAM 표시와 ETR 수정. CPU 116/116, GPU 117/117 |
 | 백엔드 크래시 방어 초안 | **완료(0.9.4.73)** | walker 예외 방어, PDB 생성, 재시작 후 1회 resume 추가. 실제 auto-resume 신호 순서 및 telemetry sampler 종료 경로는 후속 감사에서 보완 |
 | 감사 통합·telemetry 종료/진행률 수정 | **완료(0.9.4.74)** | 결정적 walker exception이 `TelemetryRecorder` joinable sampler destructor에서 0xC0000409를 재현. RAII stop/join + abortTelemetry, producer readProgress / count-phase progress, restart-before-failure UI, saved config auto-resume. CPU 116/116, GPU 117/117 |
+| Test Mode 재도입·스크롤/썸네일 후속 | **완료(0.9.4.75)** | Settings 옆 `Test` 토글 + 고유 scratch app dir에서 기존 검색 경로 전체 실행. 기존 인덱스 바이트 불변. 스크롤 gate 확장, 썸네일 dedup·coalesced layout, 중앙 앵커 복원. CPU/scheduler 미접촉. CPU 117/117, GPU 118/118 |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -192,12 +193,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.74 (감사 통합 + telemetry 종료 크래시 수정 + read progress/자동 재개) |
+| 기준 코드 | 0.9.4.75 (Test Mode 재도입 + 스크롤/썸네일 후속 수정) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.74 감사 통합·크래시 경로 수정 완료** — CPU 116/116, GPU 117/117. .72 Backend dump는 0xC0000409/ucrtbase+0xA527E였고 PDB가 없어 호출 함수를 특정할 수 없었다. 별도 `MSF_TEST_THROW_WALKER` 재현은 같은 fail-fast를 내며 심볼 스택에서 joinable telemetry sampler 소멸을 특정, RAII stop/join + catch 경로 `abortTelemetry()`로 수정. read progress를 producer admission과 consumer walked로 분리하고 count prepass progress/log를 추가. Supervisor restart timer를 modal failure보다 먼저 예약하고 저장한 `BackendScanConfig`로 READY 뒤 1회 자동 재개. 여러 감사의 stdout backpressure 가설은 이번 direct abort 증거와 맞지 않아 미확정으로 유지. 남은 것은 사용자 dataset에서 phase 로그 확인(quickHash I/O는 unchanged에도 지속), 실제 Windows UI acceptance, Tiles/ListMode 및 대규모 traversal. 0.9.4.62/65 crash-response 기록 유지. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.75 Test Mode 재도입·스크롤/썸네일 후속 완료** — CPU 117/117, GPU 118/118. Test ON 스캔은 고유 scratch app dir에서 전체 처리를 수행하고 기존 인덱스 바이트를 바꾸지 않음(test_mode 16 checks). 스크롤 gate·썸네일 dedup·coalesced layout·중앙 앵커 복원으로 후속 수정(scroll 24, usability 18, viewmode 201). CPU/scheduler 미접촉. 남은 것은 실제 Windows UI acceptance와 사용자 dataset phase 로그. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.74 |
+| 현재 버전 | 0.9.4.75 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

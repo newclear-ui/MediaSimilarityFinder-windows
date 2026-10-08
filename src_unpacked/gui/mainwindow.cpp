@@ -319,6 +319,10 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogSaved")) return S("결과 저장: %1","Saved: %1");
   if (!std::strcmp(key,"detailLogSaveFail")) return S("결과 저장 실패 (기존 결과 유지)","Could not save the result (previous result kept)");
   if (!std::strcmp(key,"strategyModeTip")) return S("실행 자원 전략 선택 (1개만)","Execution strategy (select one)");
+  if (!std::strcmp(key,"testMode")) return S("테스트","Test");
+  if (!std::strcmp(key,"testModeTip")) return S("인덱스 저장 없이 같은 설정으로 전체 처리를 다시 실행 (기존 인덱스 유지)","Re-run full processing with the same settings without saving the index (existing index kept)");
+  if (!std::strcmp(key,"testModeOn")) return S("테스트 모드 켜짐: 다음 검색은 임시 인덱스로 전체 처리하며 기존 인덱스를 저장하지 않습니다","Test Mode on: the next scan fully reprocesses into a scratch index and does not save the existing index");
+  if (!std::strcmp(key,"testModeOff")) return S("테스트 모드 꺼짐: 다음 검색은 기존 인덱스를 정상 업데이트합니다","Test Mode off: the next scan normally updates the existing index");
   if (!std::strcmp(key,"detailLogTip")) return S("실제 검색에 상세 로그 연결 (별도 벤치마크 실행 아님)","Attach detailed logging to the actual search (not a separate benchmark run)");
   if (!std::strcmp(key,"repWaitTitle")) return S("검색 리포트 작성 중","Writing search report");
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
@@ -764,6 +768,14 @@ void MainWindow::buildToolbar() {
   connect(monBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitor);
   logBtn_ = new QPushButton(toolBar_); logBtn_->setEnabled(false);
   connect(logBtn_, &QPushButton::clicked, this, [this] { if (!lastTelemetryJson_.isEmpty()) showDetailedLogDialog(lastTelemetryJson_); });
+  // Test Mode is a persistent per-run toggle, not a separate benchmark
+  // workflow. When checked, the next scan uses the same settings but runs
+  // full processing inside an isolated backend scratch index.
+  testBtn_ = new QPushButton(toolBar_); testBtn_->setCheckable(true);
+  testBtn_->setObjectName("testBtn"); // automation hook, see folder_
+  testBtn_->setChecked(QSettings().value("ui/testMode", false).toBool());
+  connect(testBtn_, &QPushButton::toggled, this, &MainWindow::toggleTestMode);
+  paintTestButton();
   // Merged settings/help menu, docked at the far right (after the spacer):
   // monitor detail settings + help in one place.
   utilBtn_ = new QToolButton(toolBar_);
@@ -796,6 +808,7 @@ void MainWindow::buildToolbar() {
   toolBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #8c8c8c; width: 2px; margin-top: 6px; margin-bottom: 6px; }"));
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
+  toolBar_->addWidget(testBtn_); // immediately left of Settings, at the far right
   toolBar_->addWidget(utilBtn_); // far-right menu
   applyDetailLogVisibility(); // ui/showDetailLog (default ON): visibility only, telemetry untouched
 }
@@ -1096,6 +1109,11 @@ void MainWindow::applyStaticTexts() {
   gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
   monBtn_->setChecked(monitorEnabled_);
+  if (testBtn_) {
+    testBtn_->setText(trStr(l, "testMode"));
+    testBtn_->setToolTip(trStr(l, "testModeTip"));
+    paintTestButton();
+  }
   if (monSettingsAct_) monSettingsAct_->setText(trStr(l, "settings"));
   if (helpAct_) helpAct_->setText(trStr(l, "help"));
   if (utilBtn_) utilBtn_->setToolTip(trStr(l, "settings") + "/" + trStr(l, "help"));
@@ -1204,6 +1222,10 @@ void MainWindow::updateExecutionUiState() {
   if (!strategyBox_) return;
 
   scan_->setEnabled(!scanning_);
+  // Test Mode selects the index destination for the next scan start. Lock it
+  // while a scan owns the backend so the toggle cannot be misread as
+  // affecting the run already in progress.
+  if (testBtn_) testBtn_->setEnabled(!scanning_);
   // Pause is a scan-only control. Keeping the rule
   // in one place also makes the idle state consistent, because setRunning() only
   // runs for scans and would otherwise leave the button enabled with no scan.
@@ -1313,6 +1335,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
     cfg.scanVideos = mediaVidBtn_->isChecked();
     cfg.ignored = ignored_;
     cfg.detailedLog = logTgl_->isChecked();
+    cfg.testMode = testBtn_ && testBtn_->isChecked();
     cfg.exec = currentExecPolicy();
     lastScanCfg_ = cfg;
     haveLastScanCfg_ = true;
@@ -1729,15 +1752,16 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* ev) {
       return true;
     }
   }
-  // Scroll-regression gate feed (0.9.4.61): wheel and keyboard navigation in
+  // Scroll-regression gate feed (0.9.4.61, extended 0.9.4.75): wheel and keyboard navigation in
   // the middle group views stamps user activity so the next full refill waits
-  // out the cooldown. The event is never consumed — scrolling behaves exactly
+  // out the cooldown. Scrollbar-focused wheel/keys count as navigation too.
+  // The event is never consumed — scrolling behaves exactly
   // as before; only the rebuild is deferred.
   const bool isMidViewport =
-      (imgTree_ && (watched == imgTree_ || watched == imgTree_->viewport())) ||
-      (vidTree_ && (watched == vidTree_ || watched == vidTree_->viewport())) ||
-      (imgGrid_ && (watched == imgGrid_ || watched == imgGrid_->viewport())) ||
-      (vidGrid_ && (watched == vidGrid_ || watched == vidGrid_->viewport()));
+      (imgTree_ && (watched == imgTree_ || watched == imgTree_->viewport() || watched == imgTree_->verticalScrollBar())) ||
+      (vidTree_ && (watched == vidTree_ || watched == vidTree_->viewport() || watched == vidTree_->verticalScrollBar())) ||
+      (imgGrid_ && (watched == imgGrid_ || watched == imgGrid_->viewport() || watched == imgGrid_->verticalScrollBar())) ||
+      (vidGrid_ && (watched == vidGrid_ || watched == vidGrid_->viewport() || watched == vidGrid_->verticalScrollBar()));
   if (isMidViewport) {
     if (ev->type() == QEvent::Wheel) { noteUserScroll(); }
     else if (ev->type() == QEvent::KeyPress) {
@@ -1909,6 +1933,9 @@ void MainWindow::onUiTick() {
   updateSysLabels();
 }
 void MainWindow::refreshStreaming(bool force) {
+  // A thumbnail burst may arrive between ticks. Flush at most one coalesced
+  // layout pass here; it never recreates items or restores scroll.
+  flushThumbLayout();
   // Full list rebuilds (widget churn for every group) are the most expensive
   // GUI work during a scan. rebuildGroups() itself walks every accumulated
   // path, so it stays inside the gate too — running it every tick on 10k+
@@ -1948,6 +1975,21 @@ void MainWindow::noteUserScroll() {
 bool MainWindow::scrollGateActive() const {
   if (sliderHeld_) return true;
   return QDateTime::currentMSecsSinceEpoch() - lastUserScrollMs_ < kScrollGateCooldownMs;
+}
+void MainWindow::flushThumbLayout() {
+  if (!thumbLayoutPending_) return;
+  // A layout pass can move Batched geometry while the user is navigating, so
+  // never run it mid-gesture. Keep the request pending and retry after the
+  // scroll cooldown instead; icons are already painted by onThumbReady.
+  if (scrollGateActive()) {
+    QTimer::singleShot(kScrollGateCooldownMs, this, [this] { flushThumbLayout(); });
+    return;
+  }
+  thumbLayoutPending_ = false;
+  QListWidget* grids[2] = {imgGrid_, vidGrid_};
+  for (auto* grid : grids) {
+    if (grid && grid->isVisible()) grid->doItemsLayout();
+  }
 }
 void MainWindow::thumbCatchUpVisible() {
   // Tree rows carry no thumbnails, so only the visible grid participates.
@@ -2078,7 +2120,7 @@ void MainWindow::connectResView(QTreeWidget* tree, QListWidget* grid) {
     if (QListWidgetItem* it = grid->itemAt(p)) grid->setCurrentItem(it);
     showGroupMenu(grid->mapToGlobal(p));
   });
-  // Scroll-regression gate (0.9.4.61): full list refills never run while the
+  // Scroll-regression gate (0.9.4.61, extended 0.9.4.75): full list refills never run while the
   // user holds a scrollbar, and a short cooldown follows wheel/keyboard
   // navigation. Input is never blocked — only the rebuild is deferred.
   // Programmatic moves (scrollToItem/setValue) do not emit sliderPressed, so
@@ -2087,6 +2129,15 @@ void MainWindow::connectResView(QTreeWidget* tree, QListWidget* grid) {
     if (!bar) return;
     connect(bar, &QAbstractSlider::sliderPressed, this, [this] { sliderHeld_ = true; noteUserScroll(); });
     connect(bar, &QAbstractSlider::sliderReleased, this, [this] { sliderHeld_ = false; noteUserScroll(); });
+    // Track clicks, gutter pages, and arrow buttons do not emit sliderPressed
+    // while they move the view, so they also arm the cooldown directly. These
+    // signals come only from user interaction; programmatic setValue calls do
+    // not emit them.
+    connect(bar, &QAbstractSlider::sliderMoved, this, [this](int) { noteUserScroll(); });
+    connect(bar, &QAbstractSlider::actionTriggered, this, [this](int) { noteUserScroll(); });
+    // Wheel and keyboard input can arrive with the scrollbar itself focused
+    // (including wheel events over the scrollbar), so filter it too.
+    bar->installEventFilter(this);
   };
   hookBar(tree->verticalScrollBar());
   hookBar(grid->verticalScrollBar());
@@ -2224,18 +2275,32 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   const int gridPos = grid->verticalScrollBar() ? grid->verticalScrollBar()->value() : 0;
   // Rebuilding the widgets can make setCurrentItem() scroll to the selected
   // group (usually group 1) after the old pixel offset was captured. Preserve
-  // the group at the viewport's top edge as a semantic anchor instead.
+  // the group at the viewport's top edge as a semantic anchor instead, along
+  // with its exact content offset so the restored view does not drift by a
+  // partial row/cell.
   QString treeAnchorPath;
+  int treeAnchorContent = 0;
   if (auto* top = tree->itemAt(QPoint(2, 2))) {
     const int index = top->data(0, Qt::UserRole).toInt();
-    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty())
+    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty()) {
       treeAnchorPath = groups_[index].paths.front();
+      treeAnchorContent = treePos + tree->visualItemRect(top).top();
+    }
   }
   QString gridAnchorPath;
-  if (auto* top = grid->itemAt(QPoint(2, 2))) {
-    const int index = top->data(Qt::UserRole).toInt();
-    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty())
-      gridAnchorPath = groups_[index].paths.front();
+  int gridAnchorContent = 0;
+  {
+    // Large icon cells wrap with spacing, so the tree-oriented (2,2) corner
+    // can probe empty space. Probe the viewport center instead.
+    const int viewportWidth = grid->viewport()->width();
+    const int probeX = std::clamp(viewportWidth / 2, 2, std::max(2, viewportWidth - 1));
+    if (auto* top = grid->itemAt(QPoint(probeX, 10))) {
+      const int index = top->data(Qt::UserRole).toInt();
+      if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty()) {
+        gridAnchorPath = groups_[index].paths.front();
+        gridAnchorContent = gridPos + grid->visualItemRect(top).top();
+      }
+    }
   }
   tree->clear(); grid->clear();
   const QString f = groupSearch_->text().trimmed().toLower();
@@ -2279,14 +2344,22 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     if (syncSel && i == currentGroup_) grid->setCurrentItem(li);
   }
   tree->resizeColumnToContents(0);
+  // Settle Batched layout before measuring the rebuilt anchor rectangles.
+  // Layout changes geometry; it does not recreate items or move selection.
+  tree->doItemsLayout();
+  grid->doItemsLayout();
   bool restoredTree = false;
   if (!treeAnchorPath.isEmpty()) {
     for (int row = 0; row < tree->topLevelItemCount(); ++row) {
       auto* item = tree->topLevelItem(row);
       const int index = item->data(0, Qt::UserRole).toInt();
       if (index >= 0 && index < groups_.size() && groups_[index].paths.contains(treeAnchorPath)) {
-        tree->scrollToItem(item, QAbstractItemView::PositionAtTop);
-        restoredTree = true;
+        const QRect rect = tree->visualItemRect(item);
+        if (rect.isValid() && tree->verticalScrollBar()) {
+          auto* bar = tree->verticalScrollBar();
+          bar->setValue(std::clamp(treeAnchorContent - rect.top(), 0, bar->maximum()));
+          restoredTree = true;
+        }
         break;
       }
     }
@@ -2297,8 +2370,12 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
       auto* item = grid->item(row);
       const int index = item->data(Qt::UserRole).toInt();
       if (index >= 0 && index < groups_.size() && groups_[index].paths.contains(gridAnchorPath)) {
-        grid->scrollToItem(item, QAbstractItemView::PositionAtTop);
-        restoredGrid = true;
+        const QRect rect = grid->visualItemRect(item);
+        if (rect.isValid() && grid->verticalScrollBar()) {
+          auto* bar = grid->verticalScrollBar();
+          bar->setValue(std::clamp(gridAnchorContent - rect.top(), 0, bar->maximum()));
+          restoredGrid = true;
+        }
         break;
       }
     }
@@ -2477,6 +2554,16 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool /*bypas
   // requested size (stale-drop); cap the map so a lost backend cannot grow
   // it without bound.
   if (backend_) {
+    // Visible-item catch-up can revisit the same miss on consecutive ticks
+    // before the backend answers. Re-issuing each miss would queue duplicate
+    // backend thumbnail work and duplicate arrival layouts; an identical
+    // in-flight request already covers this size.
+    for (auto it = thumbPendingReq_.cbegin(); it != thumbPendingReq_.cend(); ++it) {
+      if (it->path == path && it->size == size) {
+        ++thumbStatPlace_;
+        return placeholderIcon(path);
+      }
+    }
     const quint64 id = ++thumbRequestId_;
     if (thumbPendingReq_.size() > 2000) thumbPendingReq_.erase(thumbPendingReq_.begin());
     thumbPendingReq_[id] = {path, size};
@@ -2506,6 +2593,11 @@ void MainWindow::onThumbReady(quint64 requestId, const ThumbResult& thumb) {
   ++thumbStatBackend_;
   // Stale-drop + paint (0.9.4.66 pattern: a layout pass must follow icon
   // changes under uniformItemSizes+Batched, or art paints outside its cell).
+  // Coalesced (0.9.4.75): arrivals only mark layout dirty, and the first
+  // arrival in a burst schedules one zero-delay layout pass. A thumbnail
+  // burst therefore costs one layout instead of one per arrival, while the
+  // 0.9.4.66 guarantee still holds even when the periodic UI timer is
+  // stopped: the event loop, not the next 600ms tick, runs the pass.
   bool painted = false;
   QListWidget* grids[2] = {imgGrid_, vidGrid_};
   for (auto* grid : grids) {
@@ -2520,7 +2612,13 @@ void MainWindow::onThumbReady(quint64 requestId, const ThumbResult& thumb) {
       item->setIcon(ic);
       gridPainted = true;
     }
-    if (gridPainted) { grid->doItemsLayout(); painted = true; }
+    if (gridPainted) {
+      if (!thumbLayoutPending_) {
+        thumbLayoutPending_ = true;
+        QTimer::singleShot(0, this, [this] { flushThumbLayout(); });
+      }
+      painted = true;
+    }
   }
   if (currentFile_ == path && size == QSize(220, 190)) {
     preview_->setPixmap(ic.pixmap(QSize(220, 190)));
@@ -3447,6 +3545,22 @@ void MainWindow::applyDetailLogVisibility() {
   const bool show = QSettings().value("ui/showDetailLog", true).toBool();
   if (logTglAct_) logTglAct_->setVisible(show);
   else if (logTgl_) logTgl_->setVisible(show);
+}
+void MainWindow::paintTestButton() {
+  if (!testBtn_) return;
+  // Same checked-highlight idiom as the monitor toggle: an unchecked button
+  // is native, a checked button is unmistakably on.
+  testBtn_->setStyleSheet(testBtn_->isChecked()
+      ? QStringLiteral("background:#6b46c1; color:white; font-weight:bold;")
+      : QString());
+}
+
+void MainWindow::toggleTestMode(bool on) {
+  QSettings().setValue("ui/testMode", on);
+  paintTestButton();
+  // The choice applies to the next scan start; it never alters a run already
+  // in progress or any stored index by itself.
+  statusMsg_->setText(trStr(lang(), on ? "testModeOn" : "testModeOff"));
 }
 void MainWindow::toggleMonitor() {
   // The monitor button is a pure on/off toggle with highlight feedback.

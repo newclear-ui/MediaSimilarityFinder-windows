@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.74` (merged audit + telemetry-exit/progress/resume corrections) - CPU CTest 116/116 - GPU CTest 117/117
+Baseline: `0.9.4.75` (Test Mode reintroduction + scroll/thumbnail follow-up) - CPU CTest 117/117 - GPU CTest 118/118
 Last updated: 2026-10-08
 
 ## Role of this document
@@ -109,19 +109,21 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.74 done
+active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.75 done
 next               Real Windows manual GUI acceptance (new-file read progress, auto-resume after crash,
-                   preview display, selection, Tiles/ListMode, large-dataset traversal) -> final acceptance recheck
+                   preview display, selection, Test Mode toggle/scratch isolation, Tiles/ListMode,
+                   large-dataset traversal) -> final acceptance recheck
                    -> S4 real-screen acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
 current verdict    0.9.4.72 parallelized walk/analyze and fixed display/ETR; 0.9.4.73 added crash hardening/PDB/auto-resume;
                    0.9.4.74 reproduced and fixed the telemetry-sampler destructor abort path, exposed count/read progress,
-                   corrected restart-before-modal ordering, and verified one-shot saved-config auto-resume. The user's
+                   corrected restart-before-modal ordering, and verified one-shot saved-config auto-resume;
+                   0.9.4.75 reintroduced Test Mode plus scroll-gate/thumbnail-burst/anchor follow-up. The user's
                    old .72 dump lacks PDB, so exact crash caller remains unproven.
-remaining risk     GUI preview/selection/recovery cannot be eyeballed headless -> manual acceptance needed.
+remaining risk     GUI preview/selection/recovery/Test Mode feel cannot be eyeballed headless -> manual acceptance needed.
                    GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each
-                   tick but is not the present correctness blocker, so it stays a lower-priority perf item.
+                   tick but decodes visible items only and is not the present correctness blocker, so it stays a lower-priority perf item.
 immediate         0.9.4.63: Detailed Logs visibility setting, right-pane width cap / center-pane expansion, filename selection: done.
-later             Test Mode reintroduction review and visible-range traversal optimization: reviewed, deferred with rationale recorded.
+later             Test Mode was reintroduced as separate version 0.9.4.75; only manual acceptance remains.
                    Post-1.0 burst-shot and scheduler/pipeline throughput work remains separate.
 ```
 
@@ -162,4 +164,4 @@ stay in the origin documents.
 ## Version invariance check
 
 `kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.4` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9` — unchanged at the 0.9.4.74 baseline.
+`kCacheFormatVersion 9` — unchanged at the 0.9.4.75 baseline.

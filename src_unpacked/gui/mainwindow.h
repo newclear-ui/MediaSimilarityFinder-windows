@@ -120,6 +120,7 @@ private slots:
   void resourceChanged(int); void customResourceChanged();
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
+  void toggleTestMode(bool);
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
   void groupViewChanged(int);
   void applyExecutionMode(); void updateKindSelection();
@@ -166,6 +167,7 @@ private:
   // (the detailed-log path has no Pause).
   void updateExecutionUiState();
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
+  void paintTestButton(); // checked-state highlight for the Test Mode toggle
   void setRunning(bool);
   void applyDetailLogVisibility(); // show/hide logTgl_ from ui/showDetailLog (default ON)
   void rebuildGroups();          // union-find over accumulated matches
@@ -173,6 +175,7 @@ private:
   void onUiTick();               // 600ms timer body (extracted for testUiTick)
   void refreshStreaming(bool force=false); // throttled rebuild+fill for live scans
   void thumbCatchUpVisible();    // in-place thumbnail fill for visible items only (never rebuilds)
+  void flushThumbLayout();       // one coalesced Batched layout for arrived thumbnails
   bool scrollGateActive() const; // slider held or inside the post-scroll cooldown
   void noteUserScroll();         // stamp a user navigation event (wheel/keys/slider)
   void refreshGroupList();       // middle pane from groups_
@@ -280,12 +283,16 @@ private:
   // pending-request map; arrivals paint via onThumbReady.
   mutable qulonglong thumbStatMem_ = 0, thumbStatBackend_ = 0, thumbStatPlace_ = 0;
   mutable qulonglong thumbPaintedCount_ = 0;
+  // Coalesced icon-layout work (0.9.4.75): thumbnail arrivals mark the visible
+  // grids dirty instead of forcing a Batched layout per arrival. The first
+  // arrival in a burst schedules one zero-delay layout pass.
+  bool thumbLayoutPending_ = false;
   QSet<QString> ignored_;
   msf::SearchReport lastReport_; bool hasReport_=false;
   // toolbar
   QToolBar* toolBar_=nullptr;
   QLineEdit* folder_=nullptr;   QPushButton *scan_=nullptr,*pause_=nullptr,
-    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr;
+    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr,*testBtn_=nullptr;
   QAction *monSettingsAct_=nullptr, *helpAct_=nullptr; // retexted on language change
   QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;

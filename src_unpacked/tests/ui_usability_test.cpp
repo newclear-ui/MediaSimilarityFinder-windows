@@ -194,6 +194,27 @@ int main(int argc, char** argv) {
     check(nameOk, "filename value selectable by mouse and keyboard");
     check(pathOk, "full-path value still selectable (existing behavior kept)");
 
+    // ---- Phase D: Test Mode toggle next to Settings persists across launch. ----
+    auto* testBtn = w.findChild<QPushButton*>("testBtn");
+    if (!testBtn) { std::cerr << "no Test Mode button\n"; return 7; }
+    check(testBtn->isCheckable(), "Test Mode is a checkable toggle");
+    check(!testBtn->isChecked(), "Test Mode defaults to off");
+    testBtn->setChecked(true);
+    QApplication::processEvents();
+    check(QSettings().value("ui/testMode", false).toBool() == true,
+          "Test Mode ON persists to QSettings");
+    check(!testBtn->styleSheet().isEmpty(), "Test Mode ON has checked-state highlight");
+    {
+        MainWindow relaunched;
+        relaunched.show();
+        QApplication::processEvents();
+        auto* relaunchedTest = relaunched.findChild<QPushButton*>("testBtn");
+        check(relaunchedTest && relaunchedTest->isChecked(),
+              "Test Mode ON is restored after relaunch");
+    }
+    testBtn->setChecked(false);
+    QApplication::processEvents();
+
     fs::remove_all(d, ec);
     std::cout << "usability_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";

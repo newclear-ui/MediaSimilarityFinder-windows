@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.74` (감사 통합 + telemetry 종료/진행률/재개 수정) · CPU CTest 116/116 · GPU CTest 117/117
+기준: `0.9.4.75` (Test Mode 재도입 + 스크롤/썸네일 후속 수정) · CPU CTest 117/117 · GPU CTest 118/118
 최종 갱신: 2026-10-08
 
 ## 이 문서의 역할
@@ -106,18 +106,19 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71~.74 corrective builds 완료
+활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71~.75 corrective builds 완료
 다음             실제 Windows GUI manual acceptance (미리보기 표시, selection, crash 후 자동 재개,
-                 Tiles/ListMode, 대규모 dataset traversal) → 제품 acceptance 재확인
+                 Test Mode 토글·scratch 격리, Tiles/ListMode, 대규모 dataset traversal) → 제품 acceptance 재확인
                  → S4 real-screen acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
 현재 판단        0.9.4.72 walk/analyze 병렬화와 표시/ETR 수정, 0.9.4.73 crash defense/PDB/auto-resume,
-                 0.9.4.74 telemetry sampler 종료 abort 재현·수정 + count/read progress + READY 재개 검증.
+                 0.9.4.74 telemetry sampler 종료 abort 재현·수정 + count/read progress + READY 재개 검증,
+                 0.9.4.75 Test Mode 재도입 + 스크롤 gate/썸네일 burst/앵커 후속 수정.
                  사용자의 .72 dump는 PDB 부재로 exact caller 미확정. stdout backpressure는 가설로 보류.
-잔여 위험        GUI 미리보기/선택/복귀는 headless에서 육안 검증 불가 → 수동 acceptance 필요.
+잔여 위험        GUI 미리보기/선택/복귀/Test Mode 체감은 headless에서 육안 검증 불가 → 수동 acceptance 필요.
                  GPU MAX share boost는 문서화된 미구현 공백. thumbCatchUpVisible()은 매 tick 전체 목록을
-                 순회하지만 correctness blocker가 아니므로 후순위 성능 검토로 둔다.
+                 순회하지만 decode는 보이는 것만 하며 correctness blocker가 아니므로 후순위 성능 검토로 둔다.
 후속             상세 로그 표시 설정, splitter 폭 정책, filename selection은 0.9.4.63에서 완료.
-                 Test Mode 재도입 검토와 full-traversal 최적화는 설계 검토 후 DEFERRED로 분리했다.
+                 Test Mode는 0.9.4.75 별도 버전으로 재도입되어 수동 acceptance만 남았다.
                  1.0 이후 Burst-shot / scheduler-pipeline 성능 백로그는 계속 별도 유지한다.
 ```
 
@@ -157,4 +158,4 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 ## 버전 불변 확인
 
 `kEngineVersion 1.5.0` · `kDatabaseVersion 1.0.4` · `kBenchmarkSchemaVersion 9` ·
-`kCacheFormatVersion 9` — 0.9.4.74 기준 변경 없음.
+`kCacheFormatVersion 9` — 0.9.4.75 기준 변경 없음.

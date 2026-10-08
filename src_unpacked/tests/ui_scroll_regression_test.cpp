@@ -183,15 +183,30 @@ int main(int argc, char** argv) {
     check(grid->currentRow() == curBefore, "selection row preserved");
     check(grid->currentItem() == itemBefore, "selection widget identity preserved (no recreate)");
 
+    // Phase 2b: repeated catch-up before backend arrivals must not duplicate
+    // thumbnail work. The second tick revisits the same visible misses while
+    // the first tick's requests are still in flight.
+    w.testDropThumbCache();
+    w.testUiTick();
+    const qulonglong pending1 = w.testThumbPendingCount();
+    w.testUiTick();
+    check(w.testThumbPendingCount() == pending1, "repeat catch-up tick: no duplicate thumbnail requests");
+    QApplication::processEvents();
+
     // Phase 3: scrollbar drag freezes rebuilds mid-gesture (starved state).
     const qulonglong f1 = w.testFullRebuildCount();
     if (bar) {
-        bar->sliderPressed(); // same handler as a real drag press (public signal)
+        // Settle to the held position before arming the synthetic press: a
+        // pending coalesced layout may still adjust geometry once, but after
+        // the press every tick must leave the dragged position alone.
         bar->setValue(bar->maximum() / 2);
+        QApplication::processEvents();
+        const int heldValue = bar->value();
+        bar->sliderPressed(); // same handler as a real drag press (public signal)
         QApplication::processEvents();
         for (int i = 0; i < 3; ++i) { w.testUiTick(); QApplication::processEvents(); }
         check(w.testFullRebuildCount() == f1, "ticks during slider press: zero full rebuilds");
-        check(bar->value() == bar->maximum() / 2, "dragged position kept during ticks");
+        check(bar->value() == heldValue, "dragged position kept during ticks");
         bar->sliderReleased(); // starts the short post-release cooldown
         QApplication::processEvents();
     } else {

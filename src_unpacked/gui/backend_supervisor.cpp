@@ -100,6 +100,7 @@ void BackendSupervisor::startScan(const BackendScanConfig& cfg) {
     for (const auto& s : cfg.ignored) ig.push_back(s);
     p[QStringLiteral("ignored")] = ig;
     p[QStringLiteral("detailedLog")] = cfg.detailedLog;
+    p[QStringLiteral("testMode")] = cfg.testMode;
     QJsonObject exec;
     exec[QStringLiteral("cpuMode")] = cfg.exec.cpuMode;
     exec[QStringLiteral("cpuPercent")] = cfg.exec.cpuPercent;

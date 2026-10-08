@@ -63,7 +63,7 @@ public:
                    int cpu, int gpuPercent, bool gpuEnabled,
                    bool scanImages, bool scanVideos,
                    const QSet<QString>& ignored, bool detailedLog,
-                   int cpuMode, int strategy);
+                   int cpuMode, int strategy, bool testMode = false);
     // Live policy refresh (P4): monitor applies immediately; the stored
     // engine policy applies to the next scan (worker pool sizing is only
     // safe at scan start). Reports through onPolicyApplied().
