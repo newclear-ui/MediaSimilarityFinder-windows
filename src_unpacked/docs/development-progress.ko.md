@@ -35,7 +35,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
 | --- | --- | --- | --- | --- |
 | 0 | **0.9.4.64+** | **GUI usability 수동 acceptance (0.9.4.66 포함)** | 설정 대화상자 일반 탭(상세 로그 표시), 창 resize 체감, filename selection, Tiles/ListMode, 대규모 dataset traversal 확인 + 보기 전환 겹침 재확인 | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
-| 1 | **0.9.4.62** | **Crash-response follow-up** | 재발 시 scan/Qt/WER/dump 증거 확보 후 fault thread/root cause 특정 | **GUARDRAIL / 증거 발생 시 즉시 우선** |
+| 1 | **0.9.4.74** | **Crash-response follow-up** | telemetry sampler destructor abort 경로 결정적 재현·수정 완료. 원래 .72 Backend dump caller는 PDB 부재로 미확정; 다음 재현 시 .74 PDB로 fault thread/function 특정 | **GUARDRAIL / 다음 dump에서 root cause 확정** |
 | 2 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance 재확인** | 실제 dataset에서 분석 실패 파일 포함 edge-case의 silent indexing/modified semantics를 최종 확정 | **NOT ACCEPTED / UI 작업 후 재검증** |
 | 3 | S4 | **GUI Detailed Logs 실제 화면 + 저장 최종 acceptance** | Search/Update → Detailed Logs → 저장/종료까지 사용자 경로 확인 | **PENDING / product acceptance와 연계** |
 | 4 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture PASS를 실제 dataset evidence로 확장하여 CONDITIONAL 해소 | **PENDING** |
@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 (프로세스 분리 종료) → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore 완료 → 수동 GUI acceptance → 제품 acceptance 재확인
+> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 수동 GUI acceptance → 제품 acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -103,6 +103,9 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | P3 실 spawn+Supervisor+IPC | **완료(0.9.4.69)** | ScanWorker→src, 공용 Session, JSONL IPC, THUMBNAIL, 비동기 fileThumb, thumbDb 이동. E2E PID분리·restart·FAILED 실측 |
 | P4 hardening+acceptance | **완료(0.9.4.70)** | 잔여 decode를 FILE_META로 이전. GUI pixel decode 0. dumpbin Qt6Core-only. §15 전수 대조·숫자 확정 |
 | 백엔드 결함 수정+ThumbnailStore | **완료(0.9.4.71)** | 2차 재검토 확정 7건 수정(ExecutionPolicy IPC로 Maximum 복구, Index Complete=analyzed+unchanged, 요약 CPU/RAM 단일 의미, 느린 파일 cacheHit/0ms 제외, allMatches_ 해제, ThumbnailStore 엔진 art·디스크 DB·decode 체인 JPEG end-to-end, fileMeta in-place). 검증 중 Qt JPEG 플러그인 미배포 회귀 발견 → libjpeg-turbo 디코드 교체. CPU 116/116, GPU 117/117 |
+| 스캔 정체 수정 | **완료(0.9.4.72)** | walk quickHash 병렬화(지연 드라이브에서 ~5배), analyze 후보 루프 병렬화, CPU/RAM 표시와 ETR 수정. CPU 116/116, GPU 117/117 |
+| 백엔드 크래시 방어 초안 | **완료(0.9.4.73)** | walker 예외 방어, PDB 생성, 재시작 후 1회 resume 추가. 실제 auto-resume 신호 순서 및 telemetry sampler 종료 경로는 후속 감사에서 보완 |
+| 감사 통합·telemetry 종료/진행률 수정 | **완료(0.9.4.74)** | 결정적 walker exception이 `TelemetryRecorder` joinable sampler destructor에서 0xC0000409를 재현. RAII stop/join + abortTelemetry, producer readProgress / count-phase progress, restart-before-failure UI, saved config auto-resume. CPU 116/116, GPU 117/117 |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -189,12 +192,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.73 (백엔드 크래시 방어 + PDB 활성화 + 스캔 자동 재개) |
+| 기준 코드 | 0.9.4.74 (감사 통합 + telemetry 종료 크래시 수정 + read progress/자동 재개) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.73 백엔드 크래시 방어 + PDB 활성화 + 스캔 자동 재개 완료** — CPU 116/116, GPU 117/117, --version 0.9.4.73 양쪽 exe. 사용자 보고(스캔 중 백엔드 비정상 종료 "backend process exited unexpectedly", 재시작 후 검색 미재개)를 덤프 분석: 0xC0000409 FAST_FAIL_FATAL_APP_EXIT = std::terminate/abort(ucrtbase+0xA527E, 런북 3-2와 동일), walk 미완료 후 사망. 수정: walker 스레드 try/catch+walkError(미처리 예외→기록된 실패), flushBatch std::async 실패 시 순차 fallback, CMake Release PDB(/Zi CXX 전용 + /DEBUG), 백엔드 재시작 후 스캔 1회 자동 재개. 크래시 root cause 미확정(PDB 확보로 다음 재현 시 심볼 분석 예정). stall(저 CPU·신규 파일 진행 정지)은 별도 추적 필요. 남은 것은 실제 Windows 화면 acceptance와 Tiles/ListMode·대규모 dataset traversal 수동 확인. 0.9.4.62 crash-response 방어/관측 패치 완료. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.74 감사 통합·크래시 경로 수정 완료** — CPU 116/116, GPU 117/117. .72 Backend dump는 0xC0000409/ucrtbase+0xA527E였고 PDB가 없어 호출 함수를 특정할 수 없었다. 별도 `MSF_TEST_THROW_WALKER` 재현은 같은 fail-fast를 내며 심볼 스택에서 joinable telemetry sampler 소멸을 특정, RAII stop/join + catch 경로 `abortTelemetry()`로 수정. read progress를 producer admission과 consumer walked로 분리하고 count prepass progress/log를 추가. Supervisor restart timer를 modal failure보다 먼저 예약하고 저장한 `BackendScanConfig`로 READY 뒤 1회 자동 재개. 여러 감사의 stdout backpressure 가설은 이번 direct abort 증거와 맞지 않아 미확정으로 유지. 남은 것은 사용자 dataset에서 phase 로그 확인(quickHash I/O는 unchanged에도 지속), 실제 Windows UI acceptance, Tiles/ListMode 및 대규모 traversal. 0.9.4.62/65 crash-response 기록 유지. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.73 |
+| 현재 버전 | 0.9.4.74 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

@@ -1,7 +1,7 @@
-# Recent Three Significant Work Items — Result Report (2026-10-08)
+# Recent Significant Work and Audit Report (2026-10-08)
 
-Baseline commit: `8f3ba47` (synchronized with `origin/main`)
-Version: `0.9.4.71` / CPU CTest 116/116 / GPU CTest 117/117
+Baseline commit: `578a89d` (0.9.4.74 code; docs-only sync will follow)
+Version: `0.9.4.74` / CPU CTest 116/116 / GPU CTest 117/117
 
 This document is a summary report that lets the three most recently completed
 significant work items be checked **in one place**. The detailed evidence for
@@ -135,6 +135,35 @@ and decode returned null.
 | S6 | DEFERRED |
 | NVDEC production adoption | NO (F-1 CONDITIONAL) |
 
+## Follow-up full audit — 0.9.4.72–0.9.4.74
+
+- Compared the ChatGPT/Claude/Kimi/Grok claims with C++ source and the user's
+  .72 log/dumps. The Meta report's Python launcher hypotheses do not apply to
+  this C++/Qt product.
+- The .72 Backend exited with 0xC0000409 / FAST_FAIL_FATAL_APP_EXIT; no watchdog
+  timeout preceded the captured exit. The .72 build had no matching PDB, so the
+  exact caller in the user's dump remains unconfirmed.
+- `MSF_TEST_THROW_WALKER` reproduced the same 0xC0000409. The symbolized test
+  dump pointed to a joinable sampler being destroyed in
+  `TelemetryRecorder::~TelemetryRecorder`. RAII stop/join plus
+  `abortTelemetry()` in ScanWorker catches fixes it; `scan_streaming_test`
+  reproduced the abort before the fix and passes afterward.
+- The Supervisor now arms restart before failure UI, and MainWindow replays the
+  saved `BackendScanConfig` once on READY. `backend_e2e_test` verifies forced
+  kill → READY → automatic START_SCAN → FINISHED.
+- The pre-scan `Scanner::count()` previously had no progress callback, and the
+  read counter could pause while the consumer decoded a batch. .74 reports the
+  count/listing phase and producer queue admission separately, and resets stale
+  heartbeat counters at scan start.
+- Low CPU alone does not prove a scheduler defect. quickHash reads the first
+  64 KB even for indexed media, and new images use synchronous batch decode, so
+  I/O-bound behavior is plausible. Skipping quickHash when size/mtime match
+  changes correctness policy and was not adopted. Stdout backpressure remains
+  unconfirmed without a stress test.
+
+Details: `docs/build-history/0.9.4.72.*`–`0.9.4.74.*` and
+`docs/architecture/crash-response-runbook.*`.
+
 ## Remaining candidates / next steps
 
 - Real Windows manual GUI acceptance: preview display, selection, kill UI guard,
@@ -144,13 +173,16 @@ and decode returned null.
 - `color_thumb` R1 fixture and skip/pass handling, then R2-R6 separately.
 - XMP full scan regression after S4 functional acceptance.
 - Backup zips (`backup_src.ps1` / `package_portable.ps1`) were produced for
-  0.9.4.71 (3 per kind kept, `.68` portable recycled).
+  0.9.4.74 (3 per kind kept, `.70` recycled).
 
 ## Related documents
 
 - `docs/build-history/0.9.4.69.{ko,en}.md`
 - `docs/build-history/0.9.4.70.{ko,en}.md`
 - `docs/build-history/0.9.4.71.{ko,en}.md`
+- `docs/build-history/0.9.4.72.{ko,en}.md`
+- `docs/build-history/0.9.4.73.{ko,en}.md`
+- `docs/build-history/0.9.4.74.{ko,en}.md`
 - `docs/worklog/0.9.4.{ko,en}.md`
 - `docs/architecture/process-architecture-0.9.4.{ko,en}.md`
 - `docs/implementation-briefs/process-backend-isolation-0.9.4.{ko,en}.md`

@@ -42,10 +42,15 @@ so set up dump collection below.
 Run once in an elevated PowerShell:
 
 ```powershell
-New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Force
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Name "DumpFolder" -Value "D:\Temp\OpenCodeWork\dumps" -PropertyType ExpandString -Force
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Name "DumpCount" -Value 3 -PropertyType DWord -Force
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Name "DumpType" -Value 1 -PropertyType DWord -Force
+$dumpRoot = "D:\Temp\OpenCodeWork\dumps"
+New-Item -ItemType Directory -Path $dumpRoot -Force
+foreach ($image in @("MediaSimilarityFinder.exe", "MediaSimilarityFinderBackend.exe")) {
+  $key = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\$image"
+  New-Item -Path $key -Force
+  New-ItemProperty -Path $key -Name "DumpFolder" -Value $dumpRoot -PropertyType ExpandString -Force
+  New-ItemProperty -Path $key -Name "DumpCount" -Value 3 -PropertyType DWord -Force
+  New-ItemProperty -Path $key -Name "DumpType" -Value 1 -PropertyType DWord -Force
+}
 ```
 
 Registry record:
@@ -56,8 +61,12 @@ Registry record:
 | `DumpCount` | REG_DWORD | Kept dumps (oldest auto-deleted). 3 recommended |
 | `DumpType` | REG_DWORD | 1 = mini (enough for thread plus stack). 2 = full (can reach GBs on a large-scan process, use with care) |
 
-With the next forced termination, grab the `.dmp` plus its timestamp to pin
-down the faulting thread and stack.
+Configure both executable names: WER LocalDumps keys are image-specific, and the
+backend is a separate `MediaSimilarityFinderBackend.exe` process. On 0.9.4.73+
+keep the matching Release PDBs (`MediaSimilarityFinder.pdb` and
+`MediaSimilarityFinderBackend.pdb`) with the build artifacts. With the next
+forced termination, grab the `.dmp`, matching PDB, and timestamp to symbolize the
+faulting thread and stack.
 
 ## 3. Known crash history
 
@@ -106,6 +115,31 @@ down the faulting thread and stack.
   Engine-only 240-file scan is clean. Recorded separately as a GUI-side
   match-storm volume issue, unrelated to the scroll regression.
 
+### 3-4. 2026-10-08 — Backend 0xC0000409 during walk; telemetry-thread unwind path reproduced
+
+- User logs and two `MediaSimilarityFinderBackend.exe` dumps showed exit
+  `0xC0000409`, FAST_FAIL parameter `0x7`, fault RIP `ucrtbase.dll+0xA527E`, and
+  an incomplete walk. The old 0.9.4.72 backend had no matching PDB, so its exact
+  caller cannot be resolved from those dumps.
+- Two Application Event 1000 records independently matched image timestamp
+  `0x6AC7686B`, fault module `ucrtbase.dll`, code `0xC0000409`, and offset
+  `0xA527E`.
+- A deterministic `MSF_TEST_THROW_WALKER` seam reproduced the same fail-fast in
+  `scan_streaming_test`: an exception unwound `MediaSearchEngine::scan()` before
+  `finishScan()` stopped the telemetry sampler; destruction reached
+  `TelemetryRecorder` with a joinable `std::thread`, causing `std::terminate()`
+  -> `abort()` at the same ucrtbase offset. The test dump's symbolized stack
+  identified `TelemetryRecorder::~TelemetryRecorder` -> `MediaSearchEngine` ->
+  `ScanWorker`.
+- 0.9.4.74 response: `TelemetryRecorder` now stops/joins its sampler in its RAII
+  destructor, `ScanWorker` aborts unfinished telemetry in both exception
+  handlers, and the walker is joined before consumer exceptions are rethrown.
+  Walker exceptions become recorded failures. `scan_streaming_test` now injects
+  the exception and passes without terminating the test process.
+- Assessment: this is a confirmed abort path and a strong match for the observed
+  symptom, but the old backend dump cannot prove it was the sole trigger. The
+  0.9.4.74 PDBs are enabled for the next reproduction.
+
 ## 4. Defense patch history (0.9.4.62, 0.9.4.65)
 
 - Added `catch (...)` to `ScanWorker::run`. Checkpoints partial matches and
@@ -147,6 +181,7 @@ down the faulting thread and stack.
 
 - `docs/build-history/0.9.4.62.{ko,en}.md` — patch detail and verification numbers.
 - `docs/build-history/0.9.4.65.{ko,en}.md` — non-throwing handler patch and dump analysis.
+- `docs/build-history/0.9.4.74.{ko,en}.md` — telemetry sampler RAII fix, walk progress, and restart resume.
 - `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 entries (cause, measurements).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — separate topic
   (similarity verdicts). Do not confuse with crashes.

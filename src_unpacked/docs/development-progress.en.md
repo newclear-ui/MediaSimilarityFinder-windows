@@ -34,7 +34,7 @@ A separate `workprogress` document is intentionally not created; this document i
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
 | 0 | **0.9.4.64+** | **GUI usability manual acceptance (incl. 0.9.4.66)** | Settings dialog general tab (Show Detailed Logs), resize behavior, filename selection, Tiles/ListMode, large-dataset traversal, plus overlap re-check after mode switches | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
-| 1 | **0.9.4.62** | **Crash-response follow-up** | On recurrence, collect scan/Qt/WER/dump evidence and identify fault thread/root cause | **GUARDRAIL / immediate on evidence** |
+| 1 | **0.9.4.74** | **Crash-response follow-up** | The telemetry-sampler destructor abort path is deterministically reproduced and fixed. The original .72 Backend dump caller is unresolved without a PDB; symbolize the next dump with the .74 PDB | **GUARDRAIL / confirm root cause on next dump** |
 | 2 | Product acceptance | **Final Search / Index / Comparison acceptance recheck** | Resolve the latest real-dataset edge-case semantics around silent analysis failures / modified state | **NOT ACCEPTED / recheck after GUI work** |
 | 3 | S4 | **Final real-screen + save acceptance for GUI Detailed Logs** | Validate Search/Update → Detailed Logs → save/finish on the real user path | **PENDING / tied to product acceptance** |
 | 4 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | Extend fixture PASS to real-dataset evidence and clear the CONDITIONAL production acceptance | **PENDING** |
@@ -56,7 +56,7 @@ A separate `workprogress` document is intentionally not created; this document i
 > **Boundary:** Do not reopen sparse production, NVDEC production adoption, or utilization-only GPU tuning.
 > Existing rejection/deferred evidence remains authoritative.
 >
-> **Execution summary:** 0.9.4.70 P4 done (process split complete) → 0.9.4.71 backend defect fixes + ThumbnailStore done → manual GUI acceptance → final acceptance recheck
+> **Execution summary:** 0.9.4.70 P4 done → 0.9.4.71 backend defects + ThumbnailStore → 0.9.4.72 walk/analyze parallelization + display/ETR → 0.9.4.73 crash hardening/PDB/auto-resume → 0.9.4.74 telemetry-exit fix + read progress + validated resume → manual GUI acceptance → final acceptance recheck
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode and traversal remain lower-priority work and must not block the main validation track.
 
@@ -102,6 +102,9 @@ This section keeps only a **compressed completion state** for long-term orientat
 | P3 real spawn+Supervisor+IPC | **done in 0.9.4.69** | ScanWorker to src, shared Session, JSONL IPC, THUMBNAIL, async fileThumb, thumbDb moved. E2E measures PID split, restart, FAILED |
 | P4 hardening+acceptance | **done in 0.9.4.70** | Remaining decoders to FILE_META. Zero GUI pixel decode. dumpbin Qt6Core-only. All §15 checked, numbers locked |
 | Backend defect fixes+ThumbnailStore | **done in 0.9.4.71** | Seven defects from the second review fixed (ExecutionPolicy over IPC restores Maximum, Index Complete=analyzed+unchanged, single CPU/RAM summary meaning, slowest-list cacheHit/0ms exclusion, allMatches_ release, ThumbnailStore engine art + disk DB + decode chain JPEG end-to-end, fileMeta in-place). Qt JPEG plugin deployment regression found during verification → libjpeg-turbo decode. CPU 116/116, GPU 117/117 |
+| Scan stall fix | **done in 0.9.4.72** | Parallelized per-file quickHash walk (about 5x on the high-latency drive), parallelized candidate analyze, fixed CPU/RAM display and early ETR. CPU 116/116, GPU 117/117 |
+| Backend crash hardening draft | **done in 0.9.4.73** | Walker exception guard, PDB generation, one-shot auto-resume added. Follow-up audit found signal ordering and telemetry sampler lifetime gaps |
+| Merged audit / telemetry unwind / progress correction | **done in 0.9.4.74** | Deterministic walker exception reproduced 0xC0000409 at joinable `TelemetryRecorder` sampler destruction; RAII stop/join + `abortTelemetry`, pre-count progress, producer `readProgress` separate from consumer `walked`, restart-before-failure UI, saved-config resume. CPU 116/116, GPU 117/117 |
 
 
 ## 2026-10-06 — 0.9.4.59 review and next correction order
@@ -186,12 +189,12 @@ This phase-2 GUI task must not change engine cancellation semantics. Scheduler/w
 
 | Item | Status |
 | --- | --- |
-| Reference code | 0.9.4.73 (backend crash hardening + PDB enablement + scan auto-resume) |
+| Reference code | 0.9.4.74 (merged audit + telemetry-exit fix + read progress/auto-resume) |
 | Official preserved baseline | 0.9.2.32 |
 | Development line | 0.9.4 |
-| Current node | **0.9.4.73 backend crash hardening + PDB enablement + scan auto-resume done** — CPU 116/116, GPU 117/117, --version 0.9.4.73 on both exes. The user report (mid-scan backend exit "backend process exited unexpectedly", no resume after restart) was analyzed from dumps: 0xC0000409 FAST_FAIL_FATAL_APP_EXIT = std::terminate/abort (ucrtbase+0xA527E, same as runbook 3-2), died after an incomplete walk. Fixes: walker-thread try/catch + walkError (unhandled exception -> recorded failure), flushBatch serial fallback when std::async fails, CMake Release PDBs (/Zi CXX-only + /DEBUG), and one-shot scan auto-resume after a backend restart. Crash root cause unconfirmed (PDBs now allow symbolization on the next reproduction). The stall (low CPU, new-file progress pause) needs separate tracking. What remains is the real-Windows acceptance plus Tiles/ListMode and large-dataset traversal. The 0.9.4.62 crash-response patch is complete. XMP Orientation CONDITIONAL. `color_thumb` R1 not started. S5 infrastructure REVALIDATED and the real product benchmark remains gate-pending. F-1 CONDITIONAL with NVDEC production NO. |
+| Current node | **0.9.4.74 merged audit and crash-path correction done** — CPU 116/116, GPU 117/117. The .72 Backend dump showed 0xC0000409/ucrtbase+0xA527E but had no PDB to identify the caller. A deterministic `MSF_TEST_THROW_WALKER` reproduction produced the same fail-fast; its symbolized stack identified destruction of a joinable telemetry sampler. RAII stop/join plus `abortTelemetry()` in catch paths fixes it. Read progress is split between producer admission and consumer `walked`; pre-count progress/logging is added. The Supervisor schedules restart before modal failure handling and resumes the saved `BackendScanConfig` once on READY. The stdout-backpressure hypothesis does not match the captured direct abort and remains unconfirmed. Remaining: inspect phase logs on the user's dataset (quickHash still reads unchanged files), real-Windows acceptance, Tiles/ListMode, and large-dataset traversal. Crash root cause for the original .72 dump remains unproven. XMP Orientation CONDITIONAL. `color_thumb` R1 not started. S5 infrastructure REVALIDATED and the real product benchmark remains gate-pending. F-1 CONDITIONAL with NVDEC production NO. |
 | Current phase | **P4 done → real GUI manual acceptance → final Search/Index/Comparison acceptance recheck → S4 → XMP/color_thumb → S5 → S6**. Manual GUI acceptance (incl. overlap re-check) → final acceptance recheck → S4 → XMP/color_thumb → S5 → S6 stay queued. The latest real-dataset acceptance audit still leaves Search/Index/Comparison **NOT ACCEPTED**, even though some execution paths are PASS, so S4/S5 must not be promoted to final PASS prematurely. On any new crash, collect logs/WER/Qt/dump evidence using `crash-response-runbook` before speculative code changes. F-1 remains `CONDITIONAL`, NVDEC production adoption remains `NO`, and sparse production remains blocked by `ExactnessPolicy::RefuseAll`. |
-| Current version | 0.9.4.73 |
+| Current version | 0.9.4.74 |
 | GPU implementation baseline | NVIDIA CUDA |
 | CPU fallback | retained |
 | Project-local vcpkg | retained; no migration |

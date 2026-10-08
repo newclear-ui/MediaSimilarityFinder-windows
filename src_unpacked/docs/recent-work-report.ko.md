@@ -1,7 +1,7 @@
-# 최근 중요 3건 작업 결과 보고 (2026-10-08)
+# 최근 중요 작업 및 감사 결과 보고 (2026-10-08)
 
-기준 커밋: `8f3ba47` (`origin/main`과 동기화 완료)
-버전: `0.9.4.71` / CPU CTest 116/116 / GPU CTest 117/117
+기준 커밋: `578a89d` (0.9.4.74 코드, docs-only 동기화 후 origin/main과 동기화 예정)
+버전: `0.9.4.74` / CPU CTest 116/116 / GPU CTest 117/117
 
 이 문서는 최근 완료된 중요 작업 3건을 **한 문서에서 확인**하기 위한 요약 보고다.
 각 작업의 상세 근거는 Build History / Work Log에 이미 있고, 이 문서는
@@ -126,6 +126,17 @@ Qt JPEG 플러그인(`qjpeg.dll`)이 의존하는 **`jpeg62.dll`이 배포 세�
 | S6 | DEFERRED |
 | NVDEC production adoption | NO (F-1 CONDITIONAL) |
 
+## 후속 전면 감사 — 0.9.4.72~0.9.4.74
+
+- ChatGPT/Claude/Kimi/Grok 감사의 주장을 C++ 소스와 사용자의 `.72` 로그/덤프에 대조했다. Meta 리포트의 Python launcher 가설은 이 C++/Qt 제품에 적용되지 않아 제외.
+- `.72` Backend는 0xC0000409/FAST_FAIL_FATAL_APP_EXIT로 종료됐고, 기록된 로그에 watchdog timeout은 없었다. `.72`에는 PDB가 없어 실제 사용자 dump의 caller는 미확정.
+- `MSF_TEST_THROW_WALKER`로 동일한 0xC0000409를 재현했고, 테스트 dump 심볼은 `TelemetryRecorder::~TelemetryRecorder`의 joinable sampler 파괴를 가리켰다. RAII stop/join + ScanWorker catch의 `abortTelemetry()`로 수정. `scan_streaming_test`가 수정 전 abort, 수정 후 PASS를 확인.
+- Supervisor는 restart timer를 failure UI 전에 예약하고, MainWindow은 저장한 `BackendScanConfig`로 READY 후 1회 자동 재개한다. `backend_e2e_test`가 강제 종료→READY→자동 START_SCAN→FINISHED를 검증.
+- 사전 `Scanner::count()`는 이전에 progress가 없었고, read counter는 consumer가 batch decode를 하는 동안 멈출 수 있었다. `.74`는 count/listing 단계와 producer queue admission을 별도 보고하고 heartbeat 카운터를 scan 시작에 reset한다.
+- CPU 저하는 단독으로 scheduler 결함을 증명하지 않는다. 모든 indexed media에서도 quickHash 앞 64KB를 읽고 신규 이미지는 동기 batch decode가 있어 I/O-bound가 가능하다. 같은 크기/mtime에서 quickHash 생략은 정확성 정책 변경이므로 이번에는 하지 않았다. stdout backpressure는 별도 stress 검증이 없어 미확정.
+
+상세: `docs/build-history/0.9.4.72.*`–`0.9.4.74.*`, `docs/architecture/crash-response-runbook.*`.
+
 ## 남은 후보 / 다음 단계
 
 - 실제 Windows GUI manual acceptance: 미리보기 표시, selection, kill 시 UI 가드,
@@ -134,14 +145,17 @@ Qt JPEG 플러그인(`qjpeg.dll`)이 의존하는 **`jpeg62.dll`이 배포 세�
 - Backend 400MB의 정확한 비중은 VMMap/힙 스냅샷 필요.
 - `color_thumb` R1 fixture 및 skip/pass 처리 → 그다음 R2~R6은 별도 결정.
 - XMP full scan regression — S4 functional acceptance 완료 후.
-- 백업 zip(`backup_src.ps1` / `package_portable.ps1`)은 0.9.4.71에서 수행 완료
-  (src·portable 각 3개 유지, `.68` portable 회전).
+- 백업 zip(`backup_src.ps1` / `package_portable.ps1`)은 0.9.4.74에서 수행 완료
+  (src·portable 각 3개 유지, `.70` 회전).
 
 ## 관련 문서
 
 - `docs/build-history/0.9.4.69.{ko,en}.md`
 - `docs/build-history/0.9.4.70.{ko,en}.md`
 - `docs/build-history/0.9.4.71.{ko,en}.md`
+- `docs/build-history/0.9.4.72.{ko,en}.md`
+- `docs/build-history/0.9.4.73.{ko,en}.md`
+- `docs/build-history/0.9.4.74.{ko,en}.md`
 - `docs/worklog/0.9.4.{ko,en}.md`
 - `docs/architecture/process-architecture-0.9.4.{ko,en}.md`
 - `docs/implementation-briefs/process-backend-isolation-0.9.4.{ko,en}.md`

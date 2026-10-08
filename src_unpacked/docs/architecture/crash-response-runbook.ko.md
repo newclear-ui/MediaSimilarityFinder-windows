@@ -40,10 +40,15 @@ Qt warning/critical/fatal의 최종 기록. fatal 직전 줄이 마지막 단서
 관리자 PowerShell에서 1회 실행한다.
 
 ```powershell
-New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Force
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Name "DumpFolder" -Value "D:\Temp\OpenCodeWork\dumps" -PropertyType ExpandString -Force
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Name "DumpCount" -Value 3 -PropertyType DWord -Force
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\MediaSimilarityFinder.exe" -Name "DumpType" -Value 1 -PropertyType DWord -Force
+$dumpRoot = "D:\Temp\OpenCodeWork\dumps"
+New-Item -ItemType Directory -Path $dumpRoot -Force
+foreach ($image in @("MediaSimilarityFinder.exe", "MediaSimilarityFinderBackend.exe")) {
+  $key = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\$image"
+  New-Item -Path $key -Force
+  New-ItemProperty -Path $key -Name "DumpFolder" -Value $dumpRoot -PropertyType ExpandString -Force
+  New-ItemProperty -Path $key -Name "DumpCount" -Value 3 -PropertyType DWord -Force
+  New-ItemProperty -Path $key -Name "DumpType" -Value 1 -PropertyType DWord -Force
+}
 ```
 
 레지스트리 기록 사항:
@@ -54,8 +59,11 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting
 | `DumpCount` | REG_DWORD | 보관 개수 (초과분 자동 삭제). 3 권장 |
 | `DumpType` | REG_DWORD | 1 = mini (스레드·스택 특정에 충분). 2 = full (수 GB 가능, 대규모 스캔 프로세스에서 주의) |
 
-다음 강제종료 시 해당 폴더의 `.dmp` + 발생 시각을 확보하면 fault 스레드·
-스택을 특정한다.
+WER LocalDumps 키는 이미지별이므로 GUI와 별도 프로세스인
+`MediaSimilarityFinderBackend.exe` 양쪽을 설정한다. 0.9.4.73+에서는 빌드와
+일치하는 Release PDB(`MediaSimilarityFinder.pdb`,
+`MediaSimilarityFinderBackend.pdb`)도 함께 보관한다. 다음 강제종료 시 `.dmp`,
+일치 PDB, 발생 시각을 확보해 fault 스레드와 스택을 심볼 해석한다.
 
 ## 3. 알려진 크래시 이력
 
@@ -98,6 +106,29 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting
   엔진 단독 240-file 스캔은 정상. GUI 측 match-storm 규모 문제로 분리 기록.
   scroll 회귀와는 다른 버그.
 
+### 3-4. 2026-10-08 — walk 도중 Backend 0xC0000409; telemetry thread unwind 경로 재현
+
+- 사용자 로그와 `MediaSimilarityFinderBackend.exe` 덤프 2건에서 종료
+  `0xC0000409`, FAST_FAIL 파라미터 `0x7`, fault RIP `ucrtbase.dll+0xA527E`,
+  walk 미완료를 확인했다. 구 0.9.4.72 Backend에는 일치 PDB가 없어 그 덤프의
+  실제 호출 함수를 특정할 수 없다.
+- Application Event 1000 두 건도 image timestamp `0x6AC7686B`, fault module
+  `ucrtbase.dll`, code `0xC0000409`, offset `0xA527E`로 같은 종료를 확인했다.
+- 결정적 `MSF_TEST_THROW_WALKER` seam으로 `scan_streaming_test`에서 동일한
+  fail-fast를 재현했다. 예외가 `MediaSearchEngine::scan()`을 빠져나가
+  `finishScan()`이 telemetry sampler를 중지하기 전에 unwind되면, join 가능한
+  `std::thread`를 가진 `TelemetryRecorder` 파괴가 `std::terminate()` → `abort()`를
+  일으켰다(동일 ucrtbase 오프셋). 테스트 덤프 심볼 스택은
+  `TelemetryRecorder::~TelemetryRecorder` → `MediaSearchEngine` → `ScanWorker`로
+  확인됐다.
+- 0.9.4.74 대응: `TelemetryRecorder` RAII destructor에서 sampler를 중지·join,
+  `ScanWorker` 두 예외 핸들러에서 미완료 telemetry abort, consumer 예외를 다시
+  던지기 전에 walker join. Walker 예외는 기록된 실패로 격하. `scan_streaming_test`가
+  예외를 주입해도 테스트 프로세스가 종료되지 않고 PASS한다.
+- 판정: 이 abort 경로는 재현·수정했으며 사용자 증상과 강하게 일치하지만, 구
+  Backend 덤프에 심볼이 없어 이것이 유일한 사용자 트리거였다고 단정하지 않는다.
+  다음 재현은 0.9.4.74 PDB로 확인한다.
+
 ## 4. 방어 패치 내역 (0.9.4.62, 0.9.4.65)
 
 - `ScanWorker::run`에 `catch (...)` 추가. 부분 매치 checkpoint 후
@@ -136,6 +167,7 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting
 
 - `docs/build-history/0.9.4.62.{ko,en}.md` — 패치 상세와 검증 수치.
 - `docs/build-history/0.9.4.65.{ko,en}.md` — 핸들러 무throw 패치와 덤프 분석.
+- `docs/build-history/0.9.4.74.{ko,en}.md` — telemetry sampler RAII 수정, walk 진행률, 재시작 후 재개.
 - `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 항목 (원인·실측).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — 별개 주제
   (유사 판정). 크래시와 무관하므로 혼동하지 말 것.

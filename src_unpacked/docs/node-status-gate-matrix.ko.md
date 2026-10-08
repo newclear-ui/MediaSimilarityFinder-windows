@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.71` (프로세스 분리 P1–P4 완료 + 결함 수정) · CPU CTest 116/116 · GPU CTest 117/117
+기준: `0.9.4.74` (감사 통합 + telemetry 종료/진행률/재개 수정) · CPU CTest 116/116 · GPU CTest 117/117
 최종 갱신: 2026-10-08
 
 ## 이 문서의 역할
@@ -106,13 +106,13 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71 결함 수정 + ThumbnailStore 완료
-다음             실제 Windows GUI manual acceptance (미리보기 표시, selection, kill 시 UI 가드,
-                 restart 복귀, Tiles/ListMode, 대규모 dataset traversal) → 제품 acceptance 재확인
+활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71~.74 corrective builds 완료
+다음             실제 Windows GUI manual acceptance (미리보기 표시, selection, crash 후 자동 재개,
+                 Tiles/ListMode, 대규모 dataset traversal) → 제품 acceptance 재확인
                  → S4 real-screen acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
-현재 판단        0.9.4.71은 2차 독립 재검토 확정 7건(ExecutionPolicy IPC, Index Complete, 요약 단일 의미,
-                 느린 파일 제외, allMatches_ 해제, ThumbnailStore JPEG end-to-end, fileMeta in-place)을
-                 수정했다. 검증 중 Qt JPEG 플러그인 미배포 회귀를 발견해 공용 libjpeg-turbo 디코드로 교체했다.
+현재 판단        0.9.4.72 walk/analyze 병렬화와 표시/ETR 수정, 0.9.4.73 crash defense/PDB/auto-resume,
+                 0.9.4.74 telemetry sampler 종료 abort 재현·수정 + count/read progress + READY 재개 검증.
+                 사용자의 .72 dump는 PDB 부재로 exact caller 미확정. stdout backpressure는 가설로 보류.
 잔여 위험        GUI 미리보기/선택/복귀는 headless에서 육안 검증 불가 → 수동 acceptance 필요.
                  GPU MAX share boost는 문서화된 미구현 공백. thumbCatchUpVisible()은 매 tick 전체 목록을
                  순회하지만 correctness blocker가 아니므로 후순위 성능 검토로 둔다.
@@ -157,4 +157,4 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 ## 버전 불변 확인
 
 `kEngineVersion 1.5.0` · `kDatabaseVersion 1.0.4` · `kBenchmarkSchemaVersion 9` ·
-`kCacheFormatVersion 9` — 0.9.4.71 기준 변경 없음.
+`kCacheFormatVersion 9` — 0.9.4.74 기준 변경 없음.

@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.71` (process split P1–P4 complete + defect fixes) - CPU CTest 116/116 - GPU CTest 117/117
+Baseline: `0.9.4.74` (merged audit + telemetry-exit/progress/resume corrections) - CPU CTest 116/116 - GPU CTest 117/117
 Last updated: 2026-10-08
 
 ## Role of this document
@@ -109,14 +109,14 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), 0.9.4.71 defect fixes + ThumbnailStore done
-next               Real Windows manual GUI acceptance (preview display, selection, kill UI guard,
-                   restart recovery, Tiles/ListMode, large-dataset traversal) -> final acceptance recheck
+active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.74 done
+next               Real Windows manual GUI acceptance (new-file read progress, auto-resume after crash,
+                   preview display, selection, Tiles/ListMode, large-dataset traversal) -> final acceptance recheck
                    -> S4 real-screen acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
-current verdict    0.9.4.71 fixed the seven defects from the second independent review (ExecutionPolicy over IPC,
-                   Index Complete, single summary meaning, slowest-list exclusion, allMatches_ release,
-                   ThumbnailStore JPEG end-to-end, fileMeta in-place). During verification a Qt JPEG plugin
-                   deployment regression was found and replaced with shared libjpeg-turbo decode.
+current verdict    0.9.4.72 parallelized walk/analyze and fixed display/ETR; 0.9.4.73 added crash hardening/PDB/auto-resume;
+                   0.9.4.74 reproduced and fixed the telemetry-sampler destructor abort path, exposed count/read progress,
+                   corrected restart-before-modal ordering, and verified one-shot saved-config auto-resume. The user's
+                   old .72 dump lacks PDB, so exact crash caller remains unproven.
 remaining risk     GUI preview/selection/recovery cannot be eyeballed headless -> manual acceptance needed.
                    GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each
                    tick but is not the present correctness blocker, so it stays a lower-priority perf item.
@@ -162,4 +162,4 @@ stay in the origin documents.
 ## Version invariance check
 
 `kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.4` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9` — unchanged at the 0.9.4.71 baseline.
+`kCacheFormatVersion 9` — unchanged at the 0.9.4.74 baseline.
