@@ -529,6 +529,19 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // MediaPipeline transparently executes the same CPU pHash reference path.
  // Single DB connection: only this thread touches db_/files_/r.
    auto processImageBatch=[&](std::vector<std::string>& batch)->bool{
+   // Crash-frontier durability (0.9.4.76): commit admission skeleton rows
+   // BEFORE the heavy parallel batch work. A kill/AV mid-batch then leaves
+   // the admitted-but-unanalyzed frontier (fingerprint 0, not failed)
+   // committed, and the pendingAnalysis rule retries it on the next scan.
+   // Without this entry checkpoint the whole open transaction rolls back and
+   // the frontier is invisible (proven by a 0xC0000005 crash with zero
+   // completions and zero fingerprint-0 rows).
+   if(!checkpoint()) return false;
+   // Test-only fault injection (0.9.4.76): deterministic mid-batch failure
+   // AFTER the entry checkpoint, proving skeleton durability across unwind.
+   // Production code never sets this variable, so the branch is dead
+   // otherwise (same pattern as MSF_TEST_THROW_WALKER).
+   if(std::getenv("MSF_TEST_THROW_BATCH")) throw std::runtime_error("MSF_TEST_THROW_BATCH");
    const auto bt0=std::chrono::steady_clock::now();
    // B1 re-evaluation point (existing phase boundary; no topology change).
    // B2: refresh observed image-path rates first (unknown until 2+ batches).
@@ -586,6 +599,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // Videos retain the bounded asynchronous CPU/FFmpeg analysis path. This keeps
  // GPU image batching independent from the video decoder architecture.
   auto processVideoRange=[&](std::size_t from,std::size_t to)->VideoRangeResult{
+   // Same crash-frontier durability as the image path: commit admission
+   // skeletons before spawning the async range, so a kill/AV mid-range
+   // leaves the admitted-but-unanalyzed frontier committed.
+   if(!checkpoint()) return VideoRangeResult::Failed;
    // B1 re-evaluation point (existing phase boundary; no topology change).
    // B3: video carries no new throughput observation, but loads refresh.
    refreshSchedLoad();

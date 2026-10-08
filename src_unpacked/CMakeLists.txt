@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.75 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.76 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -859,6 +859,12 @@ if(Qt6_FOUND)
     target_link_libraries(msf_test_mode_test PRIVATE msf_core Qt6::Core)
     target_include_directories(msf_test_mode_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME test_mode_test COMMAND msf_test_mode_test)
+    # 0.9.4.76 crash-frontier durability: mid-batch failure must leave the
+    # admission frontier (fingerprint 0, not failed) committed for retry.
+    add_executable(msf_scan_crash_frontier_test tests/scan_crash_frontier_test.cpp)
+    target_link_libraries(msf_scan_crash_frontier_test PRIVATE msf_core Qt6::Core)
+    target_include_directories(msf_scan_crash_frontier_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME scan_crash_frontier_test COMMAND msf_scan_crash_frontier_test)
     # Transitional: the IPC endpoint arrives in P3, so --backend refuses.
     # WILL_FAIL documents the expectation; P3 removes it when serving starts.
     add_test(NAME backend_refuses_before_p3 COMMAND MediaSimilarityFinderBackend --backend)
