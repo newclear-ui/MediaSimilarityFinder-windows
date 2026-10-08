@@ -138,7 +138,7 @@ run.
 
 **D9b remains NOT ACCEPTED** and is not reclassified as a success.
 
-- Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Current set (0.9.4.71): Source `MediaSimilarityFinder-v0.9.4.71-src.zip` (2.33 MB, 774 files verified byte-identical to GitHub, 0 mismatches); Compiled `MediaSimilarityFinder-v0.9.4.71-Portable-Windows-x64.zip` (43.02 MB, 86 entries, GUI + Backend exe + turbojpeg present, `--smoke` PASS). Previous kind members: `.69`/`.70` src and portable; `.68` recycled to the Recycle Bin on 0.9.4.71. `package_portable.ps1` writes portable zips straight to `backup/`; both kinds rotate independently at 3. Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
+- Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Current set (0.9.4.72): Source `MediaSimilarityFinder-v0.9.4.72-src.zip` (2.34 MB, 776 files verified byte-identical to GitHub, 0 mismatches); Compiled `MediaSimilarityFinder-v0.9.4.72-Portable-Windows-x64.zip` (43.14 MB, 86 entries, GUI + Backend exe + turbojpeg present, `--smoke` PASS). Previous kind members: `.70`/`.71` src and portable; `.69` src recycled to the Recycle Bin on 0.9.4.72. `package_portable.ps1` writes portable zips straight to `backup/`; both kinds rotate independently at 3. Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
 
 ### D9b measured result — Candidate B NOT ACCEPTED
 
