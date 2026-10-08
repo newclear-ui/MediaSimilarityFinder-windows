@@ -49,11 +49,16 @@ struct ScanControl {
  std::atomic_bool cancel{false};
  std::atomic_bool pause{false};
   std::function<void(std::size_t,std::size_t,const std::string&)> progress;
-  // Directory-walk phase reporter (file count so far). Fires before any
-  // analysis; lets the UI show listing progress on huge folders instead of
-  // sitting at 0% with only disk I/O visible.
-  std::function<void(std::size_t)> listing;
-  std::function<void(std::size_t)> walked;
+   // Directory-walk producer progress (in-scope media admitted to the bounded
+   // queue after quick-hash). Independent of consumer analysis so a slow image
+   // batch cannot freeze the visible read counter while the walker still reads.
+   std::function<void(std::size_t)> listing;
+   // Consumer-side scanned count, kept distinct for engine clients/tests that
+   // use walked admission to drive cancellation or batch semantics.
+   std::function<void(std::size_t)> walked;
+   // Producer-side read/admission count, in-scope only. Unlike walked it can
+   // run ahead by at most the bounded queue capacity while analysis is busy.
+   std::function<void(std::size_t)> readProgress;
   // Fingerprint-phase progress (files hashed so far, bytes hashed so far,
   // current path). The fingerprint reads every file fully and can run minutes
   // on huge datasets with no other progress signal; without this the UI sits

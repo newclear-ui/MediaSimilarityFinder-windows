@@ -106,6 +106,7 @@ struct CalibrationTelemetry {
 };
 class TelemetryRecorder {
 public:
+  ~TelemetryRecorder();
   static constexpr std::size_t kSlowTop = 20;
   static constexpr int kSampleMs = 250;
   static constexpr std::size_t kMaxSamples = 50000;

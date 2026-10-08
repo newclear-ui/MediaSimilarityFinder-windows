@@ -3,7 +3,7 @@
 // Real MainWindow + real BackendSupervisor + real Backend OS process:
 //   Test 1: HELLO/READY, scan runs to FINISHED, GUI PID != Backend PID.
 //   Test 2: forced backend kill mid-scan -> GUI alive, exit detected,
-//           bounded restart, new PID, READY again, rescan completes.
+//           bounded restart, new PID, READY again, scan auto-resumes once.
 //   Test 3: repeated kills -> bounded retries exhausted -> FAILED, no
 //           infinite loop, GUI still alive.
 //   Test 4 (folded into Test 2): the post-restart rescan reopens the
@@ -143,6 +143,9 @@ int main(int argc, char** argv) {
     QObject::connect(supervisor, &BackendClient::failed, supervisor,
                      [&](const QString& m) { failedSeen = true; failedMsg = m; });
     bool scanActive = false;
+    int finishedCount = 0;
+    QObject::connect(supervisor, &BackendClient::finished, supervisor,
+                     [&](const QString&) { ++finishedCount; });
     QObject::connect(supervisor, &BackendClient::progress, supervisor,
                      [&](int, QString) { scanActive = true; });
     QObject::connect(supervisor, &BackendClient::backendLogLine, supervisor,
@@ -176,6 +179,7 @@ int main(int argc, char** argv) {
     pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1 scan finished");
     if (!gOk) return 3;
     check(grid->count() >= 2, "test1 groups displayed");
+    check(finishedCount == 1, "test1 finished event observed");
     std::cout << "  [info] guiPid=" << guiPid << " backendPid=" << pid1 << "\n";
     // FileMeta over IPC: select the first group/file and expect the detail
     // pane to resolve "8x8" through GET_FILE_META/FILE_META (no GUI decode).
@@ -197,13 +201,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ---- Test 2: forced kill right after scan start -> restart -> rescan. ----
+    // ---- Test 2: forced kill right after scan start -> restart -> auto-resume. ----
     // The kill lands deterministically with no wait at all: supervisor.scanning_
     // is set synchronously when START_SCAN is sent, while even a quick-load
     // rescan needs hundreds of ms to finish. Any wait (even for progress)
     // lets the rescan finish first and makes the failure assertion vacuous.
     scanActive = false;
     failedSeen = false;
+    const int finishedBeforeCrash = finishedCount;
     scan->click();
     QApplication::processEvents();
 #ifdef _WIN32
@@ -219,12 +224,11 @@ int main(int argc, char** argv) {
     const qint64 pid2 = supervisor->backendPid();
     check(pid2 > 0 && pid2 != pid1, "test2 new backend PID after restart");
     std::cout << "  [info] restarted backendPid=" << pid2 << "\n";
-    pumpUntil([&] { return scan->isEnabled(); }, 180000, "test2 wound-down scan button idle");
-    // Rescan on the same folder: proves the existing SQLite/index reopened
-    // with committed state (Test 4).
-    scan->click();
-    QApplication::processEvents();
-    pumpUntil([&] { return scan->isEnabled(); }, 180000, "test2 rescan finished (index reopened)");
+    pumpUntil([&] { return w.testAutoResumeTries() == 1; }, 30000,
+              "test2 scan automatically reissued after READY");
+    pumpUntil([&] { return finishedCount > finishedBeforeCrash; }, 180000,
+              "test2 auto-resumed scan finished (index reopened)");
+    check(scan->isEnabled(), "test2 scan button idle after auto-resume");
     if (!gOk) return 5;
     check(grid->count() >= 2, "test2 groups displayed after restart");
 

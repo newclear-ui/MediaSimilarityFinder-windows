@@ -44,14 +44,30 @@ void ScanWorker::run() {
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
     {
+      lastListMs_ = 0;
+      lastListN_ = 0;
       msf::IndexPaths paths;
       std::string excluded;
       if (msf::IndexManager::resolve(msf::path_from_utf8(appDir_.toStdString()),
                                      msf::path_from_utf8(root_.toStdString()), paths))
         excluded = msf::path_to_utf8(paths.directory.parent_path());
+      const qint64 countT0 = QDateTime::currentMSecsSinceEpoch();
+      msf::backendLogLine("scanPhase=count begin");
       const qulonglong total = msf::Scanner().count(root_.toStdString(), excluded,
-                                                    scanImages_, scanVideos_,
-                                                    control_.ignoredPaths, &control_.cancel);
+                                                     scanImages_, scanVideos_,
+                                                     control_.ignoredPaths, &control_.cancel,
+                                                     [this](std::size_t n) {
+                                                       lastListN_ = n;
+                                                       const qint64 now = QDateTime::currentMSecsSinceEpoch();
+                                                       if (now - lastListMs_ > 150) {
+                                                         lastListMs_ = now;
+                                                         emit listingProgress(n);
+                                                       }
+                                                     });
+      emit listingProgress(lastListN_); // flush the final count-pass heartbeat
+      msf::backendLogLine(QString("scanPhase=count done entries=%1 target=%2 elapsedMs=%3")
+                              .arg(lastListN_).arg(total)
+                              .arg(QDateTime::currentMSecsSinceEpoch() - countT0).toStdString());
       emit targetCount(total);
     }
     // Engine-version gate: pairs stored by an older verdict generation are
@@ -105,6 +121,7 @@ void ScanWorker::run() {
     // cancel, and close stay responsive no matter the scan speed.
     lastProgMs_ = 0; lastProgDone_ = 0; lastProgTotal_ = 0; lastProgPath_.clear();
     lastListMs_ = 0; lastListN_ = 0; lastWalkedMs_ = 0; lastWalkedN_ = 0;
+    emit listingProgress(0); // new walk phase; do not retain count-pass values
     lastFpMs_ = 0;
     // Fingerprint-phase live progress. Same 150 ms throttle as the walk
     // callbacks: the fingerprint can hash thousands of files per second.
@@ -131,7 +148,7 @@ void ScanWorker::run() {
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastListMs_ > 150) { lastListMs_ = now; emit listingProgress(n); }
     };
-    control_.walked = [this](std::size_t n) {
+    control_.readProgress = [this](std::size_t n) {
       lastWalkedN_ = n;
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastWalkedMs_ > 150 || n == 0) { lastWalkedMs_ = now; emit walkedCount((qulonglong)n); }
@@ -162,7 +179,10 @@ void ScanWorker::run() {
     // (two path strings each) costs hundreds of MB. The GUI accumulates
     // groups incrementally from onMatch and needs no retained vector.
     control_.retainMatches = false;
+    msf::backendLogLine("scanPhase=engine begin");
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
+    msf::backendLogLine(QString("scanPhase=engine done scanned=%1 analyzed=%2 unchanged=%3 failed=%4")
+                            .arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.failed).toStdString());
     const QString telemetryJson = engine_.hasTelemetry() ? QString::fromStdString(engine_.telemetryJson()) : QString();
     gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
     // Flush the throttled progress display with the final counts.
@@ -171,6 +191,7 @@ void ScanWorker::run() {
       emit progress(total ? int(done * 100 / total) : 100, QString::fromStdString(lastProgPath_));
       emit progressCount((qulonglong)done, (qulonglong)total);
       if (lastListN_ > 0) emit listingProgress(lastListN_);
+      emit walkedCount((qulonglong)lastWalkedN_); // flush producer-side read count
     }
     // Final persist of the accumulated match set (loaded + new, including pairs
     // whose files are currently missing from disk). Wholesale replacement keeps
@@ -215,6 +236,11 @@ void ScanWorker::run() {
                       .arg(r.failed ? QString(", %1 could not be analyzed").arg(r.failed) : QString())
                   + QString("|%1|%2|%3|%4|%5").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates));
   } catch (const std::exception& e) {
+    try { msf::backendLogLine(QString("scanWorker caught exception: %1").arg(QString::fromUtf8(e.what())).toStdString()); } catch (...) {}
+    // engine_.scan() may unwind before finishScan() finalizes telemetry. Stop
+    // its sampler here; otherwise TelemetryRecorder would be destroyed with a
+    // joinable std::thread and call std::terminate after this handler returns.
+    try { engine_.abortTelemetry(); } catch (...) {}
     // A failed scan must not discard what it already found: checkpoint first
     // so the next scan of the same folder quick-loads the partial results.
     // (0.9.4.65) Neither step may throw out of this handler: run() is a Qt
@@ -224,11 +250,14 @@ void ScanWorker::run() {
     // are attempted independently; each swallows its own failure.
     try { persistMatchesSnapshot(); } catch (...) {}
     try { emit failed(e.what()); } catch (...) {}
+    try { msf::backendLogLine("scanWorker std::exception failure reported"); } catch (...) {}
     // P4: same release as the normal path (persist already checkpointed).
     // shrink_to_fit guarded: this handler must never throw (0.9.4.65 rule).
     allMatches_.clear();
     try { allMatches_.shrink_to_fit(); } catch (...) {}
   } catch (...) {
+    try { msf::backendLogLine("scanWorker caught non-standard exception"); } catch (...) {}
+    try { engine_.abortTelemetry(); } catch (...) {}
     // Fail-fast converted to a recorded failure (0.9.4.62): a non-standard
     // exception used to terminate the whole process with no record (the
     // 0xC0000409 signature seen in real crashes). Persist partial matches
@@ -239,6 +268,7 @@ void ScanWorker::run() {
     // re-enters terminate() -> abort() with no record.
     try { persistMatchesSnapshot(); } catch (...) {}
     try { emit failed("unhandled non-standard exception in scan worker"); } catch (...) {}
+    try { msf::backendLogLine("scanWorker non-standard failure reported"); } catch (...) {}
     allMatches_.clear();
     try { allMatches_.shrink_to_fit(); } catch (...) {}
   }

@@ -25,16 +25,20 @@ bool Scanner::isMediaPath(const fs::path& p) {
 std::size_t Scanner::count(const std::string& root, const std::string& excludedDirectory,
                            bool scanImages, bool scanVideos,
                            const std::unordered_set<std::string>& ignoredPaths,
-                           const std::atomic_bool* cancel) const {
+                           const std::atomic_bool* cancel,
+                           const std::function<void(std::size_t)>& onProgress) const {
   std::error_code ec;
   const fs::path excluded = excludedDirectory.empty() ? fs::path{} : fs::weakly_canonical(path_from_utf8(excludedDirectory), ec);
   ec.clear();
   fs::recursive_directory_iterator it(path_from_utf8(root), fs::directory_options::skip_permission_denied, ec), end;
   ec.clear();
   std::size_t total = 0;
+  std::size_t visited = 0;
   for (; it != end; it.increment(ec)) {
     if (cancel && cancel->load()) break;
     if (ec) { ec.clear(); continue; }
+    ++visited;
+    if (onProgress && (visited % 2000) == 0) onProgress(visited);
     std::error_code e;
     if (!excluded.empty() && it->is_directory(e)) {
       const auto p = fs::weakly_canonical(it->path(), e);
@@ -48,6 +52,7 @@ std::size_t Scanner::count(const std::string& root, const std::string& excludedD
     if (e || ignoredPaths.find(path_to_utf8(canonical)) != ignoredPaths.end()) continue;
     ++total;
   }
+  if (onProgress) onProgress(visited);
   return total;
 }
 static std::int64_t stamp(const fs::path&p){std::error_code ec;auto t=fs::last_write_time(p,ec);if(ec)return 0;return std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch()).count();}
@@ -61,7 +66,7 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
  const fs::path excluded=excludedDirectory.empty()?fs::path{}:fs::weakly_canonical(path_from_utf8(excludedDirectory),ec); ec.clear();
  fs::recursive_directory_iterator it(path_from_utf8(root),fs::directory_options::skip_permission_denied,ec),end;
  std::size_t n=0;
- auto cancelled=[&]{ return cb.cancel && cb.cancel->load(); };
+  auto cancelled=[&]{ return (cb.cancel && cb.cancel->load()) || (cb.shouldStop && cb.shouldStop()); };
  // The per-file 64KB content hash (quick) is the walk's dominant cost and is
  // latency-bound on the file open, not CPU. Keep enumeration and metadata on
  // this thread, but fan the reads out over a bounded pool so a large or
@@ -99,12 +104,14 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
   if(!parallelDone){
    for(std::size_t i=0;i<batch.size();++i){ try{ batch[i].quickHash=quick(bpaths[i]); }catch(...){} }
   }
-  for(auto& s:batch){
-   ++n;
-   if(cb.onProgress && (n%2000)==0) cb.onProgress(n);
-   if(cb.onFile) cb.onFile(std::move(s)); else o.push_back(std::move(s));
-  }
-  batch.clear(); bpaths.clear();
+   for(auto& s:batch){
+    ++n;
+    if(cb.onFile) cb.onFile(std::move(s)); else o.push_back(std::move(s));
+   }
+   // Report each completed hash batch. The caller throttles UI delivery; this
+   // keeps producer-side read progress visible even while analysis is busy.
+   if(cb.onProgress) cb.onProgress(n);
+   batch.clear(); bpaths.clear();
  };
  for(;it!=end;it.increment(ec)){
   if(cancelled()) break;

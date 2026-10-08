@@ -79,6 +79,7 @@ public:
   // worker is gone). Lets acceptance tests assert the detailed-log result
   // of a real MainWindow scan without touching private state.
   std::string telemetryJsonForTest() const;
+  int testAutoResumeTries() const { return autoResumeTries_; }
   // Scroll-regression test hooks (0.9.4.61): run one UI-timer tick body
   // synchronously, and read the rebuild/catch-up counters. Production code
   // never calls these; they exist so offscreen tests can drive ticks
@@ -103,7 +104,7 @@ public:
   static void sortTiedReferencePaths(QStringList&, const QHash<QString,qulonglong>&, const QHash<QString,qulonglong>&);
 private slots:
   // scan
-  void chooseFolder(); void startScan(); void beginScan(); void togglePauseScan(); void cancelScan();
+  void chooseFolder(); void startScan(); void beginScan(bool resumeLastConfig = false); void togglePauseScan(); void cancelScan();
   void scanProgress(int,QString); void onMatchesBatch(const QVector<BackendMatch>&); void scanFinished(QString); void scanFailed(QString);
   void onStatusSnapshot(BackendStatus);
   void onScanCounts(qulonglong,qulonglong);
@@ -211,6 +212,9 @@ private:
   // implementation runs the real ScanWorker/MediaMonitor in-process)
   BackendClient* backend_ = nullptr; QDialog* cancelWait_=nullptr; msf::ResourcePolicy policy_;
   bool backendAvailable_ = true; // supervisor connection state (§21 guard)
+  bool backendRestarting_ = false;
+  BackendScanConfig lastScanCfg_;
+  bool haveLastScanCfg_ = false;
   BackendStatus backendStatus_; // pushed snapshot cache (Type C): ticks read this, never the engine
   BackendMonitorStatus backendMonStatus_; // pushed monitor snapshot cache (Type C)
   QVector<DupGroup> groups_;                   // built incrementally from streamed matches

@@ -16,7 +16,10 @@
 #include <cctype>
 #include <chrono>
 #include <ctime>
+#include <cstdlib>
+#include <exception>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <future>
 namespace msf {
@@ -508,7 +511,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // the parallel hash fan-out). The consumer turns it into a recorded `failed`
  // scan instead of letting an exception escape the walker thread, where it
  // would hit std::terminate -> abort (0xC0000409).
- std::atomic_bool walkError{false};
+  std::atomic_bool walkError{false};
+  std::atomic_bool walkAbort{false};
  bool failed=false, cancelled=false, walkCompleted=false;
  std::size_t lastCommitDone=0, lastCommitScanned=0;
  // Checkpoints persist completed work so interruption (cancel/crash) never
@@ -642,10 +646,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(hasIgnored && control->ignoredPaths.find(x.path)!=control->ignoredPaths.end()){ seen.insert(x.path); return; }
    const bool isVid=(kindOf(x.path)==MediaKind::Video);
    if(control && ((isVid && !control->scanVideos) || (!isVid && !control->scanImages))){ seen.insert(x.path); return; }
-   ++scanned;
-   if(isVid) ++nVidScanned; else ++nImgScanned;
-   if(control && control->walked) control->walked(scanned);
-   auto it=oldByPath.find(x.path);
+    ++scanned;
+    if(isVid) ++nVidScanned; else ++nImgScanned;
+    if(control && control->walked) control->walked(scanned);
+    auto it=oldByPath.find(x.path);
    // A skeleton row (fingerprint 0) used to force `changed` unconditionally, which
    // merged two different situations: analysis never completed (cancel/crash, must
    // retry) and analysis completed and failed (deterministic for this content, must
@@ -690,26 +694,48 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // The walker streams walked files while this thread analyzes them, so CPU/GPU
   // work overlaps the directory walk instead of waiting for it.
   if (!cancelRequested()) telemetry_.setPhase("walk");
+  std::size_t walkRead=0;
   std::thread walker([&]{
   try{
+  // Deterministic regression seam: prove a walker-thread exception is joined
+  // and reported through ScanWorker::failed instead of std::terminate.
+  if(std::getenv("MSF_TEST_THROW_WALKER"))
+    throw std::runtime_error("MSF_TEST_THROW_WALKER");
   Scanner s; Scanner::ScanCallbacks cb;
   if(control){
    cb.onProgress=[control](std::size_t n){ if(control->listing) control->listing(n); };
    cb.cancel=&control->cancel; cb.pause=&control->pause;
   }
+   cb.shouldStop=[&]{ return walkAbort.load(std::memory_order_relaxed); };
    cb.onFile=[&](FileState&& f){
     // D3-Minimal: bounded push with cancel-aware backpressure. A dropped
     // file (cancel/shutdown) was never analyzed, so the next scan sees it
     // as new ??identical to an unwalked file on cancel.
+    const bool isVideo=kindOf(f.path)==MediaKind::Video;
+    const bool inScope=!control || (isVideo ? control->scanVideos : control->scanImages);
+    const bool ignored=hasIgnored && control->ignoredPaths.find(f.path)!=control->ignoredPaths.end();
     bool waited=false;
     const auto pr=queue.push(std::move(f), control?&control->cancel:nullptr, &waited);
     if(waited) telemetry_.noteWalkerBlocked();
-    if(pr==WalkerQueue::PushResult::Pushed) telemetry_.recordWalkerEnqueue(queue.size());
+    if(pr==WalkerQueue::PushResult::Pushed){
+      telemetry_.recordWalkerEnqueue(queue.size());
+      // The visible read-complete count is producer-side: quick-hashed and
+      // admitted to the bounded queue. Analysis may block the consumer for a
+      // whole image/video batch, so counting only in processOne made this
+      // counter freeze while disk reads were still progressing.
+      if(inScope && !ignored && control && control->readProgress)
+        control->readProgress(++walkRead);
+    } else if(pr==WalkerQueue::PushResult::Shutdown) {
+      walkAbort.store(true, std::memory_order_relaxed);
+    }
    };
    s.scan_stream(root, excl, cb);
+   if(control && control->readProgress) control->readProgress(walkRead);
   }catch(...){ walkError.store(true); }
    walkDone.store(true); queue.shutdown();
   });
+  std::exception_ptr consumerException;
+  try{
   while(!failed && !cancelled){
    FileState x; bool have=false;
    {
@@ -722,8 +748,23 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(have) processOne(std::move(x));
   if(stopped(control)) cancelled=true;
   else if(walkDone.load() && queue.empty()){ if(!telemetryWalkTimed){ telemetryWalkTimed=true; telemetry_.addWalkMs(telemetryMsSince()); } walkCompleted=true; break; }
- }
-  if(walkError.load()) failed=true;
+  }
+  }catch(...){
+    consumerException=std::current_exception();
+    failed=true;
+  }
+   if(failed || cancelled || walkError.load() || consumerException)
+     walkAbort.store(true, std::memory_order_relaxed);
+   queue.shutdown();
+   if(walker.joinable()) walker.join();
+   if(consumerException){
+     if(tx) db_.rollbackTransaction();
+     std::rethrow_exception(consumerException);
+   }
+   if(walkError.load()){
+     if(tx) db_.rollbackTransaction();
+     throw std::runtime_error("directory walker failed; see backend log");
+   }
   if(!failed && !cancelled && !imageBatch.empty()){ if(!processImageBatch(imageBatch)) failed=true; imageBatch.clear(); }
    // Drain-on-cancel: Stop means "read no new files", not "discard work already
    // read". Admitted-but-unanalyzed images (bounded batch, seconds of work)
@@ -747,11 +788,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     else { videoBase+=n; if(vr==VideoRangeResult::Cancelled) cancelled=true; }
     telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
    }
-  // D3-Minimal: wake any producer blocked at this point on every exit
-  // path (failed/cancelled/normal). Idempotent; join cannot hang on it.
-  queue.shutdown();
-  walker.join();
-  if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(ScanTerminal::Failed); }
+   if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(ScanTerminal::Failed); }
   // Deleted detection needs the complete seen set: only on fully walked scans.
   // Previously indexed files that no longer exist are removed then. Ignored rows
  // are retained in the database (they reappear only when unignored and rescanned).

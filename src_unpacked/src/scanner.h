@@ -21,13 +21,17 @@ public:
     std::function<void(FileState&&)> onFile;
     const std::atomic_bool* cancel = nullptr;
     const std::atomic_bool* pause = nullptr;
+    // Internal producer/consumer failure can stop the walk without rewriting
+    // the user's cancel flag (which has distinct UI/terminal semantics).
+    std::function<bool()> shouldStop;
   };
   static bool isMediaPath(const std::filesystem::path& path);
   static bool isVideoPath(const std::filesystem::path& path);
   std::size_t count(const std::string& root, const std::string& excludedDirectory,
-                    bool scanImages, bool scanVideos,
-                    const std::unordered_set<std::string>& ignoredPaths = {},
-                    const std::atomic_bool* cancel = nullptr) const;
+                     bool scanImages, bool scanVideos,
+                     const std::unordered_set<std::string>& ignoredPaths = {},
+                     const std::atomic_bool* cancel = nullptr,
+                     const std::function<void(std::size_t)>& onProgress = {}) const;
   std::vector<FileState> scan(const std::string& root, const std::string& excludedDirectory = {}, const std::function<void(std::size_t)>& onProgress = {}) const;
   std::vector<FileState> scan_stream(const std::string& root, const std::string& excludedDirectory, const ScanCallbacks& cb) const;
 }; }

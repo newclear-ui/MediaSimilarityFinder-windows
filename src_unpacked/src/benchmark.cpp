@@ -114,6 +114,12 @@ void TelemetryRecorder::closeDiskCounters() {
 #endif
   diskAvailable_ = false;
 }
+TelemetryRecorder::~TelemetryRecorder() {
+  // The recorder may be destroyed while a scan unwinds through an exception
+  // before finalize(). A joinable sampler thread's std::thread destructor calls
+  // std::terminate (0xC0000409); always stop/join it as the RAII backstop.
+  stopSampler();
+}
 void TelemetryRecorder::reset() {
   stopSampler();
   started_ = false;

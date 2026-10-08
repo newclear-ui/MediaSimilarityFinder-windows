@@ -51,9 +51,15 @@ int main(int argc, char** argv) {
   ignored.insert(QString::fromStdString((d / "media" / "ignored.bmp").string()));
   w.setIgnored(ignored);
   qulonglong target = 0;
+  qulonglong walked = 0;
+  std::size_t listingEvents = 0;
   QObject::connect(&w, &ScanWorker::targetCount, [&](qulonglong n) { target = n; });
+  QObject::connect(&w, &ScanWorker::walkedCount, [&](qulonglong n) { walked = n; });
+  QObject::connect(&w, &ScanWorker::listingProgress, [&](std::size_t) { ++listingEvents; });
   w.run();
   if (target != 4) { std::cerr << "target=" << target << "\n"; return 5; }
+  if (walked != 4) { std::cerr << "producer read count=" << walked << "\n"; return 8; }
+  if (listingEvents == 0) { std::cerr << "no count/walk listing progress\n"; return 9; }
   const auto pending = w.takePending();
   if (pending.size() < 6) { std::cerr << "streamed=" << pending.size() << "\n"; return 2; }
   // B7 binding/telemetry: the engine scan behind the worker must have
@@ -74,6 +80,20 @@ int main(int argc, char** argv) {
   const auto stored = e2.loadMatches();
   e2.close();
   if (stored.size() < 6) { std::cerr << "stored=" << stored.size() << "\n"; return 4; }
+  // Regression: an exception inside the engine's dedicated walker thread
+  // must be joined and reported as a worker failure, not escape the std::thread
+  // entry point into std::terminate/abort.
+  {
+    qputenv("MSF_TEST_THROW_WALKER", "1");
+    ScanWorker fault(QString::fromStdString(root), QString::fromStdString(ad),
+                     8, 50, 50, false, true, false);
+    bool walkerFailed = false;
+    QObject::connect(&fault, &ScanWorker::failed, [&](const QString&) { walkerFailed = true; });
+    fault.run();
+    qunsetenv("MSF_TEST_THROW_WALKER");
+    if (!walkerFailed) { std::cerr << "walker exception was not reported\n"; return 10; }
+  }
+
   fs::remove_all(d, ec);
   std::cout << "scan_streaming=ok streamed=" << pending.size() << " stored=" << stored.size() << "\n";
   return 0;

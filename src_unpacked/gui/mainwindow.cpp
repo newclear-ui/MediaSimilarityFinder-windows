@@ -1224,9 +1224,12 @@ void MainWindow::setRunning(bool v) {
   if (v) {
     scanPaused_ = false;
     maxPctShown_ = 0;
+    lastPct_ = 0;
+    lastPath_.clear();
     lastDoneN_ = 0;
     lastTotalN_ = 0;
     lastReadN_ = 0;
+    lastListN_ = 0;
     targetTotal_ = 0;
     targetKnown_ = false;
   } else {
@@ -1254,14 +1257,17 @@ void MainWindow::startScan() {
   // User-initiated start: reset the crash auto-resume budget.
   autoResumeTries_ = 0;
   scanCrashed_ = false;
-  beginScan();
+  backendRestarting_ = false;
+  beginScan(false);
 }
-void MainWindow::beginScan() {
+void MainWindow::beginScan(bool resumeLastConfig) {
   if (scanning_) return;
   if (!backendAvailable_) {
     statusMsg_->setText(trStr(lang(), "backendDown"));
     return;
   }
+  if (resumeLastConfig && haveLastScanCfg_)
+    folder_->setText(lastScanCfg_.root);
   if (folder_->text().isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
   // P3: thumbnail persistence lives in the Backend (G1.3). The GUI keeps
   // its memory presentation cache only; nothing opens the index DB here.
@@ -1294,17 +1300,23 @@ void MainWindow::beginScan() {
   // Signal wiring lives in the constructor (persistent backend object:
   // reconnecting per scan would duplicate every delivery).
   BackendScanConfig cfg;
-  cfg.root = folder_->text();
-  cfg.appDir = appDir;
-  cfg.distance = 8;
-  cfg.cpu = cpu_->value();
-  cfg.gpuPercent = policy_.gpuPercent;
-  cfg.gpuEnabled = gpuEnabled_->isChecked();
-  cfg.scanImages = mediaImgBtn_->isChecked();
-  cfg.scanVideos = mediaVidBtn_->isChecked();
-  cfg.ignored = ignored_;
-  cfg.detailedLog = logTgl_->isChecked();
-  cfg.exec = currentExecPolicy();
+  if (resumeLastConfig && haveLastScanCfg_) {
+    cfg = lastScanCfg_;
+  } else {
+    cfg.root = folder_->text();
+    cfg.appDir = appDir;
+    cfg.distance = 8;
+    cfg.cpu = cpu_->value();
+    cfg.gpuPercent = policy_.gpuPercent;
+    cfg.gpuEnabled = gpuEnabled_->isChecked();
+    cfg.scanImages = mediaImgBtn_->isChecked();
+    cfg.scanVideos = mediaVidBtn_->isChecked();
+    cfg.ignored = ignored_;
+    cfg.detailedLog = logTgl_->isChecked();
+    cfg.exec = currentExecPolicy();
+    lastScanCfg_ = cfg;
+    haveLastScanCfg_ = true;
+  }
   scanStartMs_ = QDateTime::currentMSecsSinceEpoch();
   pauseStartMs_ = 0; pausedAccumMs_ = 0;
   scanLog(QString("start folder=%1").arg(folder_->text()));
@@ -1354,7 +1366,7 @@ void MainWindow::onTargetCount(qulonglong n) {
   updateStatusCounts();
 }
 void MainWindow::onWalkedCount(qulonglong n) {
-  lastTotalN_ = (qulonglong)n;
+  if (!targetKnown_ || n > lastTotalN_) lastTotalN_ = n;
   updateStatusCounts();
 }
 void MainWindow::scanProgress(int p, QString path) {
@@ -1612,11 +1624,22 @@ void MainWindow::scanFinished(QString msg) {
 }
 void MainWindow::scanFailed(QString msg) {
   scanLog(QString("failed %1").arg(msg));
+  const bool backendInterrupted =
+      msg.contains(QStringLiteral("backend process exited unexpectedly")) ||
+      msg.contains(QStringLiteral("backend lost — scan aborted"));
+  scanCrashed_ = backendInterrupted && haveLastScanCfg_;
+  const bool willAutoResume = scanCrashed_ && backendRestarting_ && autoResumeTries_ < 1;
   // Keep matches streamed before the worker failure visible in the current UI.
   rebuildGroups();
   refreshGroupList(); refreshFileViews(); refreshDetail();
-  QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
-  statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
+  if (willAutoResume) {
+    statusMsg_->setText(lang() == UiLang::Ko
+                            ? QStringLiteral("백엔드가 종료되었습니다. 재시작 후 검색을 자동으로 이어갑니다.")
+                            : QStringLiteral("Backend exited. The scan will resume after restart."));
+  } else {
+    QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
+    statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
+  }
   setRunning(false);
 }
 std::string MainWindow::telemetryJsonForTest() const {
@@ -3461,18 +3484,13 @@ void MainWindow::toggleMonitor() {
 void MainWindow::onBackendConnection(bool available, QString message) {
   backendAvailable_ = available;
   if (!available) {
+    backendRestarting_ = message.contains(QStringLiteral("restarting"));
     statusMsg_->setText(message);
-    if (scanning_) {
-      // The scan died with the backend: surface it through the normal failure
-      // path (popup + idle state) instead of hanging mid-scan. Remember that
-      // the backend (not the user) ended the scan so a READY reconnect can
-      // resume it automatically.
-      scanCrashed_ = true;
-      scanFailed(message);
-    } else {
-      scan_->setEnabled(false);
-    }
+    // The supervisor sends a separate failed() event for an interrupted scan.
+    // Do not open a modal here: restart timers and auto-resume must keep running.
+    if (!scanning_) scan_->setEnabled(false);
   } else {
+    backendRestarting_ = false;
     if (!scanning_) scan_->setEnabled(true);
     statusMsg_->setText(message);
     // Auto-resume a scan the backend crash aborted, once, now that the
@@ -3482,7 +3500,7 @@ void MainWindow::onBackendConnection(bool available, QString message) {
       ++autoResumeTries_;
       scanCrashed_ = false;
       scanLog(QStringLiteral("auto-resume scan after backend restart (attempt %1)").arg(autoResumeTries_));
-      beginScan();
+      beginScan(true);
     }
   }
 }

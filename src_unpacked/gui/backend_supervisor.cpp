@@ -566,14 +566,17 @@ void BackendSupervisor::emitThumbReady(quint64 requestId, const QJsonObject& pay
 // ---- failure / restart ----
 
 void BackendSupervisor::onFinished(int exitCode, QProcess::ExitStatus status) {
-    Q_UNUSED(status);
     if (explicitShutdown_) {
         procState_ = ProcState::Down;
         setPhase(QStringLiteral("Down"));
         emit backendConnection(false, QStringLiteral("shutdown"));
         return;
     }
-    enterUnexpectedExit(QStringLiteral("backend process exited (code %1)").arg(exitCode), exitCode);
+    const QString exitKind = status == QProcess::CrashExit
+                                 ? QStringLiteral("crash exit")
+                                 : QStringLiteral("normal exit");
+    enterUnexpectedExit(QStringLiteral("backend process exited (%1, code %2)")
+                            .arg(exitKind).arg(exitCode), exitCode);
 }
 
 void BackendSupervisor::onProcessError(QProcess::ProcessError error) {
@@ -586,15 +589,22 @@ void BackendSupervisor::onProcessError(QProcess::ProcessError error) {
 }
 
 void BackendSupervisor::enterUnexpectedExit(const QString& reason, int exitCode) {
-    Q_UNUSED(exitCode);
     backendReady_ = false;
-    if (scanning_) {
-        scanning_ = false;
-        emit failed(QStringLiteral("backend process exited unexpectedly — scan aborted"));
-    }
+    const bool scanAborted = scanning_;
+    scanning_ = false;
     emit backendLogLine(QStringLiteral("backend unexpected exit: ") + reason);
-    emit backendConnection(false, reason + QStringLiteral(" — restarting…"));
     scheduleRestart();
+    // Arm the restart timer before any GUI failure handler can enter a modal
+    // dialog. The old ordering emitted failed() first; QMessageBox::critical()
+    // then blocked this stack frame, so scheduleRestart() was not reached until
+    // the user dismissed the popup.
+    if (procState_ != ProcState::Failed)
+        emit backendConnection(false, reason + QStringLiteral(" — restarting…"));
+    if (scanAborted) {
+        QString message = QStringLiteral("backend process exited unexpectedly — scan aborted");
+        if (exitCode != -1) message += QStringLiteral(" (exit code %1)").arg(exitCode);
+        emit failed(message);
+    }
 }
 
 void BackendSupervisor::scheduleRestart() {
@@ -636,15 +646,15 @@ void BackendSupervisor::enterFailed(const QString& reason) {
 void BackendSupervisor::terminateAndRespawn(const QString& reason) {
     if (!processAlive() || explicitShutdown_) return;
     backendReady_ = false;
-    if (scanning_) {
-        scanning_ = false;
-        emit failed(QStringLiteral("backend lost — scan aborted"));
-    }
+    const bool scanAborted = scanning_;
+    scanning_ = false;
     emit backendLogLine(QStringLiteral("backend watchdog: ") + reason);
     emit backendConnection(false, reason + QStringLiteral(" — restarting…"));
     escStage_ = 0;
     proc_->terminate();
     escTimer_.start(opt_.killGraceMs);
+    if (scanAborted)
+        emit failed(QStringLiteral("backend lost — scan aborted"));
 }
 
 void BackendSupervisor::onEscalationTimeout() {
