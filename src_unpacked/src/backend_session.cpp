@@ -100,6 +100,7 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
     connect(worker_, &ScanWorker::matchesArrived, this, &BackendSession::onMatchesArrived);
     connect(worker_, &ScanWorker::quickLoaded, this, &BackendSession::quickLoaded);
     connect(worker_, &ScanWorker::revalidated, this, &BackendSession::revalidated);
+    connect(worker_, &ScanWorker::revalidateProgress, this, &BackendSession::revalidateProgress);
     connect(worker_, &ScanWorker::results, this, &BackendSession::onResults);
     connect(worker_, &ScanWorker::telemetryReady, this, &BackendSession::telemetryReady);
     connect(worker_, &ScanWorker::finished, this, &BackendSession::onFinished);

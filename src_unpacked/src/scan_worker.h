@@ -65,6 +65,9 @@ signals:
   void matchesArrived();            // throttled; call takePending()
   void quickLoaded(int);            // stored matches reloaded from the index
   void revalidated(int,int);        // old-engine pairs re-checked: kept, dropped
+  // 0.9.4.85: revalidation progress (pairs checked, total). Emitted while the
+  // engine-version gate re-verifies stored pairs, so the UI is not frozen.
+  void revalidateProgress(qulonglong,qulonglong);
   void results(QVector<GuiFile> files, QStringList matchRows);
   void targetCount(qulonglong);   // pre-walk file total (fixed denominator)
   void finished(QString);
@@ -85,6 +88,7 @@ private:
   qint64 lastListMs_=0; std::size_t lastListN_=0;
   qint64 lastWalkedMs_=0; std::size_t lastWalkedN_=0;
   qint64 lastFpMs_=0;
+  qint64 lastRevalMs_=0; // 0.9.4.85 revalidation-progress throttle
   std::atomic<qulonglong> gpuDone_{0}; // live GPU-accelerated image count
   bool gpuAvail_=false;                // CUDA backend present at construction
   bool detailedLogEnabled_=true;

@@ -115,6 +115,7 @@ private slots:
   void onResults(QVector<BackendFile> files, QStringList matchRows);
   void onQuickLoaded(int);
   void onRevalidated(int,int);
+  void onRevalidateProgress(qulonglong,qulonglong);
     void onDetailedLog(QString);
     void showDetailedLogDialog(const QString& json);
   void resourceChanged(int); void customResourceChanged();

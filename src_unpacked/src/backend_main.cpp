@@ -71,6 +71,7 @@ public:
         connect(session_, &BackendSession::matchesBatch, this, &BackendServer::onMatchesBatch);
         connect(session_, &BackendSession::quickLoaded, this, &BackendServer::onQuickLoaded);
         connect(session_, &BackendSession::revalidated, this, &BackendServer::onRevalidated);
+        connect(session_, &BackendSession::revalidateProgress, this, &BackendServer::onRevalidateProgress);
         connect(session_, &BackendSession::results, this, &BackendServer::onResults);
         connect(session_, &BackendSession::telemetryReady, this, &BackendServer::onTelemetryReady);
         connect(session_, &BackendSession::finished, this, &BackendServer::onFinished);
@@ -352,6 +353,16 @@ private:
         m.type = QString::fromLatin1(msf_ipc::kListingProgress);
         m.payload[QStringLiteral("kind")] = QStringLiteral("walked");
         m.payload[QStringLiteral("n")] = QString::number(n);
+        send(m);
+    }
+    // 0.9.4.85: revalidation progress (pairs checked / total) over the STATE
+    // channel, so a long engine-version revalidation is visible in the UI.
+    void onRevalidateProgress(qulonglong done, qulonglong total) {
+        Message m;
+        m.type = QString::fromLatin1(msf_ipc::kState);
+        m.payload[QStringLiteral("state")] = QStringLiteral("REVALIDATE_PROGRESS");
+        m.payload[QStringLiteral("done")] = QString::number(done);
+        m.payload[QStringLiteral("total")] = QString::number(total);
         send(m);
     }
     void onFingerprintProgress(qulonglong files, qulonglong bytes, QString path) {

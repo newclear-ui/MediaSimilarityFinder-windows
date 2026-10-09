@@ -220,6 +220,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"quickLookFail")) return S("QuickLook을 시작할 수 없습니다","Could not start QuickLook");
   if (!std::strcmp(key,"quickLookStarting")) return S("QuickLook 시작 중…","Starting QuickLook…");
   if (!std::strcmp(key,"revalidated")) return S("구버전 인덱스 재검증: %1 유지·%2 제외, 최신 엔진에 맞춤","Legacy index revalidated: %1 kept, %2 dropped for the current engine");
+  if (!std::strcmp(key,"revalidating")) return S("저장된 쌍 재검증 중 %1/%2 (엔진 버전 갱신)","Revalidating stored pairs %1/%2 (engine version update)");
   if (!std::strcmp(key,"reveal")) return S("탐색기에서 보기","Reveal in Explorer");
   if (!std::strcmp(key,"revealNoWindow")) return S("열려 있는 해당 폴더 탐색기 창이 없습니다","No open Explorer window for this folder");
   if (!std::strcmp(key,"revealFocusFail")) return S("탐색기 창은 열렸지만 파일을 선택하지 못했습니다","Explorer window opened, but the file could not be selected");
@@ -548,6 +549,7 @@ MainWindow::MainWindow(QWidget* p, BackendClient* backend) : QMainWindow(p) {
   connect(backend_, &BackendClient::matchesBatch, this, &MainWindow::onMatchesBatch);
   connect(backend_, &BackendClient::quickLoaded, this, &MainWindow::onQuickLoaded);
   connect(backend_, &BackendClient::revalidated, this, &MainWindow::onRevalidated);
+  connect(backend_, &BackendClient::revalidateProgress, this, &MainWindow::onRevalidateProgress);
   connect(backend_, &BackendClient::results, this, &MainWindow::onResults);
   connect(backend_, &BackendClient::telemetryReady, this, &MainWindow::onDetailedLog);
   connect(backend_, &BackendClient::finished, this, &MainWindow::scanFinished);
@@ -1445,6 +1447,14 @@ void MainWindow::onFingerprintProgress(qulonglong n, qulonglong bytes, QString p
 }
 void MainWindow::onQuickLoaded(int n) {
   statusMsg_->setText(trStr(lang(), "quickLoaded").arg(n));
+}
+void MainWindow::onRevalidateProgress(qulonglong done, qulonglong total) {
+  // 0.9.4.85: the engine-version gate re-verifies every stored pair (decoding
+  // images for grey-zone ones) and can run for minutes. Show its progress so a
+  // scan is not mistaken for a freeze.
+  statusProg_->setRange(0, 100);
+  statusProg_->setValue(total ? int(done * 100 / total) : 0);
+  statusMsg_->setText(trStr(lang(), "revalidating").arg(done).arg(total));
 }
 void MainWindow::onRevalidated(int kept, int dropped) {
   statusMsg_->setText(trStr(lang(), "revalidated").arg(kept).arg(dropped));

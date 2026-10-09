@@ -65,6 +65,11 @@ struct ScanControl {
   // on huge datasets with no other progress signal; without this the UI sits
   // at 0% with only disk I/O visible. Fired per hashed file; the UI throttles.
   std::function<void(std::size_t,std::uint64_t,const std::string&)> fingerprintProgress;
+  // 0.9.4.85: engine-version revalidation progress (pairs checked, total pairs).
+  // Revalidation re-verifies every stored pair and decodes images for the
+  // grey-zone ones, so it can run for minutes after an engine-version bump with
+  // no other signal. Without this the UI sits at 0 with only disk I/O visible.
+  std::function<void(std::size_t,std::size_t)> revalidateProgress;
   // Optional streaming delivery for large result sets. When retainMatches is false,
   // SearchReport does not materialize the full match list in memory.
   std::function<void(const SearchMatch&)> onMatch;

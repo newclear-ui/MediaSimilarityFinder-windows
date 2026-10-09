@@ -404,6 +404,9 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
             emit quickLoaded(payload.value("n").toInt(0));
         } else if (st == QStringLiteral("REVALIDATED")) {
             emit revalidated(payload.value("kept").toInt(0), payload.value("dropped").toInt(0));
+        } else if (st == QStringLiteral("REVALIDATE_PROGRESS")) {
+            emit revalidateProgress(payload.value("done").toString().toULongLong(),
+                                    payload.value("total").toString().toULongLong());
         } else if (st == QStringLiteral("RESULTS_PAGE")) {
             const int page = payload.value("page").toInt(0);
             const int pages = payload.value("pages").toInt(0);

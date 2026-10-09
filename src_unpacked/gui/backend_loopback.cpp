@@ -24,6 +24,7 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
     connect(session_.get(), &BackendSession::targetCount, this, &BackendClient::targetCount);
     connect(session_.get(), &BackendSession::listingProgress, this, &BackendClient::listingProgress);
     connect(session_.get(), &BackendSession::quickLoaded, this, &BackendClient::quickLoaded);
+    connect(session_.get(), &BackendSession::revalidateProgress, this, &BackendClient::revalidateProgress);
     connect(session_.get(), &BackendSession::revalidated, this, &BackendClient::revalidated);
     connect(session_.get(), &BackendSession::telemetryReady, this, &BackendClient::telemetryReady);
     connect(session_.get(), &BackendSession::finished, this, &BackendClient::finished);

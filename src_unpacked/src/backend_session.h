@@ -109,6 +109,7 @@ signals:
     void matchesBatch(QVector<LiveMatch> batch);
     void quickLoaded(int n);
     void revalidated(int kept, int dropped);
+    void revalidateProgress(qulonglong done, qulonglong total);
     void results(QVector<GuiFile> files, QStringList matchRows);
     void telemetryReady(QString json);
     void finished(QString msg);

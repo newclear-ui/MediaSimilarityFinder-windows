@@ -230,6 +230,8 @@ signals:
     void matchesBatch(QVector<BackendMatch> batch);
     void quickLoaded(int n);
     void revalidated(int kept, int dropped);
+    // 0.9.4.85: engine-version revalidation progress (pairs checked, total).
+    void revalidateProgress(qulonglong done, qulonglong total);
     void results(QVector<BackendFile> files, QStringList matchRows);
     void telemetryReady(QString json);
     void finished(QString msg);

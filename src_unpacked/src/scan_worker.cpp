@@ -60,55 +60,10 @@ void ScanWorker::run() {
     control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
-    // Engine-version gate: pairs stored by an older verdict generation are
-    // re-checked with the current logic (no rescan) before anything displays
-    // them. Drops old false positives, keeps the rest, stamps the version.
-    // Cancelled here means: stop before touching results.
-    {
-      int kept = 0, dropped = 0;
-      msf::TelemetryConfig bcfg;
-      bcfg.root = root_.toStdString();
-      bcfg.build = QCoreApplication::applicationVersion().toStdString();
-      bcfg.engine = msf::MediaSearchEngine::kEngineVersion;
-      bcfg.db = msf::Database::kDatabaseVersion;
-      bcfg.distance = (unsigned)distance_;
-      bcfg.scanImages = scanImages_; bcfg.scanVideos = scanVideos_;
-      bcfg.gpuEnabled = gpuEnabled_; bcfg.detail = detailedLogEnabled_;
-      engine_.beginTelemetry(bcfg, detailedLogEnabled_);
-      const qint64 revT0 = QDateTime::currentMSecsSinceEpoch();
-      if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
-        engine_.abortTelemetry();
-        if (detailedLogEnabled_ && engine_.hasTelemetry())
-          emit telemetryReady(QString::fromStdString(engine_.telemetryJson()));
-        emit finished(QString("CANCELLED|0|0")); return;
-      }
-      control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
-      if (kept + dropped > 0) emit revalidated(kept, dropped);
-    }
-    // Quick load: the scan button restores the stored duplicate groups before
-    // analyzing anything, so a repeat scan of the same folder shows previous
-    // results immediately, then appends only files that changed meanwhile.
-    {
-      const auto stored = engine_.loadMatches();
-      int loaded = 0;
-      for (const auto& m : stored) {
-        const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-        const bool video = isVideoExt(l) || isVideoExt(r);
-        const LiveMatch lm{l, r, m.percent, video ? 2 : 1};
-        allMatches_.push_back(lm);
-        if ((video && !scanVideos_) || (!video && !scanImages_)) continue;
-        if (control_.ignoredPaths.find(m.leftPath) != control_.ignoredPaths.end() ||
-            control_.ignoredPaths.find(m.rightPath) != control_.ignoredPaths.end()) continue;
-        { QMutexLocker g(&pendingMutex_); pending_.push_back(lm); }
-        ++loaded;
-      }
-      if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
-    }
-    // 0.9.4.83: the count prepass runs AFTER the engine-version gate and the
-    // quick load. The stored groups (with cached thumbnails) therefore reach the
-    // GUI before the long directory enumeration and walk, so a rescan of an
-    // already-indexed folder shows its results immediately. The fixed file total
-    // still arrives here, before the walk.
+    // 0.9.4.85: the count prepass runs FIRST so the summary shows "총 파일"
+    // before the engine-version revalidation (which can decode images for
+    // minutes). 0.9.4.83 had moved it after the gate, so during a long
+    // revalidation the total stayed "-" and the panel looked frozen.
     {
       lastListMs_ = 0;
       lastListN_ = 0;
@@ -135,6 +90,62 @@ void ScanWorker::run() {
                               .arg(lastListN_).arg(total)
                               .arg(QDateTime::currentMSecsSinceEpoch() - countT0).toStdString());
       emit targetCount(total);
+    }
+    // Engine-version gate: pairs stored by an older verdict generation are
+    // re-checked with the current logic (no rescan) before anything displays
+    // them. Drops old false positives, keeps the rest, stamps the version.
+    // Cancelled here means: stop before touching results. This pass decodes
+    // images for the grey-zone pairs and can run for minutes after an engine
+    // bump, so it reports its own progress (0.9.4.85) instead of leaving the UI
+    // at 0 with only disk I/O visible.
+    {
+      int kept = 0, dropped = 0;
+      msf::TelemetryConfig bcfg;
+      bcfg.root = root_.toStdString();
+      bcfg.build = QCoreApplication::applicationVersion().toStdString();
+      bcfg.engine = msf::MediaSearchEngine::kEngineVersion;
+      bcfg.db = msf::Database::kDatabaseVersion;
+      bcfg.distance = (unsigned)distance_;
+      bcfg.scanImages = scanImages_; bcfg.scanVideos = scanVideos_;
+      bcfg.gpuEnabled = gpuEnabled_; bcfg.detail = detailedLogEnabled_;
+      engine_.beginTelemetry(bcfg, detailedLogEnabled_);
+      lastRevalMs_ = 0;
+      control_.revalidateProgress = [this](std::size_t done, std::size_t total) {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - lastRevalMs_ > 150 || done >= total) {
+          lastRevalMs_ = now;
+          emit revalidateProgress((qulonglong)done, (qulonglong)total);
+        }
+      };
+      const qint64 revT0 = QDateTime::currentMSecsSinceEpoch();
+      if (!engine_.revalidateMatches(&control_, &kept, &dropped)) {
+        engine_.abortTelemetry();
+        if (detailedLogEnabled_ && engine_.hasTelemetry())
+          emit telemetryReady(QString::fromStdString(engine_.telemetryJson()));
+        emit finished(QString("CANCELLED|0|0")); return;
+      }
+      control_.revalidateProgress = nullptr;
+      control_.revalidateMs = (double)(QDateTime::currentMSecsSinceEpoch() - revT0);
+      if (kept + dropped > 0) emit revalidated(kept, dropped);
+    }
+    // Quick load: the scan button restores the stored duplicate groups before
+    // analyzing anything, so a repeat scan of the same folder shows previous
+    // results immediately, then appends only files that changed meanwhile.
+    {
+      const auto stored = engine_.loadMatches();
+      int loaded = 0;
+      for (const auto& m : stored) {
+        const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
+        const bool video = isVideoExt(l) || isVideoExt(r);
+        const LiveMatch lm{l, r, m.percent, video ? 2 : 1};
+        allMatches_.push_back(lm);
+        if ((video && !scanVideos_) || (!video && !scanImages_)) continue;
+        if (control_.ignoredPaths.find(m.leftPath) != control_.ignoredPaths.end() ||
+            control_.ignoredPaths.find(m.rightPath) != control_.ignoredPaths.end()) continue;
+        { QMutexLocker g(&pendingMutex_); pending_.push_back(lm); }
+        ++loaded;
+      }
+      if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
     }
     // Progress signals arrive once per analyzed file; a fast Maximum scan would
     // flood the GUI event loop (setText per file) and freeze the window —

@@ -91,6 +91,11 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
   std::size_t n=0;
   for(const auto& m:stored){
     if(control && ((++n & 31)==0) && control->cancel.load()) return false;
+    // 0.9.4.85: report revalidation progress so the UI is not frozen at 0 while
+    // every stored pair is re-verified (image decodes). Throttling is the
+    // caller's job; this fires per pair.
+    if(control && control->revalidateProgress && ((n & 15)==0))
+      control->revalidateProgress(n, stored.size());
     auto it1=byPath.find(m.left), it2=byPath.find(m.right);
     if(it1==byPath.end()||it2==byPath.end()){ if(dropped)++*dropped; continue; }
     const FileState &a=*it1->second, &b=*it2->second;
@@ -104,6 +109,7 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
     if(!st.matches.empty()){ survivors.push_back({m.left,m.right,st.matches.front().percent}); if(kept)++*kept; }
     else if(dropped) ++*dropped;
   }
+  if(control && control->revalidateProgress) control->revalidateProgress(stored.size(), stored.size());
   if(!db_.saveMatches(survivors)) return false;
   db_.setEngineVersion(kEngineVersion);
   return true;
