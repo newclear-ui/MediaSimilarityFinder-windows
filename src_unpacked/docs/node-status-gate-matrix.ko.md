@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.82` (EXIF 회전 이미지 WIC FlipRotator 폭주 제거) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.83` (인덱스 우선 표시) · CPU CTest 122/122 · GPU CTest 123/123
 최종 갱신: 2026-10-10
 
 ## 이 문서의 역할
