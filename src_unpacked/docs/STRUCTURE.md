@@ -76,7 +76,7 @@
 - scripts/backup_src.ps1 [-Keep 3] — GitHub과 동일한 소스+문서 zip 백업. `git archive`로만 생성하므로 워킹트리 편집이 섞일 수 없고, HEAD != origin/main 이거나 미커밋 tracked 변경이 있으면 refuse. 산출물은 저장소 루트 `backup/MediaSimilarityFinder-v<버전>-src.zip`. 기본 3개 보존이며 초과 시 가장 오래된 것을 휴지통으로 보낸다(AGENTS.md 4번).
 - msf_dataset_report <root> — dataset fingerprint 출력 + <root>.fingerprint.json 기록(root 옆, root 안쪽 금지).
 - msf_dataset_baseline <root> <app-dir> [runs] — 동일 dataset 반복 스캔, walker queue / GPU 내부 타이밍 / stage 분해 리포트. CTest 아님(의사결정 입력). D9c: verify 내부 비용 분해(decode/key/crop/flip/frame_ssim/other, exclusive 합계 = verifyMs) 도 함께 출력.
-- 현재 CMakeLists.txt에는 123개 CTest 등록이 정의되어 있으며, 현재 구성된 CPU/GPU Release 트리의 전체 CTest는 각각 122/122, 123/123이다 (0.9.4.83 빌드 기준).
+- 현재 CMakeLists.txt에는 123개 CTest 등록이 정의되어 있으며, 현재 구성된 CPU/GPU Release 트리의 전체 CTest는 각각 122/122, 123/123이다 (0.9.4.84 빌드 기준).
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - MediaSimilarityFinderBackend.exe --help/--version (0.9.4.67+, P1 진입점. src/backend_main.cpp, msf_core + Qt6::Core only. --backend는 P3 실 IPC 서빙). portable에 GUI 옆 동봉.
 - P3 backend IPC: src/backend_ipc.* (JSONL 코덱) + src/backend_session.* (스레드/워커/모니터 공용 세션) + gui/backend_supervisor.* (QProcess/Job Object/bounded restart) + gui/backend_client.h (인터페이스) + gui/backend_loopback.* (thin forwarder). E2E: tests/backend_e2e_test.cpp (Windows 실프로세스).
