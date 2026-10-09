@@ -8,10 +8,13 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <chrono>
+#include <cstdint>
 #include <stdexcept>
 
 #include "backend_log.h"
 #include "gpu_backend.h"
+#include "index_janitor.h"
 #include "index_manager.h"
 #include "path_utils.h"
 #include "scanner.h"
@@ -35,6 +38,19 @@ void ScanWorker::run() {
     // deterministically for the crash-handler regression test. Production
     // code never sets this variable, so the branch is dead otherwise.
     if (qEnvironmentVariableIsSet("MSF_TEST_THROW_NONSTD")) throw 42;
+    // Index janitor (0.9.4.79): sweep stale per-root indexes and old TestMode
+    // scratch before resolving this scan's index. Bounded directory walk,
+    // never throws, never fails the scan; the outcome is one backend-log line.
+    try {
+      const auto nowMs = (std::int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count();
+      const auto swept = msf::sweepStaleIndexes(
+          msf::path_from_utf8(appDir_.toStdString()), nowMs);
+      if (swept.indexRemoved > 0 || swept.scratchRemoved > 0)
+        msf::backendLogLine(QString("janitor removed index=%1 scratch=%2 kept=%3")
+                                .arg(swept.indexRemoved).arg(swept.scratchRemoved)
+                                .arg(swept.kept).toStdString());
+    } catch (...) {}
     engine_.setResourcePolicy(msf::make_policy(resourceMode_, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;

@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.78` (tracing, watchdog, video cancel, supervisor finality) - CPU CTest 120/120 - GPU CTest 121/121
+Baseline: `0.9.4.79` (index lifecycle management) - CPU CTest 121/121 - GPU CTest 122/122
 Last updated: 2026-10-08
 
 ## Role of this document
@@ -109,7 +109,7 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.78 done
+active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.79 done
 next               Real Windows manual GUI acceptance (new-file read progress, auto-resume after crash,
                    preview display, selection, Test Mode toggle/scratch isolation, Tiles/ListMode,
                    large-dataset traversal) -> final acceptance recheck
@@ -120,7 +120,8 @@ current verdict    0.9.4.72 parallelized walk/analyze and fixed display/ETR; 0.9
                    0.9.4.75 reintroduced Test Mode plus scroll-gate/thumbnail-burst/anchor follow-up;
                    0.9.4.76 commits admission skeletons at batch-entry checkpoints;
                    0.9.4.77 moves narrow UTF-8 path sites to the wide path;
-                   0.9.4.78 adds tracing, watchdog, video cancel, supervisor finality. The user's
+                   0.9.4.78 adds tracing, watchdog, video cancel, supervisor finality;
+                   0.9.4.79 adds index lifecycle management. The user's
                    old .72 dump lacks PDB, so exact crash caller remains unproven.
 remaining risk     GUI preview/selection/recovery/Test Mode feel cannot be eyeballed headless -> manual acceptance needed.
                    GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each
@@ -167,4 +168,4 @@ stay in the origin documents.
 ## Version invariance check
 
 `kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.5` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9` — unchanged at the 0.9.4.78 baseline. (`kDatabaseVersion 1.0.5` — additive `file_trace` table.)
+`kCacheFormatVersion 9` — unchanged at the 0.9.4.79 baseline. (`kDatabaseVersion 1.0.5` — additive `file_trace` table.)

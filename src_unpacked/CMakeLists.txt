@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.78 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.79 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -74,6 +74,7 @@ add_library(msf_core STATIC
     src/sampling.cpp
     src/database.cpp
     src/index_manager.cpp
+    src/index_janitor.cpp
     src/incremental_scanner.cpp
     src/scanner.cpp
     src/image_decoder.cpp
@@ -868,6 +869,10 @@ if(Qt6_FOUND)
     target_link_libraries(msf_video_cancel_test PRIVATE msf_core Qt6::Core)
     target_include_directories(msf_video_cancel_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME video_cancel_test COMMAND msf_video_cancel_test)
+    # 0.9.4.79 index janitor: stale per-root indexes + old TestMode scratch.
+    add_executable(msf_index_janitor_test tests/index_janitor_test.cpp src/index_janitor.cpp)
+    target_include_directories(msf_index_janitor_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME index_janitor_test COMMAND msf_index_janitor_test)
     # 0.9.4.76 crash-frontier durability: mid-batch failure must leave the
     # admission frontier (fingerprint 0, not failed) committed for retry.
     add_executable(msf_scan_crash_frontier_test tests/scan_crash_frontier_test.cpp)
