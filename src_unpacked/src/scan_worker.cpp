@@ -60,33 +60,6 @@ void ScanWorker::run() {
     control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
-    {
-      lastListMs_ = 0;
-      lastListN_ = 0;
-      msf::IndexPaths paths;
-      std::string excluded;
-      if (msf::IndexManager::resolve(msf::path_from_utf8(appDir_.toStdString()),
-                                     msf::path_from_utf8(root_.toStdString()), paths))
-        excluded = msf::path_to_utf8(paths.directory.parent_path());
-      const qint64 countT0 = QDateTime::currentMSecsSinceEpoch();
-      msf::backendLogLine("scanPhase=count begin");
-      const qulonglong total = msf::Scanner().count(root_.toStdString(), excluded,
-                                                     scanImages_, scanVideos_,
-                                                     control_.ignoredPaths, &control_.cancel,
-                                                     [this](std::size_t n) {
-                                                       lastListN_ = n;
-                                                       const qint64 now = QDateTime::currentMSecsSinceEpoch();
-                                                       if (now - lastListMs_ > 150) {
-                                                         lastListMs_ = now;
-                                                         emit listingProgress(n);
-                                                       }
-                                                     });
-      emit listingProgress(lastListN_); // flush the final count-pass heartbeat
-      msf::backendLogLine(QString("scanPhase=count done entries=%1 target=%2 elapsedMs=%3")
-                              .arg(lastListN_).arg(total)
-                              .arg(QDateTime::currentMSecsSinceEpoch() - countT0).toStdString());
-      emit targetCount(total);
-    }
     // Engine-version gate: pairs stored by an older verdict generation are
     // re-checked with the current logic (no rescan) before anything displays
     // them. Drops old false positives, keeps the rest, stamps the version.
@@ -130,6 +103,38 @@ void ScanWorker::run() {
         ++loaded;
       }
       if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
+    }
+    // 0.9.4.83: the count prepass runs AFTER the engine-version gate and the
+    // quick load. The stored groups (with cached thumbnails) therefore reach the
+    // GUI before the long directory enumeration and walk, so a rescan of an
+    // already-indexed folder shows its results immediately. The fixed file total
+    // still arrives here, before the walk.
+    {
+      lastListMs_ = 0;
+      lastListN_ = 0;
+      msf::IndexPaths paths;
+      std::string excluded;
+      if (msf::IndexManager::resolve(msf::path_from_utf8(appDir_.toStdString()),
+                                     msf::path_from_utf8(root_.toStdString()), paths))
+        excluded = msf::path_to_utf8(paths.directory.parent_path());
+      const qint64 countT0 = QDateTime::currentMSecsSinceEpoch();
+      msf::backendLogLine("scanPhase=count begin");
+      const qulonglong total = msf::Scanner().count(root_.toStdString(), excluded,
+                                                     scanImages_, scanVideos_,
+                                                     control_.ignoredPaths, &control_.cancel,
+                                                     [this](std::size_t n) {
+                                                       lastListN_ = n;
+                                                       const qint64 now = QDateTime::currentMSecsSinceEpoch();
+                                                       if (now - lastListMs_ > 150) {
+                                                         lastListMs_ = now;
+                                                         emit listingProgress(n);
+                                                       }
+                                                     });
+      emit listingProgress(lastListN_); // flush the final count-pass heartbeat
+      msf::backendLogLine(QString("scanPhase=count done entries=%1 target=%2 elapsedMs=%3")
+                              .arg(lastListN_).arg(total)
+                              .arg(QDateTime::currentMSecsSinceEpoch() - countT0).toStdString());
+      emit targetCount(total);
     }
     // Progress signals arrive once per analyzed file; a fast Maximum scan would
     // flood the GUI event loop (setText per file) and freeze the window —
