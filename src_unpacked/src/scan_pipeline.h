@@ -37,17 +37,21 @@ public:
  void clear();
   ScanStats analyze(unsigned maxDistance=8);
   ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch);
-  ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop);
-  // 0.9.4.81 mode-aware final pass. When changedFiles is null (default) every
-  // candidate pair is verified exactly as before (Sequential/B). When provided,
-  // it flags which files changed this scan (by index into files()):
-  //   - video pairs are verified only when at least one side changed;
-  //   - image pairs likewise, except skipBothChangedImages=true also skips
-  //     pairs where BOTH sides changed, on the caller's guarantee that the live
-  //     streaming pass already emitted those image pairs. Verdicts are
-  //     unchanged; only which pairs are (re)verified here differs.
+  // 0.9.4.81 mode-aware final pass plus B-slice windowing.
+  //   changedFiles/skipBothChangedImages: restrict which pairs are (re)verified
+  //     (null/False = verify everything, the Sequential baseline).
+  //   sliceGroups: when >0, each verification pass runs in windows of this many
+  //     groups (files), invoking onSlice(phase, done, total) after each window
+  //     and honoring stop between windows. 0 = one window (no explicit slicing).
+  //     phase: 0 image-full, 1 video-full, 2 crop.
+  //   onSlice: optional window callback, may be null.
+  //   startImageGroups: resume offset; image groups below it are skipped and
+  //     their pairs come from the persisted match set.
   ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop,
-                    const std::vector<char>* changedFiles, bool skipBothChangedImages);
+                    const std::vector<char>* changedFiles=nullptr, bool skipBothChangedImages=false,
+                    std::size_t sliceGroups=0,
+                    const std::function<void(int,std::size_t,std::size_t)>* onSlice=nullptr,
+                    std::size_t startImageGroups=0);
   // Optional cache-backed engine for the expensive video temporal stage.
   // Without it analyze() decodes every video pair from scratch (its local
   // engine has no cache open); with it, cache hits skip the decode entirely.

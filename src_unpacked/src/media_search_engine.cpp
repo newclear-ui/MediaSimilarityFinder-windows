@@ -1006,6 +1006,48 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     changedPtr=&changedFiles;
   }
   const bool skipBothChangedImages=(analyzeMode==AnalyzeMode::Hybrid)&&liveMatch;
+  // 0.9.4.81 B-slice: Sequential processes the image pass in 1000-file windows
+  // with a resume frontier. The frontier is keyed by engine version, max
+  // distance and a hash of the current file set, so it is honored only when the
+  // SAME files are re-scanned after an interrupted run; it is cleared when the
+  // pass completes, so a normal rescan still does the full pass. A/AB keep the
+  // unsliced final pass (their filter already bounds the work).
+  constexpr std::size_t kAnalyzeSliceFiles=1000;
+  const std::size_t sliceGroups=(analyzeMode==AnalyzeMode::Sequential)?kAnalyzeSliceFiles:0;
+  std::size_t startImageGroups=0;
+  std::string frontierKey;
+  if(analyzeMode==AnalyzeMode::Sequential){
+    std::uint64_t h=1469598103934665603ULL; // FNV-1a
+    auto mix=[&](std::uint64_t v){ h^=v; h*=1099511628211ULL; };
+    for(const auto& f:files_){
+      for(unsigned char ch: f.path) mix(ch);
+      mix(0x1ULL); mix(f.size); mix((std::uint64_t)f.modified); mix(f.fingerprint); mix((std::uint64_t)f.kind);
+    }
+    std::ostringstream k; k<<kEngineVersion<<"|"<<maxDistance<<"|"<<files_.size()<<"|"<<std::hex<<h;
+    frontierKey=k.str();
+    const std::string fr=db_.analyzeFrontier();
+    const std::string pre=frontierKey+"#";
+    if(fr.rfind(pre,0)==0){
+      try{ startImageGroups=(std::size_t)std::stoull(fr.substr(pre.size())); }catch(...){ startImageGroups=0; }
+    }
+    if(startImageGroups>0)
+      msf::backendLogLine(std::string("analyzeResume fromGroups=")+std::to_string(startImageGroups));
+  }
+  std::function<void(int,std::size_t,std::size_t)> onSlice;
+  const std::function<void(int,std::size_t,std::size_t)>* onSlicePtr=nullptr;
+  if(analyzeMode==AnalyzeMode::Sequential){
+    onSlice=[&](int phase,std::size_t done,std::size_t totalG){
+      msf::backendLogLine(std::string("analyzeSlice phase=")+std::to_string(phase)+" "+
+                          std::to_string(done)+"/"+std::to_string(totalG));
+      // Persist the accumulated match set FIRST, then advance the frontier: a
+      // crash between the two re-verifies this slice (safe) rather than skipping
+      // an unpersisted one (unsafe). Only the image-full phase (0) drives the
+      // resume frontier; video/crop windows just checkpoint.
+      if(control && control->analyzeCheckpoint) control->analyzeCheckpoint();
+      if(phase==0){ std::ostringstream v; v<<frontierKey<<"#"<<done; db_.setAnalyzeFrontier(v.str()); }
+    };
+    onSlicePtr=&onSlice;
+  }
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause
   // during this phase did nothing until it finished ??the force-quit path
@@ -1063,12 +1105,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
         r.matches.push_back(std::move(sm));
       }
     }
-  }, stopCheck, changedPtr, skipBothChangedImages);
+  }, stopCheck, changedPtr, skipBothChangedImages, sliceGroups, onSlicePtr, startImageGroups);
   telemetry_.addAnalyzeMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchAT0).count());
   // D9a: hand the analyze stage split to the recorder. Copy only -- the
   // pipeline fills a plain struct and no recorder pointer ever travels down
   // into ScanPipeline or the verification code.
   if(telemetryOn) telemetry_.setAnalyzeTelemetry(st.analyze);
+  // 0.9.4.81 B-slice: a completed Sequential pass clears the resume frontier so
+  // the next identical scan still runs the full pass. An interrupted pass keeps
+  // it so the next scan resumes from the last checkpointed slice.
+  if(analyzeMode==AnalyzeMode::Sequential && !cancelled && !(control&&control->cancel.load()))
+    db_.setAnalyzeFrontier("");
   // A stop during analyze() aborts the pair loops above (partial matches were
   // already streamed via onMatch); mark the report incomplete like every
   // other stop path. analyze() itself never propagates. Only completed scans

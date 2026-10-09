@@ -49,6 +49,10 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
   std::string engineVersion() const; bool setEngineVersion(const std::string& v);
   std::string dbVersion() const; bool setDbVersion(const std::string& v);
   std::string samplingGeneration() const; bool setSamplingGeneration(const std::string& v);
+  // 0.9.4.81 B-slice resume frontier: opaque "key#done" string written at each
+  // analyze slice boundary and cleared when the Sequential analyze completes.
+  // An empty value (or a key mismatch) means "no resume". Ignored by A/AB.
+  std::string analyzeFrontier() const; bool setAnalyzeFrontier(const std::string& v);
  // Persistent thumbnail cache (display only): small JPEG previews keyed by
  // path, validated against size+mtime. Lets rescans show thumbs instantly
  // instead of re-decoding thousands of files through the per-tick budget.

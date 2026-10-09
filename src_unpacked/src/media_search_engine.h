@@ -65,9 +65,14 @@ struct ScanControl {
   // on huge datasets with no other progress signal; without this the UI sits
   // at 0% with only disk I/O visible. Fired per hashed file; the UI throttles.
   std::function<void(std::size_t,std::uint64_t,const std::string&)> fingerprintProgress;
- // Optional streaming delivery for large result sets. When retainMatches is false,
- // SearchReport does not materialize the full match list in memory.
- std::function<void(const SearchMatch&)> onMatch;
+  // Optional streaming delivery for large result sets. When retainMatches is false,
+  // SearchReport does not materialize the full match list in memory.
+  std::function<void(const SearchMatch&)> onMatch;
+  // 0.9.4.81 B-slice: invoked on the worker thread at each analyze slice
+  // boundary, before the engine advances the resume frontier. Lets the worker
+  // persist the accumulated match set so a crash loses at most one slice.
+  // Never set by non-GUI callers (benchmarks/CLI leave it empty).
+  std::function<void()> analyzeCheckpoint;
  // Preferred low-allocation callback for large result sets / virtualized GUI models.
  std::function<void(const SearchMatchRef&)> onMatchRef;
   bool retainMatches=true;

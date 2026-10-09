@@ -123,7 +123,7 @@ current verdict    0.9.4.72 parallelized walk/analyze and fixed display/ETR; 0.9
                    0.9.4.78 adds tracing, watchdog, video cancel, supervisor finality;
                    0.9.4.79 adds index lifecycle management;
                    0.9.4.80 reworks analyze parallelism;
-                   0.9.4.81 adds selectable matching-verification modes (Stable/Fast/Auto; Settings option plus scanAnalyzeMode log). The user's
+                   0.9.4.81 adds selectable matching-verification modes (Stable/Fast/Auto; Settings option) plus a B 1000-file slice with a resume frontier (scanAnalyzeMode/analyzeSlice logs). The user's
                    old .72 dump lacks PDB, so exact crash caller remains unproven.
 remaining risk     GUI preview/selection/recovery/Test Mode feel cannot be eyeballed headless -> manual acceptance needed.
                    GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each

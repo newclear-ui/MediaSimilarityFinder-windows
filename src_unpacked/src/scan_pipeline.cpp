@@ -110,11 +110,11 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance){
 ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch){
  return analyze(maxDistance, onMatch, {});
 }
-ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop){
- return analyze(maxDistance, onMatch, stop, nullptr, false);
-}
 ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop,
-                                 const std::vector<char>* changedFiles, bool skipBothChangedImages){
+                                 const std::vector<char>* changedFiles, bool skipBothChangedImages,
+                                 std::size_t sliceGroups,
+                                 const std::function<void(int,std::size_t,std::size_t)>* onSlice,
+                                 std::size_t startImageGroups){
    ScanStats s; s.files=files_.size();
   // D9a: the analyze total is the parent of every sub-stage below, so the
   // sub-stages are defined as non-overlapping slices of it. index/verify/video
@@ -287,7 +287,21 @@ if(isVideo){
       }
     }
  };
-  const auto consume=[&](const CandidateIndex& idx){idx.forEachCandidatePair(maxDistance,process);};
+  // 0.9.4.81 B-slice: windowed variant of the pair enumeration used for the
+  // crop passes (phase 2). Group boundaries keep a window from splitting a
+  // group; stop is honored between windows.
+  const auto consumeWindowed=[&](const CandidateIndex& idx){
+   const std::vector<std::size_t> bnd=idx.groupBoundaries();
+   const std::size_t g=bnd.size()>0?bnd.size()-1:0;
+   if(g==0) return;
+   const std::size_t win=sliceGroups>0?sliceGroups:g;
+   for(std::size_t w0=0;w0<g;w0+=win){
+    const std::size_t w1=std::min(g,w0+win);
+    idx.forEachCandidatePairInRange(bnd[w0],bnd[w1],maxDistance,process);
+    if(onSlice) (*onSlice)(2,w1,g);
+    if(stop && stop()) throw LocalCancel{};
+   }
+  };
   // Parallel full-image pass. Image candidate enumeration is the analyze hot
   // loop on duplicate-heavy datasets: for every candidate it recomputes a pure
   // Hamming verdict (bestMatch is read-only; verifyImagePair is internally
@@ -308,77 +322,92 @@ if(isVideo){
    const std::size_t groups=bounds.size()>0?bounds.size()-1:0;
    if(groups==0) return;
    unsigned hw=std::thread::hardware_concurrency(); if(hw<1)hw=1;
-   const std::size_t jobs=std::min<std::size_t>(hw,groups);
-   struct Part {
-     std::size_t candidates=0;
-     double verifyMs=0;
-     double wallMs=0;
-     AnalyzeTelemetry tel;
-     // Per-group segments claimed by this worker, merged by group index
-     // afterwards so output order matches the sequential pass exactly.
-     std::vector<std::size_t> segGroups;
-     std::vector<std::vector<MediaMatch>> segMatches;
-   };
-   std::vector<Part> parts(jobs);
-   std::vector<std::future<void>> futs; futs.reserve(jobs);
-   std::atomic<std::size_t> nextGroup{0};
+   // 0.9.4.81 B-slice: process image groups in windows of sliceGroups (0 = one
+   // window). After each window onSlice(groupsDone, groupsTotal) lets the caller
+   // checkpoint matches and persist a resume frontier; stop is honored between
+   // windows. startImageGroups skips already-verified leading groups on resume
+   // (their pairs come from the persisted match set). The dynamic group
+   // dispenser and group-ordered merge are per-window, so the emitted sequence
+   // stays identical to the sequential pass.
+   const std::size_t window = sliceGroups>0 ? sliceGroups : groups;
+   const std::size_t g0 = std::min(startImageGroups, groups);
    const auto benchP0=std::chrono::steady_clock::now();
-   for(std::size_t p=0;p<jobs;++p){
-    futs.emplace_back(std::async(std::launch::async,[&,p]{
-     Part& pr=parts[p];
-     const auto wt0=std::chrono::steady_clock::now();
-     std::size_t sincePoll=0;
-     try{
-      for(;;){
-       const std::size_t g=nextGroup.fetch_add(1,std::memory_order_relaxed);
-       if(g>=groups) break;
-       const std::size_t b=bounds[g], e=bounds[g+1];
-       std::vector<MediaMatch> seg;
-       imageIdx_.forEachCandidatePairInRange(b,e,maxDistance,[&](std::size_t i,const Candidate& c){
-        if(stop && ((++sincePoll & 1023)==0) && stop()) throw LocalCancel{};
-        auto j=c.index; if(i==j) return; if(i>j) std::swap(i,j);
-        ++pr.candidates;
-        if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind) return;
-        if(!included(i,j)) return;
-        const double sim=best(files_[i],files_[j]);
-        if(sim>=threshold){
-         const auto vt1=std::chrono::steady_clock::now();
-         const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&pr.tel);
-         pr.verifyMs+=msSince(vt1);
-         if(v>=threshold) seg.push_back(MediaMatch{i,j,v});
-        }
-       });
-       pr.segGroups.push_back(g);
-       pr.segMatches.push_back(std::move(seg));
-      }
-     }catch(const LocalCancel&){}
-     pr.wallMs=msSince(wt0);
-    }));
-   }
-   for(auto& f:futs) f.get();
-   // Deterministic merge: concatenate per-group segments in group order.
-   std::vector<std::vector<MediaMatch>*> byGroup(groups,nullptr);
-   for(Part& pr:parts)
-    for(std::size_t k=0;k<pr.segGroups.size();++k)
-     byGroup[pr.segGroups[k]]=&pr.segMatches[k];
    std::size_t shardMaxPairs=0; double shardMaxWall=0, shardSumWall=0; std::size_t shardActive=0;
-   for(Part& pr:parts){
-    s.candidates+=pr.candidates;
-    verifyMs+=pr.verifyMs;
-    addAnalyzeTelemetry(tel,pr.tel);
-    if(!pr.segGroups.empty()){ ++shardActive; shardSumWall+=pr.wallMs; shardMaxWall=std::max(shardMaxWall,pr.wallMs); }
-    shardMaxPairs=std::max(shardMaxPairs,pr.candidates);
-   }
-   for(std::size_t g=0;g<groups;++g){
-    if(!byGroup[g]) continue;
-    for(auto& m:*byGroup[g]){ if(onMatch) onMatch(m); else s.matches.push_back(m); ++s.groups; }
+   std::size_t lastJobs=0;
+   for(std::size_t w0=g0; w0<groups; w0+=window){
+    const std::size_t w1=std::min(groups, w0+window);
+    const std::size_t wg=w1-w0;
+    const std::size_t jobs=std::min<std::size_t>(hw,wg);
+    lastJobs=jobs;
+    struct Part {
+      std::size_t candidates=0;
+      double verifyMs=0;
+      double wallMs=0;
+      AnalyzeTelemetry tel;
+      std::vector<std::size_t> segGroups;
+      std::vector<std::vector<MediaMatch>> segMatches;
+    };
+    std::vector<Part> parts(jobs);
+    std::vector<std::future<void>> futs; futs.reserve(jobs);
+    std::atomic<std::size_t> nextGroup{w0};
+    for(std::size_t p=0;p<jobs;++p){
+     futs.emplace_back(std::async(std::launch::async,[&,p]{
+      Part& pr=parts[p];
+      const auto wt0=std::chrono::steady_clock::now();
+      std::size_t sincePoll=0;
+      try{
+       for(;;){
+        const std::size_t g=nextGroup.fetch_add(1,std::memory_order_relaxed);
+        if(g>=w1) break;
+        const std::size_t b=bounds[g], e=bounds[g+1];
+        std::vector<MediaMatch> seg;
+        imageIdx_.forEachCandidatePairInRange(b,e,maxDistance,[&](std::size_t i,const Candidate& c){
+         if(stop && ((++sincePoll & 1023)==0) && stop()) throw LocalCancel{};
+         auto j=c.index; if(i==j) return; if(i>j) std::swap(i,j);
+         ++pr.candidates;
+         if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind) return;
+         if(!included(i,j)) return;
+         const double sim=best(files_[i],files_[j]);
+         if(sim>=threshold){
+          const auto vt1=std::chrono::steady_clock::now();
+          const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&pr.tel);
+          pr.verifyMs+=msSince(vt1);
+          if(v>=threshold) seg.push_back(MediaMatch{i,j,v});
+         }
+        });
+        pr.segGroups.push_back(g);
+        pr.segMatches.push_back(std::move(seg));
+       }
+      }catch(const LocalCancel&){}
+      pr.wallMs=msSince(wt0);
+     }));
+    }
+    for(auto& f:futs) f.get();
+    // Deterministic merge within the window: emit this window's groups in order.
+    std::vector<std::vector<MediaMatch>*> byGroup(wg,nullptr);
+    for(Part& pr:parts)
+     for(std::size_t k=0;k<pr.segGroups.size();++k)
+      byGroup[pr.segGroups[k]-w0]=&pr.segMatches[k];
+    for(Part& pr:parts){
+     s.candidates+=pr.candidates;
+     verifyMs+=pr.verifyMs;
+     addAnalyzeTelemetry(tel,pr.tel);
+     if(!pr.segGroups.empty()){ ++shardActive; shardSumWall+=pr.wallMs; shardMaxWall=std::max(shardMaxWall,pr.wallMs); }
+     shardMaxPairs=std::max(shardMaxPairs,pr.candidates);
+    }
+    for(std::size_t g=w0;g<w1;++g){
+     if(!byGroup[g-w0]) continue;
+     for(auto& m:*byGroup[g-w0]){ if(onMatch) onMatch(m); else s.matches.push_back(m); ++s.groups; }
+    }
+    if(onSlice) (*onSlice)(0, w1, groups);
+    if(stop && stop()) throw LocalCancel{};
    }
    // Shard balance telemetry: proves (or disproves) the straggler fix from
    // the backend log alone, without a profiler attached.
    {
     const double totalWall=msSince(benchP0);
     std::ostringstream sh;
-    sh<<"analyzeShards jobs="<<jobs<<" active="<<shardActive
+    sh<<"analyzeShards jobs="<<lastJobs<<" active="<<shardActive
       <<" candidates="<<s.candidates<<" maxPairsPerShard="<<shardMaxPairs
       <<" maxShardWallMs="<<(long long)shardMaxWall
       <<" avgShardWallMs="<<(shardActive?(long long)(shardSumWall/shardActive):0)
@@ -390,7 +419,23 @@ if(isVideo){
   // of a media kind, crop indexes cannot add anything and are skipped entirely.
   try {
   const auto imageBefore=s.candidates; consumeImageParallel(); imageFullCandidates=s.candidates-imageBefore;
-  const auto videoBefore=s.candidates; consume(videoIdx_); videoFullCandidates=s.candidates-videoBefore;
+  const auto videoBefore=s.candidates;
+  {
+   // 0.9.4.81 B-slice: window the video full pass (phase 1) and decode each
+   // window's temporal pairs immediately (flushVideo) so progress is real and a
+   // stop is responsive between windows.
+   const std::vector<std::size_t> vb=videoIdx_.groupBoundaries();
+   const std::size_t vg=vb.size()>0?vb.size()-1:0;
+   const std::size_t vwin=sliceGroups>0?sliceGroups:vg;
+   for(std::size_t w0=0; w0<vg; w0+=vwin){
+    const std::size_t w1=std::min(vg,w0+vwin);
+    videoIdx_.forEachCandidatePairInRange(vb[w0],vb[w1],maxDistance,process);
+    flushVideo();
+    if(onSlice) (*onSlice)(1,w1,vg);
+    if(stop && stop()) throw LocalCancel{};
+   }
+  }
+  videoFullCandidates=s.candidates-videoBefore;
   const std::size_t imagePossible=possible(imageMap_.size()), videoPossible=possible(videoMap_.size());
   const bool imageComplete=(imageFullCandidates>=imagePossible), videoComplete=(videoFullCandidates>=videoPossible);
   if(!imageComplete || !videoComplete){
@@ -403,8 +448,8 @@ if(isVideo){
     auto seed=[&](std::size_t i,const Candidate& c){poll();if(c.distance>maxDistance)return;auto a=i,b=c.index;if(a>b)std::swap(a,b);seen.insert((static_cast<std::uint64_t>(a)<<32)^static_cast<std::uint64_t>(b));};
     if(!imageComplete) imageIdx_.forEachCandidatePair(maxDistance,seed);
     if(!videoComplete) videoIdx_.forEachCandidatePair(maxDistance,seed);
-    if(!imageComplete){consume(c4_);consume(c1_);consume(c916_);}
-    if(!videoComplete){consume(vc4_);consume(vc1_);consume(vc916_);}
+    if(!imageComplete){consumeWindowed(c4_);consumeWindowed(c1_);consumeWindowed(c916_);}
+    if(!videoComplete){consumeWindowed(vc4_);consumeWindowed(vc1_);consumeWindowed(vc916_);}
   }
   flushVideo();
   } catch (const LocalCancel&) {

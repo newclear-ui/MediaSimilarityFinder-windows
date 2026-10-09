@@ -33,7 +33,13 @@ int main(){
     if(db.samplingGeneration()!="0") return 14;
     if(!db.setSamplingGeneration("2")) return 15;
     if(db.samplingGeneration()!="2") return 16;
-    std::cout<<"database=ok\nincremental=ok\ntransaction=ok\n";
+    // 0.9.4.81 B-slice resume frontier round-trip (empty default, store, clear).
+    if(!db.analyzeFrontier().empty()) return 17;
+    if(!db.setAnalyzeFrontier("eng|8|3|abcd#5")) return 18;
+    if(db.analyzeFrontier()!="eng|8|3|abcd#5") return 19;
+    if(!db.setAnalyzeFrontier("")) return 20;
+    if(!db.analyzeFrontier().empty()) return 21;
+    std::cout<<"database=ok\nincremental=ok\ntransaction=ok\nfrontier=ok\n";
     db.close(); // Windows cannot remove an open database file; close first.
     std::filesystem::remove(p);
     return 0;

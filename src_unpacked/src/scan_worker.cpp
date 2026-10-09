@@ -196,6 +196,11 @@ void ScanWorker::run() {
     // (two path strings each) costs hundreds of MB. The GUI accumulates
     // groups incrementally from onMatch and needs no retained vector.
     control_.retainMatches = false;
+    // 0.9.4.81 B-slice: at each analyze slice boundary persist the accumulated
+    // match set (loaded + newly streamed). Runs on the worker thread inside
+    // analyze(), so it may call persistMatchesSnapshot() directly. The engine
+    // advances its resume frontier only after this returns.
+    control_.analyzeCheckpoint = [this]() { persistMatchesSnapshot(); };
     msf::backendLogLine("scanPhase=engine begin");
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
     msf::backendLogLine(QString("scanPhase=engine done scanned=%1 analyzed=%2 unchanged=%3 failed=%4")

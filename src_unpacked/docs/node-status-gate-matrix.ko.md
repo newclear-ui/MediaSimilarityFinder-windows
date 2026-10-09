@@ -118,7 +118,7 @@
                  0.9.4.78 추적·워치독·비디오취소·supervisor 확정,
                  0.9.4.79 인덱스 생명주기 관리,
                  0.9.4.80 analyze 병렬 개선,
-                 0.9.4.81 매칭 검증 모드 선택(안정형/고속형/자동, 설정 옵션 + scanAnalyzeMode 로그).
+                 0.9.4.81 매칭 검증 모드 선택(안정형/고속형/자동, 설정 옵션) + B 1000 파일 슬라이스/프론티어 재개(scanAnalyzeMode/analyzeSlice 로그).
                  사용자의 .72 dump는 PDB 부재로 exact caller 미확정. stdout backpressure는 가설로 보류.
 잔여 위험        GUI 미리보기/선택/복귀/Test Mode 체감은 headless에서 육안 검증 불가 → 수동 acceptance 필요.
                  GPU MAX share boost는 문서화된 미구현 공백. thumbCatchUpVisible()은 매 tick 전체 목록을

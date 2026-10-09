@@ -16,7 +16,9 @@
 //   3. skipBothChangedImages drops image pairs where both sides changed, on
 //      the caller's guarantee that the live pass already produced them.
 #include "scan_pipeline.h"
+#include <functional>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -97,6 +99,32 @@ int main() {
   const auto none = p.analyze(8, {}, {}, nullptr, false);
   expect(none.matches.size() == full.matches.size(),
          "no filter (B/default): identical to the unfiltered pass");
+
+  // (4) B-slice windowing: sliceGroups=2 must call onSlice once per window and
+  // produce the same pair set as the unsliced pass.
+  {
+    std::vector<std::pair<std::size_t, std::size_t>> calls;
+    std::function<void(int, std::size_t, std::size_t)> slice =
+        [&](int phase, std::size_t d, std::size_t t) { if (phase == 0) calls.push_back({d, t}); };
+    const auto s = p.analyze(8, {}, {}, nullptr, false, 2, &slice, 0);
+    expect(s.matches.size() == full.matches.size(), "B-slice: same pair count as unsliced");
+    bool sameSet = true;
+    for (const auto& m : full.matches) if (!hasPair(s.matches, m.left, m.right)) sameSet = false;
+    expect(sameSet, "B-slice: same pair set as unsliced");
+    expect(calls.size() == 3, "B-slice: 5 groups / window 2 => 3 onSlice calls");
+    if (calls.size() == 3) {
+      expect(calls[0].first == 2 && calls[1].first == 4 && calls[2].first == 5,
+             "B-slice: done advances 2,4,5");
+      expect(calls[2].second == 5, "B-slice: total reported as the group count");
+    }
+  }
+  // (5) resume offset: skipping the first two image groups drops every pair
+  // whose left group is below the start.
+  {
+    const auto s = p.analyze(8, {}, {}, nullptr, false, 0, nullptr, 2);
+    expect(s.matches.size() == 1 && hasPair(s.matches, 2, 3),
+           "B-slice resume: only pairs with left group >= start remain");
+  }
 
   if (failures) { std::cout << "analyze_mode=failed " << failures << "/" << checks << "\n"; return 1; }
   std::cout << "analyze_mode=ok checks=" << checks << "\n";
