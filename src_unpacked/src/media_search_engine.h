@@ -2,6 +2,7 @@
 #include "scanner.h"
 #include "database.h"
 #include "scan_pipeline.h"
+#include "analyze_mode.h"
 #include "resource_policy.h"
 #include "scheduler.h"
 #include "profile.h"
@@ -78,6 +79,10 @@ struct ScanControl {
   std::unordered_set<std::string> ignoredPaths;
   // Kind selection: set false to skip images or videos entirely (GUI option).
   bool scanImages=true, scanVideos=true;
+  // 0.9.4.81: how/when candidate-pair verification runs. Default Sequential (B).
+  // The verdict is identical across modes. Logged at scan start as
+  // scanAnalyzeMode=<B|A|AB>.
+  AnalyzeMode analyzeMode=AnalyzeMode::Sequential;
   bool telemetryEnabled=true;
   // Instrumentation purpose attached to this scan's telemetry. GUI scanners
   // leave the UserDiagnostic default; the CLI benchmark sets Benchmark.

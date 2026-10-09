@@ -44,6 +44,9 @@ public slots:
   // P4: ResourceMode delivery (was always Custom after the P3 split).
   // Stored before run(); run() builds make_policy(mode_, cpu_, gpu_).
   void setResourceMode(msf::ResourceMode m) { resourceMode_ = m; }
+  // 0.9.4.81: analyze-mode delivery (default Sequential/B). Stored before
+  // run(); run() copies it into control_.analyzeMode.
+  void setAnalyzeMode(msf::AnalyzeMode m) { analyzeMode_ = m; }
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
   const msf::MediaSearchEngine& scanEngine() const { return engine_; }
   qulonglong gpuDone() const { return gpuDone_.load(); }
@@ -87,4 +90,5 @@ private:
   bool detailedLogEnabled_=true;
   std::size_t walkerCapOverride_=0; // see setWalkerQueueCapacity
   msf::ResourceMode resourceMode_=msf::ResourceMode::Custom; // see setResourceMode
+  msf::AnalyzeMode analyzeMode_=msf::AnalyzeMode::Sequential; // see setAnalyzeMode
 };

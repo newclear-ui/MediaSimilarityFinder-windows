@@ -25,6 +25,7 @@
 #include <string>
 
 #include "resource_policy.h" // msf::ResourcePolicy: plain config data (brief §10 payload class)
+#include "analyze_mode.h"    // msf::AnalyzeMode: selectable verify scheduling (0.9.4.81)
 
 // Execution policy (directive §9–14, P4): two independent axes cross the
 // boundary with identical meaning. Backend never reinterprets them:
@@ -59,6 +60,10 @@ struct BackendScanConfig {
     // scratch index directory. The production index/database is never opened
     // for writing by a test scan.
     bool testMode = false;
+    // Analyze mode (0.9.4.81): how and when candidate-pair verification runs.
+    // Default Sequential (B). Chosen in Settings; the verdict is identical
+    // across modes. Logged as scanAnalyzeMode=<B|A|AB>.
+    msf::AnalyzeMode analyzeMode = msf::AnalyzeMode::Sequential;
     ExecutionPolicy exec;
 };
 

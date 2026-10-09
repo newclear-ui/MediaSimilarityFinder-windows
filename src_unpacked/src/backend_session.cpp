@@ -64,7 +64,7 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
                               int cpu, int gpuPercent, bool gpuEnabled,
                               bool scanImages, bool scanVideos,
                               const QSet<QString>& ignored, bool detailedLog,
-                              int cpuMode, int strategy, bool testMode) {
+                              int cpuMode, int strategy, bool testMode, int analyzeMode) {
     teardownWorker();
     const QString effectiveAppDir = testMode ? testScratchAppDir(appDir, root) : appDir;
     lastAppDir_ = effectiveAppDir;
@@ -80,6 +80,7 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
                           ? static_cast<msf::ResourceMode>(cpuMode)
                           : msf::ResourceMode::Custom;
     worker_->setResourceMode(mode);
+    worker_->setAnalyzeMode(msf::analyzeModeFromInt(analyzeMode));
     worker_->setIgnored(ignored);
     worker_->setDetailedLog(detailedLog);
     worker_->moveToThread(thread_);

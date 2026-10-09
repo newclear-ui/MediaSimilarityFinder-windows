@@ -124,8 +124,10 @@ public:
   //     host sync wait, host total) with per-metric states.
   // v8: D8a dataset identity (fingerprint + version + counts + state) so
   //     repeated runs can prove they used the same input data.
-  // v9: D9a analyze internal stage split (index/scan/verify/video) plus
+  //   v9: D9a analyze internal stage split (index/scan/verify/video) plus
   //     verify cache/SSIM counters and their derived rates.
+  // 0.9.4.81 adds analyze.mode (B/A/AB). Additive key only: the version stays 9
+  // (the schema is additive by construction; see benchmark_schema_test).
   static constexpr int kBenchmarkSchemaVersion = 9;
   // Sentinel for "frame count not provided by this caller".
   static constexpr std::size_t kFramesNotProvided = (std::numeric_limits<std::size_t>::max)();
@@ -146,6 +148,9 @@ public:
   // verification code never depends on engine telemetry. A stage that never
   // ran is reported not_measured, never 0.
   void setAnalyzeTelemetry(const AnalyzeTelemetry& t);
+  // 0.9.4.81: analyze mode key (B/A/AB) for this run, rendered in the analyze
+  // object so a detailed-log reader can attribute the run to its mode.
+  void setAnalyzeModeKey(const std::string& key) { analyzeModeKey_ = key; }
   void addWalkMs(double ms);
   void addRevalidateMs(double ms);
   // Node A global stages (additive; unrecorded stages stay NotMeasured).
@@ -241,8 +246,9 @@ private:
     // Current scan phase for cancellation diagnosis ("fingerprint", "walk",
     // "analyze"). Set at each phase entry; serialized as cancelledDuring only
     // when the run actually cancelled, else empty.
-    std::string phase_;
-    std::string runId_;
+    std::string phase_;    std::string runId_;
+    // 0.9.4.81: analyze mode key (B/A/AB), rendered in the analyze object.
+    std::string analyzeModeKey_;
   double wallMs_ = 0;
   long long startTick_ = 0;
   double walkMs_ = 0, imageStageMs_ = 0, videoStageMs_ = 0, analyzeMs_ = 0, revalidateMs_ = 0;

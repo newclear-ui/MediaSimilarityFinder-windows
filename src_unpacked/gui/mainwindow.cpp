@@ -323,6 +323,13 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"testModeTip")) return S("인덱스 저장 없이 같은 설정으로 전체 처리를 다시 실행 (기존 인덱스 유지)","Re-run full processing with the same settings without saving the index (existing index kept)");
   if (!std::strcmp(key,"testModeOn")) return S("테스트 모드 켜짐: 다음 검색은 임시 인덱스로 전체 처리하며 기존 인덱스를 저장하지 않습니다","Test Mode on: the next scan fully reprocesses into a scratch index and does not save the existing index");
   if (!std::strcmp(key,"testModeOff")) return S("테스트 모드 꺼짐: 다음 검색은 기존 인덱스를 정상 업데이트합니다","Test Mode off: the next scan normally updates the existing index");
+  // Analyze-mode selector (0.9.4.81): an option inside Settings. The friendly
+  // label is shown; the stable internal key (B/A/AB) is logged, never shown.
+  if (!std::strcmp(key,"analyzeModeLabel")) return S("매칭 검증 방식","Matching verification");
+  if (!std::strcmp(key,"analyzeModeStable")) return S("안정형 (스캔 후 검증)","Stable (verify after scan)");
+  if (!std::strcmp(key,"analyzeModeFast")) return S("고속형 (스캔 중 검증)","Fast (verify during scan)");
+  if (!std::strcmp(key,"analyzeModeAuto")) return S("자동 (혼합 검증)","Auto (hybrid)");
+  if (!std::strcmp(key,"analyzeModeTip")) return S("중복 후보 검증을 언제/어떻게 수행할지 선택합니다. 결과(판정)는 동일하며 기본은 안정형입니다.","Choose when/how duplicate candidates are verified. Results are identical; default is Stable.");
   if (!std::strcmp(key,"detailLogTip")) return S("실제 검색에 상세 로그 연결 (별도 벤치마크 실행 아님)","Attach detailed logging to the actual search (not a separate benchmark run)");
   if (!std::strcmp(key,"repWaitTitle")) return S("검색 리포트 작성 중","Writing search report");
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
@@ -1336,6 +1343,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
     cfg.ignored = ignored_;
     cfg.detailedLog = logTgl_->isChecked();
     cfg.testMode = testBtn_ && testBtn_->isChecked();
+    cfg.analyzeMode = msf::analyzeModeFromInt(QSettings().value("ui/analyzeMode", 0).toInt());
     cfg.exec = currentExecPolicy();
     lastScanCfg_ = cfg;
     haveLastScanCfg_ = true;
@@ -3453,6 +3461,23 @@ void MainWindow::configureMonitor() {
   showLog->setObjectName("showDetailLogBox"); // automation hook, see folder_
   showLog->setChecked(QSettings().value("ui/showDetailLog", true).toBool());
   generalLay->addWidget(showLog);
+  // Analyze-mode selector (0.9.4.81): B(안정형) default on top, then A(고속형),
+  // then A+B(자동). An option inside Settings. The verdict is identical across
+  // modes; only verify scheduling/checkpointing differs.
+  auto* analyzeRow = new QHBoxLayout;
+  auto* analyzeLabel = new QLabel(trStr(lang(), "analyzeModeLabel"), generalTab);
+  auto* analyzeModeBox = new QComboBox(generalTab);
+  analyzeModeBox->setObjectName("analyzeModeBox"); // automation hook, see folder_
+  analyzeModeBox->addItem(trStr(lang(), "analyzeModeStable")); // index 0 == B
+  analyzeModeBox->addItem(trStr(lang(), "analyzeModeFast"));   // index 1 == A
+  analyzeModeBox->addItem(trStr(lang(), "analyzeModeAuto"));   // index 2 == A+B
+  analyzeModeBox->setToolTip(trStr(lang(), "analyzeModeTip"));
+  {
+    const int m = QSettings().value("ui/analyzeMode", 0).toInt();
+    analyzeModeBox->setCurrentIndex(m >= 0 && m <= 2 ? m : 0);
+  }
+  analyzeRow->addWidget(analyzeLabel); analyzeRow->addWidget(analyzeModeBox); analyzeRow->addStretch(1);
+  generalLay->addLayout(analyzeRow);
   generalLay->addStretch(1);
   tabs->addTab(generalTab, trStr(lang(), "general"));
   auto* monTab = new QWidget(tabs);
@@ -3531,6 +3556,7 @@ void MainWindow::configureMonitor() {
   st.setValue("monitor/pollSeconds", poll->value());
   st.setValue("monitor/gpuEnabled", gpu->isChecked());
   st.setValue("ui/showDetailLog", showLog->isChecked());
+  st.setValue("ui/analyzeMode", analyzeModeBox->currentIndex());
   applyDetailLogVisibility();
   st.setValue("ui/language", langSel->currentData().toString());
   setLanguage(langSel->currentIndex());

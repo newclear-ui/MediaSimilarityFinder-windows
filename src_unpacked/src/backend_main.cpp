@@ -220,7 +220,8 @@ private:
                             p.value(QStringLiteral("detailedLog")).toBool(true),
                             exec.value(QStringLiteral("cpuMode")).toInt(0),
                             exec.value(QStringLiteral("strategy")).toInt(0),
-                            p.value(QStringLiteral("testMode")).toBool(false));
+                            p.value(QStringLiteral("testMode")).toBool(false),
+                            p.value(QStringLiteral("analyzeMode")).toInt(0));
     }
 
     void updatePolicyFrom(const Message& m) {

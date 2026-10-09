@@ -54,6 +54,7 @@ void ScanWorker::run() {
     engine_.setResourcePolicy(msf::make_policy(resourceMode_, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
+    control_.analyzeMode = analyzeMode_;
     control_.telemetryEnabled = detailedLogEnabled_;
     control_.walkerQueueCapacity = walkerCapOverride_;
     control_.buildVersion = QCoreApplication::applicationVersion().toStdString();

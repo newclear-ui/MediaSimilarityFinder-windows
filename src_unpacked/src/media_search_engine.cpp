@@ -231,6 +231,11 @@ bool MediaSearchEngine::getVideoThumb(const std::string& path, std::vector<unsig
   return videoEngine_.peekThumb48(path, gray48);
 }
 SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistance,ScanControl* control){ SearchReport r; files_.clear(); gpuImagesProcessed_.store(0); analyzedCount_.store(0); unchangedCount_.store(0); gpuActive_.store(false,std::memory_order_relaxed); const bool tx= db_.beginTransaction(); if(!tx) return r;
+  // 0.9.4.81: record the selected analyze mode once, up front, so a final
+  // comparison test can attribute a run's log to a mode without parsing
+  // anything else. Stable one-word keys: B (Sequential) / A (Live) / AB (Hybrid).
+  const AnalyzeMode analyzeMode = control ? control->analyzeMode : AnalyzeMode::Sequential;
+  msf::backendLogLine(std::string("scanAnalyzeMode=") + analyzeModeKey(analyzeMode));
   auto old=db_.all();
   std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
   const bool videoRegrid=(db_.samplingGeneration()!=kSamplingGeneration);
@@ -360,6 +365,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const bool telemetryOn = !control || control->telemetryEnabled;
   bcfg.detail = telemetryOn;
   telemetry_.start(bcfg);
+  // 0.9.4.81: carry the analyze mode into the detailed-log JSON (analyze.mode),
+  // alongside the msf_scan.log scanAnalyzeMode= line.
+  telemetry_.setAnalyzeModeKey(analyzeModeKey(analyzeMode));
   // D8a: attach the identity of the bytes under this root so a later reader
   // can tell "same data" from "same path". A missing or unreadable root
   // records not_available/failed instead of a zero. This is telemetry only
@@ -493,6 +501,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // check, and the actual scanned/video admission boundary below.
  std::unordered_set<std::string> videoScopeSeen; videoScopeSeen.reserve(old.size()+256);
   std::unordered_map<std::string,FileState> currentByPath;
+  // 0.9.4.81: paths admitted for (re)analysis this scan (added/modified). Used
+  // by Live (A) and Hybrid (A+B) to restrict the final pass to pairs that can
+  // produce NEW verdicts; unchanged-vs-unchanged pairs come from the persisted
+  // match set (engine-version revalidated at scan start). Unused by Sequential.
+  std::unordered_set<std::string> changedPaths;
   ScanPipeline livePipe;
  auto liveEmit=[&](const MediaMatch& m){
   if(!control || !control->onMatch) return;
@@ -829,6 +842,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // skeleton and its timestamp commit and roll back together.
     if(!db_.traceAdmit(x.path,wallMs())){ failed=true; return; } }
   seen.insert(x.path);
+  changedPaths.insert(x.path);
   currentByPath.emplace(x.path,x);
   if(kindOf(x.path)==MediaKind::Image){
    imageBatch.push_back(x.path);
@@ -977,6 +991,21 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    if(video){ loadVideoAnchors(videoEngine_, files_.back()); ++r.indexedVideos; }
   }
   ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); pipe.setVideoGpuBackend(&videoGpu_); pipe.setVideoGpuActivity(&gpuActive_); for(auto&f:files_)pipe.add(f);
+  // 0.9.4.81 mode-aware final pass. Sequential (B) keeps the full pass (null
+  // filter). Live (A) restricts it to pairs touching a file changed this scan.
+  // Hybrid (A+B) additionally skips image pairs where BOTH sides changed, on the
+  // guarantee that the live streaming pass already emitted them -- guarded by
+  // liveMatch, because with no streaming consumer (e.g. CLI) the live index was
+  // never built and every pair must still be verified here.
+  std::vector<char> changedFiles;
+  const std::vector<char>* changedPtr=nullptr;
+  if(analyzeMode!=AnalyzeMode::Sequential){
+    changedFiles.assign(files_.size(),0);
+    for(std::size_t i=0;i<files_.size();++i)
+      if(changedPaths.find(files_[i].path)!=changedPaths.end()) changedFiles[i]=1;
+    changedPtr=&changedFiles;
+  }
+  const bool skipBothChangedImages=(analyzeMode==AnalyzeMode::Hybrid)&&liveMatch;
   // The final analyze pass can grind through millions of candidate pairs (plus
   // a video re-decode per video pair). Without a stop check, cancel/pause
   // during this phase did nothing until it finished ??the force-quit path
@@ -1034,7 +1063,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
         r.matches.push_back(std::move(sm));
       }
     }
-  }, stopCheck);
+  }, stopCheck, changedPtr, skipBothChangedImages);
   telemetry_.addAnalyzeMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchAT0).count());
   // D9a: hand the analyze stage split to the recorder. Copy only -- the
   // pipeline fills a plain struct and no recorder pointer ever travels down

@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.80` (analyze parallelism rework, UNVERIFIED) - CPU/GPU CTest NOT RUN
-Last updated: 2026-10-08
+Baseline: `0.9.4.81` (selectable matching-verification modes) - CPU CTest 122/122 - GPU CTest 123/123
+Last updated: 2026-10-09
 
 ## Role of this document
 
@@ -109,7 +109,7 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.80 done (0.9.4.80 UNVERIFIED)
+active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.81 done
 next               Real Windows manual GUI acceptance (new-file read progress, auto-resume after crash,
                    preview display, selection, Test Mode toggle/scratch isolation, Tiles/ListMode,
                    large-dataset traversal) -> final acceptance recheck
@@ -122,7 +122,8 @@ current verdict    0.9.4.72 parallelized walk/analyze and fixed display/ETR; 0.9
                    0.9.4.77 moves narrow UTF-8 path sites to the wide path;
                    0.9.4.78 adds tracing, watchdog, video cancel, supervisor finality;
                    0.9.4.79 adds index lifecycle management;
-                   0.9.4.80 reworks analyze parallelism (UNVERIFIED, parity recheck pending). The user's
+                   0.9.4.80 reworks analyze parallelism;
+                   0.9.4.81 adds selectable matching-verification modes (Stable/Fast/Auto; Settings option plus scanAnalyzeMode log). The user's
                    old .72 dump lacks PDB, so exact crash caller remains unproven.
 remaining risk     GUI preview/selection/recovery/Test Mode feel cannot be eyeballed headless -> manual acceptance needed.
                    GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each
@@ -169,4 +170,4 @@ stay in the origin documents.
 ## Version invariance check
 
 `kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.5` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9` — unchanged at the 0.9.4.80 baseline (intended). (`kDatabaseVersion 1.0.5` retained.)
+`kCacheFormatVersion 9` — unchanged at the 0.9.4.81 baseline (intended). (`kDatabaseVersion 1.0.5` retained; `analyze.mode` is additive so the schema stays 9.)

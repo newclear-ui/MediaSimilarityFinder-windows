@@ -111,6 +111,10 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
  return analyze(maxDistance, onMatch, {});
 }
 ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop){
+ return analyze(maxDistance, onMatch, stop, nullptr, false);
+}
+ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop,
+                                 const std::vector<char>* changedFiles, bool skipBothChangedImages){
    ScanStats s; s.files=files_.size();
   // D9a: the analyze total is the parent of every sub-stage below, so the
   // sub-stages are defined as non-overlapping slices of it. index/verify/video
@@ -131,8 +135,22 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
  const auto possible=[](std::size_t n){return n>1?n*(n-1)/2:0;};s.possiblePairs=possible(imageMap_.size())+possible(videoMap_.size());
  // Stream candidate pairs instead of materializing the output of all eight indexes.
  // This is important for bucket-heavy datasets where the pair count can be millions.
- const double threshold=thresholdFor(maxDistance);
-  auto best=[&](const MediaFile&a,const MediaFile&b){ return bestMatch(a,b); };
+  const double threshold=thresholdFor(maxDistance);
+   auto best=[&](const MediaFile&a,const MediaFile&b){ return bestMatch(a,b); };
+   // 0.9.4.81 mode filter: decides whether this candidate pair is (re)verified
+   // in the final pass. changedFiles==nullptr verifies everything, exactly as
+   // before (Sequential/B). Otherwise only pairs touching a changed file are
+   // verified; with skipBothChangedImages, image pairs where BOTH sides changed
+   // are also skipped (the live streaming pass already emitted them). Verdicts
+   // never change -- only which pairs this pass revisits.
+   auto included=[&](std::size_t i,std::size_t j)->bool{
+     if(!changedFiles) return true;
+     const bool ci = i<changedFiles->size() && (*changedFiles)[i];
+     const bool cj = j<changedFiles->size() && (*changedFiles)[j];
+     if(i<files_.size() && files_[i].kind==MediaKind::Video) return ci||cj;
+     if(skipBothChangedImages) return ci!=cj;
+     return ci||cj;
+   };
   // Anchor gate: best() above only sees the single XOR/mirror/crop values, so
   // a re-encoded pair whose XORs drifted apart can never reach temporal
   // through it. Frame anchors carry per-frame evidence instead: if any anchor
@@ -231,6 +249,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind)return;
     const bool isVideo=(files_[i].kind==MediaKind::Video);
     if(isVideo) ++s.videoCandidates;
+    if(!included(i,j))return;
      double sim=best(files_[i],files_[j]);
      if(!isVideo){
       if(sim>=threshold){
@@ -320,6 +339,7 @@ if(isVideo){
         auto j=c.index; if(i==j) return; if(i>j) std::swap(i,j);
         ++pr.candidates;
         if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind) return;
+        if(!included(i,j)) return;
         const double sim=best(files_[i],files_[j]);
         if(sim>=threshold){
          const auto vt1=std::chrono::steady_clock::now();

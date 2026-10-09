@@ -191,7 +191,8 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   static std::atomic<std::uint64_t> runCounter{0};
   runId_ = startedAt_ + "-" + std::to_string(runCounter.fetch_add(1, std::memory_order_relaxed) + 1);
   startTick_ = nowNs();
-  wallMs_ = walkMs_ = imageStageMs_ = videoStageMs_ = analyzeMs_ = revalidateMs_ = 0;
+    wallMs_ = walkMs_ = imageStageMs_ = videoStageMs_ = analyzeMs_ = revalidateMs_ = 0;
+    analyzeModeKey_.clear();
   incrementalMs_ = candidateIndexMs_ = similarityMs_ = persistenceMs_ = 0;
   walkRecorded_ = imageStageRecorded_ = videoStageRecorded_ = false;
   analyzeRecorded_ = revalidateRecorded_ = incrementalRecorded_ = false;
@@ -774,6 +775,10 @@ std::string TelemetryRecorder::toJson() const {
     std::ostringstream a;
     a << std::fixed << std::setprecision(3);
     a << "\"analyze\":{\"state\":\"" << measureStateName(ran ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
+    // v10: analyze mode key. Always present (defaults to B = Sequential), so a
+    // reader can tell which verification scheduling mode produced the run even
+    // when the analyze stage itself was not entered.
+    a << ",\"mode\":\"" << escapeJson(analyzeModeKey_.empty() ? std::string("B") : analyzeModeKey_) << "\"";
     a << ",\"indexMs\":" << analyzeTel_.indexMs << ",\"indexState\":\""
       << measureStateName(ran ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
     a << ",\"scanMs\":" << analyzeTel_.scanMs << ",\"scanState\":\""

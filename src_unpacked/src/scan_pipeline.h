@@ -38,6 +38,16 @@ public:
   ScanStats analyze(unsigned maxDistance=8);
   ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch);
   ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop);
+  // 0.9.4.81 mode-aware final pass. When changedFiles is null (default) every
+  // candidate pair is verified exactly as before (Sequential/B). When provided,
+  // it flags which files changed this scan (by index into files()):
+  //   - video pairs are verified only when at least one side changed;
+  //   - image pairs likewise, except skipBothChangedImages=true also skips
+  //     pairs where BOTH sides changed, on the caller's guarantee that the live
+  //     streaming pass already emitted those image pairs. Verdicts are
+  //     unchanged; only which pairs are (re)verified here differs.
+  ScanStats analyze(unsigned maxDistance, const MatchCallback& onMatch, const StopCheck& stop,
+                    const std::vector<char>* changedFiles, bool skipBothChangedImages);
   // Optional cache-backed engine for the expensive video temporal stage.
   // Without it analyze() decodes every video pair from scratch (its local
   // engine has no cache open); with it, cache hits skip the decode entirely.

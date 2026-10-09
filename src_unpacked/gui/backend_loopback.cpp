@@ -95,7 +95,8 @@ void LoopbackBackendClient::startScan(const BackendScanConfig& cfg) {
     session_->startScan(cfg.root, cfg.appDir, cfg.distance, cfg.cpu, cfg.gpuPercent,
                         cfg.gpuEnabled, cfg.scanImages, cfg.scanVideos,
                         cfg.ignored, cfg.detailedLog,
-                        cfg.exec.cpuMode, cfg.exec.strategy, cfg.testMode);
+                        cfg.exec.cpuMode, cfg.exec.strategy, cfg.testMode,
+                        static_cast<int>(cfg.analyzeMode));
 }
 
 void LoopbackBackendClient::startMonitor(const QStringList& watchRoots, const QStringList& compareRoots,
