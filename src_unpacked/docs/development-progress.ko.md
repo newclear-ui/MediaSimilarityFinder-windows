@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 수동 GUI acceptance → 제품 acceptance 재확인
+> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 수동 GUI acceptance → 제품 acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -109,6 +109,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | Test Mode 재도입·스크롤/썸네일 후속 | **완료(0.9.4.75)** | Settings 옆 `Test` 토글 + 고유 scratch app dir에서 기존 검색 경로 전체 실행. 기존 인덱스 바이트 불변. 스크롤 gate 확장, 썸네일 dedup·coalesced layout, 중앙 앵커 복원. CPU/scheduler 미접촉. CPU 117/117, GPU 118/118 |
 | 크래시 프론티어 확정 | **완료(0.9.4.76)** | admission 스켈레톤을 배치 진입 checkpoint로 커밋. 배치 중 kill/AV에도 fingerprint-0·미실패 프론티어가 남아 다음 스캔이 재분석. `MSF_TEST_THROW_BATCH` seam. 판정·스키마·버전 불변. CPU 118/118, GPU 119/119 |
 | ANSI 밖 파일명 수정 | **완료(0.9.4.77)** | narrow UTF-8 경로 6곳을 wide 경로로 교체. CP949 매핑 불가 1,778개 포함 데이터셋 89% 실패를 재현·수정. `unicode_path_test`에 U+20000 픽스처(수정 전 0xC0000409 사망 확인). 판정·스키마·버전 불변. CPU 118/118, GPU 119/119 |
+| 추적·워치독·비디오취소·supervisor 확정 | **완료(0.9.4.78)** | `backend lost` 2건이 워치독 오진으로 확정. `file_trace` 테이블 + 저속 파일 로그 + 10분 워치독 진단(이미지 배치만 자동 cancel) + 비디오 cooperative cancel + 에스컬레이션 리셋/kill latch/재기동 금지/health 3연속 미스. DB 1.0.5. CPU 120/120, GPU 121/121 |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -195,12 +196,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.77 (ANSI 밖 파일명 수정) |
+| 기준 코드 | 0.9.4.78 (추적·워치독·비디오취소·supervisor 확정) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.77 ANSI 밖 파일명 수정 완료** — CPU 118/118, GPU 119/119. narrow UTF-8 경로 6곳을 wide 경로로 교체하고 `unicode_path_test`에 U+20000 픽스처 추가(수정 전 0xC0000409 사망 확인). 판정·스키마·버전 불변. 남은 것은 LocalDumps+PDB 확보, 실제 Windows UI acceptance, 사용자 dataset 전체 스캔 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.78 추적·워치독·비디오취소·supervisor 확정 완료** — CPU 120/120, GPU 121/121. `file_trace` + 저속 파일 로그 + 10분 워치독(이미지 배치만 자동 cancel) + 비디오 cooperative cancel + 에스컬레이션 리셋/kill latch/재기동 금지/health 3연속 미스. DB 1.0.5. 남은 것은 LocalDumps+PDB 확보, 실제 Windows UI acceptance, 사용자 dataset 전체 스캔 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.77 |
+| 현재 버전 | 0.9.4.78 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

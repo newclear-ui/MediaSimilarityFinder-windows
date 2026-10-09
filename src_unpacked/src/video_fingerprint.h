@@ -51,7 +51,8 @@ struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=
 class VideoFingerprintEngine{
 public:
  ~VideoFingerprintEngine();
-   bool build(const std::string&,VideoFingerprint&,GpuBackend* gpu=nullptr,std::atomic<bool>* gpuActivity=nullptr,VideoBuildStats* stats=nullptr) const;
+   bool build(const std::string&,VideoFingerprint&,GpuBackend* gpu=nullptr,std::atomic<bool>* gpuActivity=nullptr,VideoBuildStats* stats=nullptr,
+              const std::atomic<bool>* cancel=nullptr) const;
   bool buildFull(const std::string&,VideoFingerprint&,VideoCropFingerprint&,int decodeSize=96) const;
  bool openPersistentCache(const std::string& sqlitePath) const;
  void closePersistentCache() const;

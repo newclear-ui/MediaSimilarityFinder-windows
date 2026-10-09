@@ -224,7 +224,13 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
     if(crops){ crops->timestamps.push_back(i<frames32.size()?frames32[i].timestamp:cf.timestamp); crops->a4x3.push_back(c.a4x3); crops->a1x1.push_back(c.a1x1); crops->a9x16.push_back(c.a9x16); crops->mirrorA4x3.push_back(c.mirrorA4x3); crops->mirrorA1x1.push_back(c.mirrorA1x1); crops->mirrorA9x16.push_back(c.mirrorA9x16); }
   }
 }
-bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBackend* gpu,std::atomic<bool>* gpuActivity,VideoBuildStats* stats)const{
+bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBackend* gpu,std::atomic<bool>* gpuActivity,VideoBuildStats* stats,
+                              const std::atomic<bool>* cancel)const{
+  // Cooperative cancel (0.9.4.78): a Stop landing mid-sweep stops at frame
+  // boundaries instead of decoding to the last timestamp. Checked here, in
+  // the frame loop (framesAt), and nowhere else: single-frame callers
+  // (thumbnails) stay untouched.
+  if(cancel && cancel->load(std::memory_order_relaxed)) return false;
   // NOTE: p is UTF-8. Build the path with path_from_utf8 first: constructing
   // fs::path from a narrow string throws on Windows when the name holds
   // characters outside the ANSI code page (observed terminate() on Korean
@@ -298,7 +304,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
       stats->planReason=(int)SamplingReason::PlannerDisabled;
     }
   }
-  if(!sparseUsed && !d.framesAt96Plus32(plan.timestamps,frames96,frames32)){d.close();return false;}
+  if(!sparseUsed && !d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel)){d.close();return false;}
   // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
   // full-file sweep cost ~50% of build time on decode-bound files (each sweep
   // is a single sequential decode, never one seek per timestamp).

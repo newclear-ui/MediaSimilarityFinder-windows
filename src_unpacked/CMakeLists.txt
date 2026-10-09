@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.77 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.78 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -859,6 +859,15 @@ if(Qt6_FOUND)
     target_link_libraries(msf_test_mode_test PRIVATE msf_core Qt6::Core)
     target_include_directories(msf_test_mode_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME test_mode_test COMMAND msf_test_mode_test)
+    # 0.9.4.78 stall watchdog: pure decision logic under fake clocks.
+    add_executable(msf_stall_watchdog_test tests/stall_watchdog_test.cpp)
+    target_include_directories(msf_stall_watchdog_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME stall_watchdog_test COMMAND msf_stall_watchdog_test)
+    # 0.9.4.78 video-build cancel: cooperative flag must fail fast.
+    add_executable(msf_video_cancel_test tests/video_cancel_test.cpp)
+    target_link_libraries(msf_video_cancel_test PRIVATE msf_core Qt6::Core)
+    target_include_directories(msf_video_cancel_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME video_cancel_test COMMAND msf_video_cancel_test)
     # 0.9.4.76 crash-frontier durability: mid-batch failure must leave the
     # admission frontier (fingerprint 0, not failed) committed for retry.
     add_executable(msf_scan_crash_frontier_test tests/scan_crash_frontier_test.cpp)

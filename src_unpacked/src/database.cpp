@@ -77,7 +77,11 @@ bool Database::initialize(){
    if(sqlite3_prepare_v2(D(db_),"PRAGMA table_info(thumbs)",-1,&thumbInfo,nullptr)==SQLITE_OK){while(sqlite3_step(thumbInfo)==SQLITE_ROW){const auto* n=sqlite3_column_text(thumbInfo,1);if(n&&std::string(reinterpret_cast<const char*>(n))=="quick_hash"){hasThumbQuick=true;break;}}sqlite3_finalize(thumbInfo);}
    if(!hasThumbQuick&&!exec("ALTER TABLE thumbs ADD COLUMN quick_hash TEXT NOT NULL DEFAULT '';")) return false;
   if(!exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);")) return false;
-  if(!exec("CREATE TABLE IF NOT EXISTS thumbs(path TEXT PRIMARY KEY,modified INTEGER NOT NULL,size INTEGER NOT NULL,jpeg BLOB NOT NULL);")) return false;
+   if(!exec("CREATE TABLE IF NOT EXISTS thumbs(path TEXT PRIMARY KEY,modified INTEGER NOT NULL,size INTEGER NOT NULL,jpeg BLOB NOT NULL);")) return false;
+  // 1.0.5 scan-trace table (additive; old readers ignore it). One row per
+  // admitted file per scan: admission/start/finish timestamps plus outcome.
+  // finished_ms==0 means the outcome was never observed (interrupted).
+  if(!exec("CREATE TABLE IF NOT EXISTS file_trace(path TEXT PRIMARY KEY,admitted_ms INTEGER NOT NULL DEFAULT 0,started_ms INTEGER NOT NULL DEFAULT 0,finished_ms INTEGER NOT NULL DEFAULT 0,outcome TEXT NOT NULL DEFAULT '');")) return false;
  // Migrate databases created before mirror-aware fingerprints.
  bool hasMirror=false; sqlite3_stmt* info=nullptr;
  if(sqlite3_prepare_v2(D(db_),"PRAGMA table_info(files)",-1,&info,nullptr)==SQLITE_OK){
@@ -209,6 +213,96 @@ std::vector<StoredMatch> Database::loadMatches() const{
     out.push_back(std::move(m));
   }
   sqlite3_finalize(s); return out;
+}
+
+bool Database::traceAdmit(const std::string& path, std::int64_t admittedMs) {
+    if (!db_) return false;
+    // Re-admission (rescan) resets the row: a new scan gets a fresh trace.
+    sqlite3_stmt* s = nullptr;
+    static const char* sql =
+        "INSERT INTO file_trace(path,admitted_ms,started_ms,finished_ms,outcome)"
+        " VALUES(?,?,0,0,'') ON CONFLICT(path) DO UPDATE SET"
+        " admitted_ms=excluded.admitted_ms,started_ms=0,finished_ms=0,outcome=''";
+    if (sqlite3_prepare_v2(D(db_), sql, -1, &s, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(s, 1, path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(s, 2, (sqlite3_int64)admittedMs);
+    const bool ok = sqlite3_step(s) == SQLITE_DONE;
+    sqlite3_finalize(s);
+    return ok;
+}
+
+bool Database::traceStart(const std::string& path, std::int64_t startedMs) {
+    if (!db_) return false;
+    // Keep the first start: retries must not hide the original stall point.
+    sqlite3_stmt* s = nullptr;
+    static const char* sql =
+        "UPDATE file_trace SET started_ms=? WHERE path=? AND started_ms=0";
+    if (sqlite3_prepare_v2(D(db_), sql, -1, &s, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_int64(s, 1, (sqlite3_int64)startedMs);
+    sqlite3_bind_text(s, 2, path.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(s) == SQLITE_DONE;
+    sqlite3_finalize(s);
+    return ok;
+}
+
+bool Database::traceFinish(const std::string& path, std::int64_t finishedMs,
+                           const std::string& outcome) {
+    if (!db_) return false;
+    sqlite3_stmt* s = nullptr;
+    static const char* sql =
+        "UPDATE file_trace SET finished_ms=?,outcome=? WHERE path=?";
+    if (sqlite3_prepare_v2(D(db_), sql, -1, &s, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_int64(s, 1, (sqlite3_int64)finishedMs);
+    sqlite3_bind_text(s, 2, outcome.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(s, 3, path.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(s) == SQLITE_DONE;
+    sqlite3_finalize(s);
+    return ok;
+}
+
+static std::vector<FileTrace> traceSelect(sqlite3* db, const char* sql) {
+    std::vector<FileTrace> out;
+    sqlite3_stmt* s = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &s, nullptr) != SQLITE_OK) return out;
+    while (sqlite3_step(s) == SQLITE_ROW) {
+        FileTrace t;
+        const unsigned char* p0 = sqlite3_column_text(s, 0);
+        const unsigned char* p4 = sqlite3_column_text(s, 4);
+        t.path = p0 ? reinterpret_cast<const char*>(p0) : std::string();
+        t.admittedMs = (std::int64_t)sqlite3_column_int64(s, 1);
+        t.startedMs = (std::int64_t)sqlite3_column_int64(s, 2);
+        t.finishedMs = (std::int64_t)sqlite3_column_int64(s, 3);
+        t.outcome = p4 ? reinterpret_cast<const char*>(p4) : std::string();
+        out.push_back(std::move(t));
+    }
+    sqlite3_finalize(s);
+    return out;
+}
+
+std::vector<FileTrace> Database::traceUnfinished() const {
+    if (!db_) return {};
+    return traceSelect(D(db_),
+        "SELECT path,admitted_ms,started_ms,finished_ms,outcome FROM file_trace"
+        " WHERE finished_ms=0 ORDER BY admitted_ms");
+}
+
+std::vector<FileTrace> Database::traceAll() const {
+    if (!db_) return {};
+    return traceSelect(D(db_),
+        "SELECT path,admitted_ms,started_ms,finished_ms,outcome FROM file_trace"
+        " ORDER BY admitted_ms");
+}
+
+std::int64_t Database::traceAdmitted(const std::string& path) const {
+    if (!db_) return -1;
+    sqlite3_stmt* s = nullptr;
+    static const char* sql = "SELECT admitted_ms FROM file_trace WHERE path=?";
+    if (sqlite3_prepare_v2(D(db_), sql, -1, &s, nullptr) != SQLITE_OK) return -1;
+    sqlite3_bind_text(s, 1, path.c_str(), -1, SQLITE_TRANSIENT);
+    std::int64_t out = -1;
+    if (sqlite3_step(s) == SQLITE_ROW) out = (std::int64_t)sqlite3_column_int64(s, 0);
+    sqlite3_finalize(s);
+    return out;
 }
 
 bool Database::putThumb(const std::string& path,std::int64_t modified,std::uint64_t size,const std::vector<unsigned char>& jpeg){

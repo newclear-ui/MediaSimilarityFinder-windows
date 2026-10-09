@@ -153,6 +153,22 @@ WER LocalDumps 키는 이미지별이므로 GUI와 별도 프로세스인
   데이터셋에 CP949 매핑 불가 1,778개 실재 확인, 수정 전 회귀가 0xC0000409로
   사망·수정 후 PASS. 상세: `docs/build-history/0.9.4.77.ko.md`.
 
+### 3-6. 2026-10-09 — `backend lost` 2연속, 워치독 오진으로 확정 (크래시 아님)
+
+- 제품 GPU 빌드 0.9.4.77, 07:53:17 + 07:54:15. 메시지에 exit code가 없는 것이
+  supervisor가 스스로 죽인 증거다 (`terminateAndRespawn` 전용 문구).
+- 1차: analyze 매치 burst 와중(같은 초에 groups 0→8852)에 health 10초 기아.
+  Backend 송신은 메인 스레드 동기 flush + health도 같은 스레드라, MATCHES
+  홍수 + GUI 9천 위젯 재구축이 겹치면 health가 굶는다. 08:00 이후 Event 1000
+  없음 → AV 아님.
+- 2차: 갓 뜬 지 15초 된 backend를 startup flood 중에 또 죽였다.
+- 이후 stale escTimer가 재기동 2초 만에 새 backend를 kill했고, `spawn()`이
+  `escStage_`를 리셋하지 않아 3초 간격 FAILED 무한 루프가 40분 이상 돌았다.
+- 대응: 0.9.4.78에서 file_trace + 저속 파일 로그 + 10분 워치독 진단(이미지
+  배치만 자동 cancel) + 비디오 cooperative cancel + 에스컬레이션 리셋/kill
+  latch/재기동 금지/health 3연속 미스 룰. 상세:
+  `docs/build-history/0.9.4.78.ko.md`.
+
 ## 4. 방어 패치 내역 (0.9.4.62, 0.9.4.65)
 
 - `ScanWorker::run`에 `catch (...)` 추가. 부분 매치 checkpoint 후
@@ -193,6 +209,7 @@ WER LocalDumps 키는 이미지별이므로 GUI와 별도 프로세스인
 - `docs/build-history/0.9.4.65.{ko,en}.md` — 핸들러 무throw 패치와 덤프 분석.
 - `docs/build-history/0.9.4.74.{ko,en}.md` — telemetry sampler RAII 수정, walk 진행률, 재시작 후 재개.
 - `docs/build-history/0.9.4.76.{ko,en}.md` — 배치 진입 checkpoint 로 admission 스켈레톤 확정, 크래시 프론티어 내구성.
+- `docs/build-history/0.9.4.78.{ko,en}.md` — file_trace·워치독·비디오 취소·supervisor 확정 (워치독 오진 대응).
 - `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 항목 (원인·실측).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — 별개 주제
   (유사 판정). 크래시와 무관하므로 혼동하지 말 것.

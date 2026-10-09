@@ -1,5 +1,6 @@
 #include <cmath>
 #include "media_search_engine.h"
+#include "backend_log.h"
 #include "image_verify.h"
 #include "semver.h"
 #include "path_utils.h"
@@ -7,9 +8,11 @@
 #include "media_pipeline.h"
 #include "video_fingerprint.h"
 #include "monitor.h"
+#include "stall_watchdog.h"
 #include "walker_queue.h"
 #include "similarity.h"
 #include <filesystem>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -518,12 +521,91 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  // Checkpoints persist completed work so interruption (cancel/crash) never
  // loses the file list: commit every 500 analyzed files, and the walk
  // skeleton rows are covered by the scanned-based trigger in processOne.
- auto checkpoint=[&]()->bool{
-  if(!db_.commitTransaction()){ db_.rollbackTransaction(); return false; }
-  if(!db_.beginTransaction()) return false;
-  lastCommitDone=done; lastCommitScanned=scanned;
-  return true;
- };
+  auto checkpoint=[&]()->bool{
+   if(!db_.commitTransaction()){ db_.rollbackTransaction(); return false; }
+   if(!db_.beginTransaction()) return false;
+   lastCommitDone=done; lastCommitScanned=scanned;
+   return true;
+  };
+  // Wall clock (UTC ms, stored in file_trace) vs steady clock (durations,
+  // watchdog). The msf_scan.log prefix already carries local wall time.
+  auto wallMs=[]()->std::int64_t{
+   return (std::int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+     std::chrono::system_clock::now().time_since_epoch()).count(); };
+  auto steadyMs=[]()->std::int64_t{
+   return (std::int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+     std::chrono::steady_clock::now().time_since_epoch()).count(); };
+  // Files slower than this get a slowFile backend-log line with their full
+  // timing triple (admitted/started/finished). Failures always log.
+  constexpr std::int64_t kSlowFileMs = 30000;
+  // Stall watchdog (0.9.4.78): diagnose any 10-minute completion silence with
+  // a full state snapshot; cancel only bounded image-batch stalls. Test
+  // override via MSF_TEST_WATCHDOG_MS (milliseconds, floor 1000).
+  std::int64_t watchdogMs = 10LL*60*1000;
+  if(const char* wenv=std::getenv("MSF_TEST_WATCHDOG_MS")){
+   try{ watchdogMs=std::stoll(wenv); }catch(...){}
+   if(watchdogMs<1000) watchdogMs=1000;
+  }
+  StallWatchdog watchdog(watchdogMs);
+  watchdog.noteActivity(steadyMs());
+  std::string wdPhase="init";
+  // Producer admission counter lives here (not at the walker) so the
+  // watchdog helpers above can observe producer liveness.
+  std::size_t walkRead = 0;
+  StallUnit wdUnit; wdUnit.kind="walk";
+  auto beginWdUnit=[&](const std::string& kind,const std::vector<std::string>& sample,
+                      std::size_t total){
+   StallUnit u; u.kind=kind; u.samplePaths=sample; u.total=total;
+   watchdog.beginUnit(u,steadyMs()); wdUnit=u; wdUnit.startedSteadyMs=steadyMs(); };
+  auto slowFileLog=[&](const std::string& kind,const std::string& path,
+                       std::int64_t admitted,std::int64_t started,std::int64_t finished,
+                       const std::string& outcome){
+   const std::int64_t el=finished>=started?finished-started:0;
+   if(outcome!="failed" && el<kSlowFileMs) return;
+   msf::backendLogLine(std::string("slowFile kind=")+kind+" path="+path+
+     " admittedMs="+std::to_string(admitted)+" startedMs="+std::to_string(started)+
+     " finishedMs="+std::to_string(finished)+" elapsedMs="+std::to_string(el)+
+     " outcome="+outcome); };
+  // Fires the watchdog decision and logs the snapshot. Returns true when the
+  // verdict is Cancel (caller unwinds as a normal cancel).
+  // Producer-side stalls get their own diagnose branch: a starved consumer
+  // (empty queue, walker alive) is healthy idling, but a walker that admits
+  // nothing for a full threshold is itself stuck (e.g. a kernel-hung file
+  // read) and is logged with its own snapshot. Walker stalls never cancel:
+  // a kernel-stuck thread cannot be reached cooperatively anyway.
+  std::size_t lastWalkReadSeen = 0;
+  std::int64_t lastProducerMs = steadyMs();
+  auto checkWatchdog=[&]()->bool{
+   const std::int64_t now=steadyMs();
+   if(control && control->pause.load(std::memory_order_relaxed)){
+    watchdog.noteActivity(now); lastProducerMs=now; return false; }
+   if(queue.empty() && !walkDone.load(std::memory_order_relaxed)){
+    if(walkRead!=lastWalkReadSeen){ lastWalkReadSeen=walkRead; lastProducerMs=now; }
+    else if(now-lastProducerMs>=watchdogMs){
+     const std::int64_t pstalled=now-lastProducerMs;
+     lastProducerMs=now;
+     msf::backendLogLine(std::string("WATCHDOG action=diagnosed stalledMs=")+
+       std::to_string(pstalled)+" phase="+wdPhase+" walker=stuck-reading"
+       " admitted="+std::to_string(walkRead));
+    }
+    watchdog.noteActivity(now); return false;
+   }
+   const auto v=watchdog.check(now);
+   if(v==StallWatchdog::None) return false;
+   StallState st; st.phase=wdPhase;
+   st.stalledMs=now-watchdog.lastActivityMs();
+   st.queueDepth=queue.size(); st.walkerDone=walkDone.load(std::memory_order_relaxed);
+   st.walkerBlockedTicks=telemetry_.walkBlockedTicks();
+   st.walkerStarvedTicks=telemetry_.walkStarvedTicks();
+   st.scanned=scanned; st.completed=(std::size_t)(r.analyzed+r.failed);
+   st.unit=wdUnit; st.unitElapsedMs=now-wdUnit.startedSteadyMs;
+   if(v==StallWatchdog::Cancel){
+    msf::backendLogLine(StallWatchdog::buildReport(st,"cancelling-image-batch"));
+    if(control) control->cancel.store(true);
+    cancelled=true; return true;
+   }
+   msf::backendLogLine(StallWatchdog::buildReport(st,"diagnosed"));
+   return false; };
  // Images are the CUDA-accelerated path. Decode on CPU, pack normalized 32x32
  // grayscale frames, then hash them in bounded GPU batches. If CUDA is absent,
  // MediaPipeline transparently executes the same CPU pHash reference path.
@@ -537,6 +619,21 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    // the frontier is invisible (proven by a 0xC0000005 crash with zero
    // completions and zero fingerprint-0 rows).
    if(!checkpoint()) return false;
+   // Trace + watchdog unit (0.9.4.78): stamp heavy-work start for every batch
+   // file (same transaction as the entry checkpoint above) and arm the stall
+   // unit. Sample capped at 8 paths for log lines.
+   {
+    const std::int64_t sms=wallMs();
+    std::vector<std::string> sample;
+    for(std::size_t i=0;i<batch.size()&&sample.size()<8;++i) sample.push_back(batch[i]);
+    for(const auto& p:batch) db_.traceStart(p,sms);
+    beginWdUnit("images",sample,batch.size());
+   }
+   // Commit the starts too: a fault inside the batch below rolls back to
+   // THIS point, leaving startedMs durable (proven by scan_crash_frontier).
+   // Without it the starts vanish with the batch and only admittedMs survives.
+   if(!checkpoint()) return false;
+   std::int64_t batchEntryWall=wallMs();
    // Test-only fault injection (0.9.4.76): deterministic mid-batch failure
    // AFTER the entry checkpoint, proving skeleton durability across unwind.
    // Production code never sets this variable, so the branch is dead
@@ -590,6 +687,14 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     if(!db_.upsert(x)){ return false; }
     ++nFailed;
    }
+   // Settlement trace (0.9.4.78): finished timestamp + outcome ride the same
+   // transaction as the upsert above. Slow files log their full timing triple.
+   { const std::int64_t fms=wallMs();
+     const std::string oc=x.analysisFailed?"failed":"analyzed";
+     db_.traceFinish(x.path,fms,oc);
+     watchdog.noteActivity(steadyMs());
+     const std::int64_t admitted=db_.traceAdmitted(x.path);
+     slowFileLog("image",x.path,admitted,batchEntryWall,fms,oc); }
    ++done; if(control&&control->progress)control->progress(done,scanned,x.path);
    if(ir.hasColorThumb) putColorThumb(ir.path, ir.colorThumb.width, ir.colorThumb.height, std::move(ir.colorThumb.bgra));
   }
@@ -598,11 +703,23 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
  };
  // Videos retain the bounded asynchronous CPU/FFmpeg analysis path. This keeps
  // GPU image batching independent from the video decoder architecture.
-  auto processVideoRange=[&](std::size_t from,std::size_t to)->VideoRangeResult{
+   auto processVideoRange=[&](std::size_t from,std::size_t to)->VideoRangeResult{
    // Same crash-frontier durability as the image path: commit admission
    // skeletons before spawning the async range, so a kill/AV mid-range
    // leaves the admitted-but-unanalyzed frontier committed.
    if(!checkpoint()) return VideoRangeResult::Failed;
+   // Trace + watchdog unit (0.9.4.78): stamp heavy-work start for every range
+   // file in the same transaction as the entry checkpoint above.
+   {
+    const std::int64_t sms=wallMs();
+    std::vector<std::string> sample;
+    for(std::size_t k=from;k<to&&sample.size()<8;++k) sample.push_back(changedVideos[k].path);
+    for(std::size_t k=from;k<to;++k) db_.traceStart(changedVideos[k].path,sms);
+    beginWdUnit("videos",sample,to-from);
+   }
+   // Same double-commit as the image path: starts must survive a mid-range fault.
+   if(!checkpoint()) return VideoRangeResult::Failed;
+   std::int64_t rangeEntryWall=wallMs();
    // B1 re-evaluation point (existing phase boundary; no topology change).
    // B3: video carries no new throughput observation, but loads refresh.
    refreshSchedLoad();
@@ -615,11 +732,14 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    std::vector<std::future<AnalysisJob>> futs;
   for(std::size_t k=from;k<to;++k){
    FileState x=changedVideos[k];
-    futs.emplace_back(std::async(std::launch::async,[x,this,telemetryOn,useGpu,&rangeFileMs,slot = k - from](){
+    futs.emplace_back(std::async(std::launch::async,[x,this,control,telemetryOn,useGpu,&rangeFileMs,slot = k - from](){
      AnalysisJob j{x,false,true}; VideoFingerprint vf;
      const auto vt0=std::chrono::steady_clock::now();
        VideoBuildStats videoStats;
-       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(telemetryOn){ const std::size_t sampled = videoStats.cacheHit ? msf::TelemetryRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; telemetry_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled, videoStats.cacheHit); telemetry_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); telemetry_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
+       // Cooperative cancel (0.9.4.78): Stop (or the stall watchdog) aborts
+       // the sweep at frame boundaries; control outlives the scan.
+       const std::atomic<bool>* cancelPtr = control ? &control->cancel : nullptr;
+       if(videoEngine_.build(x.path,vf,useGpu?&videoGpu_:nullptr,&gpuActive_,&videoStats,cancelPtr)){ j.state.duration=vf.duration; const std::uint64_t h=foldVideoHashes(vf.hashes), mh=foldVideoHashes(vf.mirrorHashes); j.state.fingerprint=h; j.state.mirrorFingerprint=mh; j.state.crop4x3=vf.crop4x3; j.state.crop1x1=vf.crop1x1; j.state.crop9x16=vf.crop9x16; j.state.mirrorCrop4x3=vf.mirrorCrop4x3; j.state.mirrorCrop1x1=vf.mirrorCrop1x1; j.state.mirrorCrop9x16=vf.mirrorCrop9x16; j.ok=!vf.hashes.empty(); if(telemetryOn){ const std::size_t sampled = videoStats.cacheHit ? msf::TelemetryRecorder::kFramesNotProvided : videoStats.sampledFrames; const double bms = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count(); rangeFileMs[slot]=bms; telemetry_.addVideo(x.size, vf.duration, bms, vf.hashes.size(), x.path, videoStats.decodedFrames, sampled, videoStats.cacheHit); telemetry_.addVideoGpu(videoStats.gpuUsed,videoStats.gpuFallback,videoStats.gpuMs); telemetry_.addVideoPlan(videoStats.planDecision, videoStats.planReason, videoStats.planSparseAccepted, videoStats.planSparseRejected, videoStats.planSparseSeeks, videoStats.planSparseDecoded, videoStats.planSparseLandingViolations); } }
      return j;
     }));
   }
@@ -634,6 +754,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     std::vector<char> taken(futs.size(), 0);
     std::size_t remaining=futs.size();
     while(remaining>0){
+     // Stall watchdog (0.9.4.78): a hung range with zero completions logs a
+     // snapshot here; image-batch stalls may additionally cancel.
+     if(checkWatchdog()) return VideoRangeResult::Cancelled;
      bool progressed=false;
      for(std::size_t i=0;i<futs.size();++i){
       if(taken[i]) continue;
@@ -642,6 +765,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
        auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true;
        if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
        else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed; }
+       // Settlement trace (0.9.4.78) + slow-file log. rangeFileMs holds the
+       // actual build time, a better elapsed metric than harvest latency.
+       { const std::int64_t fms=wallMs();
+         const std::string oc=j.ok?"analyzed":"failed";
+         db_.traceFinish(j.state.path,fms,oc);
+         watchdog.noteActivity(steadyMs());
+         const std::int64_t admitted=db_.traceAdmitted(j.state.path);
+         const double bms=(i<rangeFileMs.size())?rangeFileMs[i]:0.0;
+         if(oc=="failed" || (std::int64_t)bms>=kSlowFileMs)
+          slowFileLog("video",j.state.path,admitted,
+            (std::int64_t)(fms-(std::int64_t)bms),fms,oc); }
        ++done; if(control&&control->progress)control->progress(done,scanned,j.state.path);}
      if(!progressed && remaining>0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -689,7 +823,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // are invisible to matching, and are picked up by the pendingAnalysis rule
   // above. The analysisFailed flag is set only once a failure is observed.
   { FileState sk=x; sk.kind=(int)kindOf(x.path); sk.fingerprint=0; sk.mirrorFingerprint=0; sk.crop4x3=sk.crop1x1=sk.crop9x16=0; sk.mirrorCrop4x3=sk.mirrorCrop1x1=sk.mirrorCrop9x16=0; sk.duration=0; sk.analysisFailed=false;
-    if(!db_.upsert(sk)){ failed=true; return; } }
+    if(!db_.upsert(sk)){ failed=true; return; }
+    // Admission trace (0.9.4.78): the row above is the crash-frontier
+    // anchor; this stamps WHEN it was admitted. Same transaction, so the
+    // skeleton and its timestamp commit and roll back together.
+    if(!db_.traceAdmit(x.path,wallMs())){ failed=true; return; } }
   seen.insert(x.path);
   currentByPath.emplace(x.path,x);
   if(kindOf(x.path)==MediaKind::Image){
@@ -711,7 +849,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // The walker streams walked files while this thread analyzes them, so CPU/GPU
   // work overlaps the directory walk instead of waiting for it.
   if (!cancelRequested()) telemetry_.setPhase("walk");
-  std::size_t walkRead=0;
+  wdPhase="walk";
+  walkRead=0;
   std::thread walker([&]{
   try{
   // Deterministic regression seam: prove a walker-thread exception is joined
@@ -751,9 +890,13 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   }catch(...){ walkError.store(true); }
    walkDone.store(true); queue.shutdown();
   });
-  std::exception_ptr consumerException;
-  try{
-  while(!failed && !cancelled){
+   std::exception_ptr consumerException;
+   try{
+   // Stall watchdog (0.9.4.78) rides the consumer idle poll: completions keep
+   // resetting it inside batch/range harvests, so a fire here means the whole
+   // consumer side (including the current unit) made zero progress.
+   while(!failed && !cancelled){
+   if(checkWatchdog()) break;
    FileState x; bool have=false;
    {
     // D1b: a 50 ms timeout with an empty queue while the walker is alive is
@@ -839,9 +982,15 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // during this phase did nothing until it finished ??the force-quit path
   // that lost every streamed match. Poll pause-aware, like stopped().
   auto stopCheck=[&]()->bool{
-    if(!control) return false;
-    while(control->pause.load()&&!control->cancel.load()) std::this_thread::sleep_for(std::chrono::milliseconds(80));
-    return control->cancel.load();
+   if(!control) return false;
+   while(control->pause.load()&&!control->cancel.load()) std::this_thread::sleep_for(std::chrono::milliseconds(80));
+   // Watchdog tick (0.9.4.78): the analyze loops poll here, so a tick proves
+   // the loop is alive. Checked BEFORE stamping activity so a hung pair (no
+   // more polls) trips the silence detector. Diagnose-only during analyze
+   // (unit kind "analyze" never cancels).
+   checkWatchdog();
+   watchdog.noteActivity(steadyMs());
+   return control->cancel.load();
   };
   ScanStats st;
   const auto benchAT0=std::chrono::steady_clock::now();
@@ -853,7 +1002,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   for (std::size_t i = 0; i < clusterParent.size(); ++i) clusterParent[i] = i;
   std::vector<char> clusterTouched(files_.size(), 0);
   if (!cancelRequested()) telemetry_.setPhase("analyze");
+  wdPhase="analyze";
+  beginWdUnit("analyze",{},files_.size());
   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
+   watchdog.noteActivity(steadyMs());
    if(telemetryOn) telemetry_.addStreamedMatch();
    if (m.left < clusterParent.size() && m.right < clusterParent.size()) {
      // Pairs are kind-homogeneous (image and video indexes are separate), so
@@ -966,12 +1118,15 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // `cancelled`, so a Stop landing during analyze also skips the hash.
   if (telemetryOn && walkCompleted && !cancelled && !failed && !cancelRequested()) {
     telemetry_.setPhase("fingerprint");
+    wdPhase="fingerprint";
+    beginWdUnit("fingerprint",{},0);
     const bool scopeImages = !control || control->scanImages;
     const bool scopeVideos = !control || control->scanVideos;
     telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(
         root, control ? &control->cancel : nullptr,
         control && control->fingerprintProgress
             ? [&](std::size_t n, std::uint64_t b, const std::string& p) {
+                watchdog.noteActivity(steadyMs());
                 control->fingerprintProgress(n, b, p);
               }
             : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),

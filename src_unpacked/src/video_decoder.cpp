@@ -94,9 +94,11 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
 #endif
 }
 
-bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::vector<VideoFrame>& out){
+bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::vector<VideoFrame>& out,
+                      const std::atomic<bool>* cancel){
     out.clear();
     if(path_.empty() || w<=0 || h<=0 || seconds.empty()) return false;
+    if(cancel && cancel->load(std::memory_order_relaxed)) return false;
 #ifdef MSF_HAS_FFMPEG
     if(!fmt_ || !codec_ || stream_<0) return false;
     std::vector<double> targets=seconds;
@@ -124,6 +126,9 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         sws_freeContext(sws); av_frame_free(&dst); out.push_back(std::move(vf)); return true;
     };
     while(next<targets.size() && av_read_frame(fmt,pkt)>=0){
+        // Cooperative cancel between packet reads: a Stop (or the stall
+        // watchdog) landing mid-sweep stops here instead of decoding to EOF.
+        if(cancel && cancel->load(std::memory_order_relaxed)){ av_packet_unref(pkt); break; }
         if(pkt->stream_index==stream_ && avcodec_send_packet(cc,pkt)>=0){
             while(avcodec_receive_frame(cc,fr)>=0){
                 double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
@@ -158,9 +163,10 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
 #endif
 }
 
-bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32){
+bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32,
+                               const std::atomic<bool>* cancel){
     out96.clear(); out32.clear();
-    if(!framesAt(seconds,96,96,out96)) return false;
+    if(!framesAt(seconds,96,96,out96,cancel)) return false;
     out32.reserve(out96.size());
     for(const auto& f:out96){
         if(f.width!=96||f.height!=96||f.gray.size()!=(std::size_t)96*96) continue;

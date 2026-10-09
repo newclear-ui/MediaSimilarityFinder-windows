@@ -70,7 +70,12 @@ void BackendSupervisor::ensureRunning() {
     if (procState_ == ProcState::Failed) {
         // A way back from FAILED (e.g. user shows the window again after a
         // crash storm): fresh budget, fresh backend. The FAILED banner stays
-        // until READY proves otherwise.
+        // until READY proves otherwise. Never stack onto a live wedged
+        // process (G5): kill-proof backends need a manual kill or app restart.
+        if (processAlive()) {
+            emit backendLogLine(QStringLiteral("backend wedged (PID %1): kill it manually or restart the app — not spawning (G5)").arg(proc_->processId()));
+            return;
+        }
         attempts_ = 0;
         spawn();
     }
@@ -248,6 +253,11 @@ void BackendSupervisor::requestFileMeta(const QString& path, quint64 requestId) 
 
 void BackendSupervisor::spawn() {
     if (processAlive()) return; // G5: never stack a new backend on a live one
+    // Fresh process, fresh escalation state: a stale armed timer from a
+    // previous round must never kill this backend (0.9.4.78).
+    escStage_ = 0;
+    killExhausted_ = false;
+    healthMisses_ = 0;
     nonce_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
     sequenceOut_ = 0;
     sequenceIn_ = 0;
@@ -366,6 +376,7 @@ void BackendSupervisor::handleLine(const QByteArray& line) {
                                 .arg(m.sequence));
     sequenceIn_ = m.sequence;
     lastHealthMs_ = QDateTime::currentMSecsSinceEpoch();
+    healthMisses_ = 0; // any backend traffic is proof of life
     dispatchEvent(m.type, m.payload, m.requestId);
 }
 
@@ -637,10 +648,14 @@ void BackendSupervisor::enterFailed(const QString& reason) {
     emit backendLogLine(QStringLiteral("backend FAILED: ") + reason);
     emit backendConnection(false, reason);
     // Leave a wedged process to the escalation path, not to hope: kill it
-    // asynchronously so no dual writer can linger.
-    if (processAlive()) {
+    // asynchronously so no dual writer can linger. Once kill has proven
+    // ineffective (killExhausted_), stop re-arming: re-terminating on every
+    // timer tick only spams the log while the process stays alive.
+    if (processAlive() && !killExhausted_) {
         proc_->terminate();
         escTimer_.start(opt_.killGraceMs);
+    } else if (processAlive()) {
+        emit backendLogLine(QStringLiteral("backend wedged (PID %1): kill it manually or restart the app — no new backend will be stacked on it (G5)").arg(proc_->processId()));
     }
 }
 
@@ -670,7 +685,9 @@ void BackendSupervisor::onEscalationTimeout() {
         return;
     }
     // Kill did not take the process down: spawning now would risk a SQLite
-    // double writer (G5), so hold FAILED instead of hoping.
+    // double writer (G5), so hold FAILED instead of hoping. Latch the
+    // exhaustion so enterFailed cannot re-arm escalation into a log-spam loop.
+    killExhausted_ = true;
     emit backendLogLine(QStringLiteral("backend refuses to die; holding FAILED"));
     enterFailed(QStringLiteral("backend process will not exit"));
 }
@@ -686,7 +703,16 @@ void BackendSupervisor::onHealthTick() {
         return;
     }
     if (!backendReady_) return;
+    // 0.9.4.78: three-strike health rule. One silent window is usually a match
+    // burst saturating the pipe/GUI (backend busy, not dead): only the third
+    // consecutive miss escalates. Any backend message resets the count (the
+    // reset lives where lastHealthMs_ is refreshed: every valid event).
     if (now - lastHealthMs_ > opt_.healthTimeoutMs) {
+        if (++healthMisses_ < 3) {
+            emit backendLogLine(QStringLiteral("backend health quiet %1/3").arg(healthMisses_));
+            return;
+        }
+        healthMisses_ = 0;
         emit backendLogLine(QStringLiteral("backend health timeout"));
         terminateAndRespawn(QStringLiteral("backend health timeout"));
     }

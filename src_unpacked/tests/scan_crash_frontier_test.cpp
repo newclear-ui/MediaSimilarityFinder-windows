@@ -117,6 +117,21 @@ int main(int argc, char** argv) {
     check(f1.total == 8, "all 8 admitted files recorded");
     check(f1.unanalyzed == 8, "unanalyzed frontier committed (fingerprint 0, not failed)");
     check(f1.failed == 0, "no analysis failures recorded");
+    // 0.9.4.78 trace: admission rows exist with timestamps, none finished.
+    {
+        msf::IndexPaths paths;
+        check(msf::IndexManager::resolve(msf::path_from_utf8(ad), msf::path_from_utf8(root), paths),
+              "trace index resolves");
+        msf::Database db;
+        check(db.open(msf::path_to_utf8(paths.database)) && db.initialize(), "trace db opens");
+        const auto unfinished = db.traceUnfinished();
+        check((long)unfinished.size() == 8, "8 trace rows unfinished after fault");
+        bool stamped = true;
+        for (const auto& t : unfinished)
+            if (t.admittedMs <= 0 || t.startedMs <= 0 || t.finishedMs != 0 || !t.outcome.empty()) stamped = false;
+        check(stamped, "trace rows carry admitted+started, blank finished/outcome");
+        db.close();
+    }
     if (!gOk) return 1;
 
     // Phase 2: clean rescan retries the frontier via pendingAnalysis and
@@ -138,6 +153,21 @@ int main(int argc, char** argv) {
     check(scanned == 8 && analyzed == 8, "frontier fully reprocessed, not skipped");
     const Frontier f2 = readFrontier(ad, root);
     check(f2.valid && f2.unanalyzed == 0, "no frontier left after clean rescan");
+    // 0.9.4.78 trace: every row settled with finished timestamp + outcome.
+    {
+        msf::IndexPaths paths;
+        msf::Database db;
+        bool okTrace = msf::IndexManager::resolve(msf::path_from_utf8(ad), msf::path_from_utf8(root), paths)
+            && db.open(msf::path_to_utf8(paths.database)) && db.initialize();
+        check(okTrace, "trace db reopens");
+        const auto all = db.traceAll();
+        check((long)all.size() == 8, "8 trace rows after rescan");
+        bool settled = all.size() == 8;
+        for (const auto& t : all)
+            if (t.finishedMs <= 0 || t.outcome != "analyzed") settled = false;
+        check(settled, "trace rows finished with outcome=analyzed");
+        db.close();
+    }
     msf::MediaSearchEngine e2;
     check(e2.openIndexForRoot(root, ad), "index reopens after frontier rescan");
     check((long)e2.loadMatches().size() >= 28, "all 28 pairs indexed");

@@ -172,6 +172,24 @@ faulting thread and stack.
   dies with 0xC0000409 and passes post-fix. Details:
   `docs/build-history/0.9.4.77.en.md`.
 
+### 3-6. 2026-10-09 — Two consecutive `backend lost` events, proven watchdog false positives (not crashes)
+
+- Product GPU build 0.9.4.77, at 07:53:17 + 07:54:15. The absence of an exit
+  code proves the supervisor killed them itself (`terminateAndRespawn`-only
+  message).
+- First: health starved 10s+ during an analyze match burst (groups 0→8852 in
+  the same second). Backend sends run on the main thread with a synchronous
+  flush and health shares that thread, so a MATCHES flood plus a 9k-widget GUI
+  rebuild starves health. No Event 1000 after 08:00, so no AV.
+- Second: a 15-second-old backend killed the same way during the startup flood.
+- Afterwards a stale escTimer killed the respawn 2 seconds after spawn, and
+  `spawn()` never resets `escStage_`, producing the infinite 3-second FAILED
+  loop for 40+ minutes.
+- Response: 0.9.4.78 adds file_trace plus slow-file logging plus a 10-minute
+  watchdog diagnose (auto-cancel for image batches only) plus cooperative
+  video cancel plus escalation reset/kill latch/no-respawn-onto-live/3-strike
+  health. Details: `docs/build-history/0.9.4.78.en.md`.
+
 ## 4. Defense patch history (0.9.4.62, 0.9.4.65)
 
 - Added `catch (...)` to `ScanWorker::run`. Checkpoints partial matches and
@@ -215,6 +233,7 @@ faulting thread and stack.
 - `docs/build-history/0.9.4.65.{ko,en}.md` — non-throwing handler patch and dump analysis.
 - `docs/build-history/0.9.4.74.{ko,en}.md` — telemetry sampler RAII fix, walk progress, and restart resume.
 - `docs/build-history/0.9.4.76.{ko,en}.md` — admission skeletons committed at the batch-entry checkpoint; crash-frontier durability.
+- `docs/build-history/0.9.4.78.{ko,en}.md` — file_trace, watchdog, video cancel, supervisor finality (watchdog false-positive response).
 - `docs/worklog/0.9.4.{ko,en}.md` — 0.9.4.62 / 0.9.4.65 entries (cause, measurements).
 - `docs/architecture/image-burst-shot-similarity.{ko,en}.md` — separate topic
   (similarity verdicts). Do not confuse with crashes.

@@ -115,6 +115,13 @@ private:
     qint64 spawnMs_ = 0;
     int attempts_ = 0; // restarts used (initial spawn is not an attempt)
     int escStage_ = 0; // kill-escalation stage: 0 = terminate grace, 1 = kill wait
+    // 0.9.4.78: kill proven ineffective against this process instance. Terminal
+    // latch: enterFailed stops re-arming escalation, and ensureRunning refuses
+    // to stack a new backend on the live one (G5) until it is gone.
+    bool killExhausted_ = false;
+    // 0.9.4.78: health-timeout strikes. One missed window is usually a match
+    // burst saturating the pipe/GUI, not death: kill only on 3 consecutive.
+    int healthMisses_ = 0;
     bool explicitShutdown_ = false;
     bool backendReady_ = false;
     bool scanning_ = false;

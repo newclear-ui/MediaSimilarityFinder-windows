@@ -178,6 +178,9 @@ public:
   void recordWalkerEnqueue(std::size_t depthAfterPush);
   void recordWalkerDequeue(std::size_t depthAfterPop);
   void noteWalkerStarved();
+  // 0.9.4.78 watchdog snapshot readers (additive; existing recording untouched).
+  std::uint64_t walkBlockedTicks() const { return walkBlocked_.load(std::memory_order_relaxed); }
+  std::uint64_t walkStarvedTicks() const { return walkStarved_.load(std::memory_order_relaxed); }
   // D3-Minimal: capacity is config (like sampleMs), blockedTicks counts
   // producer waits entered while full (100 ms units, roughly).
   void setWalkerCapacity(std::size_t capacity);
