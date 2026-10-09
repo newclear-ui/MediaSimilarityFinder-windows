@@ -145,7 +145,7 @@ run.
 
 **D9b remains NOT ACCEPTED** and is not reclassified as a success.
 
-- Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Current set: Source `MediaSimilarityFinder-v0.9.4.80-src.zip` (2.43 MB, 800 files verified byte-identical to GitHub, 0 missing/0 mismatches) — code+docs only, per user directive (no compile while a production scan runs, so no portable zip for 0.9.4.80). Previous kind members: `.78`/`.79` src and portable; `.77` src recycled to the Recycle Bin on 0.9.4.80. Newest portable remains `MediaSimilarityFinder-v0.9.4.79-Portable-Windows-x64.zip` (0.9.4.79 binaries). Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
+- Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Current set: Source `MediaSimilarityFinder-v0.9.4.81-src.zip` (2.44 MB, 804 files verified byte-identical to GitHub, 0 missing/0 mismatches); Compiled `MediaSimilarityFinder-v0.9.4.81-Portable-Windows-x64.zip` (43.88 MB, 86 entries, GUI + Backend exe present, `--smoke` PASS). Previous kind members: src `.79`/`.80`, portable `.78`/`.79`; `.77` portable recycled on 0.9.4.81. Additionally, a **pinned, non-rotating baseline** of the pre-mode code+docs (0.9.4.80) is preserved under `backup/Baseline Preservation/` (with `BASELINE.txt`). Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
 
 ### D9b measured result — Candidate B NOT ACCEPTED
 
