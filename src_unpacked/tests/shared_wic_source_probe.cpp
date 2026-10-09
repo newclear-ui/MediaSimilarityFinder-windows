@@ -172,6 +172,54 @@ struct CandResult {
   double aScalerMs = 0, aConvMs = 0, aCopyMs = 0;
 };
 
+// 0.9.4.82: software orientation, matching src/image_decoder.cpp
+// applyOrientationPixels exactly. The candidate must mirror the product order
+// (scale first, rotate the scaled buffer) for the parity comparison to mean
+// anything. Kept in sync by hand; probe7 proves the product helper equals WIC.
+static void applyProbeOrientation(std::vector<std::uint8_t>& px, int& w, int& h,
+                                  int channels, WICBitmapTransformOptions xform) {
+  if (xform == WICBitmapTransformRotate0 || w <= 0 || h <= 0) return;
+  const int ch = channels > 0 ? channels : 1;
+  auto flipH = [&] {
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w / 2; ++x)
+        for (int c = 0; c < ch; ++c)
+          std::swap(px[((std::size_t)y * w + x) * ch + c],
+                    px[((std::size_t)y * w + (w - 1 - x)) * ch + c]);
+  };
+  auto flipV = [&] {
+    for (int y = 0; y < h / 2; ++y)
+      for (int x = 0; x < w; ++x)
+        for (int c = 0; c < ch; ++c)
+          std::swap(px[((std::size_t)y * w + x) * ch + c],
+                    px[((std::size_t)(h - 1 - y) * w + x) * ch + c]);
+  };
+  auto rot90 = [&] {
+    const int W = w, H = h;
+    std::vector<std::uint8_t> o((std::size_t)W * H * ch);
+    for (int y = 0; y < W; ++y) for (int x = 0; x < H; ++x) for (int c = 0; c < ch; ++c)
+      o[((std::size_t)y * H + x) * ch + c] = px[((std::size_t)(H - 1 - x) * W + y) * ch + c];
+    px.swap(o); w = H; h = W;
+  };
+  auto rot180 = [&] {
+    const int W = w, H = h;
+    std::vector<std::uint8_t> o((std::size_t)W * H * ch);
+    for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x) for (int c = 0; c < ch; ++c)
+      o[((std::size_t)y * W + x) * ch + c] = px[((std::size_t)(H - 1 - y) * W + (W - 1 - x)) * ch + c];
+    px.swap(o);
+  };
+  auto rot270 = [&] {
+    const int W = w, H = h;
+    std::vector<std::uint8_t> o((std::size_t)W * H * ch);
+    for (int y = 0; y < W; ++y) for (int x = 0; x < H; ++x) for (int c = 0; c < ch; ++c)
+      o[((std::size_t)y * H + x) * ch + c] = px[((std::size_t)x * W + (W - 1 - y)) * ch + c];
+    px.swap(o); w = H; h = W;
+  };
+  if (xform & WICBitmapTransformFlipHorizontal) flipH();
+  if (xform & WICBitmapTransformFlipVertical) flipV();
+  switch ((unsigned)xform & 0x3u) { case 1: rot90(); break; case 2: rot180(); break; case 3: rot270(); break; default: break; }
+}
+
 // forceXform: WICBitmapTransformRotate0 means "read EXIF and use it" (the real
 // candidate). Any other value forces that transform, which is what lets the
 // rotated path be exercised even though the product's own metadata query does
@@ -204,7 +252,6 @@ static bool runSharedPipelineXform(const std::wstring& wpath, int maxDimension,
     r.frameMs = nowMs(tFr0);
     if (FAILED(hr)) { r.failHr = (std::uint32_t)hr; return false; }
 
-    ComPtr<IWICBitmapFlipRotator> orient;
     ComPtr<IWICBitmapSource> src;
     const auto tM0 = std::chrono::steady_clock::now();
     const auto tOr0 = std::chrono::steady_clock::now();
@@ -232,30 +279,30 @@ static bool runSharedPipelineXform(const std::wstring& wpath, int maxDimension,
       }
     }
     r.metaMs = nowMs(tM0);
-    if (xform != WICBitmapTransformRotate0) {
-      if (FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
-      if (FAILED(orient->Initialize(frame.Get(), xform))) return false;
-      src = orient;
-      ++r.orientApplied;
-    } else {
-      src = frame;
-    }
+    // 0.9.4.82: the source stays the raw frame; orientation is applied to each
+    // scaled output below (applyProbeOrientation), matching the product.
+    src = frame;
+    if (xform != WICBitmapTransformRotate0) ++r.orientApplied;
     r.orientMs = nowMs(tOr0);
 
     UINT sw = 0, sh = 0;
     if (FAILED(src->GetSize(&sw, &sh)) || !sw || !sh) return false;
     r.srcW = (int)sw; r.srcH = (int)sh;
+    const bool swapDims = ((unsigned)xform & 0x3u) == 1u || ((unsigned)xform & 0x3u) == 3u;
+    const int ow = swapDims ? (int)sh : (int)sw, oh = swapDims ? (int)sw : (int)sh;
     int aw = 0, ah = 0;
-    aspectDims((int)sw, (int)sh, maxDimension, aw, ah);
+    aspectDims(ow, oh, maxDimension, aw, ah);
     r.aW = aw; r.aH = ah;
 
     // ---- branch A: fixed maxDimension x maxDimension, as decodeWicFile ----
     {
+      const UINT fw2 = (UINT)maxDimension, fh2 = (UINT)maxDimension;
+      const UINT pw = swapDims ? fh2 : fw2, ph = swapDims ? fw2 : fh2;
       ComPtr<IWICBitmapScaler> scaler;
       ComPtr<IWICFormatConverter> conv;
       const auto tS0 = std::chrono::steady_clock::now();
       hr = factory->CreateBitmapScaler(&scaler);
-      if (SUCCEEDED(hr)) hr = scaler->Initialize(src.Get(), (UINT)maxDimension, (UINT)maxDimension, WICBitmapInterpolationModeFant);
+      if (SUCCEEDED(hr)) hr = scaler->Initialize(src.Get(), pw, ph, WICBitmapInterpolationModeFant);
       r.fScalerMs = nowMs(tS0);
       if (FAILED(hr)) { r.failHr = (std::uint32_t)hr; return false; }
       const auto tC0 = std::chrono::steady_clock::now();
@@ -265,23 +312,25 @@ static bool runSharedPipelineXform(const std::wstring& wpath, int maxDimension,
                                                 WICBitmapPaletteTypeCustom);
       r.fConvMs = nowMs(tC0);
       if (FAILED(hr)) { r.failHr = (std::uint32_t)hr; return false; }
-      f.width = maxDimension; f.height = maxDimension;
-      f.pixels.resize((std::size_t)maxDimension * maxDimension);
+      f.width = (int)pw; f.height = (int)ph;
+      f.pixels.resize((std::size_t)pw * ph);
       const auto tP0 = std::chrono::steady_clock::now();
-      hr = conv->CopyPixels(nullptr, (UINT)maxDimension, (UINT)f.pixels.size(), f.pixels.data());
+      hr = conv->CopyPixels(nullptr, pw, (UINT)f.pixels.size(), f.pixels.data());
       r.fCopyMs = nowMs(tP0);
       if (FAILED(hr)) { r.failHr = (std::uint32_t)hr; return false; }
+      applyProbeOrientation(f.pixels, f.width, f.height, 1, xform);
     }
 
     // ---- branch B: aspect, as decodeWicFileAspect ----
     // Same `src`, a second fully independent scaler and converter. The second
     // Fant step reads the same original source, never an intermediate image.
     {
+      const UINT pw = swapDims ? (UINT)ah : (UINT)aw, ph = swapDims ? (UINT)aw : (UINT)ah;
       ComPtr<IWICBitmapScaler> scaler;
       ComPtr<IWICFormatConverter> conv;
       const auto tS1 = std::chrono::steady_clock::now();
       hr = factory->CreateBitmapScaler(&scaler);
-      if (SUCCEEDED(hr)) hr = scaler->Initialize(src.Get(), (UINT)aw, (UINT)ah, WICBitmapInterpolationModeFant);
+      if (SUCCEEDED(hr)) hr = scaler->Initialize(src.Get(), pw, ph, WICBitmapInterpolationModeFant);
       r.aScalerMs = nowMs(tS1);
       if (FAILED(hr)) { r.failHr = (std::uint32_t)hr; return false; }
       const auto tC1 = std::chrono::steady_clock::now();
@@ -291,14 +340,15 @@ static bool runSharedPipelineXform(const std::wstring& wpath, int maxDimension,
                                                 WICBitmapPaletteTypeCustom);
       r.aConvMs = nowMs(tC1);
       if (FAILED(hr)) { r.failHr = (std::uint32_t)hr; return false; }
-      a.width = aw; a.height = ah;
-      a.pixels.resize((std::size_t)aw * ah);
+      a.width = (int)pw; a.height = (int)ph;
+      a.pixels.resize((std::size_t)pw * ph);
       const auto tP1 = std::chrono::steady_clock::now();
-      hr = conv->CopyPixels(nullptr, (UINT)aw, (UINT)a.pixels.size(), a.pixels.data());
+      hr = conv->CopyPixels(nullptr, pw, (UINT)a.pixels.size(), a.pixels.data());
       r.aCopyMs = nowMs(tP1);
       if (FAILED(hr)) { r.failHr = (std::uint32_t)hr; return false; }
+      applyProbeOrientation(a.pixels, a.width, a.height, 1, xform);
     }
-  }  // factory, decoder, frame, orient, both scalers and both converters released
+  }  // factory, decoder, frame, both scalers and both converters released
   return true;
 }
 

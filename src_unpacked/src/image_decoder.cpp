@@ -179,6 +179,73 @@ inline ResolvedOrientation resolveOrientationToTransform(IWICMetadataQueryReader
 inline WICBitmapTransformOptions exifOrientationToTransform(IWICMetadataQueryReader* meta) {
   return resolveOrientationToTransform(meta).transform;
 }
+
+// 0.9.4.82: apply the EXIF orientation transform to the ALREADY-SCALED gray/color
+// buffer instead of inserting an IWICBitmapFlipRotator between the JPEG decoder
+// and the scaler. The decoder-side rotator forces WIC to decode the full
+// resolution frame; with a Fant scaler above it, a single 4000x3000
+// orientation-6 CopyPixels measured ~151 s versus ~0.02 s once the rotator is
+// removed (probe evidence in docs/build-history/0.9.4.82.*). Every orientation
+// transform is a pure pixel permutation, so applying it to the scaled buffer is
+// byte-identical to applying a WICBitmapFlipRotator to the scaled source, and
+// within +/-1 LSB of the old decode-time order (Fant interpolation rounding).
+// WIC composes FlipHorizontal BEFORE the rotation (verified against a synthetic
+// pattern), and this mirrors that order so the combined values (EXIF 5/7) match.
+// `channels` is 1 (8bppGray) or 4 (32bppBGRA). Rotate0 leaves the buffer as-is.
+inline void applyOrientationPixels(std::vector<std::uint8_t>& px, int& w, int& h,
+                                   int channels, WICBitmapTransformOptions xform) {
+  if (xform == WICBitmapTransformRotate0 || w <= 0 || h <= 0) return;
+  const int ch = channels > 0 ? channels : 1;
+  auto flipH = [&] {
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w / 2; ++x)
+        for (int c = 0; c < ch; ++c)
+          std::swap(px[((std::size_t)y * w + x) * ch + c],
+                    px[((std::size_t)y * w + (w - 1 - x)) * ch + c]);
+  };
+  auto flipV = [&] {
+    for (int y = 0; y < h / 2; ++y)
+      for (int x = 0; x < w; ++x)
+        for (int c = 0; c < ch; ++c)
+          std::swap(px[((std::size_t)y * w + x) * ch + c],
+                    px[((std::size_t)(h - 1 - y) * w + x) * ch + c]);
+  };
+  auto rot90 = [&] {  // 90 CW: dst(x,y)=src(y,h-1-x), dims swap to (h,w)
+    const int W = w, H = h;
+    std::vector<std::uint8_t> o((std::size_t)W * H * ch);
+    for (int y = 0; y < W; ++y)
+      for (int x = 0; x < H; ++x)
+        for (int c = 0; c < ch; ++c)
+          o[((std::size_t)y * H + x) * ch + c] = px[((std::size_t)(H - 1 - x) * W + y) * ch + c];
+    px.swap(o); w = H; h = W;
+  };
+  auto rot180 = [&] {  // dst(x,y)=src(w-1-x,h-1-y)
+    const int W = w, H = h;
+    std::vector<std::uint8_t> o((std::size_t)W * H * ch);
+    for (int y = 0; y < H; ++y)
+      for (int x = 0; x < W; ++x)
+        for (int c = 0; c < ch; ++c)
+          o[((std::size_t)y * W + x) * ch + c] = px[((std::size_t)(H - 1 - y) * W + (W - 1 - x)) * ch + c];
+    px.swap(o);
+  };
+  auto rot270 = [&] {  // 270 CW: dst(x,y)=src(w-1-y,x), dims swap to (h,w)
+    const int W = w, H = h;
+    std::vector<std::uint8_t> o((std::size_t)W * H * ch);
+    for (int y = 0; y < W; ++y)
+      for (int x = 0; x < H; ++x)
+        for (int c = 0; c < ch; ++c)
+          o[((std::size_t)y * H + x) * ch + c] = px[((std::size_t)x * W + (W - 1 - y)) * ch + c];
+    px.swap(o); w = H; h = W;
+  };
+  if (xform & WICBitmapTransformFlipHorizontal) flipH();
+  if (xform & WICBitmapTransformFlipVertical) flipV();
+  switch ((unsigned)xform & 0x3u) {
+    case 1: rot90(); break;
+    case 2: rot180(); break;
+    case 3: rot270(); break;
+    default: break;
+  }
+}
 #endif
 // Minimal P5 grayscale reader shared by all platforms. On Windows it is the
 // fallback for formats WIC cannot decode (e.g. PGM test fixtures); on other
@@ -309,38 +376,41 @@ bool decodeWicBranches(const wchar_t* wpath,int fw,int fh,int maxDimension,
     // QImageReader::setAutoTransform(true) does this in the display lane, but
     // WIC raw frames do not. Read the tag and swap/flip on the decoded pixels
     // (orientations 2..8) so rotated phone photos match their displayed form.
-    ComPtr<IWICBitmapFlipRotator> orient;
     ComPtr<IWICBitmapSource> src;
     UINT sw=0,sh=0;
+    WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
     const auto tMeta0=std::chrono::steady_clock::now();
     auto tOrient1=std::chrono::steady_clock::time_point{};
     {
       ComPtr<IWICBitmapFrameDecode> frame;
       hr=dec->GetFrame(0,&frame);
       if(FAILED(hr))return false;
-      WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
       ComPtr<IWICMetadataQueryReader> meta;
       if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
         xform=exifOrientationToTransform(meta.Get());
       const auto tMeta1=std::chrono::steady_clock::now(); if(telShared) telShared->metadataMs+=d9dMs(tMeta0,tMeta1);
-      if(xform!=WICBitmapTransformRotate0){
-        if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
-        if(FAILED(orient->Initialize(frame.Get(),xform))) return false;
-        src=orient;
-        if(telShared) ++telShared->orientApplied;
-      } else {
-        src=frame;
-      }
+      // 0.9.4.82: the orientation transform is applied to the SCALED output below
+      // (applyOrientationPixels), never by rotating the full-resolution source.
+      // The source stays the raw frame so the Fant scaler keeps WIC's fast
+      // scaled-JPEG path. orientApplied still records that a non-identity
+      // orientation was resolved, unchanged from the previous contract.
+      src=frame;
+      if(xform!=WICBitmapTransformRotate0){ if(telShared) ++telShared->orientApplied; }
       tOrient1=std::chrono::steady_clock::now(); if(telShared) telShared->orientMs+=d9dMs(tMeta1,tOrient1);
-      // Oriented size drives the aspect math: 90/270-degree rotations swap w/h.
       if(FAILED(src->GetSize(&sw,&sh))||!sw||!sh)return false;
     }
+    // A 90/270 rotation (and the combined EXIF 5/7 transforms) swaps the oriented
+    // width and height, so both the aspect math and the pre-rotation scale target
+    // depend on it.
+    const bool swapDims=((unsigned)xform & 0x3u)==1u||((unsigned)xform & 0x3u)==3u;
+    const UINT ow=swapDims?sh:sw, oh=swapDims?sw:sh;
     // ---- branch A: fixed size ----
     if(wantFixed){
+      const UINT pw=swapDims?(UINT)fh:(UINT)fw, ph=swapDims?(UINT)fw:(UINT)fh;
       ComPtr<IWICBitmapScaler> scaler;
       ComPtr<IWICFormatConverter> conv;
       hr=factory->CreateBitmapScaler(&scaler);
-      if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),fw,fh,WICBitmapInterpolationModeFant);
+      if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),pw,ph,WICBitmapInterpolationModeFant);
       const auto tScale1=std::chrono::steady_clock::now(); if(telFixed) telFixed->resizeMs+=d9dMs(tOrient1,tScale1);
       if(FAILED(hr))return false;
       hr=factory->CreateFormatConverter(&conv);
@@ -349,32 +419,36 @@ bool decodeWicBranches(const wchar_t* wpath,int fw,int fh,int maxDimension,
                                              WICBitmapPaletteTypeCustom);
       const auto tConv1=std::chrono::steady_clock::now(); if(telFixed) telFixed->convertMs+=d9dMs(tScale1,tConv1);
       if(FAILED(hr))return false;
-      fixed.width=fw; fixed.height=fh; fixed.pixels.resize(size_t(fw)*size_t(fh));
+      fixed.width=(int)pw; fixed.height=(int)ph; fixed.pixels.resize(size_t(pw)*size_t(ph));
       // WIC decodes lazily, so the real image decompression happens inside
       // CopyPixels. That is why this bucket is the actual decode cost, and why it
       // cannot be split further without changing the code under measurement.
-      hr=conv->CopyPixels(nullptr,fw,fixed.pixels.size(),fixed.pixels.data());
+      hr=conv->CopyPixels(nullptr,pw,fixed.pixels.size(),fixed.pixels.data());
       if(telFixed) telFixed->copyMs+=d9dMs(tConv1,std::chrono::steady_clock::now());
       if(FAILED(hr))return false;
+      applyOrientationPixels(fixed.pixels,fixed.width,fixed.height,1,xform);
     }
     // ---- branch B: aspect, same shared source, independent scaler ----
     if(wantAspect){
-      UINT w=sw,h=sh; if(sw>sh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)sh*maxDimension/sw));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)sw*maxDimension/sh));}
+      UINT w=ow,h=oh; if(ow>oh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)oh*maxDimension/ow));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)ow*maxDimension/oh));}
+      // Scale to the pre-rotation target; the orientation pass then yields (w,h).
+      const UINT pw=swapDims?h:w, ph=swapDims?w:h;
       ComPtr<IWICBitmapScaler> scaler;
       ComPtr<IWICFormatConverter> conv;
       const auto tAS0=std::chrono::steady_clock::now();
-      hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant);
+      hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),pw,ph,WICBitmapInterpolationModeFant);
       const auto tAS1=std::chrono::steady_clock::now(); if(telAspect) telAspect->resizeMs+=d9dMs(tAS0,tAS1);
       if(FAILED(hr))return false;
       hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat8bppGray,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom);
       const auto tAC1=std::chrono::steady_clock::now(); if(telAspect) telAspect->convertMs+=d9dMs(tAS1,tAC1);
       if(FAILED(hr))return false;
-      aspect.width=(int)w;aspect.height=(int)h;aspect.pixels.resize((size_t)w*h);
-      hr=conv->CopyPixels(nullptr,w,aspect.pixels.size(),aspect.pixels.data());
+      aspect.width=(int)pw;aspect.height=(int)ph;aspect.pixels.resize((size_t)pw*ph);
+      hr=conv->CopyPixels(nullptr,pw,aspect.pixels.size(),aspect.pixels.data());
       const auto tAEnd=std::chrono::steady_clock::now();
       if(telAspect) telAspect->copyMs+=d9dMs(tAC1,tAEnd);
       if(aspectBranchMs) *aspectBranchMs=d9dMs(tAS0,tAEnd);
       if(FAILED(hr))return false;
+      applyOrientationPixels(aspect.pixels,aspect.width,aspect.height,1,xform);
     }
     return true;
 }
@@ -385,29 +459,28 @@ bool decodeWicFileAspectColor(const wchar_t* wpath,int maxDimension,msf::ColorIm
     // EXIF orientation applies to the color display lane too (same mapping as
     // the gray fingerprint lanes above): decoded previews must match what the
     // fingerprint describes, or rotated photos show one way and match another.
-    ComPtr<IWICBitmapFlipRotator> orient;
     ComPtr<IWICBitmapSource> src;
+    WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
     UINT sw=0,sh=0;
     {
       ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false;
-      WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
       ComPtr<IWICMetadataQueryReader> meta;
       if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
         xform=exifOrientationToTransform(meta.Get());
-      if(xform!=WICBitmapTransformRotate0){
-        if(FAILED(factory->CreateBitmapFlipRotator(&orient))) return false;
-        if(FAILED(orient->Initialize(frame.Get(),xform))) return false;
-        src=orient;
-      } else {
-        src=frame;
-      }
+      // 0.9.4.82: orientation is applied to the scaled BGRA output (see
+      // applyOrientationPixels), not by rotating the full-resolution source.
+      src=frame;
       UINT fw=0,fh=0; if(FAILED(src->GetSize(&fw,&fh))||!fw||!fh)return false; sw=fw; sh=fh;
     }
-    UINT w=sw,h=sh; if(sw>sh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)sh*maxDimension/sw));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)sw*maxDimension/sh));}
-    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),w,h,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
+    const bool swapDims=((unsigned)xform & 0x3u)==1u||((unsigned)xform & 0x3u)==3u;
+    const UINT ow=swapDims?sh:sw, oh=swapDims?sw:sh;
+    UINT w=ow,h=oh; if(ow>oh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)oh*maxDimension/ow));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)ow*maxDimension/oh));}
+    const UINT pw=swapDims?h:w, ph=swapDims?w:h;
+    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),pw,ph,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
     // BGRA bytes land in QImage::Format_ARGB32 order on little-endian.
     ComPtr<IWICFormatConverter> conv; hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat32bppBGRA,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom); if(FAILED(hr))return false;
-    out.width=(int)w;out.height=(int)h;out.bgra.resize((size_t)w*h*4); hr=conv->CopyPixels(nullptr,w*4,out.bgra.size(),out.bgra.data()); return SUCCEEDED(hr);
+    out.width=(int)pw;out.height=(int)ph;out.bgra.resize((size_t)pw*ph*4); hr=conv->CopyPixels(nullptr,pw*4,out.bgra.size(),out.bgra.data()); if(FAILED(hr))return false;
+    applyOrientationPixels(out.bgra,out.width,out.height,4,xform); return true;
 }
 } // namespace
 bool ImageDecoder::decode(const std::string& path,int w,int h,GrayImage& out,DecodeTelemetry* tel) const {
