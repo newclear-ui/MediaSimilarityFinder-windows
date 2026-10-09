@@ -144,7 +144,7 @@ run.
 
 **D9b remains NOT ACCEPTED** and is not reclassified as a success.
 
-- Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Current set (0.9.4.79): Source `MediaSimilarityFinder-v0.9.4.79-src.zip` (2.43 MB, 798 files verified byte-identical to GitHub, 0 missing/0 mismatches); Compiled `MediaSimilarityFinder-v0.9.4.79-Portable-Windows-x64.zip` (43.87 MB, 86 entries, GUI + Backend exe + turbojpeg/ffmpeg/ffprobe present, `--smoke` PASS). Previous kind members: `.77`/`.78` src and portable; `.76` src and portable recycled to the Recycle Bin on 0.9.4.79. `package_portable.ps1` writes portable zips straight to `backup/`; both kinds rotate independently at 3. Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
+- Source + compiled backup zips: **kept in the repository-root `backup/` folder, max 3 per kind, oldest recycled.** Current set: Source `MediaSimilarityFinder-v0.9.4.80-src.zip` (2.43 MB, 800 files verified byte-identical to GitHub, 0 missing/0 mismatches) — code+docs only, per user directive (no compile while a production scan runs, so no portable zip for 0.9.4.80). Previous kind members: `.78`/`.79` src and portable; `.77` src recycled to the Recycle Bin on 0.9.4.80. Newest portable remains `MediaSimilarityFinder-v0.9.4.79-Portable-Windows-x64.zip` (0.9.4.79 binaries). Session- and agent-independent long-term rule in AGENTS.md (root item 2, `src_unpacked` item 4)
 
 ### D9b measured result — Candidate B NOT ACCEPTED
 
