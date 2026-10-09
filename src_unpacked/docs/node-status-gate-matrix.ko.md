@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.81` (매칭 검증 모드 선택) · CPU CTest 122/122 · GPU CTest 123/123
-최종 갱신: 2026-10-09
+기준: `0.9.4.82` (EXIF 회전 이미지 WIC FlipRotator 폭주 제거) · CPU CTest 122/122 · GPU CTest 123/123
+최종 갱신: 2026-10-10
 
 ## 이 문서의 역할
 
@@ -163,5 +163,5 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 
 ## 버전 불변 확인
 
-`kEngineVersion 1.5.0` · `kDatabaseVersion 1.0.5` · `kBenchmarkSchemaVersion 9` ·
-`kCacheFormatVersion 9` — 0.9.4.81 기준 변경 없음(의도). (`kDatabaseVersion 1.0.5` 유지, `analyze.mode`는 가산 키라 스키마 9 유지)
+`kEngineVersion 1.5.1` · `kDatabaseVersion 1.0.5` · `kBenchmarkSchemaVersion 9` ·
+`kCacheFormatVersion 9`. 0.9.4.82에서 `kEngineVersion`을 1.5.0→1.5.1로 상향(EXIF 회전 이미지 fingerprint가 최대 ±1 LSB 바뀌어 저장 쌍 재검증). DB/schema/cache 불변.

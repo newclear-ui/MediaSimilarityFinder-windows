@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.81` (selectable matching-verification modes) - CPU CTest 122/122 - GPU CTest 123/123
-Last updated: 2026-10-09
+Baseline: `0.9.4.82` (EXIF-rotated image WIC FlipRotator runaway removed) - CPU CTest 122/122 - GPU CTest 123/123
+Last updated: 2026-10-10
 
 ## Role of this document
 
@@ -169,5 +169,5 @@ stay in the origin documents.
 
 ## Version invariance check
 
-`kEngineVersion 1.5.0` - `kDatabaseVersion 1.0.5` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9` — unchanged at the 0.9.4.81 baseline (intended). (`kDatabaseVersion 1.0.5` retained; `analyze.mode` is additive so the schema stays 9.)
+`kEngineVersion 1.5.1` - `kDatabaseVersion 1.0.5` - `kBenchmarkSchemaVersion 9` -
+`kCacheFormatVersion 9`. 0.9.4.82 bumped `kEngineVersion` 1.5.0 -> 1.5.1 because EXIF-rotated image fingerprints change by up to +/-1 LSB, so stored pairs revalidate. DB/schema/cache unchanged.
