@@ -1,11 +1,14 @@
 #include "scan_pipeline.h"
+#include "backend_log.h"
 #include "candidate_index.h"
 #include "similarity.h"
 #include "image_verify.h"
 #include "video_fingerprint.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <future>
+#include <sstream>
 #include <thread>
 #include <unordered_set>
 #include <unordered_map>
@@ -180,7 +183,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
     tel.videoStageEntered=true;
     const auto vt0=std::chrono::steady_clock::now();
     struct VideoTimeGuard { const std::chrono::steady_clock::time_point& t0; double& acc; ~VideoTimeGuard(){ acc += std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); } } vguard{vt0, videoMs};
-    unsigned hw=std::thread::hardware_concurrency(); if(hw<2)hw=2; if(hw>16)hw=16;
+    unsigned hw=std::thread::hardware_concurrency(); if(hw<2)hw=2;
     const std::size_t chunk=64;
     for(std::size_t b=0;b<pendingVideo.size();b+=chunk){
       poll();
@@ -269,60 +272,98 @@ if(isVideo){
   // Parallel full-image pass. Image candidate enumeration is the analyze hot
   // loop on duplicate-heavy datasets: for every candidate it recomputes a pure
   // Hamming verdict (bestMatch is read-only; verifyImagePair is internally
-  // synchronized) and, for grey-zone pairs, runs verification. The work is
-  // sharded across cores at group (file) boundaries, so each unordered pair is
-  // still emitted exactly once. Workers keep thread-local counters, telemetry
-  // and match buffers; shards are merged back in order, so the emitted match
-  // sequence, the counters and the telemetry sums are identical to the
-  // sequential pass (verdict parity, deterministic order).
+  // synchronized) and, for grey-zone pairs, runs verification.
+  // 0.9.4.80: dynamic group dispensing replaces contiguous ranges. Contiguous
+  // ranges starve workers when pairs concentrate in one group (one worker
+  // grinds for tens of minutes while the rest idle). Workers now claim whole
+  // groups atomically; the merge below reorders segments by group index, so
+  // the emitted match sequence stays identical to the sequential pass
+  // (verdict parity, deterministic order). Worker count follows the machine
+  // (the old 16-cap left cores idle); no policy gate here, same as before.
+  // 0.9.4.80 is UNVERIFIED (no compile/test: production scan owns the
+  // machine) — parity re-check is queued as the first gate on rebuild.
   auto consumeImageParallel=[&](){
    const std::size_t total=imageIdx_.size();
    if(total==0) return;
    const std::vector<std::size_t> bounds=imageIdx_.groupBoundaries();
    const std::size_t groups=bounds.size()>0?bounds.size()-1:0;
    if(groups==0) return;
-   unsigned hw=std::thread::hardware_concurrency(); if(hw<1)hw=1; if(hw>16)hw=16;
+   unsigned hw=std::thread::hardware_concurrency(); if(hw<1)hw=1;
    const std::size_t jobs=std::min<std::size_t>(hw,groups);
    struct Part {
      std::size_t candidates=0;
      double verifyMs=0;
+     double wallMs=0;
      AnalyzeTelemetry tel;
-     std::vector<MediaMatch> matches;
+     // Per-group segments claimed by this worker, merged by group index
+     // afterwards so output order matches the sequential pass exactly.
+     std::vector<std::size_t> segGroups;
+     std::vector<std::vector<MediaMatch>> segMatches;
    };
    std::vector<Part> parts(jobs);
    std::vector<std::future<void>> futs; futs.reserve(jobs);
-   const std::size_t groupsPerJob=(groups+jobs-1)/jobs;
+   std::atomic<std::size_t> nextGroup{0};
+   const auto benchP0=std::chrono::steady_clock::now();
    for(std::size_t p=0;p<jobs;++p){
-    const std::size_t g0=p*groupsPerJob;
-    const std::size_t g1=std::min(groups,g0+groupsPerJob);
-    if(g0>=g1) continue;
-    const std::size_t b=bounds[g0], e=bounds[g1];
-    futs.emplace_back(std::async(std::launch::async,[&,p,b,e]{
+    futs.emplace_back(std::async(std::launch::async,[&,p]{
      Part& pr=parts[p];
+     const auto wt0=std::chrono::steady_clock::now();
      std::size_t sincePoll=0;
      try{
-      imageIdx_.forEachCandidatePairInRange(b,e,maxDistance,[&](std::size_t i,const Candidate& c){
-       if(stop && ((++sincePoll & 1023)==0) && stop()) throw LocalCancel{};
-       auto j=c.index; if(i==j) return; if(i>j) std::swap(i,j);
-       ++pr.candidates;
-       if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind) return;
-       const double sim=best(files_[i],files_[j]);
-       if(sim>=threshold){
-        const auto vt1=std::chrono::steady_clock::now();
-        const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&pr.tel);
-        pr.verifyMs+=msSince(vt1);
-        if(v>=threshold) pr.matches.push_back(MediaMatch{i,j,v});
-       }
-      });
+      for(;;){
+       const std::size_t g=nextGroup.fetch_add(1,std::memory_order_relaxed);
+       if(g>=groups) break;
+       const std::size_t b=bounds[g], e=bounds[g+1];
+       std::vector<MediaMatch> seg;
+       imageIdx_.forEachCandidatePairInRange(b,e,maxDistance,[&](std::size_t i,const Candidate& c){
+        if(stop && ((++sincePoll & 1023)==0) && stop()) throw LocalCancel{};
+        auto j=c.index; if(i==j) return; if(i>j) std::swap(i,j);
+        ++pr.candidates;
+        if(i>=files_.size()||j>=files_.size()||files_[i].kind!=files_[j].kind) return;
+        const double sim=best(files_[i],files_[j]);
+        if(sim>=threshold){
+         const auto vt1=std::chrono::steady_clock::now();
+         const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&pr.tel);
+         pr.verifyMs+=msSince(vt1);
+         if(v>=threshold) seg.push_back(MediaMatch{i,j,v});
+        }
+       });
+       pr.segGroups.push_back(g);
+       pr.segMatches.push_back(std::move(seg));
+      }
      }catch(const LocalCancel&){}
+     pr.wallMs=msSince(wt0);
     }));
    }
    for(auto& f:futs) f.get();
+   // Deterministic merge: concatenate per-group segments in group order.
+   std::vector<std::vector<MediaMatch>*> byGroup(groups,nullptr);
+   for(Part& pr:parts)
+    for(std::size_t k=0;k<pr.segGroups.size();++k)
+     byGroup[pr.segGroups[k]]=&pr.segMatches[k];
+   std::size_t shardMaxPairs=0; double shardMaxWall=0, shardSumWall=0; std::size_t shardActive=0;
    for(Part& pr:parts){
     s.candidates+=pr.candidates;
     verifyMs+=pr.verifyMs;
     addAnalyzeTelemetry(tel,pr.tel);
-    for(const auto& m:pr.matches){ if(onMatch) onMatch(m); else s.matches.push_back(m); ++s.groups; }
+    if(!pr.segGroups.empty()){ ++shardActive; shardSumWall+=pr.wallMs; shardMaxWall=std::max(shardMaxWall,pr.wallMs); }
+    shardMaxPairs=std::max(shardMaxPairs,pr.candidates);
+   }
+   for(std::size_t g=0;g<groups;++g){
+    if(!byGroup[g]) continue;
+    for(auto& m:*byGroup[g]){ if(onMatch) onMatch(m); else s.matches.push_back(m); ++s.groups; }
+   }
+   // Shard balance telemetry: proves (or disproves) the straggler fix from
+   // the backend log alone, without a profiler attached.
+   {
+    const double totalWall=msSince(benchP0);
+    std::ostringstream sh;
+    sh<<"analyzeShards jobs="<<jobs<<" active="<<shardActive
+      <<" candidates="<<s.candidates<<" maxPairsPerShard="<<shardMaxPairs
+      <<" maxShardWallMs="<<(long long)shardMaxWall
+      <<" avgShardWallMs="<<(shardActive?(long long)(shardSumWall/shardActive):0)
+      <<" totalWallMs="<<(long long)totalWall;
+    backendLogLine(sh.str());
    }
   };
   // Full indexes are authoritative first. If they already cover every possible pair
