@@ -21,6 +21,11 @@ BackendSession::BackendSession(QObject* parent) : QObject(parent) {
     qRegisterMetaType<SessionMonitorStatus>();
     qRegisterMetaType<msf::MonitorEvent>();
     monitor_ = std::make_unique<msf::MediaMonitor>();
+    // 0.9.4.84: the engine counters must move even when no match streams (an
+    // incremental rescan of an unchanged folder). Poll them while scanning.
+    statusTimer_ = new QTimer(this);
+    statusTimer_->setInterval(500);
+    connect(statusTimer_, &QTimer::timeout, this, &BackendSession::pushStatusSnapshot);
 }
 
 BackendSession::~BackendSession() {
@@ -29,6 +34,7 @@ BackendSession::~BackendSession() {
 
 void BackendSession::teardownWorker() {
     scanning_ = false;
+    if (statusTimer_) statusTimer_->stop();
     if (thread_) {
         thread_->quit();
         thread_->wait();
@@ -102,6 +108,7 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
     connect(worker_, &ScanWorker::failed, thread_, &QThread::quit);
     thread_->start();
     scanning_ = true;
+    if (statusTimer_) statusTimer_->start();
     emit stateChanged(QStringLiteral("SCANNING"));
 }
 
@@ -158,6 +165,7 @@ void BackendSession::onResults(QVector<GuiFile> files, QStringList matchRows) {
 
 void BackendSession::onFinished(QString msg) {
     scanning_ = false;
+    if (statusTimer_) statusTimer_->stop();
     drainToGui();
     thumbs_.prune(); // drop disk thumbs whose files left the index
     emit finished(msg);
@@ -166,6 +174,7 @@ void BackendSession::onFinished(QString msg) {
 
 void BackendSession::onFailed(QString msg) {
     scanning_ = false;
+    if (statusTimer_) statusTimer_->stop();
     drainToGui();
     thumbs_.prune();
     emit failed(msg);

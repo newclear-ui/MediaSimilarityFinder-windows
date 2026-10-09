@@ -16,6 +16,7 @@
 #include <QString>
 #include <QStringList>
 #include <QThread>
+#include <QTimer>
 #include <QVector>
 #include <memory>
 #include <string>
@@ -138,6 +139,11 @@ private:
     QThread* thread_ = nullptr;
     ScanWorker* worker_ = nullptr;
     std::unique_ptr<msf::MediaMonitor> monitor_;
+    // 0.9.4.84: pushes the engine counters (analyzed/unchanged/gpu) on a timer
+    // during a scan. Previously the snapshot was pushed only when matches
+    // arrived, so an incremental rescan that finds no new matches left the live
+    // "index complete" counter at 0.
+    QTimer* statusTimer_ = nullptr;
     bool scanning_ = false;
     msf::ThumbnailStore thumbs_;
     QString lastAppDir_;

@@ -3350,12 +3350,18 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
     return;
   }
   const qulonglong completed = lastStats_[0].toULongLong();
-  const qulonglong indexed = lastStats_.size() > 1 ? lastStats_[1].toULongLong() : 0;
+  // 0.9.4.84: "인덱스 완료" is the number of files that hold a usable index row:
+  // newly analyzed (this scan) plus unchanged (already indexed). Showing only
+  // `analyzed` made a fully-unchanged rescan report 0 even though the whole
+  // folder is indexed. Matches the live formula in updateStatusCounts().
+  const qulonglong analyzed = lastStats_.size() > 1 ? lastStats_[1].toULongLong() : 0;
+  const qulonglong unchanged = lastStats_.size() > 2 ? lastStats_[2].toULongLong() : 0;
+  const qulonglong indexed = analyzed + unchanged;
   const qulonglong total = targetKnown_ ? targetTotal_ : completed;
   sumValTotal_->setText(QString::number(total));
   // "읽기 완료" is files admitted to the pipeline (r.scanned); "인덱스 완료"
-  // is files fingerprinted and DB-written this scan (r.analyzed). They differ
-  // whenever files fail analysis or were already indexed.
+  // is files with an index row (analyzed + unchanged). They differ when files
+  // fail analysis.
   sumValDone_->setText(QString::number(completed));
   sumValIndexed_->setText(QString::number(indexed));
   sumValGroups_->setText(lastStats_[3]);
