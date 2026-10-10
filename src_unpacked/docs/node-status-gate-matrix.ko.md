@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.89` (증분 dataset fingerprint) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.90` (그룹 정렬 "없음" + 스캔 중 정렬 잠금) · CPU CTest 122/122 · GPU CTest 123/123
 최종 갱신: 2026-10-10
 
 ## 이 문서의 역할
