@@ -53,6 +53,11 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
   // analyze slice boundary and cleared when the Sequential analyze completes.
   // An empty value (or a key mismatch) means "no resume". Ignored by A/AB.
   std::string analyzeFrontier() const; bool setAnalyzeFrontier(const std::string& v);
+  // 0.9.4.86: cached dataset fingerprint, keyed by the index's file-set identity
+  // (a manifest hash of path;size;modified;quickHash). A rescan of an unchanged
+  // dataset reuses this instead of re-reading every file (the fingerprint is
+  // telemetry-only but full-content, so it dominated large-scan wall time).
+  std::string datasetFingerprintCache() const; bool setDatasetFingerprintCache(const std::string& v);
  // Persistent thumbnail cache (display only): small JPEG previews keyed by
  // path, validated against size+mtime. Lets rescans show thumbs instantly
  // instead of re-decoding thousands of files through the per-tick budget.

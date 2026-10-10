@@ -129,9 +129,18 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   s.analyze.analyzeRan=true;
  imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
  imageMap_.clear(); videoMap_.clear(); imageMap_.reserve(files_.size()); videoMap_.reserve(files_.size());
- const auto indexT0=std::chrono::steady_clock::now();
- for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,i,f);imageMap_.push_back(i);}else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,i,f);videoMap_.push_back(i); for(auto a:f.anchors) if(a) videoIdx_.add(i,a);}++s.indexed;}
- indexMs=msSince(indexT0);
+  const auto indexT0=std::chrono::steady_clock::now();
+  std::size_t withCrops=0;
+  for(std::size_t i=0;i<files_.size();++i){const auto&f=files_[i];if(!f.fingerprint)continue; if(f.crop4x3||f.crop1x1||f.crop9x16)++withCrops; if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,i,f);imageMap_.push_back(i);}else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,i,f);videoMap_.push_back(i); for(auto a:f.anchors) if(a) videoIdx_.add(i,a);}++s.indexed;}
+  indexMs=msSince(indexT0);
+  // 0.9.4.86 determinism diagnostic: the candidate set is a pure function of
+  // files_ (fingerprints + crops), so two runs over one unchanged dataset must
+  // report identical numbers here. A difference proves the DB crop columns
+  // differ between runs, not a code nondeterminism.
+  backendLogLine(std::string("scanIndex files=")+std::to_string(files_.size())+
+    " indexed="+std::to_string(s.indexed)+" withCrops="+std::to_string(withCrops)+
+    " imageIdx="+std::to_string(imageIdx_.size())+" c4="+std::to_string(c4_.size())+
+    " c1="+std::to_string(c1_.size())+" c916="+std::to_string(c916_.size()));
  const auto possible=[](std::size_t n){return n>1?n*(n-1)/2:0;};s.possiblePairs=possible(imageMap_.size())+possible(videoMap_.size());
  // Stream candidate pairs instead of materializing the output of all eight indexes.
  // This is important for bucket-heavy datasets where the pair count can be millions.

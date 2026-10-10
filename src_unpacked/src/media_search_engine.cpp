@@ -1204,15 +1204,65 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     beginWdUnit("fingerprint",{},0);
     const bool scopeImages = !control || control->scanImages;
     const bool scopeVideos = !control || control->scanVideos;
-    telemetry_.setDatasetFingerprint(msf::computeDatasetFingerprint(
-        root, control ? &control->cancel : nullptr,
-        control && control->fingerprintProgress
-            ? [&](std::size_t n, std::uint64_t b, const std::string& p) {
-                watchdog.noteActivity(steadyMs());
-                control->fingerprintProgress(n, b, p);
-              }
-            : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),
-        scopeImages, scopeVideos));
+    // 0.9.4.86: the fingerprint re-reads every in-scope file (full SHA-256).
+    // Measured at 1388-1437 s / 68.9 GB for 177,160 files (~65-68 % of wall
+    // time) on a full rescan, yet it feeds only the telemetry JSON's dataset
+    // identity, never the results. Build a cheap file-set key from the index
+    // rows -- the same (path,size,modified,quickHash) triple the walk uses to
+    // detect change -- and reuse the stored fingerprint when it is unchanged,
+    // so a rescan of an unchanged dataset skips the re-read entirely.
+    std::string key = std::string("fpv=")+std::to_string(msf::kDatasetFingerprintVersion)+
+                      ";scope="+(scopeImages?"i":"")+(scopeVideos?"v":"")+"\n";
+    {
+      auto rows = db_.all();
+      std::sort(rows.begin(), rows.end(), [](const FileState&a,const FileState&b){ return a.path<b.path; });
+      key.reserve(key.size() + rows.size()*80);
+      for (const auto& x : rows) {
+        const bool video = kindOf(x.path)==MediaKind::Video;
+        if (video && !scopeVideos) continue;
+        if (!video && !scopeImages) continue;
+        key += x.path; key += ';'; key += std::to_string(x.size); key += ';';
+        key += std::to_string(x.modified); key += ';'; key += x.quickHash; key += '\n';
+      }
+    }
+    const std::string keyHash = msf::sha256Hex(reinterpret_cast<const unsigned char*>(key.data()), key.size());
+    msf::DatasetFingerprint fp;
+    bool cacheHit = false;
+    {
+      const std::string cached = db_.datasetFingerprintCache();
+      const std::size_t p1 = cached.find('|');
+      if (p1 != std::string::npos && cached.compare(0, p1, keyHash) == 0) {
+        const std::size_t p2 = cached.find('|', p1+1);
+        const std::size_t p3 = (p2==std::string::npos)?std::string::npos:cached.find('|', p2+1);
+        if (p2 != std::string::npos && p3 != std::string::npos) {
+          try {
+            fp.state = "measured";
+            fp.fingerprint = cached.substr(p1+1, p2-p1-1);
+            fp.fileCount = std::stoull(cached.substr(p2+1, p3-p2-1));
+            fp.totalBytes = std::stoull(cached.substr(p3+1));
+            cacheHit = !fp.fingerprint.empty();
+          } catch (...) { cacheHit = false; }
+        }
+      }
+    }
+    if (cacheHit) {
+      msf::backendLogLine(std::string("datasetFingerprint cache=hit files=")+std::to_string(fp.fileCount)+" bytes="+std::to_string(fp.totalBytes));
+    } else {
+      fp = msf::computeDatasetFingerprint(
+          root, control ? &control->cancel : nullptr,
+          control && control->fingerprintProgress
+              ? [&](std::size_t n, std::uint64_t b, const std::string& p) {
+                  watchdog.noteActivity(steadyMs());
+                  control->fingerprintProgress(n, b, p);
+                }
+              : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),
+          scopeImages, scopeVideos);
+      msf::backendLogLine(std::string("datasetFingerprint cache=miss state=")+fp.state+" files="+std::to_string(fp.fileCount)+" bytes="+std::to_string(fp.totalBytes));
+      if (fp.state == "measured")
+        db_.setDatasetFingerprintCache(keyHash + "|" + fp.fingerprint + "|" +
+                                       std::to_string(fp.fileCount) + "|" + std::to_string(fp.totalBytes));
+    }
+    telemetry_.setDatasetFingerprint(fp);
   }
   // The only incomplete arrival here is cancellation (all failure paths
   // returned early with Failed above), so incomplete means Cancelled.

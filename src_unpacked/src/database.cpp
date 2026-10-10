@@ -415,4 +415,24 @@ bool Database::setAnalyzeFrontier(const std::string& v){
   sqlite3_bind_text(s,1,v.c_str(),-1,SQLITE_TRANSIENT);
   const bool ok=sqlite3_step(s)==SQLITE_DONE; sqlite3_finalize(s); return ok;
 }
+
+std::string Database::datasetFingerprintCache() const{
+  if(!db_) return {};
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"SELECT value FROM meta WHERE key='dataset_fp_cache'",-1,&s,nullptr)!=SQLITE_OK) return {};
+  std::string v;
+  if(sqlite3_step(s)==SQLITE_ROW){
+    const char* t=reinterpret_cast<const char*>(sqlite3_column_text(s,0));
+    if(t) v=t;
+  }
+  sqlite3_finalize(s); return v;
+}
+
+bool Database::setDatasetFingerprintCache(const std::string& v){
+  if(!db_) return false;
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"INSERT INTO meta(key,value) VALUES('dataset_fp_cache',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",-1,&s,nullptr)!=SQLITE_OK) return false;
+  sqlite3_bind_text(s,1,v.c_str(),-1,SQLITE_TRANSIENT);
+  const bool ok=sqlite3_step(s)==SQLITE_DONE; sqlite3_finalize(s); return ok;
+}
 }

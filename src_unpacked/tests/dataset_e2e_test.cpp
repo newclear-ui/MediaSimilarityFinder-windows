@@ -114,6 +114,27 @@ int main(int argc, char** argv) {
     std::cerr << "scan walked no files, so this proves nothing\n";
     rc = 8;
   }
+  // 0.9.4.86: a second scan of the unchanged dataset must reuse the cached
+  // fingerprint instead of re-reading every file. bytesRead==0 on the second
+  // run proves the full-content re-read was skipped, and the identity must be
+  // unchanged.
+  {
+    const msf::SearchReport report2 = engine.scan(root, 8, &control);
+    const msf::DatasetFingerprint& recorded2 = engine.lastTelemetryDataset();
+    if (recorded2.state != "measured" || recorded2.fingerprint != expected.fingerprint) {
+      std::cerr << "second scan fingerprint mismatch (state=" << recorded2.state << ")\n";
+      rc = 9;
+    }
+    if (recorded2.bytesRead != 0) {
+      std::cerr << "second scan re-read the dataset (bytesRead=" << recorded2.bytesRead
+                << "), expected a cache hit\n";
+      rc = 9;
+    }
+    if (report2.scanned == 0) {
+      std::cerr << "second scan walked no files\n";
+      rc = 9;
+    }
+  }
   std::cout << "dataset_e2e_fingerprint=" << recorded.fingerprint
             << " files=" << recorded.fileCount
             << " bytes=" << recorded.totalBytes
