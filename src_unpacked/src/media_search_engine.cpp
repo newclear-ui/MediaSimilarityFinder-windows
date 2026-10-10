@@ -1248,6 +1248,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     if (cacheHit) {
       msf::backendLogLine(std::string("datasetFingerprint cache=hit files=")+std::to_string(fp.fileCount)+" bytes="+std::to_string(fp.totalBytes));
     } else {
+      // 0.9.4.89: incremental hashing. The DB's content_hash table lets the
+      // fingerprint re-read only changed/new files; unchanged files reuse their
+      // stored SHA-256. This turns a "few files changed" rescan from a full
+      // 68 GB re-read (measured ~25 min) into seconds.
+      msf::DatasetHashCache hcache;
+      hcache.get = [this](const std::string& rel, std::uint64_t size, std::int64_t mod, std::string& h) {
+        return db_.contentHashGet(rel, size, mod, h);
+      };
+      hcache.put = [this](const std::string& rel, std::uint64_t size, std::int64_t mod, const std::string& h) {
+        db_.contentHashPut(rel, size, mod, h);
+      };
       fp = msf::computeDatasetFingerprint(
           root, control ? &control->cancel : nullptr,
           control && control->fingerprintProgress
@@ -1256,8 +1267,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
                   control->fingerprintProgress(n, b, p);
                 }
               : std::function<void(std::size_t,std::uint64_t,const std::string&)>(),
-          scopeImages, scopeVideos);
-      msf::backendLogLine(std::string("datasetFingerprint cache=miss state=")+fp.state+" files="+std::to_string(fp.fileCount)+" bytes="+std::to_string(fp.totalBytes));
+          scopeImages, scopeVideos, hcache);
+      msf::backendLogLine(std::string("datasetFingerprint cache=miss state=")+fp.state+
+                          " files="+std::to_string(fp.fileCount)+" bytes="+std::to_string(fp.totalBytes)+
+                          " cached="+std::to_string(fp.cachedFiles));
       if (fp.state == "measured")
         db_.setDatasetFingerprintCache(keyHash + "|" + fp.fingerprint + "|" +
                                        std::to_string(fp.fileCount) + "|" + std::to_string(fp.totalBytes));

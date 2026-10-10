@@ -82,6 +82,10 @@ bool Database::initialize(){
   // admitted file per scan: admission/start/finish timestamps plus outcome.
   // finished_ms==0 means the outcome was never observed (interrupted).
   if(!exec("CREATE TABLE IF NOT EXISTS file_trace(path TEXT PRIMARY KEY,admitted_ms INTEGER NOT NULL DEFAULT 0,started_ms INTEGER NOT NULL DEFAULT 0,finished_ms INTEGER NOT NULL DEFAULT 0,outcome TEXT NOT NULL DEFAULT '');")) return false;
+  // 1.0.6 content-hash cache (additive; old readers ignore it). One row per
+  // in-scope file: its full-content SHA-256 plus the (size,modified) it was
+  // computed for, so the dataset fingerprint can skip re-reading unchanged files.
+  if(!exec("CREATE TABLE IF NOT EXISTS content_hash(rel TEXT PRIMARY KEY,size INTEGER NOT NULL,modified INTEGER NOT NULL,sha256 TEXT NOT NULL);")) return false;
  // Migrate databases created before mirror-aware fingerprints.
  bool hasMirror=false; sqlite3_stmt* info=nullptr;
  if(sqlite3_prepare_v2(D(db_),"PRAGMA table_info(files)",-1,&info,nullptr)==SQLITE_OK){
@@ -433,6 +437,32 @@ bool Database::setDatasetFingerprintCache(const std::string& v){
   sqlite3_stmt* s=nullptr;
   if(sqlite3_prepare_v2(D(db_),"INSERT INTO meta(key,value) VALUES('dataset_fp_cache',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",-1,&s,nullptr)!=SQLITE_OK) return false;
   sqlite3_bind_text(s,1,v.c_str(),-1,SQLITE_TRANSIENT);
+  const bool ok=sqlite3_step(s)==SQLITE_DONE; sqlite3_finalize(s); return ok;
+}
+
+bool Database::contentHashGet(const std::string& rel, std::uint64_t size, std::int64_t modified, std::string& sha256) const{
+  if(!db_) return false;
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"SELECT sha256,size,modified FROM content_hash WHERE rel=?",-1,&s,nullptr)!=SQLITE_OK) return false;
+  sqlite3_bind_text(s,1,rel.c_str(),-1,SQLITE_TRANSIENT);
+  bool ok=false;
+  if(sqlite3_step(s)==SQLITE_ROW){
+    const auto* h=sqlite3_column_text(s,0);
+    const long long stSize=sqlite3_column_int64(s,1);
+    const long long stMod=sqlite3_column_int64(s,2);
+    if(h && (std::uint64_t)stSize==size && (std::int64_t)stMod==modified){ sha256=reinterpret_cast<const char*>(h); ok=true; }
+  }
+  sqlite3_finalize(s); return ok;
+}
+
+bool Database::contentHashPut(const std::string& rel, std::uint64_t size, std::int64_t modified, const std::string& sha256){
+  if(!db_) return false;
+  sqlite3_stmt* s=nullptr;
+  if(sqlite3_prepare_v2(D(db_),"INSERT INTO content_hash(rel,size,modified,sha256) VALUES(?,?,?,?) ON CONFLICT(rel) DO UPDATE SET size=excluded.size,modified=excluded.modified,sha256=excluded.sha256",-1,&s,nullptr)!=SQLITE_OK) return false;
+  sqlite3_bind_text(s,1,rel.c_str(),-1,SQLITE_TRANSIENT);
+  sqlite3_bind_int64(s,2,(sqlite3_int64)size);
+  sqlite3_bind_int64(s,3,(sqlite3_int64)modified);
+  sqlite3_bind_text(s,4,sha256.c_str(),-1,SQLITE_TRANSIENT);
   const bool ok=sqlite3_step(s)==SQLITE_DONE; sqlite3_finalize(s); return ok;
 }
 }

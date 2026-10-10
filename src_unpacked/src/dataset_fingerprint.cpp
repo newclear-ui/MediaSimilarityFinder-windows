@@ -139,7 +139,8 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
                                                 const std::atomic_bool* cancel,
                                                 std::function<void(std::size_t,std::uint64_t,const std::string&)> progress,
                                                 bool scanImages,
-                                                bool scanVideos) {
+                                                bool scanVideos,
+                                                const DatasetHashCache& cache) {
     DatasetFingerprint out;
     const auto t0 = std::chrono::steady_clock::now();
     const auto cancelled = [&] {
@@ -189,12 +190,28 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
         if (rel.empty()) continue;                     // defensive: never hash a nameless entry
         Entry e;
         e.rel = rel;
-        if (!hashWholeFile(it->path(), e.hash, e.size, cancel)) {
-            // Cancellation and read failure are different outcomes. A cancelled
-            // walk must not be reported as a corrupt dataset.
-            out.state = cancelled() ? "cancelled" : "failed";
-            stampDuration();
-            return out;
+        // 0.9.4.89: reuse a stored content hash when (size,modified) are
+        // unchanged, so a rescan re-hashes only changed/new files instead of the
+        // whole dataset. A cache miss (new/changed file) reads and stores.
+        std::error_code sec;
+        const auto stSize = fs::file_size(it->path(), sec);
+        std::int64_t stMod = 0;
+        if (!sec)
+            stMod = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        fs::last_write_time(it->path(), sec).time_since_epoch()).count();
+        const bool haveStat = !sec;
+        if (haveStat && cache.get && cache.get(rel, (std::uint64_t)stSize, stMod, e.hash)) {
+            e.size = (std::uint64_t)stSize;
+            ++out.cachedFiles;
+        } else {
+            if (!hashWholeFile(it->path(), e.hash, e.size, cancel)) {
+                // Cancellation and read failure are different outcomes. A cancelled
+                // walk must not be reported as a corrupt dataset.
+                out.state = cancelled() ? "cancelled" : "failed";
+                stampDuration();
+                return out;
+            }
+            if (haveStat && cache.put) cache.put(rel, (std::uint64_t)stSize, stMod, e.hash);
         }
         bytesRead += e.size;
         entries.push_back(std::move(e));

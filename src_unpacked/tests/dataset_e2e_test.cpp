@@ -135,6 +135,28 @@ int main(int argc, char** argv) {
       rc = 9;
     }
   }
+  // 0.9.4.89: incremental content-hash cache. After modifying ONE file the
+  // whole-fingerprint cache misses (the dataset changed), but only that file's
+  // content hash should be recomputed: cachedFiles == fileCount - 1.
+  {
+    writeBmp(mediaDir / "images" / "varied" / "v00.bmp", 424242);
+    const msf::DatasetFingerprint exp3 = msf::computeDatasetFingerprint(root);
+    const msf::SearchReport report3 = engine.scan(root, 8, &control);
+    const msf::DatasetFingerprint& rec3 = engine.lastTelemetryDataset();
+    if (rec3.state != "measured" || rec3.fingerprint != exp3.fingerprint) {
+      std::cerr << "third scan fingerprint mismatch (state=" << rec3.state << ")\n";
+      rc = 10;
+    }
+    if (rec3.cachedFiles != exp3.fileCount - 1) {
+      std::cerr << "third scan cachedFiles=" << rec3.cachedFiles
+                << " expected " << (exp3.fileCount - 1) << "\n";
+      rc = 10;
+    }
+    if (report3.scanned == 0) {
+      std::cerr << "third scan walked no files\n";
+      rc = 10;
+    }
+  }
   std::cout << "dataset_e2e_fingerprint=" << recorded.fingerprint
             << " files=" << recorded.fileCount
             << " bytes=" << recorded.totalBytes

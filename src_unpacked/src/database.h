@@ -40,12 +40,20 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
   std::vector<FileTrace> traceAll() const;
   // Slow-file log helper: admitted timestamp of one path, -1 when absent.
   std::int64_t traceAdmitted(const std::string& path) const;
+  // 0.9.4.89: per-file full-content hash cache for the incremental dataset
+  // fingerprint. Keyed by canonical relative path; a hit requires the stored
+  // (size,modified) to match, so a content change that keeps them is the only
+  // (rare) miss. Lets a rescan re-hash only changed/new files.
+  bool contentHashGet(const std::string& rel, std::uint64_t size, std::int64_t modified, std::string& sha256) const;
+  bool contentHashPut(const std::string& rel, std::uint64_t size, std::int64_t modified, const std::string& sha256);
  // Internal versions, independent of the 0.9.2.x build numbers ("M.m.p"):
  // engine verdict generation (match logic) and DB schema generation.
  // Missing/malformed rows read as "0.0.0" (pre-versioning).
    // 1.0.4 adds files.analysis_failed (additive column, old code still reads it).
    // 1.0.5 adds the file_trace table (additive table, old code ignores it).
-  static constexpr const char* kDatabaseVersion = "1.0.5";
+   // 1.0.6 adds the content_hash table (additive table, old code ignores it):
+   //       per-file full-content SHA-256 for the incremental dataset fingerprint.
+  static constexpr const char* kDatabaseVersion = "1.0.6";
   std::string engineVersion() const; bool setEngineVersion(const std::string& v);
   std::string dbVersion() const; bool setDbVersion(const std::string& v);
   std::string samplingGeneration() const; bool setSamplingGeneration(const std::string& v);

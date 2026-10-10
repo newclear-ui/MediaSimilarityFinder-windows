@@ -39,11 +39,23 @@ struct DatasetFingerprint {
     std::uint64_t fileCount = 0;
     std::uint64_t totalBytes = 0;
     // Fingerprint-phase telemetry. durationMs measures the whole walk+hash;
-    // bytesRead counts bytes actually hashed (equals totalBytes on success,
-    // less on cancel/failure). Lets a multi-GB fingerprint phase be diagnosed
-    // from the log alone. Never part of the identity.
+    // bytesRead counts bytes actually hashed this run (equals totalBytes when
+    // nothing was cached, less when unchanged files were served from the
+    // content-hash cache). Lets a multi-GB fingerprint phase be diagnosed from
+    // the log alone. Never part of the identity.
     double durationMs = 0;
     std::uint64_t bytesRead = 0;
+    // 0.9.4.89: files whose content hash came from the cache (not re-read).
+    std::uint64_t cachedFiles = 0;
+};
+
+// 0.9.4.89: optional per-file full-content hash cache so the fingerprint only
+// re-reads changed/new files. get returns true and fills sha256 when a stored
+// hash matches (rel, size, modified); put stores a freshly computed hash. Both
+// are called from the walk thread and must not throw.
+struct DatasetHashCache {
+    std::function<bool(const std::string& rel, std::uint64_t size, std::int64_t modified, std::string& sha256)> get;
+    std::function<void(const std::string& rel, std::uint64_t size, std::int64_t modified, const std::string& sha256)> put;
 };
 
 // Stable lowercase hex SHA-256 of a byte range. Exposed because the same
@@ -79,6 +91,7 @@ DatasetFingerprint computeDatasetFingerprint(const std::string& root,
                                              const std::atomic_bool* cancel = nullptr,
                                              std::function<void(std::size_t,std::uint64_t,const std::string&)> progress = nullptr,
                                              bool scanImages = true,
-                                             bool scanVideos = true);
+                                             bool scanVideos = true,
+                                             const DatasetHashCache& cache = {});
 
 }
