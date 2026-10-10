@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.85` (revalidation progress + count-first) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.86` (dataset fingerprint cache) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-10
 
 ## Role of this document
