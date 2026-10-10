@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## 현재 개발 버전: 0.9.4.90 (엔진 1.5.1, DB 1.0.6, 공식 기준선 0.9.2.32, 개발선 0.9.4, 프로세스 분리 P1–P4 완료, 매칭 검증 모드 선택 + B 1000 슬라이스, EXIF 회전 이미지 WIC FlipRotator 폭주 제거, 인덱스 우선 표시, 라이브 "인덱스 완료" 카운터 수정, 엔진버전 재검증 진행률 표시, dataset fingerprint 캐시, 백엔드 셸 썸네일 경로 제거, 통합 CPU 표기, 증분 dataset fingerprint, 그룹 정렬 없음 + 스캔 중 정렬 잠금, S4 verification in progress, S5 product benchmark DEFERRED, F-1 CONDITIONAL)
+## 현재 개발 버전: 0.9.4.91 (엔진 1.5.1, DB 1.0.6, 공식 기준선 0.9.2.32, 개발선 0.9.4, 프로세스 분리 P1–P4 완료, 매칭 검증 모드 선택 + B 1000 슬라이스, EXIF 회전 이미지 WIC FlipRotator 폭주 제거, 인덱스 우선 표시, 라이브 "인덱스 완료" 카운터 수정, 엔진버전 재검증 진행률 표시, dataset fingerprint 캐시, 백엔드 셸 썸네일 경로 제거, 통합 CPU 표기, 증분 dataset fingerprint, 그룹 정렬 없음 + 스캔 중 정렬 잠금, 그룹 정렬 없음 최상단/기본값 + append-only 목록, S4 verification in progress, S5 product benchmark DEFERRED, F-1 CONDITIONAL)
 
 Windows 11 x64 미디어 중복/유사 검색 엔진. CPU + GPU 공동 실행 구조로 개발 중이며 현재 concrete GPU backend는 NVIDIA CUDA입니다.
 
