@@ -1,5 +1,6 @@
 ﻿#include "mainwindow.h"
 #include "backend_loopback.h"
+#include "backend_sysinfo.h" // 0.9.4.88: GUI's own process CPU for the combined display
 #include "video_decoder.h"
 #include "msf_build_version.h"
 #include "../src/image_decoder.h"
@@ -567,6 +568,21 @@ MainWindow::MainWindow(QWidget* p, BackendClient* backend) : QMainWindow(p) {
   monitorTimer_->start();
   uiTimer_ = new QTimer(this); uiTimer_->setInterval(600);
   connect(uiTimer_, &QTimer::timeout, this, &MainWindow::onUiTick);
+  // 0.9.4.88: sample the GUI process's own CPU every second so the summary can
+  // show GUI + Backend + Backend children combined. Under the in-process
+  // loopback the GUI IS the working process (backendCpu already covers it), so
+  // guiCpu_ stays 0 to avoid double counting; the GUI also never samples there,
+  // which keeps the loopback's own sampler baseline undisturbed.
+  cpuTimer_ = new QTimer(this); cpuTimer_->setInterval(1000);
+  connect(cpuTimer_, &QTimer::timeout, this, [this] {
+    if (backend_ && backend_->separateProcess()) {
+      double c = 0.0; unsigned long long r = 0;
+      msf::sampleOwnProcess(c, r); guiCpu_ = c;
+    } else {
+      guiCpu_ = 0.0;
+    }
+  });
+  cpuTimer_->start();
   tray_ = new QSystemTrayIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon), this);
   auto* tm = new QMenu(this);
   tm->addAction(trStr(lang(), "monSettings"), this, &MainWindow::configureMonitor);
@@ -3674,10 +3690,13 @@ void MainWindow::monitorEvent(const BackendMonitorEvent& e) {
 }
 void MainWindow::onStatusSnapshot(BackendStatus st) {
   backendStatus_ = st;
-  // P4 display contract: single meaning — the working process's own CPU%
-  // and Working Set. No system-wide percentages here, no GUI-process
-  // sampling here.
-  sumValCpu_->setText(QString("%1%").arg(std::clamp(st.backendCpu, 0.0, 100.0), 0, 'f', 0));
+  // 0.9.4.88 combined CPU: GUI process (guiCpu_) + Backend process tree
+  // (backendCpu = Backend + its children, e.g. nvidia-smi/ffprobe). Under the
+  // loopback guiCpu_ is 0 (same process), so the value stays single-source.
+  // User-action spawns (Explorer etc.) and unrelated OS processes (Defender)
+  // are not included: they are neither the GUI process nor the Backend tree.
+  const double combinedCpu = std::clamp(st.backendCpu + guiCpu_, 0.0, 100.0);
+  sumValCpu_->setText(QString("%1%").arg(combinedCpu, 0, 'f', 0));
   sumValRam_->setText(fmtSize(st.backendRssMB * 1024ULL * 1024ULL));
 }
 void MainWindow::onMonitorSnapshot(const BackendMonitorStatus& s) {

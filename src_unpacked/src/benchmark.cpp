@@ -1,4 +1,5 @@
 #include "benchmark.h"
+#include "backend_sysinfo.h" // 0.9.4.88: process-tree CPU for cpuProc
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -405,11 +406,12 @@ void TelemetryRecorder::sampleOnce(double tMs) {
   s.wallTime = localTimeStr();
   s.gpu = gpuActiveFn_ ? gpuActiveFn_() : false;
 #ifdef _WIN32
-  FILETIME fc, fe, fk, fu;
-  if (GetProcessTimes(GetCurrentProcess(), &fc, &fe, &fk, &fu)) {
-    ULARGE_INTEGER k, u;
-    k.LowPart = fk.dwLowDateTime; k.HighPart = fk.dwHighDateTime;
-    u.LowPart = fu.dwLowDateTime; u.HighPart = fu.dwHighDateTime;
+  // 0.9.4.88: cpuProc now covers this process AND its children (job tree), so
+  // the detailed-log "CPU usage" matches the GUI summary's combined value
+  // (Backend + nvidia-smi/ffprobe, etc.). Semantic change from earlier builds:
+  // cpuProc previously counted this process alone.
+  unsigned long long treeK = 0, treeU = 0;
+  if (processTreeCpuTicks(treeK, treeU)) {
     FILETIME fi, sk, su;
     if (GetSystemTimes(&fi, &sk, &su)) {
       ULARGE_INTEGER si, skk, suu;
@@ -419,12 +421,13 @@ void TelemetryRecorder::sampleOnce(double tMs) {
       const long long tick = nowNs();
       if (prevTick_ >= 0 && tick > prevTick_) {
         const double wall = (double)(tick - prevTick_) / 1e9;
-        const double proc = (double)((long long)(k.QuadPart - prevProcK_) + (long long)(u.QuadPart - prevProcU_)) / 1e7;
+        const double proc = (double)((long long)(treeK - (unsigned long long)prevProcK_) +
+                                     (long long)(treeU - (unsigned long long)prevProcU_)) / 1e7;
         s.cpuProc = 100.0 * proc / (wall * cpuCount_);
         const long long tot = (long long)(si.QuadPart - prevSysI_) + (long long)(skk.QuadPart - prevSysK_) + (long long)(suu.QuadPart - prevSysU_);
         if (tot > 0) s.cpuSys = 100.0 * (1.0 - (double)(long long)(si.QuadPart - prevSysI_) / (double)tot);
       }
-      prevProcK_ = (long long)k.QuadPart; prevProcU_ = (long long)u.QuadPart;
+      prevProcK_ = (long long)treeK; prevProcU_ = (long long)treeU;
       prevSysI_ = (long long)si.QuadPart; prevSysK_ = (long long)skk.QuadPart; prevSysU_ = (long long)suu.QuadPart;
       prevTick_ = tick;
     }

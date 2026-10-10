@@ -68,6 +68,7 @@ public:
     BackendMonitorStatus lastMonitorStatus() const override { return lastMonStatus_; }
     std::string telemetryJsonForTest() const override { return {}; } // loopback-only
     qint64 backendPid() const override;
+    bool separateProcess() const override { return true; }
 
     // Acceptance introspection (E2E tests): current supervisor phase.
     QString phase() const { return phase_; }

@@ -347,4 +347,6 @@ private:
   QSystemTrayIcon* tray_=nullptr; QTimer* monitorTimer_=nullptr;
   bool monitorEnabled_=false;
   QTimer* uiTimer_=nullptr; // throttled refresh while scanning
+  QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
+  double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };

@@ -536,7 +536,10 @@ private:
         if (session_->monitorRunning()) session_->refreshMonitor();
         double cpu = 0.0;
         unsigned long long rss = 0;
-        msf::sampleOwnProcess(cpu, rss);
+        // 0.9.4.88: backendCpu now covers the backend process AND every child it
+        // spawns (nvidia-smi / ffprobe via captureSilent), so the summary's
+        // combined CPU accounts for all scan/index work, not just one process.
+        msf::sampleProcessTree(cpu, rss);
         Message m;
         m.type = QString::fromLatin1(msf_ipc::kHealth);
         m.payload[QStringLiteral("state")] = sessionState_;

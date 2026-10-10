@@ -104,10 +104,12 @@ struct FileMetaResult {
 };
 
 // Pushed engine snapshot (Type C). Updated by statusSnapshot; the GUI tick
-// reads lastStatus() and never touches the engine. backendCpu/backendRss
-// are the WORKING process's own numbers (Backend in production, GUI process
-// under loopback) — the only CPU/RAM the summary panel shows (P4: one
-// meaning, no flip-flop).
+// reads lastStatus() and never touches the engine. backendCpu/backendRss are
+// the WORKING side's numbers. Production: the Backend process AND its children
+// (0.9.4.88 Job-object tree accounting). Loopback: the GUI process (the working
+// process). The summary adds the GUI's own CPU on top when separateProcess()
+// is true, so the shown value covers GUI + scan/index work; user-action spawns
+// (Explorer etc.) and unrelated OS processes are excluded.
 struct BackendStatus {
     qulonglong analyzed = 0;
     qulonglong unchanged = 0; // P4: valid index reused (Index Complete = analyzed + unchanged)
@@ -213,6 +215,10 @@ public:
     virtual BackendStatus lastStatus() const = 0;
     virtual BackendMonitorStatus lastMonitorStatus() const = 0;
 
+    // 0.9.4.88: true when the backend runs in its own process (the supervisor).
+    // False under the in-process loopback, where the GUI process IS the working
+    // process. The summary combines the GUI's own CPU only when this is true.
+    virtual bool separateProcess() const { return false; }
     // Test-only hook (loopback implements it; the real client reports empty).
     virtual std::string telemetryJsonForTest() const { return {}; }
     // Acceptance hook: OS PID of the current backend process, -1 when there
