@@ -4,9 +4,10 @@
 // violated the process boundary. Independent of ScanWorker lifecycle: the
 // store is opened per scan root and serves any time after that.
 //
-// Serve order (same quality ladder as the old GUI path, minus Qt):
-// disk JPEG -> engine art -> shell fast lane -> WIC decode ->
-// FFmpeg video frame -> gray fingerprint fallback.
+// Serve order (0.9.4.87: the shell fast lane was removed -- it used the
+// Windows shell thumbnail-cache COM, which faulted in an unloaded shell DLL):
+// disk JPEG -> engine art -> WIC decode -> FFmpeg video frame ->
+// gray fingerprint fallback.
 // Callers get finished JPEG bytes (bounded for IPC); the GUI only displays.
 #pragma once
 #include <cstddef>
@@ -68,7 +69,6 @@ private:
     void diskPut(const std::string& path, std::int64_t modified, std::uint64_t size,
                  const StoredThumb& t);
     static bool fileIdentity(const std::string& path, std::int64_t& modified, std::uint64_t& size);
-    static RawArt shellArt(const std::string& path);
     static RawArt wicArt(const std::string& path, int maxDim);
     static RawArt ffmpegArt(const std::string& path, int maxDim);
 

@@ -1,6 +1,7 @@
 // See thumbnail_store.h.
 #include "thumbnail_store.h"
 
+#include <cctype>
 #include <chrono>
 #include <cstring>
 
@@ -10,14 +11,6 @@
 #include "path_utils.h"
 #include "video_decoder.h"
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <shobjidl.h>
-#include <thumbcache.h>
-#endif
 #include <turbojpeg.h>
 
 namespace msf {
@@ -106,71 +99,6 @@ void ThumbnailStore::diskPut(const std::string& path, std::int64_t modified, std
     db_.putThumb(path, modified, size, t.jpeg);
 }
 
-#ifdef _WIN32
-RawArt ThumbnailStore::shellArt(const std::string& path) {
-    RawArt out;
-    std::wstring wpath;
-    {
-        // UTF-8 product paths into the system-code-page shell: match the old
-        // GUI behavior (Korean filenames kept working through toLocal8Bit).
-        const int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-        if (n <= 1) return out;
-        wpath.resize((size_t)n - 1);
-        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wpath.data(), n);
-    }
-    IShellItem* item = nullptr;
-    if (FAILED(SHCreateItemFromParsingName(wpath.c_str(), nullptr, IID_PPV_ARGS(&item))))
-        return out;
-    // CLSID_ThumbnailCache needs INITGUID; spell it out to stay header-local
-    // (same as the former GUI implementation).
-    static const GUID kThumbCacheClsid = {0xc8199035, 0xdb49, 0x4e95, {0x91, 0xb7, 0x7e, 0x86, 0x2f, 0x12, 0x04, 0x59}};
-    IThumbnailCache* cache = nullptr;
-    if (FAILED(CoCreateInstance(kThumbCacheClsid, nullptr, CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&cache)))) {
-        item->Release();
-        return out;
-    }
-    ISharedBitmap* sb = nullptr;
-    const HRESULT hr = cache->GetThumbnail(item, 256, WTS_INCACHEONLY | WTS_SCALETOREQUESTEDSIZE,
-                                          &sb, nullptr, nullptr);
-    if (SUCCEEDED(hr) && sb) {
-        HBITMAP hb = nullptr;
-        if (SUCCEEDED(sb->GetSharedBitmap(&hb)) && hb) {
-            BITMAP bm{};
-            if (::GetObject(hb, sizeof(bm), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
-                BITMAPINFO bi{};
-                bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-                bi.bmiHeader.biWidth = bm.bmWidth;
-                bi.bmiHeader.biHeight = -bm.bmHeight;
-                bi.bmiHeader.biPlanes = 1;
-                bi.bmiHeader.biBitCount = 32;
-                bi.bmiHeader.biCompression = BI_RGB;
-                const int nPix = bm.bmWidth * bm.bmHeight;
-                std::vector<unsigned char> buf((std::size_t)nPix * 4, 0);
-                const HDC dc = ::GetDC(nullptr);
-                if (dc && ::GetDIBits(dc, hb, 0, (UINT)bm.bmHeight, buf.data(), &bi,
-                                      DIB_RGB_COLORS) == bm.bmHeight) {
-                    for (int i = 3; i < nPix * 4; i += 4) buf[i] = 0xff;
-                    out.bgra = std::move(buf);
-                    out.width = bm.bmWidth;
-                    out.height = bm.bmHeight;
-                    out.ok = true;
-                }
-                if (dc) ::ReleaseDC(nullptr, dc);
-            }
-        }
-        if (sb) sb->Release();
-    }
-    if (cache) cache->Release();
-    if (item) item->Release();
-    return out;
-}
-#else
-RawArt ThumbnailStore::shellArt(const std::string&) {
-    return RawArt();
-}
-#endif
-
 RawArt ThumbnailStore::wicArt(const std::string& path, int maxDim) {
     RawArt out;
     ImageDecoder dec;
@@ -251,20 +179,26 @@ StoredThumb ThumbnailStore::fetch(const std::string& path, int desiredMaxDim,
     RawArt art = engineFetch ? engineFetch() : RawArt();
     bool grayOnly = false;
     if (!art.ok) {
-        art = shellArt(path);
-        if (!art.ok) {
-            const bool isVid = [&] {
-                const size_t dot = path.find_last_of('.');
-                std::string e = (dot == std::string::npos) ? std::string() : path.substr(dot + 1);
-                for (auto& ch : e) ch = (char)tolower((unsigned char)ch);
-                return e == "mp4" || e == "mkv" || e == "avi" || e == "mov" ||
-                       e == "webm" || e == "m4v" || e == "wmv";
-            }();
-            if (isVid)
-                art = ffmpegArt(path, desiredMaxDim);
-            else
-                art = wicArt(path, desiredMaxDim);
-        }
+        // 0.9.4.87: no shell fast lane. The former path used the Windows shell
+        // thumbnail cache (SHCreateItemFromParsingName + CoCreateInstance of
+        // CLSID_ThumbnailCache / IThumbnailCache), which loads shell DLLs
+        // (Windows.FileExplorer.Common.dll, urlmon.dll). Crash dumps showed the
+        // backend faulting while executing in one of those DLLs after it had
+        // been unloaded (0xC0000005, INVALID_POINTER_EXECUTE) -- a module-lifetime
+        // use-after-free in an undocumented third-party use of the shell COM.
+        // Images now use the WIC color decode (decodeColorAspect) and videos the
+        // FFmpeg frame decode; no COM/shell dependency remains on this path.
+        const bool isVid = [&] {
+            const size_t dot = path.find_last_of('.');
+            std::string e = (dot == std::string::npos) ? std::string() : path.substr(dot + 1);
+            for (auto& ch : e) ch = (char)tolower((unsigned char)ch);
+            return e == "mp4" || e == "mkv" || e == "avi" || e == "mov" ||
+                   e == "webm" || e == "m4v" || e == "wmv";
+        }();
+        if (isVid)
+            art = ffmpegArt(path, desiredMaxDim);
+        else
+            art = wicArt(path, desiredMaxDim);
     } else {
         grayOnly = art.gray;
     }
