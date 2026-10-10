@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 수동 GUI acceptance → 제품 acceptance 재확인
+> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 수동 GUI acceptance → 제품 acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -119,6 +119,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 엔진버전 재검증 진행률 표시 | **완료(0.9.4.85)** | 인덱스된 폴더 재스캔이 143s 동안 총 파일 "-"·전 카운터 0으로 멈춘 원인은 엔진버전 게이트 `revalidateMatches`(저장 쌍 재검증·이미지 디코드, 2.94GB read). count를 재검증 앞으로 복원 + `revalidateProgress` 콜백 → IPC → GUI 상태바 "저장된 쌍 재검증 중 N/M". 판정·엔진·DB 버전 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 NOT_VALIDATED. 재검증은 1회성(중간 Stop 시 재실행). |
 | dataset fingerprint 캐시 + 결정성 진단 | **완료(0.9.4.86)** | 풀 검색 로그에서 총 시간의 65~68%가 dataset fingerprint(1388/1437s, 68.9GB 전체 재해시, telemetry 전용)임을 확인. DB rows (path,size,modified,quickHash) 매니페스트 SHA-256을 키로 지문을 DB meta(`dataset_fp_cache`)에 저장 → 변경 없는 재스캔은 재해시 생략(23분→0). `ScanPipeline::analyze`에 `scanIndex … withCrops=` 진단 로그 추가(동일 데이터셋 groups 1976 vs 4734 이상 규명용). 판정·스키마·캐시 불변. CPU CTest 122/122, GPU CTest 123/123. dataset_e2e_test 캐시 히트 검증 추가. |
 | 백엔드 셸 썸네일 경로 제거 (크래시) | **완료(0.9.4.87)** | 대규모 스캔 중 백엔드 반복 크래시(`0xC0000005`). 덤프(0.9.4.86 PDB)+Event 1000 → fault IP가 **언로드 셸 DLL**(Windows.FileExplorer.Common.dll/urlmon.dll)에서 실행 = 모듈 수명 UAF. 원인 코드 = `ThumbnailStore::shellArt`(셸 IThumbnailCache/CLSID_ThumbnailCache). `shellArt` 제거, 썸네일 WIC/FFmpeg만. 판정·스키마·캐시 불변. CPU CTest 122/122, GPU CTest 123/123. 사용자 재현 확인 필요. |
+| 통합 CPU 표기 (GUI+백엔드+자식) | **완료(0.9.4.88)** | 종전 표기는 작업 프로세스 1개(백엔드)만 측정. 자식(`nvidia-smi` 매 스캔 3초마다/`ffprobe`/조건부 `ffmpeg`)과 GUI 프로세스가 빠졌다. 백엔드는 Job Object 회계(`sampleProcessTree`)로 자기+자식(종료분 포함), GUI는 자기 CPU를 합산(`guiCpu_ + backendCpu`). 상세 로그 `cpuProc`도 트리 기준(의미 변경: SUPERSEDED). 사용자 동작 spawn·Defender/OS 제외. CPU CTest 122/122, GPU CTest 123/123. GUI 육안/repro 필요. |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -205,12 +206,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.87 (백엔드 셸 썸네일 경로 제거) |
+| 기준 코드 | 0.9.4.88 (통합 CPU 표기) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.87 백엔드 셸 썸네일 경로 제거 완료** — 직전 0.9.4.86은 dataset fingerprint 캐시. 대규모 스캔 중 백엔드 크래시(언로드 셸 DLL 실행, `ThumbnailStore::shellArt`/IThumbnailCache)를 덤프 추적으로 특정·제거. 썸네일은 WIC/FFmpeg만. 사용자 재현 확인 필요. — 설정 옵션(안정형=B 기본/고속형=A/자동=A+B). A/AB는 변경 파일이 낀 쌍만 재검증, AB는 양쪽 변경 이미지 생략. B는 이미지/비디오/크롭 패스를 1000 파일 윈도우로 처리 + 이미지 phase 재개 프론티어. 로그 `scanAnalyzeMode=`/`analyzeSlice`/`analyzeResume` + 상세 로그 `analyze.mode`. 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.88 통합 CPU 표기 완료** — 직전 0.9.4.87은 백엔드 셸 썸네일 경로 제거(크래시). 요약/상세로그 CPU가 GUI 프로세스 + 백엔드 프로세스 + 백엔드 자식(nvidia-smi/ffprobe)을 합산(Job Object 회계). 사용자 동작 spawn·Defender/OS 제외. `cpuProc` 의미 변경(트리)은 이전 빌드와 비교 불가. GUI 육안/repro 확인 필요. — 설정 옵션(안정형=B 기본/고속형=A/자동=A+B). A/AB는 변경 파일이 낀 쌍만 재검증, AB는 양쪽 변경 이미지 생략. B는 이미지/비디오/크롭 패스를 1000 파일 윈도우로 처리 + 이미지 phase 재개 프론티어. 로그 `scanAnalyzeMode=`/`analyzeSlice`/`analyzeResume` + 상세 로그 `analyze.mode`. 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.87 |
+| 현재 버전 | 0.9.4.88 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
