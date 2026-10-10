@@ -954,7 +954,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   connect(viewBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int i) { groupViewChanged(i); });
   groupSearch_ = new QLineEdit(w); groupSearch_->setClearButtonEnabled(true);
   connect(groupSearch_, &QLineEdit::textChanged, this, &MainWindow::groupSearchChanged);
-  connect(sortBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { refreshGroupList(); });
+  connect(sortBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { rebuildGroups(); refreshGroupList(); });
   groupSearch_->setMaximumWidth(280); // balanced against the view button
   bar->addWidget(sortBox_); bar->addWidget(viewBox_); bar->addWidget(groupSearch_);
   lay->addLayout(bar);
@@ -1165,7 +1165,7 @@ void MainWindow::applyStaticTexts() {
   groupTitle_->setText(trStr(l, "groups") + QString(" (%1)").arg(groups_.size()));
   sortBox_->blockSignals(true);
   const int ssort = sortBox_->currentIndex();
-  sortBox_->clear(); sortBox_->addItem(trStr(l, "sortSim")); sortBox_->addItem(trStr(l, "sortName")); sortBox_->addItem(trStr(l, "sortNone"));
+  sortBox_->clear(); sortBox_->addItem(trStr(l, "sortNone")); sortBox_->addItem(trStr(l, "sortSim")); sortBox_->addItem(trStr(l, "sortName"));
   sortBox_->setCurrentIndex(ssort < 0 ? 0 : ssort);
   sortBox_->blockSignals(false);
   groupSearch_->setPlaceholderText(trStr(l, "searchGroups"));
@@ -2000,16 +2000,21 @@ void MainWindow::refreshStreaming(bool force) {
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   const qint64 interval = std::clamp(lastFillCostMs_ * 3, (qint64)600, (qint64)3000);
   // Data change (streamed matches or any matchSeq_ advance) is the only
-  // reason for a full rebuild. Thumbnail starvation alone fills visible
-  // icons in place below and must never recreate the widget list: that was
-  // the scroll regression (a starved catch-up destroying the scrolled
-  // position on every tick). A scroll-gated tick defers the rebuild without
-  // dropping it — groupsDirty_/lastFillSig_ stay set until it runs.
+  // reason for a refill. During a scan the middle pane is filled in append
+  // mode: existing rows/thumbnails are kept and only new groups are added at
+  // the bottom (the fill falls back to a full rebuild itself if a group
+  // merged). Thumbnail starvation alone fills visible icons in place below and
+  // must never recreate the widget list: that was the scroll regression (a
+  // starved catch-up destroying the scrolled position on every tick). A
+  // scroll-gated tick defers the refill without dropping it —
+  // groupsDirty_/lastFillSig_ stay set until it runs.
   const bool dataChanged = groupsDirty_ || (matchSeq_ != lastFillSig_);
   if (force || (dataChanged && !scrollGateActive() && now - lastFillMs_ >= interval)) {
-    rebuildGroups(); // also clears groupsDirty_: all known data now reflected
     QElapsedTimer t; t.start();
-    refreshGroupList(); refreshFileViews();
+    rebuildGroups(); // also clears groupsDirty_: all known data now reflected
+    // Append-only fill is valid only while the scan runs with sort=None; any
+    // other mode (or a post-scan tick) uses a full rebuild.
+    refreshGroupList(scanning_ && sortBox_->currentIndex() == kSortNone); refreshFileViews();
     lastFillCostMs_ = t.elapsed();
   } else if (!dataChanged && !sliderHeld_) {
     // P3: thumbnail requests are cheap hash lookups now (misses ask the
@@ -2097,20 +2102,46 @@ void MainWindow::rebuildGroups() {
     }
     g.best = 0; g.kind = pathKind_.value(g.paths[0], 1);
     for (const auto& p : g.paths) { g.pct[p] = bestPct_.value(p, 0); g.best = std::max(g.best, g.pct[p]); }
+    g.root = it.key();
     groups_.push_back(g);
   }
   const int sortMode = sortBox_->currentIndex();
   if (sortMode == kSortName) {
     std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) { return a.paths[0] < b.paths[0]; });
-  } else if (sortMode != kSortNone) {
-    // Similarity (default): best match first, path as the tie-break.
+  } else if (sortMode == kSortSim) {
+    // Similarity: best match first, path as the tie-break.
     std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) {
       if (a.best != b.best) return a.best > b.best;
       const QString ap = a.paths.isEmpty() ? QString() : a.paths.front();
       const QString bp = b.paths.isEmpty() ? QString() : b.paths.front();
       return ap < bp;
     });
-  } // kSortNone: keep the union-find build order; streamed matches only append.
+  } else {
+    // kSortNone: stable append order. Groups already listed keep their position;
+    // new groups (or ones whose union-find root changed by a merge) are appended
+    // at the bottom in root order. This is what lets the middle pane extend
+    // without recreating existing rows during a scan.
+    QSet<QString> present;
+    for (const auto& g : groups_) present.insert(g.root);
+    QStringList order;
+    for (const QString& r : noneOrder_) if (present.contains(r)) order << r;
+    QSet<QString> kept;
+    for (const QString& r : order) kept.insert(r);
+    QStringList fresh;
+    for (const auto& g : groups_) if (!kept.contains(g.root)) fresh << g.root;
+    std::sort(fresh.begin(), fresh.end());
+    order += fresh;
+    QHash<QString,int> idx;
+    for (int i = 0; i < groups_.size(); ++i) idx[groups_[i].root] = i;
+    QVector<DupGroup> reordered;
+    reordered.reserve(order.size());
+    for (const QString& r : order) reordered.push_back(groups_[idx.value(r)]);
+    groups_ = std::move(reordered);
+  }
+  // Record the resulting order as the None-mode baseline (also after a sorted
+  // fill) so switching to None later preserves the visible order.
+  noneOrder_.clear();
+  for (const auto& g : groups_) noneOrder_ << g.root;
   for (int i = 0; i < groups_.size(); ++i)
     for (const auto& p : groups_[i].paths) pathGroup_[p] = i;
   if (!selectedPath.isEmpty()) {
@@ -2325,7 +2356,82 @@ void MainWindow::setGroupMarked(int gi, bool on) {
   for (auto* g : grids) g->blockSignals(false);
   refreshFileViews(); updateStatusCounts();
 }
-void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel) {
+QString MainWindow::groupSig(const DupGroup& g) const {
+  // Signature used to detect a changed existing row during an append refresh:
+  // the file count and best similarity capture everything the row shows.
+  return QString::number(g.paths.size()) + ':' + QString::number(g.best, 'f', 1);
+}
+void MainWindow::addGroupItems(QTreeWidget* tree, QListWidget* grid, int i, int wantKind, bool syncSel) {
+  const auto& g = groups_[i];
+  qulonglong bytes = 0;
+  for (const auto& p : g.paths) bytes += fileSizeCached(p);
+  int marked = 0;
+  for (const auto& p : g.paths) if (marked_.contains(p)) ++marked;
+  auto* it = new QTreeWidgetItem(tree);
+  it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+  it->setCheckState(0, marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
+  it->setText(0, QString("%1 %2").arg(trStr(lang(), "group")).arg(i + 1));
+  it->setText(1, QString("%1 %2").arg(g.paths.size()).arg(trStr(lang(), "files")));
+  // Pairs = file count choose 2: direct pairwise comparisons a complete
+  // group implies. Transitive pairs may exceed verified matches — documented.
+  const qulonglong pairs = (qulonglong)g.paths.size() * ((qulonglong)g.paths.size() - 1) / 2;
+  it->setText(2, QString("%1 %2").arg(pairs).arg(trStr(lang(), "pairs")));
+  it->setText(3, QString("%1%").arg(g.best, 0, 'f', 1));
+  it->setText(4, fmtSize(bytes));
+  it->setData(0, Qt::UserRole, i);
+  if (syncSel && i == currentGroup_) tree->setCurrentItem(it);
+  const QString rep = g.paths.isEmpty() ? QString() : g.paths[0];
+  auto* li = new QListWidgetItem(fileThumb(rep, grid->iconSize()),
+                                 QString("%1 %2\n%3 %4 · %5 %6 · %7%\n%8")
+                                     .arg(trStr(lang(), "group")).arg(i + 1)
+                                     .arg(g.paths.size()).arg(trStr(lang(), "files"))
+                                     .arg(pairs).arg(trStr(lang(), "pairs")).arg(g.best, 0, 'f', 1)
+                                     .arg(fmtSize(bytes)));
+  li->setFlags(li->flags() | Qt::ItemIsUserCheckable);
+  li->setCheckState(marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
+  li->setData(Qt::UserRole, i);
+  li->setToolTip(rep);
+  grid->addItem(li);
+  if (syncSel && i == currentGroup_) grid->setCurrentItem(li);
+}
+void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel, bool append) {
+  // Ordered rows for this kind, each with a signature. The append path extends
+  // the existing pane; any structural change (merge/removal/order change) fails
+  // the prefix check and falls back to a full rebuild below.
+  const QString f = groupSearch_->text().trimmed().toLower();
+  QVector<QPair<QString,QString>> cur;
+  QVector<int> curIndex;
+  for (int i = 0; i < groups_.size(); ++i) {
+    const auto& g = groups_[i];
+    if (g.kind != wantKind) continue;
+    if (!f.isEmpty()) {
+      bool hit = false;
+      for (const auto& p : g.paths) if (p.toLower().contains(f)) { hit = true; break; }
+      if (!hit) continue;
+    }
+    cur.append({g.root, groupSig(g)});
+    curIndex.append(i);
+  }
+  QVector<QPair<QString,QString>>& shown = (wantKind == 2) ? vidShown_ : imgShown_;
+  bool canAppend = append && cur.size() >= shown.size();
+  if (canAppend) {
+    for (int k = 0; k < shown.size(); ++k)
+      if (shown[k] != cur[k]) { canAppend = false; break; }
+  }
+  if (canAppend) {
+    if (cur.size() == shown.size()) return; // nothing new: leave the pane untouched
+    // Append only the new rows at the bottom. Existing rows and their
+    // thumbnails are never recreated, so the scrolled view stays put.
+    tree->blockSignals(true); grid->blockSignals(true);
+    for (int k = shown.size(); k < cur.size(); ++k) addGroupItems(tree, grid, curIndex[k], wantKind, syncSel);
+    tree->resizeColumnToContents(0);
+    tree->doItemsLayout();
+    grid->doItemsLayout();
+    tree->blockSignals(false); grid->blockSignals(false);
+    shown = cur;
+    return;
+  }
+  // Full rebuild: clear and repopulate, restoring the scroll anchors.
   tree->blockSignals(true); grid->blockSignals(true);
   const int treePos = tree->verticalScrollBar() ? tree->verticalScrollBar()->value() : 0;
   const int gridPos = grid->verticalScrollBar() ? grid->verticalScrollBar()->value() : 0;
@@ -2359,46 +2465,7 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     }
   }
   tree->clear(); grid->clear();
-  const QString f = groupSearch_->text().trimmed().toLower();
-  for (int i = 0; i < groups_.size(); ++i) {
-    const auto& g = groups_[i];
-    if (g.kind != wantKind) continue;
-    if (!f.isEmpty()) {
-      bool hit = false;
-      for (const auto& p : g.paths) if (p.toLower().contains(f)) { hit = true; break; }
-      if (!hit) continue;
-    }
-    qulonglong bytes = 0;
-    for (const auto& p : g.paths) bytes += fileSizeCached(p);
-    int marked = 0;
-    for (const auto& p : g.paths) if (marked_.contains(p)) ++marked;
-    auto* it = new QTreeWidgetItem(tree);
-    it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
-    it->setCheckState(0, marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
-    it->setText(0, QString("%1 %2").arg(trStr(lang(), "group")).arg(i + 1));
-    it->setText(1, QString("%1 %2").arg(g.paths.size()).arg(trStr(lang(), "files")));
-    // Pairs = file count choose 2: direct pairwise comparisons a complete
-    // group implies. Transitive pairs may exceed verified matches — documented.
-    const qulonglong pairs = (qulonglong)g.paths.size() * ((qulonglong)g.paths.size() - 1) / 2;
-    it->setText(2, QString("%1 %2").arg(pairs).arg(trStr(lang(), "pairs")));
-    it->setText(3, QString("%1%").arg(g.best, 0, 'f', 1));
-    it->setText(4, fmtSize(bytes));
-    it->setData(0, Qt::UserRole, i);
-    if (syncSel && i == currentGroup_) tree->setCurrentItem(it);
-    const QString rep = g.paths.isEmpty() ? QString() : g.paths[0];
-    auto* li = new QListWidgetItem(fileThumb(rep, grid->iconSize()),
-                                   QString("%1 %2\n%3 %4 · %5 %6 · %7%\n%8")
-                                       .arg(trStr(lang(), "group")).arg(i + 1)
-                                       .arg(g.paths.size()).arg(trStr(lang(), "files"))
-                                       .arg(pairs).arg(trStr(lang(), "pairs")).arg(g.best, 0, 'f', 1)
-                                       .arg(fmtSize(bytes)));
-    li->setFlags(li->flags() | Qt::ItemIsUserCheckable);
-    li->setCheckState(marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
-    li->setData(Qt::UserRole, i);
-    li->setToolTip(rep);
-    grid->addItem(li);
-    if (syncSel && i == currentGroup_) grid->setCurrentItem(li);
-  }
+  for (int k = 0; k < curIndex.size(); ++k) addGroupItems(tree, grid, curIndex[k], wantKind, syncSel);
   tree->resizeColumnToContents(0);
   // Settle Batched layout before measuring the rebuilt anchor rectangles.
   // Layout changes geometry; it does not recreate items or move selection.
@@ -2438,13 +2505,15 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   }
   if (!restoredTree && tree->verticalScrollBar()) tree->verticalScrollBar()->setValue(treePos);
   if (!restoredGrid && grid->verticalScrollBar()) grid->verticalScrollBar()->setValue(gridPos);
+  shown = cur;
   tree->blockSignals(false); grid->blockSignals(false);
 }
-void MainWindow::refreshGroupList() {
-  // Test-only instrumentation: every destructive middle-pane refill passes
-  // through here (timer path and direct user-action callers alike), while
-  // thumbnail-only catch-up never does. Lets the regression test assert
-  // "catch-up ticks rebuild nothing, data changes rebuild".
+void MainWindow::refreshGroupList(bool append) {
+  // Test-only instrumentation: every middle-pane refill (full rebuild or the
+  // append-only scan path) passes through here (timer path and direct
+  // user-action callers alike), while thumbnail-only catch-up never does. Lets
+  // the regression test assert "catch-up ticks rebuild nothing, data changes
+  // rebuild".
   ++fullRebuildCount_;
   // Coverage bookkeeping lives here for the same reason: any full fill
   // (streaming, finish, sort, search, tab) reflects all matches known, so a
@@ -2461,8 +2530,8 @@ void MainWindow::refreshGroupList() {
   // thumbnail decodes) for a hidden tab every 600ms is pure GUI-thread waste.
   // Switching tabs calls refreshGroupList() via activateTab(), so the hidden
   // side is always filled lazily on show.
-  if (tab == 0) fillPair(imgTree_, imgGrid_, 1, true);
-  else if (tab == 1) fillPair(vidTree_, vidGrid_, 2, true);
+  if (tab == 0) fillPair(imgTree_, imgGrid_, 1, true, append);
+  else if (tab == 1) fillPair(vidTree_, vidGrid_, 2, true, append);
   updateGroupFoot();
   updateIgnoreTab();
 }

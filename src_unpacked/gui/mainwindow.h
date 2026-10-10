@@ -13,6 +13,7 @@
 #include <QHash>
 #include <QMap>
 #include <QSet>
+#include <QPair>
 #include <atomic>
 #include <string>
 #include <vector>
@@ -66,6 +67,7 @@ struct DupGroup {
   double best=0;          // best similarity inside the group
   int kind=1;             // 1=image, 2=video (MediaKind values)
   QHash<QString,double> pct; // per-path best percent
+  QString root;           // union-find root (stable group identity for append)
 };
 
 class MainWindow : public QMainWindow {
@@ -180,7 +182,7 @@ private:
   void flushThumbLayout();       // one coalesced Batched layout for arrived thumbnails
   bool scrollGateActive() const; // slider held or inside the post-scroll cooldown
   void noteUserScroll();         // stamp a user navigation event (wheel/keys/slider)
-  void refreshGroupList();       // middle pane from groups_
+  void refreshGroupList(bool append=false); // middle pane from groups_ (append=extend only)
   void refreshFileViews();       // right grid+list from selected group
   void refreshDetail();          // tabs for current file
   void refreshSummary(const msf::SearchReport* r=nullptr);
@@ -310,12 +312,19 @@ private:
   QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValIndexed_=nullptr,*sumValGroups_=nullptr,
     *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr;
   // middle
-  // Group sort: 0=similarity, 1=name, 2=none. "None" keeps the union-find build
-  // order so streamed matches only append; a running scan locks the combo to
-  // None and restores the user's choice when the scan ends.
-  static constexpr int kSortSim = 0, kSortName = 1, kSortNone = 2;
+  // Group sort: 0=none (default, top), 1=similarity, 2=name. "None" keeps a
+  // stable append order (existing groups keep their position, new groups are
+  // appended) so the middle pane extends without recreating rows during a scan;
+  // a running scan locks the combo to None and restores the user's choice when
+  // the scan ends.
+  static constexpr int kSortNone = 0, kSortSim = 1, kSortName = 2;
   QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;
-  int preScanSort_ = kSortSim; // sort restored when the running scan ends
+  int preScanSort_ = kSortNone; // sort restored when the running scan ends
+  // None-mode stable group order (union-find roots) and the per-kind rows
+  // currently materialized in the middle pane: (root, signature) pairs used to
+  // decide whether a refresh can append or must fall back to a full rebuild.
+  QStringList noneOrder_;
+  QVector<QPair<QString,QString>> imgShown_, vidShown_;
   QTabWidget* midTabs_=nullptr;
   QTreeWidget *imgTree_=nullptr, *vidTree_=nullptr;
   QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;
@@ -329,7 +338,9 @@ private:
   QSplitter* split_=nullptr;
   QTreeWidget* groupsView_=nullptr; QLabel* groupFoot_=nullptr;
   void connectResView(QTreeWidget* tree, QListWidget* grid);
-  void fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel);
+  void fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel, bool append);
+  void addGroupItems(QTreeWidget* tree, QListWidget* grid, int i, int wantKind, bool syncSel);
+  QString groupSig(const DupGroup& g) const; // (size,best) signature for append-change detection
   void activateTab(int idx);
   void onMidTabChanged(int idx);
   void updateIgnoreTab();
