@@ -170,6 +170,7 @@ private:
   void buildUi(); void buildToolbar(); void buildLeft(QWidget*); void buildMiddle(QWidget*); void buildRight(QWidget*);
   void paintTestButton(); // checked-state highlight for the Test Mode toggle
   void setRunning(bool);
+  void updateSortEnabled(); // group-sort combo enabled only when idle on a group tab
   void applyDetailLogVisibility(); // show/hide logTgl_ from ui/showDetailLog (default ON)
   void rebuildGroups();          // union-find over accumulated matches
   void updateGroupFoot();        // "전체 N · 선택 M" footer label
@@ -309,7 +310,12 @@ private:
   QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValIndexed_=nullptr,*sumValGroups_=nullptr,
     *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr;
   // middle
+  // Group sort: 0=similarity, 1=name, 2=none. "None" keeps the union-find build
+  // order so streamed matches only append; a running scan locks the combo to
+  // None and restores the user's choice when the scan ends.
+  static constexpr int kSortSim = 0, kSortName = 1, kSortNone = 2;
   QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;
+  int preScanSort_ = kSortSim; // sort restored when the running scan ends
   QTabWidget* midTabs_=nullptr;
   QTreeWidget *imgTree_=nullptr, *vidTree_=nullptr;
   QListWidget *imgGrid_=nullptr, *vidGrid_=nullptr;

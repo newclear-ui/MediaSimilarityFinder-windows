@@ -185,6 +185,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"kindVideos")) return S("영상","Videos");
   if (!std::strcmp(key,"sortSim")) return S("유사도 내림차순","Similarity");
   if (!std::strcmp(key,"sortName")) return S("이름 오름차순","Name");
+  if (!std::strcmp(key,"sortNone")) return S("없음","None");
   if (!std::strcmp(key,"searchGroups")) return S("그룹 검색","Search groups");
   if (!std::strcmp(key,"exportCsv")) return S("그룹 내보내기 (CSV)","Export groups (CSV)");
   if (!std::strcmp(key,"group")) return S("그룹","Group");
@@ -1164,7 +1165,7 @@ void MainWindow::applyStaticTexts() {
   groupTitle_->setText(trStr(l, "groups") + QString(" (%1)").arg(groups_.size()));
   sortBox_->blockSignals(true);
   const int ssort = sortBox_->currentIndex();
-  sortBox_->clear(); sortBox_->addItem(trStr(l, "sortSim")); sortBox_->addItem(trStr(l, "sortName"));
+  sortBox_->clear(); sortBox_->addItem(trStr(l, "sortSim")); sortBox_->addItem(trStr(l, "sortName")); sortBox_->addItem(trStr(l, "sortNone"));
   sortBox_->setCurrentIndex(ssort < 0 ? 0 : ssort);
   sortBox_->blockSignals(false);
   groupSearch_->setPlaceholderText(trStr(l, "searchGroups"));
@@ -1279,8 +1280,25 @@ void MainWindow::setRunning(bool v) {
     lastListN_ = 0;
     targetTotal_ = 0;
     targetKnown_ = false;
+    // Lock the group sort to None for the whole scan. A similarity/name order
+    // must re-place every streamed match, which churned the pane (new groups
+    // inserted into a sorted list). None keeps the union-find build order, so
+    // streamed matches only append. The user's choice is restored at scan end.
+    preScanSort_ = sortBox_->currentIndex();
+    if (sortBox_->currentIndex() != kSortNone) {
+      sortBox_->blockSignals(true);
+      sortBox_->setCurrentIndex(kSortNone);
+      sortBox_->blockSignals(false);
+    }
   } else {
     scanPaused_ = false;
+    // Scan over (indexing + post-processing done): let the user sort by
+    // similarity or name again by restoring their pre-scan choice.
+    if (preScanSort_ >= 0 && sortBox_->currentIndex() != preScanSort_) {
+      sortBox_->blockSignals(true);
+      sortBox_->setCurrentIndex(preScanSort_);
+      sortBox_->blockSignals(false);
+    }
   }
   scanning_ = v;
   // P3 backend guard (§21): the Start button stays disabled while the backend
@@ -1299,6 +1317,7 @@ void MainWindow::setRunning(bool v) {
   // A scan starting or ending changes the execution enable state, so the gate
   // is reapplied here rather than being duplicated at each call site.
   updateExecutionUiState();
+  updateSortEnabled();
 }
 void MainWindow::startScan() {
   // User-initiated start: reset the crash auto-resume budget.
@@ -2080,15 +2099,18 @@ void MainWindow::rebuildGroups() {
     for (const auto& p : g.paths) { g.pct[p] = bestPct_.value(p, 0); g.best = std::max(g.best, g.pct[p]); }
     groups_.push_back(g);
   }
-  if (sortBox_->currentIndex() == 1)
+  const int sortMode = sortBox_->currentIndex();
+  if (sortMode == kSortName) {
     std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) { return a.paths[0] < b.paths[0]; });
-  else
+  } else if (sortMode != kSortNone) {
+    // Similarity (default): best match first, path as the tie-break.
     std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) {
       if (a.best != b.best) return a.best > b.best;
       const QString ap = a.paths.isEmpty() ? QString() : a.paths.front();
       const QString bp = b.paths.isEmpty() ? QString() : b.paths.front();
       return ap < bp;
     });
+  } // kSortNone: keep the union-find build order; streamed matches only append.
   for (int i = 0; i < groups_.size(); ++i)
     for (const auto& p : groups_[i].paths) pathGroup_[p] = i;
   if (!selectedPath.isEmpty()) {
@@ -2444,9 +2466,15 @@ void MainWindow::refreshGroupList() {
   updateGroupFoot();
   updateIgnoreTab();
 }
+void MainWindow::updateSortEnabled() {
+  // The group-sort combo is usable only on a group tab and only when no scan is
+  // running (a scan locks it to None; see setRunning()).
+  const int t = midTabs_ ? midTabs_->currentIndex() : 0;
+  sortBox_->setEnabled((t == 0 || t == 1) && !scanning_);
+}
 void MainWindow::activateTab(int idx) {
   const bool res = (idx == 0 || idx == 1);
-  sortBox_->setEnabled(res); viewBox_->setEnabled(res); groupSearch_->setEnabled(res);
+  updateSortEnabled(); viewBox_->setEnabled(res); groupSearch_->setEnabled(res);
   if (idx == 0 || idx == 1) {
     groupsView_ = (idx == 1) ? vidTree_ : imgTree_;
     groupsList_ = (idx == 1) ? vidGrid_ : imgGrid_;
