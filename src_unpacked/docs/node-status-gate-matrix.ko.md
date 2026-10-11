@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.91` (그룹 정렬 "없음" 최상단/기본값 + append-only 목록) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.92` (쌍검증 DBV-1/DBV-2: 캐시키 읽기 제거 + 캐시 확대) · CPU CTest 122/122 · GPU CTest 123/123
 최종 갱신: 2026-10-10
 
 ## 이 문서의 역할

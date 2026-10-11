@@ -69,6 +69,10 @@ Orphaned thumbnail rows are pruned when a scan finishes.
 This document describes the current storage design. Version-specific changes are
 recorded separately under `docs/build-history/`.
 
+For the detailed DB schema/versions/sharing model and the planned pair-verification
+speedups see `docs/architecture/database-structure.en.md`; their measurement record is
+`docs/architecture/database-verification-benchmark.en.md`.
+
 The Korean counterpart is `docs/architecture/storage-design.ko.md`. The two files
 are preserved as independent KO/EN documents and are not renamed; their content is
 identical.

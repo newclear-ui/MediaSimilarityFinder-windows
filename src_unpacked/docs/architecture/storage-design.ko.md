@@ -69,6 +69,10 @@ WAL 모드가 이를 스캔 연결과 공존하도록 한다.
 이 문서는 현재 저장 설계를 기술한다. 버전별 변경은 `docs/build-history/` 아래에
 별도로 기록한다.
 
+DB 스키마/버전/공유 모델의 상세와 쌍매칭 검증 개선 예정 내역은
+`docs/architecture/database-structure.ko.md`, 그 실측은
+`docs/architecture/database-verification-benchmark.ko.md`를 따른다.
+
 영문 각본은 `docs/architecture/storage-design.md` 이며, 두 파일은 서로 독립된
 KO/EN 문서로 각각 보존된다(개명하지 않는다). 두 각본의 내용은 동일하다.
 
