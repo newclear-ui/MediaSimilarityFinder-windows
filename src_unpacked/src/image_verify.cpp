@@ -20,10 +20,18 @@ inline double msSince(std::chrono::steady_clock::time_point t0) {
   return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 }
 struct VerifyBuffers { GrayImage full; GrayImage asp; };
-struct VerifyCacheKey { std::string path; std::uint64_t size=0; std::uint64_t modified=0; std::string quickHash; bool operator==(const VerifyCacheKey& o) const { return path==o.path&&size==o.size&&modified==o.modified&&quickHash==o.quickHash; } };
+// DBV-1 (0.9.4.92): the key is (path,size,modified). The former 64 KiB
+// quick-hash read was ~13% of verify wall on a high-latency drive and is
+// redundant inside a scan (content cannot change between index and verify). A
+// same-size+same-mtime content change is the (rare) miss, exactly as with the
+// whole-dataset fingerprint cache (0.9.4.86).
+struct VerifyCacheKey { std::string path; std::uint64_t size=0; std::uint64_t modified=0; bool operator==(const VerifyCacheKey& o) const { return path==o.path&&size==o.size&&modified==o.modified; } };
 struct VerifyCacheKeyHash { std::size_t operator()(const VerifyCacheKey& k) const noexcept {
-  std::size_t h=std::hash<std::string>{}(k.path); h^=std::hash<std::uint64_t>{}(k.size+0x9e3779b97f4a7c15ULL+(h<<6)+(h>>2)); h^=std::hash<std::uint64_t>{}(k.modified+0x9e3779b97f4a7c15ULL+(h<<6)+(h>>2)); h^=std::hash<std::string>{}(k.quickHash); return h; } };
-constexpr std::size_t kVerifyCacheMax = 32;
+  std::size_t h=std::hash<std::string>{}(k.path); h^=std::hash<std::uint64_t>{}(k.size+0x9e3779b97f4a7c15ULL+(h<<6)+(h>>2)); h^=std::hash<std::uint64_t>{}(k.modified+0x9e3779b97f4a7c15ULL+(h<<6)+(h>>2)); return h; } };
+// DBV-2 (0.9.4.92): 32 entries was effectively useless against 14k distinct
+// files (9.1% hit rate). 1024 entries (~8 KB each, ~8 MB) lets a file reused
+// across pairs stay resident, cutting decode misses.
+constexpr std::size_t kVerifyCacheMax = 1024;
 std::mutex verifyCacheMutex;
 std::list<std::pair<VerifyCacheKey,VerifyBuffers>> verifyCacheList;
 std::unordered_map<VerifyCacheKey,std::list<std::pair<VerifyCacheKey,VerifyBuffers>>::iterator,VerifyCacheKeyHash> verifyCacheMap;
@@ -47,13 +55,11 @@ bool verifyBuffersFor(const std::string& path, GrayImage& full, GrayImage& asp,
   if(ec) return false;
   const std::uint64_t mt = (std::uint64_t)std::filesystem::last_write_time(widePath, ec).time_since_epoch().count();
   if(ec) return false;
-  std::ifstream qf(widePath,std::ios::binary); unsigned char b[65536]; qf.read(reinterpret_cast<char*>(b),sizeof(b)); const std::size_t n=static_cast<std::size_t>(qf.gcount()); std::uint64_t q=1469598103934665603ULL; for(std::size_t i=0;i<n;++i){q^=b[i];q*=1099511628211ULL;}
-  const VerifyCacheKey key{path, sz, mt, std::to_string(q)};
+  // DBV-1: no file read; the key is (path,size,modified) only.
+  const VerifyCacheKey key{path, sz, mt};
   if(tel){
     tel->verifyKeyMs += msSince(tKey0);
     ++tel->verifyBufferLookups;
-    ++tel->verifyQuickHashReads;
-    tel->verifyQuickHashBytes += n;
   }
   {
     // D9d: wait is measured around the lock attempt, hold around the critical
