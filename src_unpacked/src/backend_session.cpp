@@ -197,7 +197,10 @@ void BackendSession::pushStatusSnapshot() {
 
 msf::JpegThumb BackendSession::requestThumb(const QString& path, bool isVideo, int desiredMaxDim) {
     msf::JpegThumb miss;
-    if (!worker_) return miss;
+    // 0.9.4.93: no worker required. A load-only view ("불러오기") has no scan
+    // worker, and the store serves from the persistent disk thumbnails (or a
+    // WIC/FFmpeg decode) on its own. engineFetch below stays optional.
+    if (lastRoot_.isEmpty() || lastAppDir_.isEmpty()) return miss;
     thumbs_.ensureOpen(lastAppDir_.toStdString(), lastRoot_.toStdString());
     const std::string p = path.toStdString();
     auto engineFetch = [&]() -> msf::RawArt {
@@ -324,6 +327,41 @@ void BackendSession::startMonitor(const QStringList& watchRoots, const QStringLi
 
 void BackendSession::stopMonitor() {
     if (monitor_) monitor_->stop();
+}
+
+void BackendSession::loadIndex(const QString& root, const QString& appDir) {
+    // Load-only (0.9.4.93): no walk, no analysis. Open the root's index, read
+    // the stored files and pairs, and report them through the same
+    // results()/quickLoaded() signals a scan uses, so the GUI reuses its
+    // existing population path (onResults + onQuickLoaded).
+    msf::MediaSearchEngine engine;
+    if (!engine.openIndexForRoot(root.toStdString(), appDir.toStdString())) {
+        emit failed(QStringLiteral("load index failed: %1").arg(root));
+        return;
+    }
+    lastRoot_ = root;
+    lastAppDir_ = appDir;
+    const auto states = engine.storedFiles();
+    const auto matches = engine.loadMatches();
+    engine.close();
+    QVector<GuiFile> files;
+    files.reserve((int)states.size());
+    for (const auto& f : states) {
+        GuiFile g;
+        g.path = QString::fromStdString(f.path);
+        g.size = (qulonglong)f.size;
+        g.fpHex = QString("%1").arg((qulonglong)f.fingerprint, 16, 16, QChar('0'));
+        g.duration = f.duration;
+        files.push_back(g);
+    }
+    QStringList rows;
+    rows.reserve((int)matches.size());
+    for (const auto& m : matches)
+        rows << (QString::fromStdString(m.leftPath) + "\t" +
+                 QString::fromStdString(m.rightPath) + "\t" +
+                 QString::number(m.percent, 'f', 1));
+    emit quickLoaded((int)matches.size());
+    emit results(files, rows);
 }
 
 void BackendSession::updateResourcePolicy(int cpuMode, int cpuPercent, int gpuPercent,

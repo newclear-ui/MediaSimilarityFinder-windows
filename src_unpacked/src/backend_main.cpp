@@ -160,6 +160,9 @@ private:
             sendReady();
         } else if (t == QLatin1String(msf_ipc::kStartScan)) {
             startScanFrom(m);
+        } else if (t == QLatin1String(msf_ipc::kLoadIndex)) {
+            session_->loadIndex(m.payload.value(QStringLiteral("root")).toString(),
+                                m.payload.value(QStringLiteral("appDir")).toString());
         } else if (t == QLatin1String(msf_ipc::kPause)) {
             session_->pause();
         } else if (t == QLatin1String(msf_ipc::kResume)) {

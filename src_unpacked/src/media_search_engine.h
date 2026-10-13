@@ -122,6 +122,10 @@ public:
  // Load the pairs persisted by the last completed scan. Paths use the same
  // canonical UTF-8 form as scan results, so reload maps 1:1 onto files().
   std::vector<SearchMatch> loadMatches() const;
+  // 0.9.4.93: the stored index rows (one per indexed file). The load-only path
+  // ("불러오기" / Load) uses this to populate the GUI list and previews from the
+  // index without walking or analyzing anything.
+  std::vector<FileState> storedFiles() const { return db_.all(); }
  // Re-verify stored pairs against the current verdict logic without a full
  // rescan (no directory walk, no re-analysis). Images re-run bestMatch plus
  // the SSIM gate on DB fingerprints (grey-zone decodes only); videos re-run

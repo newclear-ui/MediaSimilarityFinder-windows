@@ -118,6 +118,17 @@ void BackendSupervisor::startScan(const BackendScanConfig& cfg) {
     sendCommand(msf_ipc::kStartScan, p);
 }
 
+void BackendSupervisor::loadIndex(const QString& root, const QString& appDir) {
+    if (!backendReady_ || !processAlive()) {
+        emit failed(QStringLiteral("backend unavailable — load not started"));
+        return;
+    }
+    QJsonObject p;
+    p[QStringLiteral("root")] = root;
+    p[QStringLiteral("appDir")] = appDir;
+    sendCommand(msf_ipc::kLoadIndex, p);
+}
+
 void BackendSupervisor::pause() {
     if (processAlive()) sendCommand(msf_ipc::kPause, {});
 }

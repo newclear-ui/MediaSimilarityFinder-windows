@@ -174,6 +174,10 @@ public:
     // loopback is a no-op). Idempotent: safe to call on every show.
     virtual void ensureRunning() = 0;
     virtual void startScan(const BackendScanConfig& cfg) = 0;
+    // 0.9.4.93: load-only ("불러오기" / Load). Reads the root's stored index and
+    // reports files+pairs through the normal results()/quickLoaded() signals,
+    // with no walk or analysis. root+appDir mirror startScan's index identity.
+    virtual void loadIndex(const QString& root, const QString& appDir) = 0;
     virtual void pause() = 0;
     virtual void resume() = 0;
     virtual void cancel() = 0;

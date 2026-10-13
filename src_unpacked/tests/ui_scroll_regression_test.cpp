@@ -140,6 +140,33 @@ int main(int argc, char** argv) {
     std::cerr << "  [phase] starting scan" << std::endl;
     scan->click();
     QApplication::processEvents();
+    // Phase 0b: while the scan streams, once the group grid has grown, scroll it
+    // and click a visible row; the streamed refresh must not jump the list to the
+    // top. This exercises the append-only fill path that post-scan ticks never do.
+    {
+        auto* liveGrid = w.findChild<QListWidget*>("imgGrid");
+        QElapsedTimer t; t.start();
+        while (liveGrid && liveGrid->count() < 60 && t.elapsed() < 60000) {
+            QApplication::processEvents();
+            QThread::msleep(20);
+        }
+        if (liveGrid && liveGrid->count() >= 60) {
+            liveGrid->scrollToBottom();
+            liveGrid->doItemsLayout();
+            QApplication::processEvents();
+            auto* bar = liveGrid->verticalScrollBar();
+            const int before = bar ? bar->value() : -1;
+            const QPoint mid(liveGrid->viewport()->width() / 2, liveGrid->viewport()->height() / 2);
+            if (auto* it = liveGrid->itemAt(mid)) liveGrid->setCurrentItem(it);
+            for (int i = 0; i < 3; ++i) { w.testUiTick(); QApplication::processEvents(); }
+            std::cout << "  [info] during-scan select-scroll before=" << before
+                      << " after=" << (bar ? bar->value() : -1) << "\n";
+            check(bar && bar->value() == before, "during-scan click keeps the scroll position");
+        } else {
+            std::cout << "  [info] during-scan grid never reached 60 items; phase skipped\n";
+            ++gChecks;
+        }
+    }
     pumpUntil([&] { return scan->isEnabled(); }, 240000, "scan finished (button re-enabled)");
     if (!gOk) return 2;
     QApplication::processEvents();
@@ -157,6 +184,23 @@ int main(int argc, char** argv) {
     std::cout << "  [info] grid items=" << n << "\n";
     check(n >= 80, "enough groups for starvation and scrolling");
     check(tree->topLevelItemCount() == n, "tree and grid agree on group count");
+
+    // Phase 1b: selecting a visible group after scrolling must not move the
+    // list. User-reported defect: scroll down, click a row, the list jumps to
+    // the top. This pins that contract for the grid.
+    {
+        grid->scrollToBottom();
+        grid->doItemsLayout();
+        QApplication::processEvents();
+        auto* bar = grid->verticalScrollBar();
+        const int before = bar ? bar->value() : -1;
+        const QPoint mid(grid->viewport()->width() / 2, grid->viewport()->height() / 2);
+        if (auto* it = grid->itemAt(mid)) grid->setCurrentItem(it);
+        QApplication::processEvents();
+        std::cout << "  [info] select-scroll before=" << before
+                  << " after=" << (bar ? bar->value() : -1) << "\n";
+        check(bar && bar->value() == before, "clicking a visible group keeps the scroll position");
+    }
 
     // Phase 2: thumbnail catch-up ticks rebuild nothing but fill icons.
     // P3 async model: catch-up requests misses, arrivals paint via

@@ -100,6 +100,10 @@ void LoopbackBackendClient::startScan(const BackendScanConfig& cfg) {
                         static_cast<int>(cfg.analyzeMode));
 }
 
+void LoopbackBackendClient::loadIndex(const QString& root, const QString& appDir) {
+    session_->loadIndex(root, appDir);
+}
+
 void LoopbackBackendClient::startMonitor(const QStringList& watchRoots, const QStringList& compareRoots,
                                         const QString& appDir, double thresholdPercent,
                                         int stableSeconds, int pollSeconds, bool gpuEnabled,

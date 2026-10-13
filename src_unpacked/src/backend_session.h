@@ -71,6 +71,10 @@ public:
     // safe at scan start). Reports through onPolicyApplied().
     void updateResourcePolicy(int cpuMode, int cpuPercent, int gpuPercent,
                               int strategy, bool gpuEnabled);
+    // 0.9.4.93: load-only path. Opens the root's index, reads the stored files
+    // and pairs, and reports them through results()/quickLoaded() without any
+    // walk or analysis. Replaces the current view with the index content.
+    void loadIndex(const QString& root, const QString& appDir);
     void pause();
     void resume();
     void cancel();

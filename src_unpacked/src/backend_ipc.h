@@ -34,6 +34,7 @@ bool decodeLine(const QByteArray& line, Message& out, QString& rejectReason);
 // Command types (GUI → Backend).
 inline const char* kHello = "HELLO";
 inline const char* kStartScan = "START_SCAN";
+inline const char* kLoadIndex = "LOAD_INDEX";
 inline const char* kPause = "PAUSE";
 inline const char* kResume = "RESUME";
 inline const char* kCancel = "CANCEL";

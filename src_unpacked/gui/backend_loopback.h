@@ -19,6 +19,7 @@ public:
     ~LoopbackBackendClient() override = default;
 
     void startScan(const BackendScanConfig& cfg) override;
+    void loadIndex(const QString& root, const QString& appDir) override;
     void ensureRunning() override {} // loopback needs no process
     void pause() override { session_->pause(); }
     void resume() override { session_->resume(); }

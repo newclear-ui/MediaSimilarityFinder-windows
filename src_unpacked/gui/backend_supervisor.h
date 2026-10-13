@@ -48,6 +48,7 @@ public:
     // BackendClient (same contract as loopback; transport underneath).
     void ensureRunning() override;
     void startScan(const BackendScanConfig& cfg) override;
+    void loadIndex(const QString& root, const QString& appDir) override;
     void pause() override;
     void resume() override;
     void cancel() override;

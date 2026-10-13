@@ -115,7 +115,10 @@ QString trStr(UiLang lang, const char* key) {
   auto S = [&](const char* k, const QString& e) -> QString { return ko ? QString::fromUtf8(k) : e; };
   if (!std::strcmp(key,"app")) return S("Media Similarity Finder","Media Similarity Finder");
   if (!std::strcmp(key,"selectFolder")) return S("폴더 선택","Select folder");
-  if (!std::strcmp(key,"refresh")) return S("새로고침","Refresh");
+  if (!std::strcmp(key,"load")) return S("불러오기","Load");
+  if (!std::strcmp(key,"loadRunning")) return S("인덱스에서 불러오는 중…","Loading from index…");
+  if (!std::strcmp(key,"loadWait")) return S("인덱스 목록 로딩중…","Loading index list…");
+  if (!std::strcmp(key,"loadWaitTitle")) return S("인덱스 불러오기","Loading index");
   if (!std::strcmp(key,"start")) return S("검색/업데이트 시작","Start scan/update");
   if (!std::strcmp(key,"pause")) return S("일시정지","Pause");
   if (!std::strcmp(key,"resume")) return S("계속","Resume");
@@ -362,9 +365,10 @@ static void applySelectionStyle(QWidget* w) {
 // (or while a stop request winds down in-flight analyses). It is closed as
 // soon as the real results are on screen, so users wait instead of closing
 // the program mid-rebuild.
-static QDialog* showReportWaitPopup(QWidget* parent, UiLang lang, const char* textKey = "repWait") {
+static QDialog* showReportWaitPopup(QWidget* parent, UiLang lang, const char* textKey = "repWait",
+                                    const char* titleKey = "repWaitTitle") {
   auto* dlg = new QDialog(parent);
-  dlg->setWindowTitle(trStr(lang, "repWaitTitle"));
+  dlg->setWindowTitle(trStr(lang, titleKey));
   dlg->setModal(false);
   auto* lay = new QVBoxLayout(dlg);
   lay->setContentsMargins(24, 18, 24, 18);
@@ -704,9 +708,9 @@ void MainWindow::buildToolbar() {
   folder_->setPlaceholderText(QStringLiteral("D:\\MediaLibrary"));
   folder_->setMinimumWidth(200);
   QSettings st; folder_->setText(st.value("ui/lastFolder", "").toString());
-  refresh_ = new QPushButton(QStringLiteral("🔄 ") + trStr(lang(), "refresh"), toolBar_);
-  refresh_->setToolTip(trStr(lang(), "refresh"));
-  connect(refresh_, &QPushButton::clicked, this, &MainWindow::refreshFolders);
+  refresh_ = new QPushButton(QStringLiteral("📂 ") + trStr(lang(), "load"), toolBar_);
+  refresh_->setToolTip(trStr(lang(), "load"));
+  connect(refresh_, &QPushButton::clicked, this, &MainWindow::loadIndex);
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
   scan_->setDefault(true);
   pause_ = new QPushButton(toolBar_); pause_->setCheckable(true); cancel_ = new QPushButton(toolBar_);
@@ -1110,7 +1114,7 @@ void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
   setWindowTitle(trStr(l, "app") + QStringLiteral(" ") + QString::fromLatin1(MSF_BUILD_VERSION));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
-  refresh_->setText(QStringLiteral("🔄 ") + trStr(l, "refresh"));
+  refresh_->setText(QStringLiteral("📂 ") + trStr(l, "load"));
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
   pause_->setChecked(scanPaused_);
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
@@ -1284,6 +1288,8 @@ void MainWindow::setRunning(bool v) {
     // must re-place every streamed match, which churned the pane (new groups
     // inserted into a sorted list). None keeps the union-find build order, so
     // streamed matches only append. The user's choice is restored at scan end.
+    // A scan takes over the sort lock from a previous load.
+    loadLockSort_ = false;
     preScanSort_ = sortBox_->currentIndex();
     if (sortBox_->currentIndex() != kSortNone) {
       sortBox_->blockSignals(true);
@@ -1700,6 +1706,17 @@ void MainWindow::scanFinished(QString msg) {
 }
 void MainWindow::scanFailed(QString msg) {
   scanLog(QString("failed %1").arg(msg));
+  // A failed load-only request is not a scan failure: clear the load state and
+  // report it without the scan-failure machinery.
+  if (loading_) {
+    loading_ = false;
+    if (loadWait_) { loadWait_->close(); loadWait_->deleteLater(); loadWait_ = nullptr; }
+    scan_->setEnabled(backendAvailable_);
+    refresh_->setEnabled(true);
+    QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
+    statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
+    return;
+  }
   const bool backendInterrupted =
       msg.contains(QStringLiteral("backend process exited unexpectedly")) ||
       msg.contains(QStringLiteral("backend lost — scan aborted"));
@@ -1723,9 +1740,21 @@ std::string MainWindow::telemetryJsonForTest() const {
   return backend_->telemetryJsonForTest();
 }
 void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
-  QDialog* wait = cancelWait_;
-  cancelWait_ = nullptr;
-  if (!wait) wait = showReportWaitPopup(this, lang());
+  // Load-only ("불러오기") answers through this same path but must NOT show the
+  // finished-scan report popup; it closes its own loading notice and re-enables
+  // the buttons. A scan answer keeps the existing behavior.
+  QDialog* wait = nullptr;
+  if (loading_) {
+    loading_ = false;
+    wait = loadWait_;
+    loadWait_ = nullptr;
+    scan_->setEnabled(backendAvailable_);
+    refresh_->setEnabled(true);
+  } else {
+    wait = cancelWait_;
+    cancelWait_ = nullptr;
+    if (!wait) wait = showReportWaitPopup(this, lang());
+  }
   allPaths_.clear(); matchRows_ = matchRows;
   fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   for (const auto& f : files) {
@@ -1741,8 +1770,7 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
     addMatch(p[0], p[1], p[2].toDouble(), isVideoExt(p[0]) ? 2 : 1);
   }
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
-  wait->close();
-  wait->deleteLater();
+  if (wait) { wait->close(); wait->deleteLater(); }
 }
 void MainWindow::resourceChanged(int i) {
   auto m = static_cast<msf::ResourceMode>(i + 1);
@@ -1904,6 +1932,40 @@ void MainWindow::refreshFolders() {
   }
   auto* net = new QTreeWidgetItem(folders_, QStringList(trStr(lang(), "network")));
   net->setIcon(0, icons.icon(QFileIconProvider::Network));
+}
+void MainWindow::loadIndex() {
+  // 0.9.4.93: load-only. Replace the current view with the selected folder's
+  // stored index content (files + pairs) without walking or analyzing. The
+  // Backend answers through the normal results()/quickLoaded() path, so the
+  // list and previews populate exactly like a scan finish.
+  if (scanning_ || loading_ || !backend_) return;
+  const QString root = folder_->text();
+  if (root.isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
+  // The view is replaced: drop the previous accumulation so old groups cannot
+  // linger next to the loaded ones.
+  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
+  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
+  pathParent_.clear(); groups_.clear(); pathGroup_.clear();
+  noneOrder_.clear(); imgShown_.clear(); vidShown_.clear();
+  marked_.clear();
+  currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
+  matchSeq_ = 0; groupsDirty_ = false; lastFillSig_ = 0;
+  // Load shows the stored order: sort = None, locked until the next scan.
+  sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
+  loadLockSort_ = true;
+  updateSortEnabled();
+  refreshGroupList(); refreshFileViews(); refreshDetail();
+  statusMsg_->setText(trStr(lang(), "loadRunning"));
+  // One press per load: disable the button and show a NON-modal notice, so the
+  // window stays movable while the index is read. onResults clears both.
+  loading_ = true;
+  refresh_->setEnabled(false);
+  scan_->setEnabled(false);
+  // The load notice is a SEPARATE popup from the finished-scan report popup:
+  // its own title ("인덱스 불러오기") and body ("인덱스 목록 로딩중…"), so a load
+  // never shows the "검색 리포트 작성중" wording.
+  loadWait_ = showReportWaitPopup(this, lang(), "loadWait", "loadWaitTitle");
+  backend_->loadIndex(root, QApplication::applicationDirPath());
 }
 void MainWindow::populateFolderChildren(QTreeWidgetItem* it) {
   if (!it) return;
@@ -2539,7 +2601,7 @@ void MainWindow::updateSortEnabled() {
   // The group-sort combo is usable only on a group tab and only when no scan is
   // running (a scan locks it to None; see setRunning()).
   const int t = midTabs_ ? midTabs_->currentIndex() : 0;
-  sortBox_->setEnabled((t == 0 || t == 1) && !scanning_);
+  sortBox_->setEnabled((t == 0 || t == 1) && !scanning_ && !loadLockSort_);
 }
 void MainWindow::activateTab(int idx) {
   const bool res = (idx == 0 || idx == 1);

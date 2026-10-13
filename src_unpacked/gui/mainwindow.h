@@ -138,6 +138,7 @@ private slots:
   void pollQuickLookPipe(); // async launch follow-up (bounded, event-loop driven)
   void copySelected(); void cutSelected(); void pasteFiles(); void moveSelected();
   void refreshFolders(); void folderActivated(QTreeWidgetItem*,int);
+  void loadIndex(); // 0.9.4.93: load the selected folder's index (no scan)
   void populateFolderChildren(QTreeWidgetItem*);
   QStringList selectedFiles() const;
   void prunePaths(const QSet<QString>&);
@@ -320,6 +321,14 @@ private:
   static constexpr int kSortNone = 0, kSortSim = 1, kSortName = 2;
   QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;
   int preScanSort_ = kSortNone; // sort restored when the running scan ends
+  // 0.9.4.93: "불러오기" (Load) shows the stored index in None order and locks
+  // the sort combo until the next scan (load-only view is never re-sorted).
+  bool loadLockSort_ = false;
+  // 0.9.4.93: load-only ("불러오기") in-flight state. While true the Load button
+  // is disabled (one press per load), a non-modal "loading" notice is up, and
+  // onResults must not show the finished-scan report popup.
+  bool loading_ = false;
+  QDialog* loadWait_ = nullptr;
   // None-mode stable group order (union-find roots) and the per-kind rows
   // currently materialized in the middle pane: (root, signature) pairs used to
   // decide whether a refresh can append or must fall back to a full rebuild.
