@@ -130,6 +130,7 @@ private slots:
   void groupViewChanged(int);
   void applyExecutionMode(); void updateKindSelection();
   void applyCpuPercentVisibility(); // show/hide cpu_ from ui/showCpuPercent (default OFF)
+  void applyTestButtonVisibility(); // show/hide testBtn_ from ui/showTestButton (default ON)
   // P4: builds the two-axis ExecutionPolicy from policy_ + strategy box.
   ExecutionPolicy currentExecPolicy() const;
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
@@ -309,7 +310,7 @@ private:
   // The toolbar checkbox is gone; strategy forcing (CPU-only off) applies to
   // this stored switch with the same overwrite semantics as before.
   bool gpuOn_ = true;
-  QCheckBox* logTgl_=nullptr; QAction* logTglAct_=nullptr; QAction* cpuAct_=nullptr;
+  QCheckBox* logTgl_=nullptr; QAction* logTglAct_=nullptr; QAction* cpuAct_=nullptr; QAction* testBtnAct_=nullptr;
   // Execution resource strategy (single-select dropdown): the user's
   // real-search resource choice. logTgl_ enables diagnostic telemetry
   // on the scan.

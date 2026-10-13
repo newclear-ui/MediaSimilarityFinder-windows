@@ -15,6 +15,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QMetaObject>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -165,6 +166,31 @@ int main(int argc, char** argv) {
       else st.remove("ui/showCpuPercent");
       QMetaObject::invokeMethod(&w, "applyCpuPercentVisibility");
       QApplication::processEvents();
+      // 0.9.4.98: Test-button visibility follows ui/showTestButton
+      // (default ON); the toggle state itself is untouched.
+      QPushButton* testBtn = w.findChild<QPushButton*>("testBtn");
+      if (!testBtn) { std::cerr << "test button not found\n"; return 1; }
+      const QVariant prevTest = st.value("ui/showTestButton");
+      st.setValue("ui/showTestButton", false);
+      st.sync();
+      QMetaObject::invokeMethod(&w, "applyTestButtonVisibility");
+      QApplication::processEvents();
+      if (testBtn->isVisible()) {
+        std::cerr << "test button visible with showTestButton=false\n";
+        return 1;
+      }
+      st.setValue("ui/showTestButton", true);
+      st.sync();
+      QMetaObject::invokeMethod(&w, "applyTestButtonVisibility");
+      QApplication::processEvents();
+      if (!testBtn->isVisible()) {
+        std::cerr << "test button hidden with showTestButton=true\n";
+        return 1;
+      }
+      if (prevTest.isValid()) st.setValue("ui/showTestButton", prevTest);
+      else st.remove("ui/showTestButton");
+      QMetaObject::invokeMethod(&w, "applyTestButtonVisibility");
+      QApplication::processEvents();
       std::cout << "resource_ui=ok\n";
     }
     return 0;
@@ -207,6 +233,8 @@ int main(int argc, char** argv) {
       "showDetailLog",
       // settings dialog (toolbar CPU display + GPU acceleration switches)
       "showCpuPercent", "monitorGpu",
+      // settings dialog (Test button visibility switch)
+      "showTestButton",
       // detailed-log result dialog rows
       "detailLogWall", "detailLogFiles", "detailLogImages", "detailLogVideos",
       "detailLogCpuUse", "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",

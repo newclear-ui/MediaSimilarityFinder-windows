@@ -126,6 +126,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"settings")) return S("설정","Settings");
   if (!std::strcmp(key,"showDetailLog")) return S("상세 로그 표시","Show Detailed Logs");
   if (!std::strcmp(key,"showCpuPercent")) return S("CPU 사용량 % 표기","Show CPU usage %");
+  if (!std::strcmp(key,"showTestButton")) return S("테스트 버튼 표시","Show Test button");
   if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
   if (!std::strcmp(key,"explorer")) return S("탐색기","Explorer");
@@ -852,10 +853,11 @@ void MainWindow::buildToolbar() {
   toolBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #8c8c8c; width: 2px; margin-top: 6px; margin-bottom: 6px; }"));
   auto* spacer = new QWidget(toolBar_); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   toolBar_->addWidget(spacer);
-  toolBar_->addWidget(testBtn_); // immediately left of Settings, at the far right
+  testBtnAct_ = toolBar_->addWidget(testBtn_); // immediately left of Settings, at the far right
   toolBar_->addWidget(utilBtn_); // far-right menu
   applyDetailLogVisibility(); // ui/showDetailLog (default ON): visibility only, telemetry untouched
   applyCpuPercentVisibility(); // ui/showCpuPercent (default OFF): display only, policy untouched
+  applyTestButtonVisibility(); // ui/showTestButton (default ON): visibility only, Test Mode state untouched
 }
 
 void MainWindow::buildLeft(QWidget* w) {
@@ -3766,6 +3768,13 @@ void MainWindow::configureMonitor() {
   gpuAccel->setObjectName("gpuAccelBox"); // automation hook
   gpuAccel->setChecked(QSettings().value("ui/gpuEnabled", true).toBool());
   generalLay->addWidget(gpuAccel);
+  // Test-button visibility checkbox (0.9.4.98+): the far-right Test toggle
+  // stays available without crowding the toolbar. Stored like the rest;
+  // the toggle state itself (ui/testMode) is untouched.
+  auto* showTest = new QCheckBox(trStr(lang(), "showTestButton"), generalTab);
+  showTest->setObjectName("showTestBox"); // automation hook
+  showTest->setChecked(QSettings().value("ui/showTestButton", true).toBool());
+  generalLay->addWidget(showTest);
   // Analyze-mode selector (0.9.4.81): B(안정형) default on top, then A(고속형),
   // then A+B(자동). An option inside Settings. The verdict is identical across
   // modes; only verify scheduling/checkpointing differs.
@@ -3863,9 +3872,11 @@ void MainWindow::configureMonitor() {
   st.setValue("ui/showDetailLog", showLog->isChecked());
   st.setValue("ui/showCpuPercent", showCpu->isChecked());
   st.setValue("ui/gpuEnabled", gpuAccel->isChecked());
+  st.setValue("ui/showTestButton", showTest->isChecked());
   gpuOn_ = gpuAccel->isChecked();
   applyDetailLogVisibility();
   applyCpuPercentVisibility();
+  applyTestButtonVisibility();
   // Push the GPU decision so monitor/scan pick it up without a restart.
   if (backend_) backend_->updateResourcePolicy(currentExecPolicy());
   st.setValue("ui/analyzeMode", analyzeModeBox->currentIndex());
@@ -3893,6 +3904,14 @@ void MainWindow::applyCpuPercentVisibility() {
   const bool show = QSettings().value("ui/showCpuPercent", false).toBool();
   if (cpuAct_) cpuAct_->setVisible(show);
   else if (cpu_) cpu_->setVisible(show);
+}
+void MainWindow::applyTestButtonVisibility() {
+  // Visibility only: the Test Mode toggle state (ui/testMode) is untouched,
+  // and a hidden button keeps its checked state so re-showing restores
+  // behavior. Same toolbar-action pattern as applyDetailLogVisibility.
+  const bool show = QSettings().value("ui/showTestButton", true).toBool();
+  if (testBtnAct_) testBtnAct_->setVisible(show);
+  else if (testBtn_) testBtn_->setVisible(show);
 }
 void MainWindow::paintTestButton() {
   if (!testBtn_) return;
