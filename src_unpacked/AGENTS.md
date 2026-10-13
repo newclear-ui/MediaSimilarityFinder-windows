@@ -65,7 +65,7 @@
 - 구조 방향을 바꿔야 하면 Roadmap과 Progress를 함께 갱신한다.
 - 사용자/상위 아키텍처 명칭은 CPU/GPU로 통일한다.
 - GPU는 ON/OFF만 사용자에게 노출한다. GPU 사용률 수동 설정은 제거한다.
-- Resource Mode는 Maximum/High/Balanced/Gaming/Manual을 유지한다.
+- Resource Mode는 Maximum/High/Balanced/Minimum을 유지한다 (0.9.4.96부터 Gaming→Minimum 개명, Manual/Custom 삭제).
 - GPU 작업 배분은 고정 50:50이 아니라 capability + calibration + 실시간 부하 + throughput + queue + transfer cost에 의해 동적으로 결정한다.
 - 성능 profile은 INI에 저장하고 live runtime state가 항상 우선한다.
 - 상위 GPU abstraction은 vendor-neutral이며 NVIDIA CUDA/NVDEC, Vulkan, AMD HIP/ROCm, Intel Level Zero는 독립 backend 후보로 취급한다.

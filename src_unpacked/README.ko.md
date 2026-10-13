@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## 현재 개발 버전: 0.9.4.95 (엔진 1.5.1, DB 1.0.6, 공식 기준선 0.9.2.32, 개발선 0.9.4, 프로세스 분리 P1–P4 완료, 매칭 검증 모드 선택 + B 1000 슬라이스, EXIF 회전 이미지 WIC FlipRotator 폭주 제거, 인덱스 우선 표시, 라이브 "인덱스 완료" 카운터 수정, 엔진버전 재검증 진행률 표시, dataset fingerprint 캐시, 백엔드 셸 썸네일 경로 제거, 통합 CPU 표기, 증분 dataset fingerprint, 그룹 정렬 없음 + 스캔 중 정렬 잠금, 그룹 정렬 없음 최상단/기본값 + append-only 목록, 쌍검증 DBV-1/DBV-2(캐시키 읽기 제거 + 캐시 확대), 불러오기(인덱스 로드 전용) + 팝업 분리, 완료 경로 중복 제거 + 스크롤 점프 수정, 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록, S4 verification in progress, S5 product benchmark DEFERRED, F-1 CONDITIONAL)
+## 현재 개발 버전: 0.9.4.96 (엔진 1.5.1, DB 1.0.6, 공식 기준선 0.9.2.32, 개발선 0.9.4, 프로세스 분리 P1–P4 완료, 매칭 검증 모드 선택 + B 1000 슬라이스, EXIF 회전 이미지 WIC FlipRotator 폭주 제거, 인덱스 우선 표시, 라이브 "인덱스 완료" 카운터 수정, 엔진버전 재검증 진행률 표시, dataset fingerprint 캐시, 백엔드 셸 썸네일 경로 제거, 통합 CPU 표기, 증분 dataset fingerprint, 그룹 정렬 없음 + 스캔 중 정렬 잠금, 그룹 정렬 없음 최상단/기본값 + append-only 목록, 쌍검증 DBV-1/DBV-2(캐시키 읽기 제거 + 캐시 확대), 불러오기(인덱스 로드 전용) + 팝업 분리, 완료 경로 중복 제거 + 스크롤 점프 수정, 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록, 자원 정책 UI 개편(Minimum 개명 + Custom 삭제 + 설정 이전), S4 verification in progress, S5 product benchmark DEFERRED, F-1 CONDITIONAL)
 
 Windows 11 x64 미디어 중복/유사 검색 엔진. CPU + GPU 공동 실행 구조로 개발 중이며 현재 concrete GPU backend는 NVIDIA CUDA입니다.
 
@@ -25,10 +25,9 @@ MediaSimilarityFinder는 CPU와 GPU를 함께 활용하는 프로그램이며, G
 
 승인된 목표 자원관리 구조는 다음과 같다.
 
-- Resource Mode: Maximum / High / Balanced / Gaming / Manual 유지.
-- Maximum/High/Balanced/Gaming은 CPU 자원 정책을 결정한다.
-- Manual은 CPU 자원 한도를 사용자가 직접 지정한다.
-- GPU는 ON/OFF만 사용한다.
+- Resource Mode: Maximum / High / Balanced / Minimum (0.9.4.96부터 Gaming→Minimum 개명, Custom 삭제).
+- Maximum/High/Balanced/Minimum은 CPU 자원 정책을 결정한다 (Minimum 25/25, 사용자 직접 지정은 GUI에서 제거, 정책 계층은 유지).
+- GPU는 ON/OFF만 사용한다 (설정 일반 탭의 GPU 가속 스위치).
 - GPU ON 상태에서는 GPU 사용률을 사용자가 직접 지정하지 않고 Adaptive GPU Scheduler가 자동으로 작업량을 결정한다.
 - CPU/GPU 작업 배분은 50:50으로 고정하지 않고 실제 처리능력, 현재 시스템 부하, queue 상태, 데이터 이동 비용을 반영해 동적으로 조정한다.
 - 다른 프로그램이 CPU/GPU를 사용하면 MediaSimilarityFinder도 실시간 상태를 반영하여 작업량을 줄이거나 늘린다.

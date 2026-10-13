@@ -452,7 +452,7 @@ GUI:
 - [Detailed Logs] = diagnostic telemetry from real user work
 - no Benchmark Run/Stop/Pause UI
 - AUTO / CPU-only / GPU-max = user execution strategy, one selected
-- Maximum / High / Balanced / Gaming / Manual = separate CPU Resource Policy
+- Maximum / High / Balanced / Minimum = separate CPU Resource Policy (renamed Gaming→Minimum in 0.9.4.96, Manual/Custom removed)
 
 CLI:
 - --benchmark = controlled development benchmark
@@ -493,7 +493,7 @@ The existing benchmark S0-S8 schedule is finalized with the following contract:
 - Execute AUTO -> CPU -> GPU-max per file and persist that file's results immediately.
 - Do not share analytical intermediate results between benchmark modes.
 - Ctrl+C cancellation and partial-result persistence are first-class behavior.
-- Console CPU resource reuses the existing Maximum / High / Balanced / Gaming / Manual(10-90%) policy. Balanced (55%) is the recommended default.
+- Console CPU resource reuses the existing Maximum / High / Balanced / Minimum (10-90%) policy. Balanced (55%) is the recommended default.
 - A linear extrapolation from a Balanced run is not an actual Maximum benchmark result.
 - The interactive console header is compressed to three fixed information rows and never auto-wraps.
 - Long Target paths use middle ellipsis on screen only; JSON stores the full path.

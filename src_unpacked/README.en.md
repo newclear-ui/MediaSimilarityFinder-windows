@@ -1,6 +1,6 @@
 # MediaSimilarityFinder
 
-## Current development version: 0.9.4.95 (engine 1.5.1, DB 1.0.6; official baseline 0.9.2.32; development line 0.9.4; process split P1–P4 complete; selectable matching-verification modes + B 1000-slice; EXIF-rotated WIC FlipRotator runaway removed; index-first display; live "Index complete" counter fix; revalidation progress + count-first; dataset fingerprint cache; backend shell-thumbnail path removed; combined CPU display; incremental dataset fingerprint; group sort "None" + scan lock; group sort "None" top/default + append-only list; pair-verify DBV-1/DBV-2 (key read removal + cache enlargement); Load (index load-only) + popup separation; completion-path dedup + scroll-jump fix; summary-panel pair-verify counts + Stable-rescan record; S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL)
+## Current development version: 0.9.4.96 (engine 1.5.1, DB 1.0.6; official baseline 0.9.2.32; development line 0.9.4; process split P1–P4 complete; selectable matching-verification modes + B 1000-slice; EXIF-rotated WIC FlipRotator runaway removed; index-first display; live "Index complete" counter fix; revalidation progress + count-first; dataset fingerprint cache; backend shell-thumbnail path removed; combined CPU display; incremental dataset fingerprint; group sort "None" + scan lock; group sort "None" top/default + append-only list; pair-verify DBV-1/DBV-2 (key read removal + cache enlargement); Load (index load-only) + popup separation; completion-path dedup + scroll-jump fix; summary-panel pair-verify counts + Stable-rescan record; resource-policy UI rework (Minimum rename + Custom removal + Settings move); S4 verification in progress; S5 product benchmark DEFERRED; F-1 CONDITIONAL)
 
 Windows 11 x64 media duplicate/similarity search engine under active CPU + GPU development; the current concrete GPU backend is NVIDIA CUDA.
 
@@ -25,10 +25,9 @@ MediaSimilarityFinder is explicitly designed to use CPU and GPU together. The GP
 
 The approved resource-management direction is:
 
-- Resource Mode remains Maximum / High / Balanced / Gaming / Manual.
-- Maximum/High/Balanced/Gaming define CPU resource policy.
-- Manual lets the user define the CPU resource limit.
-- GPU is controlled only by ON/OFF.
+- Resource Mode: Maximum / High / Balanced / Minimum (renamed Gaming→Minimum in 0.9.4.96, Custom removed).
+- Maximum/High/Balanced/Minimum define CPU resource policy (Minimum 25/25; direct user entry removed from the GUI, policy layer retained).
+- GPU is controlled only by ON/OFF (Settings > General GPU acceleration switch).
 - When GPU is ON, the user does not choose a GPU utilization percentage; the Adaptive GPU Scheduler determines GPU workload automatically.
 - CPU/GPU work is not fixed at 50:50. Allocation follows measured capability, current system load, queue pressure, and data-transfer cost.
 - CPU/GPU load caused by other applications is monitored at runtime and reflected in workload allocation.

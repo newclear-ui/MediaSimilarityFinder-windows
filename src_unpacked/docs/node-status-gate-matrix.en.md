@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.95` (summary-panel pair-verify counts + Stable-rescan measurement record) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.96` (resource-policy UI rework) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-10
 
 ## Role of this document

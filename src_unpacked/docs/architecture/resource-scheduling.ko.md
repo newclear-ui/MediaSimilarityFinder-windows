@@ -26,23 +26,21 @@ MediaSimilarityFinder는 처음부터 CPU와 GPU를 함께 사용하는 미디�
 
 ## 2. 사용자 모드
 
-사용자에게 노출되는 Resource Mode는 다음 다섯 가지를 유지한다.
+사용자에게 노출되는 Resource Mode는 다음 네 가지를 유지한다 (0.9.4.96부터 Gaming→Minimum 개명, Manual/Custom 삭제).
 
 | 모드 | CPU 정책 | GPU 정책 |
 |---|---|---|
 | **Maximum** | CPU를 가장 적극적으로 사용 | ON이면 AUTO |
 | **High** | 높은 수준의 CPU 사용 | ON이면 AUTO |
 | **Balanced** | 균형 잡힌 CPU 사용 | ON이면 AUTO |
-| **Gaming** | 게임/무거운 작업과 공존하도록 보수적 CPU 사용 | ON이면 AUTO + 외부 부하에 적극 반응 |
-| **Manual** | 사용자가 CPU 자원 한도를 직접 지정 | ON이면 AUTO |
+| **Minimum** | 게임/무거운 작업과 공존하도록 보수적 CPU 사용 | ON이면 AUTO + 외부 부하에 적극 반응 |
 
 기존의 CPU 프리셋 값은 다음 기준을 유지한다.
 
 - Maximum: 90%
 - High: 75%
 - Balanced: 55%
-- Gaming: 25%
-- Manual: 사용자가 CPU 한도를 지정
+- Minimum: 25% (구 Gaming, 동일 값)
 
 여기서 위 퍼센트는 작업량을 정확히 그 비율로 나누라는 뜻이 아니라 **CPU 자원 사용 정책의 상한/목표**를 의미한다.
 
@@ -146,9 +144,9 @@ MediaSimilarityFinder GPU workload ↓
 
 스케줄러는 순간적인 변동에 바로 반응하지 않고 이동평균, hysteresis, 최소 유지시간 같은 안정화 장치를 사용하여 worker/workload가 빠르게 진동하지 않도록 한다.
 
-## 7. Gaming 모드
+## 7. Minimum 모드 (구 Gaming)
 
-Gaming은 단순히 CPU 수치를 낮게 고정하는 모드가 아니다.
+Minimum(0.9.4.96부터 Gaming에서 개명)은 단순히 CPU 수치를 낮게 고정하는 모드가 아니다.
 
 게임 또는 다른 무거운 foreground workload가 존재할 가능성을 전제로:
 
@@ -159,9 +157,9 @@ Gaming은 단순히 CPU 수치를 낮게 고정하는 모드가 아니다.
 
 하는 정책으로 정의한다.
 
-## 8. Manual 모드
+## 8. Manual/Custom 모드 (0.9.4.96부터 GUI에서 제거, 정책 계층 유지)
 
-Manual은 CPU 자원 제어만 사용자가 직접 지정한다.
+Manual(Custom enum)은 CPU 자원 한도를 사용자가 직접 지정하던 모드였다.
 
 예:
 
@@ -172,7 +170,9 @@ CPU limit = 40%, GPU = ON
 - CPU: 사용자가 지정한 정책을 준수
 - GPU: Adaptive Scheduler가 자동 결정
 
-Manual에서도 scheduler 자체를 끄는 것이 아니다. 사용자의 CPU 한도는 scheduler가 지켜야 할 제약 조건이며, 그 제약 안에서 worker 수와 작업량을 동적으로 조정한다.
+Manual에서도 scheduler 자체를 끄는 것이 아니었다. 사용자의 CPU 한도는 scheduler가 지켜야 할 제약 조건이며, 그 제약 안에서 worker 수와 작업량을 동적으로 조정했다.
+
+0.9.4.96부터 GUI 프리셋 콤보와 CPU 직접 입력은 제거되었다(프리셋 4종만). `ResourceMode::Custom`과 `make_policy` 분기는 백엔드/IPC/CLI 호환을 위해 정책 계층에 그대로 남아 있으며, 스케줄러의 모드별 동작도 불변이다.
 
 ## 9. CPU/GPU 병렬 처리의 목표
 

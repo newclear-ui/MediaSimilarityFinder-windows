@@ -405,7 +405,7 @@ GUI:
 - [상세 로그] = 실제 사용자 작업의 diagnostic telemetry
 - Benchmark Run/Stop/Pause UI 없음
 - AUTO / CPU / GPU-max = 사용자 실행 전략, 하나 선택
-- Maximum / High / Balanced / Gaming / Manual = 별도 CPU Resource Policy
+- Maximum / High / Balanced / Minimum = 별도 CPU Resource Policy (0.9.4.96부터 Gaming→Minimum 개명, Manual/Custom 삭제)
 
 CLI:
 - --benchmark = controlled development benchmark
@@ -446,7 +446,7 @@ S0 → S1 → S2 → S3 → S4 GUI Detailed Logging → S5 Console Benchmark →
 - 파일 단위로 AUTO → CPU → GPU-max를 실행하고 파일별 결과를 즉시 저장한다.
 - 분석용 중간 결과를 benchmark mode 사이에 공유하지 않는다.
 - Ctrl+C 취소와 부분 결과 보존을 기본 지원한다.
-- Console CPU resource는 기존 Maximum / High / Balanced / Gaming / Manual(10–90%) 정책을 재사용한다. 기본값은 Balanced(55%)로 권장한다.
+- Console CPU resource는 기존 Maximum / High / Balanced / Minimum(10–90%) 정책을 재사용한다. 기본값은 Balanced(55%)로 권장한다.
 - Balanced 결과를 선형 보간한 Maximum 값은 실제 benchmark 결과로 간주하지 않는다.
 - Interactive Console 상단은 3줄 고정 정보 영역으로 압축하며 자동 줄바꿈하지 않는다.
 - Target 경로가 길면 화면에서 middle ellipsis로 축약하고 JSON에는 원본을 저장한다.

@@ -26,23 +26,21 @@ The goals are:
 
 ## 2. User modes
 
-The five Resource Modes remain:
+The four Resource Modes remain (renamed Gaming→Minimum in 0.9.4.96, Manual/Custom removed):
 
 | Mode | CPU policy | GPU policy |
 |---|---|---|
 | **Maximum** | Most aggressive CPU use | AUTO when ON |
 | **High** | High CPU use | AUTO when ON |
 | **Balanced** | Balanced CPU use | AUTO when ON |
-| **Gaming** | Conservative CPU use for coexistence with games/heavy foreground work | AUTO, with stronger external-load response |
-| **Manual** | User-defined CPU resource limit | AUTO when ON |
+| **Minimum** | Conservative CPU use for coexistence with games/heavy foreground work | AUTO, with stronger external-load response |
 
 The existing CPU preset targets remain:
 
 - Maximum: 90%
 - High: 75%
 - Balanced: 55%
-- Gaming: 25%
-- Manual: user-selected CPU limit
+- Minimum: 25% (formerly Gaming, same values)
 
 These percentages describe a CPU resource policy/target, not a literal rule that the total workload must be split at that ratio.
 
@@ -148,9 +146,9 @@ When the system becomes idle, workload can increase gradually within the selecte
 
 The scheduler should use moving averages, hysteresis, and minimum hold times so that worker/workload allocation does not oscillate on every short utilization fluctuation.
 
-## 7. Gaming mode
+## 7. Minimum mode (formerly Gaming)
 
-Gaming mode is not simply a lower fixed CPU percentage.
+Minimum mode (renamed from Gaming in 0.9.4.96) is not simply a lower fixed CPU percentage.
 
 It assumes that games or other heavy foreground workloads may be active:
 
@@ -159,9 +157,9 @@ It assumes that games or other heavy foreground workloads may be active:
 - reduce MediaSimilarityFinder load when external CPU/GPU pressure increases
 - recover gradually when external pressure decreases
 
-## 8. Manual mode
+## 8. Manual/Custom mode (removed from the GUI in 0.9.4.96, retained in the policy layer)
 
-Manual mode exposes direct CPU resource control only.
+Manual mode (the Custom enum) used to expose direct CPU resource control only.
 
 Example:
 
@@ -172,7 +170,9 @@ means:
 - CPU: respect the user-defined policy
 - GPU: still managed automatically
 
-Manual mode does not disable the Adaptive Scheduler. The user's CPU limit is a scheduler constraint; worker counts and workload allocation can still change dynamically inside that constraint.
+Manual mode did not disable the Adaptive Scheduler. The user's CPU limit was a scheduler constraint; worker counts and workload allocation could still change dynamically inside that constraint.
+
+As of 0.9.4.96 the GUI preset combo and direct CPU entry are removed (4 presets only). `ResourceMode::Custom` and the `make_policy` branch stay in the policy layer for backend/IPC/CLI compatibility, and per-mode scheduler behavior is unchanged.
 
 ## 9. CPU/GPU parallelism goal
 
