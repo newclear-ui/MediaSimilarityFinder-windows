@@ -26,6 +26,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaObject>
@@ -478,6 +479,56 @@ int main(int argc, char** argv) {
                 }
                 check(artShown, "right pane shows decoded art after Load");
             }
+        }
+    }
+
+    // Phase 12 (0.9.4.99): group checkbox marks every file except the
+    // reference image, and check/uncheck-then-select keeps detail info.
+    // Regression: refreshDetail() orphaned empty QFormLayout rows, pushing
+    // live rows out of view after repeated cycles.
+    {
+        auto* mgrid = w.findChild<QListWidget*>("imgGrid");
+        auto* fgrid = w.findChild<QListWidget*>("fileGrid");
+        check(mgrid && fgrid && mgrid->count() > 0, "group and file panes ready");
+        if (mgrid && fgrid && mgrid->count() > 0) {
+            if (auto* first = mgrid->item(0)) mgrid->setCurrentItem(first);
+            QApplication::processEvents();
+            auto* grow = mgrid->item(0);
+            const QString refPath = grow->toolTip(); // representative (paths[0])
+            grow->setCheckState(Qt::Checked);
+            QApplication::processEvents();
+            QStringList marked = w.testMarkedPaths();
+            check(!marked.contains(refPath), "group check skips the reference image");
+            // All group files except the reference are marked: the right pane
+            // was refreshed by setGroupMarked itself, so compare directly.
+            QSet<QString> fileSet;
+            for (int r = 0; r < fgrid->count(); ++r)
+                fileSet.insert(fgrid->item(r)->data(Qt::UserRole).toString());
+            check(fileSet.size() >= 2, "group holds at least two files");
+            check(marked.size() == fileSet.size() - 1, "group check marks all but one file");
+            {
+                QSet<QString> markedSet(marked.begin(), marked.end());
+                check(markedSet == fileSet - QSet<QString>({refPath}),
+                    "marked set is exactly the non-reference files");
+            }
+            check(grow->checkState() == Qt::Checked, "group box stays checked when all non-ref marked");
+            grow->setCheckState(Qt::Unchecked);
+            QApplication::processEvents();
+            check(w.testMarkedPaths().isEmpty(), "group uncheck clears all marks");
+            check(grow->checkState() == Qt::Unchecked, "group box returns to unchecked");
+            // The reported defect: after this cycle, selecting a file must
+            // still show its path/name/size in the detail pane.
+            if (fgrid->count() > 0) {
+                if (auto* f = fgrid->item(0)) fgrid->setCurrentItem(f);
+                QApplication::processEvents();
+            }
+            const QString shown = w.testDetailFileName();
+            const QString expect = fgrid->count() > 0
+                ? QFileInfo(fgrid->item(0)->data(Qt::UserRole).toString()).fileName()
+                : QString();
+            std::cout << "  [info] detail shows=" << shown.toStdString()
+                      << " expected=" << expect.toStdString() << "\n";
+            check(!expect.isEmpty() && shown == expect, "detail info survives check/uncheck/select");
         }
     }
 

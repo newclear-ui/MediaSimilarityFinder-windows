@@ -97,22 +97,35 @@ int main(int argc, char** argv) {
     chk(strategy->currentIndex() == 0, "AUTO restored");
     chk(logTgl->isChecked(), "the detailed-log checkbox keeps its own default");
 
-    // ---- photo/video toggle, both-off forbidden ----------------------------
-    std::printf("-- media scope toggles --\n");
-    QPushButton* img = w->findChild<QPushButton*>("mediaImgBtn");
-    QPushButton* vid = w->findChild<QPushButton*>("mediaVidBtn");
-    chk(img && vid, "photo and video toggle buttons exist");
-    if (!img || !vid) {
+    // ---- photo/video scope dropdown (0.9.4.99): photos / videos / all ----
+    // Single-select by construction: exactly one scope is always active, so
+    // the old both-off refusal is gone.
+    std::printf("-- media scope dropdown --\n");
+    QComboBox* kind = w->findChild<QComboBox*>("kindBox");
+    chk(kind != nullptr, "the photo/video scope dropdown exists");
+    if (!kind) {
         std::printf("\ngui_detailed_log_selfcheck=FAIL checks=%d\n", gChecks);
         return 1;
     }
-    chk(img->isCheckable() && vid->isCheckable(), "both are checkable");
-    chk(img->isChecked() && vid->isChecked(), "default both on");
-    img->setChecked(false); QApplication::processEvents();
-    chk(!img->isChecked() && vid->isChecked(), "photo off, video on is allowed");
-    vid->setChecked(false); QApplication::processEvents();
-    chk(img->isChecked() || vid->isChecked(), "both off is refused");
-    img->setChecked(true); vid->setChecked(true); QApplication::processEvents();
+    chk(kind->count() == 3, "the scope dropdown holds three choices");
+    chk(kind->currentIndex() == 2, "default scope is All");
+    for (int i = 0; i < 3; ++i) {
+        kind->setCurrentIndex(i); QApplication::processEvents();
+        if (kind->currentIndex() != i) {
+            std::printf("scope index %d did not stick\n", i);
+            chk(false, "every scope selects as the single choice");
+        }
+    }
+    chk(true, "every scope selects as the single choice");
+    kind->setCurrentIndex(2); QApplication::processEvents();
+    // Labels resolve in at least one language (default locale varies by env).
+    {
+      const QStringList wantKo({trStr(UiLang::Ko, "kindImages"), trStr(UiLang::Ko, "kindVideos"), trStr(UiLang::Ko, "kindAll")});
+      const QStringList wantEn({trStr(UiLang::En, "kindImages"), trStr(UiLang::En, "kindVideos"), trStr(UiLang::En, "kindAll")});
+      QStringList got;
+      for (int i = 0; i < 3; ++i) got << kind->itemText(i);
+      chk(got == wantKo || got == wantEn, "scope labels are photos/videos/all");
+    }
 
     QLineEdit* folder = w->findChild<QLineEdit*>("folder");
     chk(folder != nullptr, "the folder field is reachable");

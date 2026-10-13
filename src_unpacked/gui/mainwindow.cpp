@@ -188,6 +188,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"kindMenu")) return S("검색 대상","Scan target");
   if (!std::strcmp(key,"kindImages")) return S("사진","Photos");
   if (!std::strcmp(key,"kindVideos")) return S("영상","Videos");
+  if (!std::strcmp(key,"kindAll")) return S("모두","All");
   if (!std::strcmp(key,"sortSim")) return S("유사도 내림차순","Similarity");
   if (!std::strcmp(key,"sortName")) return S("이름 오름차순","Name");
   if (!std::strcmp(key,"sortNone")) return S("없음","None");
@@ -797,16 +798,20 @@ void MainWindow::buildToolbar() {
   // The scan button is gated on a folder being present, so editing the folder has
   // to re-evaluate that gate; otherwise clearing it would leave the button armed.
   connect(folder_, &QLineEdit::textChanged, this, [this](const QString&) { updateExecutionUiState(); });
-  mediaImgBtn_ = new QPushButton(toolBar_); mediaImgBtn_->setCheckable(true);
-  mediaVidBtn_ = new QPushButton(toolBar_); mediaVidBtn_->setCheckable(true);
-  mediaImgBtn_->setObjectName("mediaImgBtn"); mediaVidBtn_->setObjectName("mediaVidBtn");
+  // 0.9.4.99: photo/video scope is a single-select dropdown like the
+  // resource preset menu (photos / videos / all). Exactly one scope is
+  // always active, so the old both-off refusal is gone by construction.
+  kindBox_ = new QComboBox(toolBar_);
+  kindBox_->setObjectName("kindBox"); // automation hook
+  kindBox_->addItem(trStr(lang(), "kindImages")); // index 0 == photos (mask 1)
+  kindBox_->addItem(trStr(lang(), "kindVideos")); // index 1 == videos (mask 2)
+  kindBox_->addItem(trStr(lang(), "kindAll"));    // index 2 == all (mask 3)
   {
     const int km = QSettings().value("ui/kindMask", 3).toInt();
-    mediaImgBtn_->setChecked(km & 1); mediaVidBtn_->setChecked(km & 2);
-    if (!mediaImgBtn_->isChecked() && !mediaVidBtn_->isChecked()) mediaImgBtn_->setChecked(true);
+    kindBox_->setCurrentIndex(km == 1 ? 0 : (km == 2 ? 1 : 2));
   }
-  connect(mediaImgBtn_, &QPushButton::toggled, this, &MainWindow::updateKindSelection);
-  connect(mediaVidBtn_, &QPushButton::toggled, this, &MainWindow::updateKindSelection);
+  kindBox_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  connect(kindBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { updateKindSelection(); });
   monBtn_ = new QPushButton(toolBar_); monBtn_->setCheckable(true);
   connect(monBtn_, &QPushButton::clicked, this, &MainWindow::toggleMonitor);
   logBtn_ = new QPushButton(toolBar_); logBtn_->setEnabled(false);
@@ -845,7 +850,7 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(strategyBox_);
   toolBar_->addWidget(preset_); cpuAct_ = toolBar_->addWidget(cpu_);
   toolBar_->addSeparator();
-  toolBar_->addWidget(mediaImgBtn_); toolBar_->addWidget(mediaVidBtn_);
+  toolBar_->addWidget(kindBox_);
   toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(logBtn_);
   // All toolbar separators share one clearly visible style: a 1px rule in a
   // mid grey, lighter than before but darker than the faint native etch, with
@@ -1204,8 +1209,15 @@ void MainWindow::applyStaticTexts() {
     viewBox_->setCurrentIndex(vcur < 0 ? 0 : vcur);
     viewBox_->blockSignals(false);
   }
-  if (mediaImgBtn_) mediaImgBtn_->setText(trStr(l, "kindImages"));
-  if (mediaVidBtn_) mediaVidBtn_->setText(trStr(l, "kindVideos"));
+  if (kindBox_) {
+    const int kcur = kindBox_->currentIndex();
+    kindBox_->blockSignals(true);
+    kindBox_->setItemText(0, trStr(l, "kindImages"));
+    kindBox_->setItemText(1, trStr(l, "kindVideos"));
+    kindBox_->setItemText(2, trStr(l, "kindAll"));
+    kindBox_->setCurrentIndex(kcur < 0 ? 2 : kcur);
+    kindBox_->blockSignals(false);
+  }
   updateKindSelection();
   midTabs_->setTabText(0, trStr(l, "tabImages"));
   midTabs_->setTabText(1, trStr(l, "tabVideos"));
@@ -1408,8 +1420,8 @@ void MainWindow::beginScan(bool resumeLastConfig) {
     cfg.cpu = cpu_->value();
     cfg.gpuPercent = policy_.gpuPercent;
     cfg.gpuEnabled = gpuOn_;
-    cfg.scanImages = mediaImgBtn_->isChecked();
-    cfg.scanVideos = mediaVidBtn_->isChecked();
+    cfg.scanImages = !kindBox_ || kindBox_->currentIndex() != 1;
+    cfg.scanVideos = !kindBox_ || kindBox_->currentIndex() != 0;
     cfg.ignored = ignored_;
     cfg.detailedLog = logTgl_->isChecked();
     cfg.testMode = testBtn_ && testBtn_->isChecked();
@@ -2068,6 +2080,13 @@ void MainWindow::onMatchesBatch(const QVector<BackendMatch>& batch) {
   groupsDirty_ = true;
 }
 void MainWindow::testUiTick() { onUiTick(); }
+QString MainWindow::testDetailFileName() const {
+  if (!detailForm_) return {};
+  auto* w = detailForm_->itemAt(0, QFormLayout::FieldRole);
+  if (!w || !w->widget()) return {};
+  auto* lab = qobject_cast<QLabel*>(w->widget());
+  return lab ? lab->text() : QString();
+}
 void MainWindow::onUiTick() {
   // P3: no decode happens on the GUI thread anymore (all decode is
   // Backend-side), so there is no per-tick decode budget to refresh.
@@ -2372,28 +2391,13 @@ void MainWindow::applyExecutionMode() {
 }
 
 void MainWindow::updateKindSelection() {
-  // Photo/video is now two independent toggle buttons. It must never end with
-  // both OFF: if the user unchecks the last remaining one, force it back on.
-  bool img = mediaImgBtn_->isChecked();
-  bool vid = mediaVidBtn_->isChecked();
-  if (!img && !vid) {
-    // Treat "the one being turned off" as the survivor to keep checked.
-    // The signal that triggered us was a toggle; recover by re-checking the
-    // one that is currently off but was last the sole survivor. Simple rule:
-    // keep the previous single selection. We infer it from kindMask.
-    const int prev = QSettings().value("ui/kindMask", 3).toInt();
-    img = (prev & 1) != 0;
-    vid = (prev & 2) != 0;
-    if (!img && !vid) img = true;
-    mediaImgBtn_->blockSignals(true); mediaImgBtn_->setChecked(img); mediaImgBtn_->blockSignals(false);
-    mediaVidBtn_->blockSignals(true); mediaVidBtn_->setChecked(vid); mediaVidBtn_->blockSignals(false);
-  }
-  const int m = (img ? 1 : 0) | (vid ? 2 : 0);
-  QSettings().setValue("ui/kindMask", m);
-  // Style: checkable buttons already highlight when checked; keep both visually
-  // aligned so a single-kind selection reads as filtered.
-  QFont fi = mediaImgBtn_->font(); fi.setBold(m == 1); mediaImgBtn_->setFont(fi);
-  QFont fv = mediaVidBtn_->font(); fv.setBold(m == 2); mediaVidBtn_->setFont(fv);
+  // 0.9.4.99: single-select dropdown (photos/index 0, videos/1, all/2).
+  // Exactly one scope is always active by construction, so the old both-off
+  // refusal is gone. Persists ui/kindMask with the same bit values (1/2/3).
+  if (!kindBox_) return;
+  static const int masks[3] = {1, 2, 3};
+  const int idx = std::clamp(kindBox_->currentIndex(), 0, 2);
+  QSettings().setValue("ui/kindMask", masks[idx]);
 }
 void MainWindow::groupViewChanged(int idx) {
   if (idx < 0) idx = 0;
@@ -2439,30 +2443,42 @@ void MainWindow::groupViewChanged(int idx) {
 }
 void MainWindow::setGroupMarked(int gi, bool on) {
   if (gi < 0 || gi >= groups_.size()) return;
-  for (const auto& p : groups_[gi].paths) { if (on) marked_.insert(p); else marked_.remove(p); }
+  // 0.9.4.99: checking a group marks every file except the reference image
+  // (paths[0]), so move/recycle act on the rest. Unchecking clears the whole
+  // group (cancel semantics, including a manually marked reference).
+  if (on) {
+    const auto& paths = groups_[gi].paths;
+    for (int k = 1; k < paths.size(); ++k) marked_.insert(paths[k]);
+  } else {
+    for (const auto& p : groups_[gi].paths) marked_.remove(p);
+  }
   QTreeWidget* trees[2] = {imgTree_, vidTree_};
   QListWidget* grids[2] = {imgGrid_, vidGrid_};
   for (auto* t : trees) t->blockSignals(true);
   for (auto* g : grids) g->blockSignals(true);
-  auto stateOf = [this](int g2) {
-    if (g2 < 0 || g2 >= groups_.size()) return Qt::Unchecked;
-    int n = 0;
-    for (const auto& p : groups_[g2].paths) if (marked_.contains(p)) ++n;
-    return n == 0 ? Qt::Unchecked : (n == groups_[g2].paths.size() ? Qt::Checked : Qt::PartiallyChecked);
-  };
   for (auto* t : trees)
     for (int r = 0; r < t->topLevelItemCount(); ++r) {
       auto* it = t->topLevelItem(r);
-      it->setCheckState(0, stateOf(it->data(0, Qt::UserRole).toInt()));
+      it->setCheckState(0, groupMarkState(it->data(0, Qt::UserRole).toInt()));
     }
   for (auto* g : grids)
     for (int r = 0; r < g->count(); ++r) {
       auto* it = g->item(r);
-      it->setCheckState(stateOf(it->data(Qt::UserRole).toInt()));
+      it->setCheckState(groupMarkState(it->data(Qt::UserRole).toInt()));
     }
   for (auto* t : trees) t->blockSignals(false);
   for (auto* g : grids) g->blockSignals(false);
   refreshFileViews(); updateStatusCounts();
+}
+// 0.9.4.99: the group checkbox selects every file except the reference
+// (paths[0]), so "fully marked" means all non-reference files are marked.
+Qt::CheckState MainWindow::groupMarkState(int gi) const {
+  if (gi < 0 || gi >= groups_.size() || groups_[gi].paths.size() < 2) return Qt::Unchecked;
+  int n = 0;
+  const auto& paths = groups_[gi].paths;
+  for (int k = 1; k < paths.size(); ++k) if (marked_.contains(paths[k])) ++n;
+  if (n == 0) return Qt::Unchecked;
+  return n == paths.size() - 1 ? Qt::Checked : Qt::PartiallyChecked;
 }
 QString MainWindow::groupSig(const DupGroup& g) const {
   // Signature used to detect a changed existing row during an append refresh:
@@ -2473,11 +2489,9 @@ void MainWindow::addGroupItems(QTreeWidget* tree, QListWidget* grid, int i, int 
   const auto& g = groups_[i];
   qulonglong bytes = 0;
   for (const auto& p : g.paths) bytes += fileSizeCached(p);
-  int marked = 0;
-  for (const auto& p : g.paths) if (marked_.contains(p)) ++marked;
   auto* it = new QTreeWidgetItem(tree);
   it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
-  it->setCheckState(0, marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
+  it->setCheckState(0, groupMarkState(i));
   it->setText(0, QString("%1 %2").arg(trStr(lang(), "group")).arg(i + 1));
   it->setText(1, QString("%1 %2").arg(g.paths.size()).arg(trStr(lang(), "files")));
   // Pairs = file count choose 2: direct pairwise comparisons a complete
@@ -2496,7 +2510,7 @@ void MainWindow::addGroupItems(QTreeWidget* tree, QListWidget* grid, int i, int 
                                      .arg(pairs).arg(trStr(lang(), "pairs")).arg(g.best, 0, 'f', 1)
                                      .arg(fmtSize(bytes)));
   li->setFlags(li->flags() | Qt::ItemIsUserCheckable);
-  li->setCheckState(marked == 0 ? Qt::Unchecked : (marked == g.paths.size() ? Qt::Checked : Qt::PartiallyChecked));
+  li->setCheckState(groupMarkState(i));
   li->setData(Qt::UserRole, i);
   li->setToolTip(rep);
   grid->addItem(li);
@@ -2987,7 +3001,21 @@ void MainWindow::fileActivated(QListWidgetItem* it) {
 }
 void MainWindow::detailTabChanged(int) { refreshDetail(); }
 void MainWindow::refreshDetail() {
-  while (detailForm_->count()) { auto* it = detailForm_->takeAt(0); delete it->widget(); delete it; }
+  // QFormLayout::takeAt() orphans emptied rows: rowCount() grows without
+  // bound and pushes live rows below the visible area (the "detail info
+  // disappears after repeated check/uncheck/select" defect). Rebuild the
+  // form object instead: harvesting widgets first, then letting the layout
+  // destructor take its items. (removeRow() item ownership is version
+  // sensitive; this path depends only on the stable QLayout contract:
+  // the destructor deletes items, never widgets.)
+  while (detailForm_->count() > 0) {
+    if (QLayoutItem* it = detailForm_->takeAt(0)) delete it->widget();
+  }
+  if (QWidget* box = qobject_cast<QWidget*>(detailForm_->parent())) {
+    delete detailForm_;
+    detailForm_ = new QFormLayout;
+    box->setLayout(detailForm_);
+  }
   exifLabel_->clear(); simLabel_->clear(); simBar_->setValue(0); hashLabel_->clear();
   // Always show the field labels, even with no selection (values become "-").
   // The folder row looks like every other row (plain label, wraps to two

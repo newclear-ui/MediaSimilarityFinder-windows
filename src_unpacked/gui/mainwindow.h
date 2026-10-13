@@ -102,6 +102,13 @@ public:
   // directly and bypassing it. Arrivals paint via onThumbReady.
   void testThumbCatchUp() { thumbCatchUpVisible(); }
   qulonglong testFullRebuildCount() const { return fullRebuildCount_; }
+  // Mark-state probe (0.9.4.99): all marked paths. Pins reference-exclusion
+  // (the group checkbox never auto-marks paths[0]).
+  QStringList testMarkedPaths() const { return QStringList(marked_.begin(), marked_.end()); }
+  // Detail-pane probe (0.9.4.99): fileName value text of the first detail
+  // row ("-" when no file is shown). Pins the user-visible symptom of the
+  // check/uncheck-then-select blank-detail defect regardless of cause.
+  QString testDetailFileName() const;
   // Resource-policy test hook (0.9.4.96): GPU acceleration switch state.
   bool testGpuOn() const { return gpuOn_; }
   static void scanLog(const QString& line); // process-wide scan log file
@@ -135,6 +142,9 @@ private slots:
   ExecutionPolicy currentExecPolicy() const;
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
   void setGroupMarked(int gi, bool on);
+  // 0.9.4.99: group-box check state under reference-exclusion (paths[0] is
+  // never auto-marked). Checked == all non-reference files marked.
+  Qt::CheckState groupMarkState(int gi) const;
   void showFileMenu(const QPoint&); void showGroupMenu(const QPoint&);
   void openSelected(); void revealSelected(); void renameSelected(); void deleteSelected();
   void revealPath(const QString& path);
@@ -363,7 +373,7 @@ private:
   QStyledItemDelegate* tileDelegate_=nullptr; // Explorer-style Tiles renderer for the group grid
   QStyledItemDelegate* defaultDelegate_=nullptr; // plain delegate restored for icon/list modes
   // (setItemDelegate(nullptr) does NOT restore painting; probed null visuals)
-  QPushButton *mediaImgBtn_=nullptr, *mediaVidBtn_=nullptr;   // toggle photo/video scope
+  QComboBox* kindBox_=nullptr; // photo/video/all scope dropdown (0.9.4.99)
   QListWidget* ignoreList_=nullptr; QPushButton *unignoreBtn_=nullptr, *clearIgnoreBtn_=nullptr;
   QStackedWidget* groupsStack_=nullptr; QListWidget* groupsList_=nullptr;
   QSplitter* split_=nullptr;

@@ -233,6 +233,8 @@ int main(int argc, char** argv) {
       "showDetailLog",
       // settings dialog (toolbar CPU display + GPU acceleration switches)
       "showCpuPercent", "monitorGpu",
+      // media scope dropdown labels
+      "kindImages", "kindVideos", "kindAll",
       // settings dialog (Test button visibility switch)
       "showTestButton",
       // detailed-log result dialog rows
