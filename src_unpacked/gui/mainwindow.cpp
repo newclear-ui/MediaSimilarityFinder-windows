@@ -1095,6 +1095,7 @@ void MainWindow::buildRight(QWidget* w) {
     showFileMenu(grid_->mapToGlobal(p));
   });
   list_ = new QTreeWidget(w);
+  list_->setObjectName("fileList"); // automation hook
   list_->setColumnCount(7); list_->setRootIsDecorated(false);
   applySelectionStyle(list_);
   connect(list_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem*, QTreeWidgetItem*) { fileListSelected(); });
@@ -2087,6 +2088,15 @@ QString MainWindow::testDetailFileName() const {
   auto* lab = qobject_cast<QLabel*>(w->widget());
   return lab ? lab->text() : QString();
 }
+// Detail-form installation probe (see header).
+bool MainWindow::testDetailInstalled() const {
+  if (!detailForm_) return false;
+  auto* box = qobject_cast<QWidget*>(detailForm_->parent());
+  return box && box->layout() == detailForm_;
+}
+int MainWindow::testDetailRowCount() const {
+  return detailForm_ ? detailForm_->rowCount() : -1;
+}
 void MainWindow::onUiTick() {
   // P3: no decode happens on the GUI thread anymore (all decode is
   // Backend-side), so there is no per-tick decode budget to refresh.
@@ -3023,6 +3033,9 @@ void MainWindow::refreshDetail() {
   // filename is already one row above, no need to repeat it.
   auto* pathLabel = new QLabel(this);
   pathLabel->setWordWrap(true);
+  // 0.9.4.100: user-controlled text renders literally. QLabel auto-detects
+  // rich text, so a filename carrying <>& would mangle or blank the row.
+  pathLabel->setTextFormat(Qt::PlainText);
   // Ignored horizontal size: wrap inside the allotted width instead of
   // stretching the pane (the old sudden widen/narrow jumps).
   pathLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -3048,6 +3061,7 @@ void MainWindow::refreshDetail() {
   const double pct = ref ? 100.0 : pathBest(currentFile_);
   auto* nameLabel = new QLabel(fi.fileName(), this);
   nameLabel->setWordWrap(true);
+  nameLabel->setTextFormat(Qt::PlainText); // see pathLabel: filenames are user-controlled
   nameLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   nameLabel->setToolTip(fi.fileName());
   // Same selection policy as the full-path value below: mouse + keyboard.
@@ -3106,6 +3120,23 @@ void MainWindow::refreshDetail() {
   // hash tab
   const QString fp = fileFp_.value(currentFile_);
   hashLabel_->setText(QString("%1\n%2").arg(trStr(lang(), "phash")).arg(fp.isEmpty() ? "-" : ("0x" + fp)));
+  // 0.9.4.100: remote-diagnosis tripwire for "detail text all blank".
+  // Healthy runs never log here: ~9 rows, a visible form box with width,
+  // tab 0. Fires only on row-count divergence, a collapsed/invisible form
+  // box, or an unexpected tab — exactly the states that render blank.
+  {
+    QWidget* box = qobject_cast<QWidget*>(detailForm_->parent());
+    const int rows = detailForm_->rowCount();
+    const bool wild = rows < 0 || rows > 24;
+    const bool narrow = box && box->isVisible() && box->width() < 60;
+    const bool homeless = !box || !box->isVisible() || box->layout() != detailForm_;
+    if (wild || narrow || homeless)
+      scanLog(QString("detailAnomaly file=%1 rows=%2 box=%3x%4 vis=%5 tab=%6").arg(
+          currentFile_.isEmpty() ? QStringLiteral("<empty>") : QFileInfo(currentFile_).fileName()).arg(rows).arg(
+          box ? box->width() : -1).arg(box ? box->height() : -1).arg(
+          box ? (int)box->isVisible() : -1).arg(
+          detailTabs_ ? detailTabs_->currentIndex() : -1));
+  }
 }
 
 // ------------------------------------------------------------ mark + file ops

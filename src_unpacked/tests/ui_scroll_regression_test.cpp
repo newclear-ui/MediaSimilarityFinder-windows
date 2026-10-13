@@ -527,8 +527,78 @@ int main(int argc, char** argv) {
                 ? QFileInfo(fgrid->item(0)->data(Qt::UserRole).toString()).fileName()
                 : QString();
             std::cout << "  [info] detail shows=" << shown.toStdString()
-                      << " expected=" << expect.toStdString() << "\n";
+                      << " expected=" << expect.toStdString()
+                      << " installed=" << w.testDetailInstalled() << "\n";
             check(!expect.isEmpty() && shown == expect, "detail info survives check/uncheck/select");
+            check(w.testDetailInstalled(), "detail form stays installed on its container");
+            // Multi-cycle stress (user flow repeats select+check actions):
+            // detail content and form row count must stay bounded.
+            for (int cyc = 0; cyc < 30; ++cyc) {
+                grow->setCheckState(Qt::Checked);
+                QApplication::processEvents();
+                grow->setCheckState(Qt::Unchecked);
+                QApplication::processEvents();
+                if (auto* f = fgrid->item(cyc % fgrid->count())) fgrid->setCurrentItem(f);
+                QApplication::processEvents();
+            }
+            const QString shownN = w.testDetailFileName();
+            const int rowsN = w.testDetailRowCount();
+            std::cout << "  [info] after 30 cycles detail=" << shownN.toStdString()
+                      << " rows=" << rowsN << "\n";
+            check(rowsN >= 0 && rowsN < 30, "detail form rows stay bounded");
+            check(!shownN.isEmpty() && shownN != QStringLiteral("-"), "detail survives repeated cycles");
+        }
+    }
+
+    // Phase 13 (0.9.4.99x): right-pane file checkbox toggles, then
+    // select — the detail pane must still show path/name/size.
+    {
+        auto* fgrid = w.findChild<QListWidget*>("fileGrid");
+        if (fgrid && fgrid->count() > 1) {
+            auto* f0 = fgrid->item(0);
+            f0->setCheckState(Qt::Checked);
+            QApplication::processEvents();
+            f0->setCheckState(Qt::Unchecked);
+            QApplication::processEvents();
+            if (auto* f1 = fgrid->item(1)) fgrid->setCurrentItem(f1);
+            QApplication::processEvents();
+            const QString shown = w.testDetailFileName();
+            const QString expect = QFileInfo(fgrid->item(1)->data(Qt::UserRole).toString()).fileName();
+            std::cout << "  [info] rightcheck detail shows=" << shown.toStdString()
+                      << " expected=" << expect.toStdString() << "\n";
+            check(!expect.isEmpty() && shown == expect, "detail survives file check/uncheck/select");
+        }
+    }
+
+    // Phase 14 (0.9.4.99x): same check/uncheck/select cycle in
+    // details/tree mode (middle tree + right list widgets).
+    {
+        auto* viewBox = w.findChild<QComboBox*>("viewBox");
+        auto* mtree = w.findChild<QTreeWidget*>("imgTree");
+        auto* rlist = w.findChild<QTreeWidget*>("fileList");
+        if (viewBox && mtree && rlist && mtree->topLevelItemCount() > 0) {
+            viewBox->setCurrentIndex(5); // tree/details mode
+            QApplication::processEvents();
+            if (auto* t0 = mtree->topLevelItem(0)) mtree->setCurrentItem(t0);
+            QApplication::processEvents();
+            auto* grow = mtree->topLevelItem(0);
+            grow->setCheckState(0, Qt::Checked);
+            QApplication::processEvents();
+            grow->setCheckState(0, Qt::Unchecked);
+            QApplication::processEvents();
+            QMetaObject::invokeMethod(&w, "setViewMode", Q_ARG(int, 1)); // right list
+            QApplication::processEvents();
+            if (rlist->topLevelItemCount() > 0) {
+                if (auto* f = rlist->topLevelItem(0)) rlist->setCurrentItem(f);
+                QApplication::processEvents();
+            }
+            const QString shown = w.testDetailFileName();
+            const QString expect = rlist->topLevelItemCount() > 0
+                ? QFileInfo(rlist->topLevelItem(0)->data(1, Qt::UserRole).toString()).fileName()
+                : QString();
+            std::cout << "  [info] tree-mode detail shows=" << shown.toStdString()
+                      << " expected=" << expect.toStdString() << "\n";
+            check(!expect.isEmpty() && shown == expect, "tree-mode detail survives check/uncheck/select");
         }
     }
 

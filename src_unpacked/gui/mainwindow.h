@@ -109,6 +109,12 @@ public:
   // row ("-" when no file is shown). Pins the user-visible symptom of the
   // check/uncheck-then-select blank-detail defect regardless of cause.
   QString testDetailFileName() const;
+  // Detail-form installation probe: the refreshDetail() form object must
+  // stay installed on its container (a silently orphaned layout would show
+  // nothing while all data paths test green).
+  bool testDetailInstalled() const;
+  // Detail-form row bound probe: refreshDetail() must not accumulate rows.
+  int testDetailRowCount() const;
   // Resource-policy test hook (0.9.4.96): GPU acceleration switch state.
   bool testGpuOn() const { return gpuOn_; }
   static void scanLog(const QString& line); // process-wide scan log file

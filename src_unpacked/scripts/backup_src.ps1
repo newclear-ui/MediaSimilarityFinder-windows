@@ -39,12 +39,17 @@ $zipPath = Join-Path $backupDir $zipName
 if ($LASTEXITCODE -ne 0) { throw "git archive failed: $LASTEXITCODE" }
 Write-Host "Created $zipName from $head"
 
-# Rotate: keep the newest $Keep, recycle the rest. Sorting on name works because
-# the version segment is zero-padded and dotted, so lexical order is version order.
-# Each kind rotates independently, so a build with no portable package does not
-# push out a source backup and vice versa.
+# Rotate: keep the newest $Keep, recycle the rest. Sort numerically by the
+# dotted version tuple, NOT lexically by name: lexical order breaks at
+# three-digit components (v0.9.4.100 < v0.9.4.99 lexically) and would recycle
+# the newest backup first. Each kind rotates independently, so a build with
+# no portable package does not push out a source backup and vice versa.
 foreach ($kind in @("-src.zip", "-Portable-Windows-x64.zip")) {
-  $all = @(Get-ChildItem $backupDir -Filter "MediaSimilarityFinder-v*$kind" | Sort-Object Name)
+  $all = @(Get-ChildItem $backupDir -Filter "MediaSimilarityFinder-v*$kind" | Sort-Object {
+    if ($_.Name -match 'v(\d+)\.(\d+)\.(\d+)\.(\d+)') {
+      [long]$Matches[1] * 1000000000 + [long]$Matches[2] * 1000000 + [long]$Matches[3] * 1000 + [long]$Matches[4]
+    } else { 0 }
+  })
   if ($all.Count -gt $Keep) {
     foreach ($old in $all[0..($all.Count - $Keep - 1)]) {
       Add-Type -AssemblyName Microsoft.VisualBasic
