@@ -26,6 +26,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMetaObject>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSettings>
@@ -294,6 +295,108 @@ int main(int argc, char** argv) {
     // View switch itself refills once (legitimate structural change); the
     // catch-up ticks after it must not.
     check(w.testFullRebuildCount() <= f2 + 1, "at most the view-switch refill, no tick rebuilds");
+
+    // Phase 6 (0.9.4.94): a deep full rebuild keeps the scroll position.
+    // Batched grids used to restore against a still-small maximum, clamping a
+    // deep offset toward the top ("past a depth, jumps to the top"). The
+    // rebuild now lays out synchronously before restoring.
+    {
+        // Settle to a converged bottom first: the Batched maximum can still
+        // grow right after scrollToBottom, leaving the value behind. Repeat
+        // until the value matches the maximum.
+        auto* gbar = grid->verticalScrollBar();
+        for (int i = 0; i < 30 && gbar && gbar->value() != gbar->maximum(); ++i) {
+            grid->scrollToBottom();
+            grid->doItemsLayout();
+            QApplication::processEvents();
+        }
+        const int deepMax = gbar ? gbar->maximum() : 0;
+        const int deepVal = gbar ? gbar->value() : -1;
+        std::cout << "  [info] deep-rebuild max=" << deepMax << " value=" << deepVal << "\n";
+        check(gbar && deepMax > 0 && deepVal == deepMax, "deep scroll settled at a nonzero maximum");
+        const qulonglong f6 = w.testFullRebuildCount();
+        QMetaObject::invokeMethod(&w, "groupSearchChanged", Q_ARG(QString, QString()));
+        // Let any post-rebuild batching settle WITHOUT touching the scrollbar:
+        // layout growth must never move the restored value by itself.
+        for (int i = 0; i < 10; ++i) QApplication::processEvents();
+        check(w.testFullRebuildCount() == f6 + 1, "filter refresh ran one full rebuild");
+        const int maxAfter = gbar ? gbar->maximum() : -1;
+        const int valAfter = gbar ? gbar->value() : -1;
+        std::cout << "  [info] after rebuild max=" << maxAfter << " value=" << valAfter << "\n";
+        check(gbar && maxAfter > 0 && valAfter == maxAfter, "deep full rebuild stays at the bottom");
+    }
+
+    // Phase 7 (0.9.4.94): same-group right-pane refills keep the file scroll.
+    // refreshFileViews() recreated every row with no restore, so any refill
+    // (finish, streaming, zoom) threw the file list back to the top.
+    {
+        auto* fileGrid = w.findChild<QListWidget*>("fileGrid");
+        check(fileGrid != nullptr, "right file grid found");
+        if (fileGrid) {
+            QMetaObject::invokeMethod(&w, "setViewMode", Q_ARG(int, 0)); // right grid mode
+            if (auto* first = grid->item(0)) grid->setCurrentItem(first);
+            QApplication::processEvents();
+            std::cout << "  [info] fileGrid items=" << fileGrid->count() << "\n";
+            check(fileGrid->count() == 2, "selected group shows its two files");
+            w.resize(300, 160);
+            QApplication::processEvents();
+            QMetaObject::invokeMethod(&w, "zoomChanged", Q_ARG(int, 256));
+            QApplication::processEvents();
+            auto* fbar = fileGrid->verticalScrollBar();
+            const int fmax = fbar ? fbar->maximum() : 0;
+            std::cout << "  [info] fileGrid max=" << fmax << "\n";
+            check(fbar && fmax > 0, "zoomed file grid overflows (scrollable)");
+            fileGrid->scrollToBottom();
+            fileGrid->doItemsLayout();
+            QApplication::processEvents();
+            const int fbefore = fbar ? fbar->value() : -1;
+            check(fbefore == fmax, "file grid at bottom before refill");
+            QMetaObject::invokeMethod(&w, "zoomChanged", Q_ARG(int, 256));
+            QApplication::processEvents();
+            const int fafter = fbar ? fbar->value() : -1;
+            std::cout << "  [info] fileGrid before=" << fbefore << " after=" << fafter << "\n";
+            check(fafter == fmax, "same-group refill keeps the file scroll");
+        }
+    }
+
+    // Phase 8 (0.9.4.94): scanFinished skips the duplicate finish rebuild.
+    // onResults already rebuilt everything for the same scan; repeating it in
+    // scanFinished doubled the worst-case "writing report" stall with no new
+    // data. Cancelled scans never pass through onResults and still rebuild.
+    {
+        const qulonglong f8 = w.testFullRebuildCount();
+        QVector<BackendFile> noFiles;
+        QStringList noRows;
+        QMetaObject::invokeMethod(&w, "onResults",
+            Q_ARG(QVector<BackendFile>, noFiles), Q_ARG(QStringList, noRows));
+        QApplication::processEvents();
+        check(w.testFullRebuildCount() == f8 + 1, "synthetic onResults rebuilt once");
+        QMetaObject::invokeMethod(&w, "scanFinished",
+            Q_ARG(QString, QStringLiteral("Scan complete: 0 files, 0 analyzed, 0 candidates, 0 groups|0|0|0|0|0")));
+        QApplication::processEvents();
+        check(w.testFullRebuildCount() == f8 + 1, "completed scanFinished adds no second rebuild");
+        QMetaObject::invokeMethod(&w, "scanFinished",
+            Q_ARG(QString, QStringLiteral("CANCELLED|10|5")));
+        QApplication::processEvents();
+        check(w.testFullRebuildCount() == f8 + 2, "cancelled scanFinished still rebuilds");
+    }
+
+    // Phase 9 (0.9.4.94): a damaged detailed-log record reports instead of
+    // vanishing. The parse failure used to return silently (no dialog, no
+    // message), which reads as "log generation never completes".
+    {
+        auto* status = w.findChild<QLabel*>("statusMsg");
+        check(status != nullptr, "status message label found");
+        QMetaObject::invokeMethod(&w, "showDetailedLogDialog",
+            Q_ARG(QString, QStringLiteral("{damaged record")));
+        QApplication::processEvents();
+        const QString shown = status ? status->text() : QString();
+        const bool msgOk = shown == trStr(UiLang::En, "detailLogParseFail") ||
+                           shown == trStr(UiLang::Ko, "detailLogParseFail");
+        std::cout << "  [info] parse-fail status=" << shown.toStdString() << "\n";
+        check(msgOk, "damaged record shows a failure message, no silent return");
+        check(QApplication::activeModalWidget() == nullptr, "no dialog opened for a damaged record");
+    }
 
     fs::remove_all(d, ec);
     std::cout << "scroll_regression_selfcheck=" << (gOk ? "ok" : "FAILED")

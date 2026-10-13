@@ -286,6 +286,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogClose")) return S("닫기","Close");
   if (!std::strcmp(key,"detailLogSaved")) return S("상세 로그 저장됨: ","Detailed log saved: ");
   if (!std::strcmp(key,"detailLogSaveFail")) return S("상세 로그 저장 실패","Detailed log save failed");
+  if (!std::strcmp(key,"detailLogParseFail")) return S("상세 로그 열기 실패 (기록 손상)","Could not open the detailed log (record damaged)");
   if (!std::strcmp(key,"detailLogDone")) return S("완료","Completed");
   if (!std::strcmp(key,"detailLogStopped")) return S("중단","Stopped");
   if (!std::strcmp(key,"detailLogState")) return S("상태","Status");
@@ -689,7 +690,7 @@ void MainWindow::buildUi() {
   // Non-empty saved state is applied by restoreUiState() after all panes exist.
   outer->addWidget(split_, 1);
   statusBar_ = statusBar();
-  statusMsg_ = new QLabel(this); statusCount_ = new QLabel(this); statusProg_ = new QProgressBar(this);
+  statusMsg_ = new QLabel(this); statusMsg_->setObjectName("statusMsg"); statusCount_ = new QLabel(this); statusProg_ = new QProgressBar(this);
   statusProg_->setRange(0, 100); statusProg_->setValue(0); statusProg_->setFixedWidth(220);
   gpuLbl_ = new QLabel(this);
   statusBar_->addWidget(statusMsg_, 1); statusBar_->addWidget(statusCount_); statusBar_->addWidget(statusProg_);
@@ -973,7 +974,14 @@ void MainWindow::buildMiddle(QWidget* w) {
   imgGrid_->setObjectName("imgGrid"); // automation hook, see folder_
   imgGrid_->setViewMode(QListView::IconMode); imgGrid_->setResizeMode(QListView::Adjust);
   imgGrid_->setMovement(QListView::Static); imgGrid_->setSpacing(8);
-  imgGrid_->setUniformItemSizes(true); imgGrid_->setLayoutMode(QListView::Batched);
+  // 0.9.4.94: SinglePass, never Batched. A Batched doItemsLayout() restarts
+  // batching from row 0: the scrollbar maximum collapses to the first batch
+  // and the restored/clamped deep value is left behind when later batches
+  // regrow the maximum (proven in-test: 14461 stuck vs 17491 maximum). Every
+  // explicit layout call here (append, rebuild, thumb flush) must observe the
+  // final geometry, so the layout is synchronous. Item creation dominates
+  // refill cost; the layout pass over uniform-size cells is cheap.
+  imgGrid_->setUniformItemSizes(true); imgGrid_->setLayoutMode(QListView::SinglePass);
   imgLay->addWidget(imgTree_); imgLay->addWidget(imgGrid_);
   midTabs_->addTab(imgTab, QString());
   auto* vidTab = new QWidget(midTabs_);
@@ -982,7 +990,7 @@ void MainWindow::buildMiddle(QWidget* w) {
   vidGrid_ = new QListWidget(vidTab);
   vidGrid_->setViewMode(QListView::IconMode); vidGrid_->setResizeMode(QListView::Adjust);
   vidGrid_->setMovement(QListView::Static); vidGrid_->setSpacing(8);
-  vidGrid_->setUniformItemSizes(true); vidGrid_->setLayoutMode(QListView::Batched);
+  vidGrid_->setUniformItemSizes(true); vidGrid_->setLayoutMode(QListView::SinglePass);
   vidLay->addWidget(vidTree_); vidLay->addWidget(vidGrid_);
   midTabs_->addTab(vidTab, QString());
   applySelectionStyle(imgTree_); applySelectionStyle(imgGrid_);
@@ -1284,6 +1292,8 @@ void MainWindow::setRunning(bool v) {
     lastListN_ = 0;
     targetTotal_ = 0;
     targetKnown_ = false;
+    // 0.9.4.94: a new scan invalidates the previous completion rebuild mark.
+    resultsApplied_ = false;
     // Lock the group sort to None for the whole scan. A similarity/name order
     // must re-place every streamed match, which churned the pane (new groups
     // inserted into a sorted list). None keeps the union-find build order, so
@@ -1509,7 +1519,14 @@ void MainWindow::onDetailedLog(QString json) {
 void MainWindow::showDetailedLogDialog(const QString& json) {
   QJsonParseError perr;
   const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &perr);
-  if (perr.error != QJsonParseError::NoError || !doc.isObject()) return;
+  if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+    // 0.9.4.94: never fail silently here. Without this message a damaged
+    // telemetry record looks exactly like "log generation never completes":
+    // no dialog, no error, and the log button re-opens the same dead record.
+    statusMsg_->setText(trStr(lang(), "detailLogParseFail"));
+    scanLog(QString("detailLog parse failed at offset %1: %2").arg(perr.offset).arg(perr.errorString()));
+    return;
+  }
   const QJsonObject root = doc.object();
   const QJsonObject meta = root["meta"].toObject(), cfg = root["config"].toObject();
   const QJsonObject sum = root["summary"].toObject(), imgs = root["images"].toObject();
@@ -1666,7 +1683,14 @@ void MainWindow::scanFinished(QString msg) {
   scanLog(QString("thumbStat mem=%1 backend=%2 place=%3 pending=%4")
       .arg(thumbStatMem_).arg(thumbStatBackend_)
       .arg(thumbStatPlace_).arg((qulonglong)thumbPendingReq_.size()));
-  rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail();
+  // 0.9.4.94: onResults already performed this exact rebuild for the same
+  // scan (results arrive before finished). Repeating it here doubled the
+  // worst-case "writing report" stall on the GUI thread with zero new data.
+  // Cancelled scans never pass through onResults, so they always rebuild.
+  const bool skipRebuild = resultsApplied_ && !msg.startsWith(QStringLiteral("CANCELLED"));
+  resultsApplied_ = false;
+  if (skipRebuild) scanLog(QString("scanFinished rebuild skipped (already applied by onResults)"));
+  else { rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); }
   if (msg.startsWith(QStringLiteral("CANCELLED"))) {
     // Partial progress is kept by design (checkpoints): report what survived.
     const QStringList st = msg.split('|');
@@ -1744,6 +1768,7 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   // finished-scan report popup; it closes its own loading notice and re-enables
   // the buttons. A scan answer keeps the existing behavior.
   QDialog* wait = nullptr;
+  const bool wasLoad = loading_;
   if (loading_) {
     loading_ = false;
     wait = loadWait_;
@@ -1770,6 +1795,10 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
     addMatch(p[0], p[1], p[2].toDouble(), isVideoExt(p[0]) ? 2 : 1);
   }
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
+  // 0.9.4.94: mark this scan's rebuild done so scanFinished (which always
+  // follows for a completed scan) does not repeat it. Load answers take the
+  // wasLoad branch above and never reach scanFinished; leave the mark clear.
+  if (!wasLoad) resultsApplied_ = true;
   if (wait) { wait->close(); wait->deleteLater(); }
 }
 void MainWindow::resourceChanged(int i) {
@@ -1950,6 +1979,7 @@ void MainWindow::loadIndex() {
   marked_.clear();
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
   matchSeq_ = 0; groupsDirty_ = false; lastFillSig_ = 0;
+  resultsApplied_ = false; lastFileSig_.clear();
   // Load shows the stored order: sort = None, locked until the next scan.
   sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
   loadLockSort_ = true;
@@ -2098,9 +2128,9 @@ bool MainWindow::scrollGateActive() const {
 }
 void MainWindow::flushThumbLayout() {
   if (!thumbLayoutPending_) return;
-  // A layout pass can move Batched geometry while the user is navigating, so
-  // never run it mid-gesture. Keep the request pending and retry after the
-  // scroll cooldown instead; icons are already painted by onThumbReady.
+  // Never run a layout pass mid-gesture: even a synchronous pass can fight a
+  // drag in flight. Keep the request pending and retry after the scroll
+  // cooldown instead; icons are already painted by onThumbReady.
   if (scrollGateActive()) {
     QTimer::singleShot(kScrollGateCooldownMs, this, [this] { flushThumbLayout(); });
     return;
@@ -2378,9 +2408,9 @@ void MainWindow::groupViewChanged(int idx) {
     }
     for (int r = 0; r < grid->count(); ++r)
       if (grid->item(r)->data(Qt::UserRole).toInt() == currentGroup_) { grid->setCurrentRow(r); break; }
-    // (0.9.4.66) Delegate/size swaps must take effect even when Batched
-    // defers layout: force the pass explicitly. This never rebuilds
-    // items (see fillPair prohibition) and never touches scroll.
+    // (0.9.4.66) Delegate/size swaps must take effect immediately: force the
+    // pass explicitly. This never rebuilds items (see fillPair prohibition)
+    // and never touches scroll.
     grid->doItemsLayout();
   } else {
     grid->setItemDelegate(defaultDelegate_);
@@ -2527,10 +2557,14 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     }
   }
   tree->clear(); grid->clear();
+  // The middle grids use SinglePass (see construction), so the layout below
+  // observes the final scrollbar maximum and the anchor restore is exact.
+  // (Batched would collapse the maximum mid-rebuild and clamp deep offsets.)
   for (int k = 0; k < curIndex.size(); ++k) addGroupItems(tree, grid, curIndex[k], wantKind, syncSel);
   tree->resizeColumnToContents(0);
-  // Settle Batched layout before measuring the rebuilt anchor rectangles.
-  // Layout changes geometry; it does not recreate items or move selection.
+  // Settle the synchronous layout before measuring the rebuilt anchor
+  // rectangles. Layout changes geometry; it does not recreate items or move
+  // selection.
   tree->doItemsLayout();
   grid->doItemsLayout();
   bool restoredTree = false;
@@ -2785,7 +2819,7 @@ void MainWindow::onThumbReady(quint64 requestId, const ThumbResult& thumb) {
   }
   ++thumbStatBackend_;
   // Stale-drop + paint (0.9.4.66 pattern: a layout pass must follow icon
-  // changes under uniformItemSizes+Batched, or art paints outside its cell).
+  // changes under uniformItemSizes, or art paints outside its cell).
   // Coalesced (0.9.4.75): arrivals only mark layout dirty, and the first
   // arrival in a burst schedules one zero-delay layout pass. A thumbnail
   // burst therefore costs one layout instead of one per arrival, while the
@@ -2832,10 +2866,16 @@ static QString pctText(double v, bool ref, UiLang l) {
 }
 void MainWindow::refreshFileViews() {
   grid_->blockSignals(true); list_->blockSignals(true);
+  // 0.9.4.94: recreating every row resets both scrollbars to 0. A refill that
+  // shows the same group (streaming, finish, zoom) must keep the file
+  // position; only a newly selected group starts at the top.
+  const int gridPos = grid_->verticalScrollBar() ? grid_->verticalScrollBar()->value() : 0;
+  const int listPos = list_->verticalScrollBar() ? list_->verticalScrollBar()->value() : 0;
   grid_->clear(); list_->clear();
   detailTitle_->setText(trStr(lang(), "group"));
   detailSim_->clear(); detailCount_->clear();
   if (currentGroup_ < 0 || currentGroup_ >= groups_.size()) {
+    lastFileSig_.clear();
     grid_->blockSignals(false); list_->blockSignals(false); return;
   }
   const auto& g = groups_[currentGroup_];
@@ -2873,6 +2913,19 @@ void MainWindow::refreshFileViews() {
   }
   list_->resizeColumnToContents(1);
   if (!currentFile_.isEmpty() && !g.paths.contains(currentFile_)) currentFile_.clear();
+  grid_->doItemsLayout();
+  list_->doItemsLayout();
+  // Identity is the selected group plus the file-set shape. setValue clamps,
+  // so a zoom-driven geometry change still lands on the nearest valid offset.
+  const QString sig = QString::number(currentGroup_) + QLatin1Char('|') +
+      QString::number(g.paths.size()) + QLatin1Char('|') +
+      (g.paths.isEmpty() ? QString() : g.paths.first()) + QLatin1Char('|') +
+      (g.paths.isEmpty() ? QString() : g.paths.last());
+  if (sig == lastFileSig_) {
+    if (grid_->verticalScrollBar()) grid_->verticalScrollBar()->setValue(gridPos);
+    if (list_->verticalScrollBar()) list_->verticalScrollBar()->setValue(listPos);
+  }
+  lastFileSig_ = sig;
   grid_->blockSignals(false); list_->blockSignals(false);
 }
 void MainWindow::fileGridSelected() {

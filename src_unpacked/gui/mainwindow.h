@@ -329,6 +329,16 @@ private:
   // onResults must not show the finished-scan report popup.
   bool loading_ = false;
   QDialog* loadWait_ = nullptr;
+  // 0.9.4.94: completion-path dedup. onResults (scan branch) already performs
+  // the full middle/right rebuild; scanFinished skips repeating it for the
+  // same scan so the "writing report" phase cannot stall the GUI thread twice.
+  // Set only by the scan branch of onResults; cleared at scan/load start.
+  bool resultsApplied_ = false;
+  // 0.9.4.94: right-pane scroll identity. refreshFileViews() recreates every
+  // row; same-content refills (streaming, finish, zoom) restore the file
+  // position, while a newly selected group starts at the top. The signature
+  // embeds the selected group plus the file-set shape.
+  QString lastFileSig_;
   // None-mode stable group order (union-find roots) and the per-kind rows
   // currently materialized in the middle pane: (root, signature) pairs used to
   // decide whether a refresh can append or must fall back to a full rebuild.

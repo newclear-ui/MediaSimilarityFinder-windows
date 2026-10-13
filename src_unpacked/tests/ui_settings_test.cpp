@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
       // S4 detailed logging + execution strategy (renamed off the bench* keys;
       // a missing entry would render the raw key in the toolbar/dialog)
       "detailLogToggle", "detailLogTip", "detailLogTitle", "detailLogSaved",
-      "detailLogSaveFail", "detailLogSave", "detailLogClose", "detailLogState",
+      "detailLogSaveFail", "detailLogParseFail", "detailLogSave", "detailLogClose", "detailLogState",
       "detailLogDone", "detailLogStopped", "detailLogOff",
       "strategyModeAuto", "strategyModeCpu", "strategyModeGpu", "strategyModeTip",
       "searchLog",
