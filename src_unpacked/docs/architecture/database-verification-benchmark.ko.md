@@ -139,3 +139,26 @@
 - 검증: CPU CTest 122/122, GPU CTest 123/123(`image_verify_test`, `verify_parity_test` 포함). groups 동일 → 판정 불변.
 - **미측정**: 사용자 dataset(G:)에서의 절대값(고지연 드라이브에서 V-1 key 효과가 더 큼), DBV-3~7.
 - Status: **PASS** (표준 dataset). 사용자 dataset 재측정 대기.
+
+### 7.1 사용자 dataset 실측 (0.9.4.92 GUI run, 2026-10-12)
+
+사용자 실행 로그 `detailed-log-2026-10-12T162124.json`. dataset `G:\Downloads\ss_twit` 177,392 파일, **인덱스 전체 삭제 후 콜드 스캔**.
+비교 기준은 0.9.4.91 로그(177,372 파일). **주의**: 이번 run은 `cudaAvailable=False`(CPU 해싱)라 wall 절대값 비교는 교란된다. 아래 verify 지표는 lookups 수가 동일(14,806)해 직접 비교 가능하다.
+
+| 지표 | 0.9.4.91 | 0.9.4.92 | 변화 |
+|---|---|---|---|
+| verifyQuickHashReads | 14,806 | **0** | -100% |
+| verifyQuickHashBytes | 934.5 MB | **0** | -100% |
+| verifyKeyMs | 169,877 ms | **4,582.6 ms** | **-97.3%** |
+| verifyCacheHits | 1,353 | 1,960 | hit 9.1% → 13.2% |
+| verifyDecodeMisses | 13,453 | 12,846 | -4.5% |
+| verifyDecodeMs | 1,095,446 ms | 1,066,381 ms | -2.7% |
+| verifyMs | 540,758 ms | 471,820 ms | -12.7% |
+| verifyCalls | 19,221 | 19,222 | 동일(≈) |
+| groups | 9,054 | 9,055 | +1 (dataset +20 파일) |
+
+- **V-1 확인(핵심)**: 고지연 G: 드라이브에서 캐시키의 64 KiB 읽기 제거로 `verifyKeyMs`가 **170 s → 4.6 s**(-97.3%). 표준 dataset(C:)의 -37.9%보다 훨씬 큰 효과 — 드라이브 지연이 클수록 이득이 크다는 예상을 실측이 확인했다.
+- **V-2 부분 확인**: 캐시 히트율 9.1% → 13.2%. 사용자 dataset은 파일당 재등장이 적어(캐시 1024로도 13%) 표준 dataset(96.3%)보다 이득이 작다. 캐시 확대의 상한은 데이터 재사용률에 달려 있다.
+- **교란 요인**: `cudaAvailable=False` → CPU 해싱(177,392). CUDA 미가용 원인은 별도 확인 필요(CPU 빌드 실행 여부/드라이버). wall(101m vs 112m)은 이 요인과 인덱스 삭제로 직접 비교 불가.
+- dataset fingerprint: 전체 재해시 1,393 s(인덱스 삭제로 content_hash 비어 있음 — 예상된 콜드 비용).
+- Status: **PASS** (사용자 dataset, verify key 지표). wall 절대값은 CUDA 가용 상태 재측정 필요.

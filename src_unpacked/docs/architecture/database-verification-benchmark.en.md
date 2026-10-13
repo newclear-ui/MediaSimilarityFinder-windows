@@ -139,3 +139,26 @@ Build: 0.9.4.92 (engine 1.5.1). Dataset: `test_sample_img_vid` (3,347 files). Te
 - Verification: CPU CTest 122/122, GPU CTest 123/123 (including `image_verify_test`, `verify_parity_test`). Identical groups → verdicts unchanged.
 - **Not measured**: absolute values on the user dataset (G:); on a high-latency drive V-1's key effect is larger. DBV-3..7.
 - Status: **PASS** (standard dataset). User-dataset re-measurement pending.
+
+### 7.1 User-dataset measurement (0.9.4.92 GUI run, 2026-10-12)
+
+User log `detailed-log-2026-10-12T162124.json`. Dataset `G:\Downloads\ss_twit`, 177,392 files, **cold scan after deleting the whole index**.
+Baseline is the 0.9.4.91 log (177,372 files). **Note**: this run had `cudaAvailable=False` (CPU hashing), so the absolute wall is confounded. The verify metrics below are directly comparable (identical lookup count 14,806).
+
+| Metric | 0.9.4.91 | 0.9.4.92 | Change |
+|---|---|---|---|
+| verifyQuickHashReads | 14,806 | **0** | -100% |
+| verifyQuickHashBytes | 934.5 MB | **0** | -100% |
+| verifyKeyMs | 169,877 ms | **4,582.6 ms** | **-97.3%** |
+| verifyCacheHits | 1,353 | 1,960 | hit 9.1% -> 13.2% |
+| verifyDecodeMisses | 13,453 | 12,846 | -4.5% |
+| verifyDecodeMs | 1,095,446 ms | 1,066,381 ms | -2.7% |
+| verifyMs | 540,758 ms | 471,820 ms | -12.7% |
+| verifyCalls | 19,221 | 19,222 | ~identical |
+| groups | 9,054 | 9,055 | +1 (dataset +20 files) |
+
+- **V-1 confirmed (key result)**: on the high-latency G: drive, removing the cache key's 64 KiB read cut `verifyKeyMs` from **170 s to 4.6 s** (-97.3%). Much larger than the standard dataset's -37.9% (C:) — the measurement confirms the prediction that a slower drive benefits more.
+- **V-2 partial**: hit rate 9.1% -> 13.2%. The user dataset reuses files across pairs less (13% even with a 1024 cache) than the standard dataset (96.3%). The cache-enlargement ceiling depends on the data's reuse rate.
+- **Confound**: `cudaAvailable=False` -> CPU hashing (177,392). The CUDA-unavailable cause needs a separate check (ran the CPU build? driver?). wall (101m vs 112m) is not directly comparable because of this and the index deletion.
+- dataset fingerprint: full re-hash 1,393 s (content_hash empty after the index deletion — expected cold cost).
+- Status: **PASS** (user dataset, verify-key metrics). The absolute wall needs a re-measurement with CUDA available.
