@@ -12,7 +12,12 @@
 // persists, which is exactly the bug this guards against).
 #include "mainwindow.h"
 #include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QMetaObject>
 #include <QSpinBox>
+#include <QStringList>
+#include <QTemporaryDir>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -81,6 +86,12 @@ int main(int argc, char** argv) {
   if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--cpu-policy") {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
+    // Isolated Ini settings (same init path as the app): without it the
+    // settings backend has no identity and every read returns defaults.
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) { std::cerr << "temp settings dir failed\n"; return 1; }
+    QDir().mkpath(settingsDir.path() + "/settings");
+    initAppSettings(settingsDir.path() + "/settings");
     MainWindow w;
     w.show();
     QApplication::processEvents();
@@ -114,6 +125,48 @@ int main(int argc, char** argv) {
       }
     }
     std::cout << "cpu_policy=ok checked=" << (int)(sizeof(cases) / sizeof(cases[0])) << "\n";
+    // 0.9.4.96: preset combo is Maximum/High/Balanced/Minimum (Gaming renamed,
+    // Custom removed); the CPU box is a read-only display, hidden by default;
+    // the toolbar GPU checkbox is gone (Settings > General owns the switch).
+    {
+      QComboBox* preset = w.findChild<QComboBox*>("presetBox");
+      if (!preset) { std::cerr << "preset combo not found\n"; return 1; }
+      QStringList names;
+      for (int i = 0; i < preset->count(); ++i) names << preset->itemText(i);
+      if (names != QStringList({"Maximum", "High", "Balanced", "Minimum"})) {
+        std::cerr << "preset items changed: " << names.join(",").toStdString() << "\n";
+        return 1;
+      }
+      if (w.findChild<QCheckBox*>("gpuToggle")) {
+        std::cerr << "toolbar GPU checkbox still present\n";
+        return 1;
+      }
+      if (!w.testGpuOn()) { std::cerr << "GPU switch default is not ON\n"; return 1; }
+      QSettings st;
+      const QVariant prevShow = st.value("ui/showCpuPercent");
+      st.setValue("ui/showCpuPercent", false);
+      st.sync(); // flush so the fresh instance inside the apply slot reads it
+      QMetaObject::invokeMethod(&w, "applyCpuPercentVisibility");
+      QApplication::processEvents();
+      if (cpu->isVisible()) {
+        std::cerr << "CPU box visible with showCpuPercent=false\n";
+        return 1;
+      }
+      st.setValue("ui/showCpuPercent", true);
+      st.sync();
+      const bool invoked = QMetaObject::invokeMethod(&w, "applyCpuPercentVisibility");
+      if (!invoked) { std::cerr << "apply slot not invoked\n"; return 1; }
+      QApplication::processEvents();
+      if (!cpu->isVisible()) {
+        std::cerr << "CPU box hidden with showCpuPercent=true\n";
+        return 1;
+      }
+      if (prevShow.isValid()) st.setValue("ui/showCpuPercent", prevShow);
+      else st.remove("ui/showCpuPercent");
+      QMetaObject::invokeMethod(&w, "applyCpuPercentVisibility");
+      QApplication::processEvents();
+      std::cout << "resource_ui=ok\n";
+    }
     return 0;
   }
   // Translation-table regression gate.
@@ -152,6 +205,8 @@ int main(int argc, char** argv) {
       "searchLog",
       // settings dialog (Show Detailed Logs visibility option)
       "showDetailLog",
+      // settings dialog (toolbar CPU display + GPU acceleration switches)
+      "showCpuPercent", "monitorGpu",
       // detailed-log result dialog rows
       "detailLogWall", "detailLogFiles", "detailLogImages", "detailLogVideos",
       "detailLogCpuUse", "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",

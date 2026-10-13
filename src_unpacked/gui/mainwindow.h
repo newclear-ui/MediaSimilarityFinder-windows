@@ -102,6 +102,8 @@ public:
   // directly and bypassing it. Arrivals paint via onThumbReady.
   void testThumbCatchUp() { thumbCatchUpVisible(); }
   qulonglong testFullRebuildCount() const { return fullRebuildCount_; }
+  // Resource-policy test hook (0.9.4.96): GPU acceleration switch state.
+  bool testGpuOn() const { return gpuOn_; }
   static void scanLog(const QString& line); // process-wide scan log file
   static void sortTiedReferencePaths(QStringList&, const QHash<QString,qulonglong>&, const QHash<QString,qulonglong>&);
 private slots:
@@ -120,13 +122,14 @@ private slots:
   void onRevalidateProgress(qulonglong,qulonglong);
     void onDetailedLog(QString);
     void showDetailedLogDialog(const QString& json);
-  void resourceChanged(int); void customResourceChanged();
+  void resourceChanged(int);
   // groups / files
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
   void toggleTestMode(bool);
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
   void groupViewChanged(int);
   void applyExecutionMode(); void updateKindSelection();
+  void applyCpuPercentVisibility(); // show/hide cpu_ from ui/showCpuPercent (default OFF)
   // P4: builds the two-axis ExecutionPolicy from policy_ + strategy box.
   ExecutionPolicy currentExecPolicy() const;
   void toggleMarkSelected(); void markAll(bool); void invertMarked();
@@ -301,8 +304,12 @@ private:
   QAction *monSettingsAct_=nullptr, *helpAct_=nullptr; // retexted on language change
   QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;
-  QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr; QCheckBox* gpuEnabled_=nullptr;
-  QCheckBox* logTgl_=nullptr; QAction* logTglAct_=nullptr;
+  QComboBox* preset_=nullptr; QSpinBox* cpu_=nullptr;
+  // 0.9.4.96: GPU acceleration moved to Settings > General (ui/gpuEnabled).
+  // The toolbar checkbox is gone; strategy forcing (CPU-only off) applies to
+  // this stored switch with the same overwrite semantics as before.
+  bool gpuOn_ = true;
+  QCheckBox* logTgl_=nullptr; QAction* logTglAct_=nullptr; QAction* cpuAct_=nullptr;
   // Execution resource strategy (single-select dropdown): the user's
   // real-search resource choice. logTgl_ enables diagnostic telemetry
   // on the scan.

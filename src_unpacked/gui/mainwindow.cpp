@@ -125,6 +125,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"stop")) return S("중지","Stop");
   if (!std::strcmp(key,"settings")) return S("설정","Settings");
   if (!std::strcmp(key,"showDetailLog")) return S("상세 로그 표시","Show Detailed Logs");
+  if (!std::strcmp(key,"showCpuPercent")) return S("CPU 사용량 % 표기","Show CPU usage %");
   if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
   if (!std::strcmp(key,"explorer")) return S("탐색기","Explorer");
@@ -724,10 +725,13 @@ void MainWindow::buildToolbar() {
   connect(pause_, &QPushButton::clicked, this, &MainWindow::togglePauseScan);
   connect(cancel_, &QPushButton::clicked, this, &MainWindow::cancelScan);
   preset_ = new QComboBox(toolBar_);
-  // Text-only labels (no percentages): the CPU percent lives in the spinbox
-  // next to it. Mapping stays index-based in resourceChanged().
+  preset_->setObjectName("presetBox"); // automation hook
+  // Text-only labels (no percentages): the CPU percent is shown in the
+  // read-only CPU box next to it (visible only when ui/showCpuPercent is on).
+  // Mapping stays index-based in resourceChanged(). 0.9.4.96: Gaming is now
+  // labeled Minimum (same 25/25 values); Custom is gone (presets only).
   preset_->addItems({QStringLiteral("Maximum"), QStringLiteral("High"), QStringLiteral("Balanced"),
-                     QStringLiteral("Gaming"), QStringLiteral("Custom")});
+                     QStringLiteral("Minimum")});
   preset_->setCurrentIndex(2);
   // Narrow to the content instead of stretching with the widest label so the
   // resource+CPU area stays compact.
@@ -745,23 +749,29 @@ void MainWindow::buildToolbar() {
   // selectable/editable (see clampCpuDigitSelection + the SelectAll filter).
   cpu_->setPrefix(QStringLiteral("CPU "));
   cpu_->setSuffix(QStringLiteral("%"));
+  // 0.9.4.96: display-only (no custom editing; presets only). No spin buttons
+  // and a read-only field, so valueChanged can only come from programmatic
+  // preset syncs (always blockSignals-guarded). Visibility is governed by
+  // ui/showCpuPercent (default OFF) through applyCpuPercentVisibility().
   // "CPU 90%" (the widest value) must fit: text width + spin buttons + frame.
   {
     const int cpuTextW = cpu_->fontMetrics().horizontalAdvance(QStringLiteral("CPU 90%"));
     cpu_->setMinimumWidth(cpuTextW + 30);
     cpu_->setMaximumWidth(cpuTextW + 54);
   }
+  cpu_->setButtonSymbols(QAbstractSpinBox::NoButtons);
   QLineEdit* cpuEdit = cpu_->findChild<QLineEdit*>();
+  cpuEdit->setReadOnly(true);
   connect(cpuEdit, &QLineEdit::selectionChanged, this, [this] { clampCpuDigitSelection(); });
   connect(cpuEdit, &QLineEdit::cursorPositionChanged, this, [this] { clampCpuDigitSelection(); });
   cpuEdit->installEventFilter(this);
   // Node A: no manual GPU utilization control. GPU is ON/OFF only
-  // (gpuEnabled_ checkbox = Adaptive/AUTO when ON); the deprecated internal
-  // gpuPercent cap stays untouched until the Node B scheduler replaces it.
+  // (Settings > General switch = Adaptive/AUTO when ON); the deprecated
+  // internal gpuPercent cap stays untouched until the Node B scheduler
+  // replaces it.
   cpu_->setValue(policy_.cpuPercent);
-  connect(cpu_, qOverload<int>(&QSpinBox::valueChanged), this, &MainWindow::customResourceChanged);
-  gpuEnabled_ = new QCheckBox(toolBar_); gpuEnabled_->setChecked(true);
-  gpuEnabled_->setObjectName("gpuToggle"); // automation hook, see folder_
+  // 0.9.4.96: GPU acceleration moved to Settings > General (ui/gpuEnabled).
+  gpuOn_ = QSettings().value("ui/gpuEnabled", true).toBool();
   logTgl_ = new QCheckBox(toolBar_); logTgl_->setChecked(true);
   logTgl_->setObjectName("logTgl"); // automation hook, see folder_
   // Execution resource strategy: one dropdown choice of how this program uses
@@ -779,7 +789,7 @@ void MainWindow::buildToolbar() {
   strategyBox_->setToolTip(trStr(lang(), "strategyModeTip"));
   strategyBox_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
   fitStrategyBoxWidth();
-  // On change, reflect it in gpuEnabled_ and refresh
+  // On change, reflect it in the stored GPU switch and refresh
   // the policy so the scan honours the selection.
   connect(strategyBox_, qOverload<int>(&QComboBox::currentIndexChanged),
           this, [this](int){ applyExecutionMode(); });
@@ -828,12 +838,14 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); logTglAct_ = toolBar_->addWidget(logTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator();
-  // Execution resource strategy + fine CPU budget as one compact area.
+  // Execution resource strategy + preset CPU budget as one compact area.
+  // The CPU box is a read-only display shown only when ui/showCpuPercent is
+  // on; the GPU switch lives in Settings > General.
   toolBar_->addWidget(strategyBox_);
-  toolBar_->addWidget(preset_); toolBar_->addWidget(cpu_);
+  toolBar_->addWidget(preset_); cpuAct_ = toolBar_->addWidget(cpu_);
   toolBar_->addSeparator();
   toolBar_->addWidget(mediaImgBtn_); toolBar_->addWidget(mediaVidBtn_);
-  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(gpuEnabled_); toolBar_->addWidget(logBtn_);
+  toolBar_->addSeparator(); toolBar_->addWidget(monBtn_); toolBar_->addWidget(logBtn_);
   // All toolbar separators share one clearly visible style: a 1px rule in a
   // mid grey, lighter than before but darker than the faint native etch, with
   // margins matching the height of the existing native separators.
@@ -843,6 +855,7 @@ void MainWindow::buildToolbar() {
   toolBar_->addWidget(testBtn_); // immediately left of Settings, at the far right
   toolBar_->addWidget(utilBtn_); // far-right menu
   applyDetailLogVisibility(); // ui/showDetailLog (default ON): visibility only, telemetry untouched
+  applyCpuPercentVisibility(); // ui/showCpuPercent (default OFF): display only, policy untouched
 }
 
 void MainWindow::buildLeft(QWidget* w) {
@@ -1144,8 +1157,6 @@ void MainWindow::applyStaticTexts() {
     strategyBox_->setToolTip(trStr(l, "strategyModeTip"));
     fitStrategyBoxWidth();
   }
-  gpuEnabled_->setText(trStr(l, "monitorGpu"));
-  gpuEnabled_->setToolTip(trStr(l, "scanGpuTip"));
   monBtn_->setText(QStringLiteral("👁 ") + trStr(l, "monitor"));
   monBtn_->setChecked(monitorEnabled_);
   if (testBtn_) {
@@ -1394,7 +1405,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
     cfg.distance = 8;
     cfg.cpu = cpu_->value();
     cfg.gpuPercent = policy_.gpuPercent;
-    cfg.gpuEnabled = gpuEnabled_->isChecked();
+    cfg.gpuEnabled = gpuOn_;
     cfg.scanImages = mediaImgBtn_->isChecked();
     cfg.scanVideos = mediaVidBtn_->isChecked();
     cfg.ignored = ignored_;
@@ -1843,7 +1854,7 @@ ExecutionPolicy MainWindow::currentExecPolicy() const {
   e.strategy = executionStrategy() == ExecutionResourceStrategy::CpuOnly
                    ? 1
                    : (executionStrategy() == ExecutionResourceStrategy::GpuMax ? 2 : 0);
-  e.gpuEnabled = gpuEnabled_ && gpuEnabled_->isChecked();
+  e.gpuEnabled = gpuOn_;
   return e;
 }
 void MainWindow::clampCpuDigitSelection() {
@@ -1901,21 +1912,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* ev) {
     }
   }
   return QMainWindow::eventFilter(watched, ev);
-}
-
-void MainWindow::customResourceChanged() {
-  // Show the same normalized value that make_policy will store. Updating the
-  // widget before switching to Custom keeps the preset change and the later
-  // policy assignment idempotent.
-  const int cpu = msf::normalize_user_cpu_percent(cpu_->value());
-  if (cpu != cpu_->value()) {
-    cpu_->blockSignals(true);
-    cpu_->setValue(cpu);
-    cpu_->blockSignals(false);
-  }
-  if (preset_->currentIndex() != 4) preset_->setCurrentIndex(4);
-  policy_ = msf::make_policy(msf::ResourceMode::Custom, cpu_->value(), policy_.gpuPercent);
-  if (backend_) backend_->updateResourcePolicy(currentExecPolicy());
 }
 
 // ------------------------------------------------------------ folders (left)
@@ -2359,16 +2355,17 @@ void MainWindow::gridCheckChanged(QListWidgetItem* it) {
 void MainWindow::applyExecutionMode() {
   // The upper mode drives GPU availability; the CPU detail (preset_/cpu_) is
   // unchanged. CPU-only forces the GPU off; AUTO and GPU-max keep the adaptive
-  // GPU path available. gpuEnabled_ remains visible so the user can still see it.
+  // GPU path available. The GPU switch now lives in Settings > General
+  // (ui/gpuEnabled); the forcing below mirrors the old toolbar checkbox,
+  // including its overwrite of the stored switch.
   const bool cpuOnly = (executionStrategy() == ExecutionResourceStrategy::CpuOnly);
-  if (cpuOnly && gpuEnabled_->isChecked()) {
-    gpuEnabled_->blockSignals(true); gpuEnabled_->setChecked(false); gpuEnabled_->blockSignals(false);
-  } else if (!cpuOnly && !gpuEnabled_->isChecked()) {
-    gpuEnabled_->blockSignals(true); gpuEnabled_->setChecked(true); gpuEnabled_->blockSignals(false);
+  if (cpuOnly && gpuOn_) {
+    gpuOn_ = false; QSettings().setValue("ui/gpuEnabled", false);
+  } else if (!cpuOnly && !gpuOn_) {
+    gpuOn_ = true; QSettings().setValue("ui/gpuEnabled", true);
   }
   // Refresh the stored policy so monitor/scan pick up the GPU decision.
-  // Re-apply through the current preset so the user's CPU budget preset is kept
-  // (customResourceChanged would silently force Custom).
+  // Re-apply through the current preset so the user's CPU budget preset is kept.
   resourceChanged(preset_->currentIndex());
 }
 
@@ -3690,11 +3687,11 @@ void MainWindow::updateGpuLabel() {
   const qulonglong n = backend_ ? backendStatus_.gpuDone : 0;
   QString txt;
   if (scanning_ && n > 0) txt = trStr(l, "gpuLive").arg(n);
-  else if (gpuEnabled_ && gpuEnabled_->isChecked() && avail) txt = trStr(l, "gpuOn");
+  else if (gpuOn_ && avail) txt = trStr(l, "gpuOn");
   else txt = trStr(l, "gpuOff");
   gpuLbl_->setText("⚡ " + txt);
-  gpuLbl_->setStyleSheet(gpuEnabled_ && gpuEnabled_->isChecked() && avail
-                             ? QStringLiteral("color:#2e7d32;") : QStringLiteral("color:#999;"));
+  gpuLbl_->setStyleSheet(gpuOn_ && avail
+                              ? QStringLiteral("color:#2e7d32;") : QStringLiteral("color:#999;"));
 }
   void MainWindow::showHelp() {
     QMessageBox::about(this, trStr(lang(), "help"), trStr(lang(), "about"));
@@ -3727,6 +3724,20 @@ void MainWindow::configureMonitor() {
   showLog->setObjectName("showDetailLogBox"); // automation hook, see folder_
   showLog->setChecked(QSettings().value("ui/showDetailLog", true).toBool());
   generalLay->addWidget(showLog);
+  // CPU usage % display checkbox (0.9.4.96+): the toolbar CPU box is a
+  // read-only preset display, hidden unless this is on (default OFF).
+  // Stored in portable QSettings like the rest.
+  auto* showCpu = new QCheckBox(trStr(lang(), "showCpuPercent"), generalTab);
+  showCpu->setObjectName("showCpuBox"); // automation hook
+  showCpu->setChecked(QSettings().value("ui/showCpuPercent", false).toBool());
+  generalLay->addWidget(showCpu);
+  // GPU acceleration checkbox (0.9.4.96+): moved here from the toolbar, where
+  // it stood next to the monitor button. Same adaptive ON/OFF meaning
+  // (no manual utilization control); persists across launches.
+  auto* gpuAccel = new QCheckBox(trStr(lang(), "monitorGpu"), generalTab);
+  gpuAccel->setObjectName("gpuAccelBox"); // automation hook
+  gpuAccel->setChecked(QSettings().value("ui/gpuEnabled", true).toBool());
+  generalLay->addWidget(gpuAccel);
   // Analyze-mode selector (0.9.4.81): B(안정형) default on top, then A(고속형),
   // then A+B(자동). An option inside Settings. The verdict is identical across
   // modes; only verify scheduling/checkpointing differs.
@@ -3784,7 +3795,7 @@ void MainWindow::configureMonitor() {
   auto* poll = new QSpinBox(settingsGroup); poll->setRange(1, 60); poll->setSuffix(" s");
   poll->setValue(st.value("monitor/pollSeconds", 2).toInt());
   auto* gpu = new QCheckBox(trStr(lang(), "allowGpu"), settingsGroup);
-  gpu->setChecked(st.value("monitor/gpuEnabled", gpuEnabled_->isChecked()).toBool());
+  gpu->setChecked(st.value("monitor/gpuEnabled", gpuOn_).toBool());
   settings->addWidget(thresholdLabel, 0, 0); settings->addWidget(threshold, 0, 1);
   settings->addWidget(stableLabel, 1, 0); settings->addWidget(stable, 1, 1);
   settings->addWidget(pollLabel, 2, 0); settings->addWidget(poll, 2, 1);
@@ -3822,6 +3833,13 @@ void MainWindow::configureMonitor() {
   st.setValue("monitor/pollSeconds", poll->value());
   st.setValue("monitor/gpuEnabled", gpu->isChecked());
   st.setValue("ui/showDetailLog", showLog->isChecked());
+  st.setValue("ui/showCpuPercent", showCpu->isChecked());
+  st.setValue("ui/gpuEnabled", gpuAccel->isChecked());
+  gpuOn_ = gpuAccel->isChecked();
+  applyDetailLogVisibility();
+  applyCpuPercentVisibility();
+  // Push the GPU decision so monitor/scan pick it up without a restart.
+  if (backend_) backend_->updateResourcePolicy(currentExecPolicy());
   st.setValue("ui/analyzeMode", analyzeModeBox->currentIndex());
   applyDetailLogVisibility();
   st.setValue("ui/language", langSel->currentData().toString());
@@ -3837,6 +3855,16 @@ void MainWindow::applyDetailLogVisibility() {
   const bool show = QSettings().value("ui/showDetailLog", true).toBool();
   if (logTglAct_) logTglAct_->setVisible(show);
   else if (logTgl_) logTgl_->setVisible(show);
+}
+void MainWindow::applyCpuPercentVisibility() {
+  // Visibility only: the preset policy behind cpu_ is untouched, and a hidden
+  // box keeps its preset-synced value so re-showing restores the display.
+  // Through the toolbar action: QToolBar owns child visibility via the action
+  // created by addWidget, so hiding the widget directly would be reverted on
+  // the next toolbar layout.
+  const bool show = QSettings().value("ui/showCpuPercent", false).toBool();
+  if (cpuAct_) cpuAct_->setVisible(show);
+  else if (cpu_) cpu_->setVisible(show);
 }
 void MainWindow::paintTestButton() {
   if (!testBtn_) return;
@@ -3880,7 +3908,7 @@ void MainWindow::toggleMonitor() {
                          st.value("monitor/thresholdPercent", 90).toDouble(),
                          st.value("monitor/stableSeconds", 3).toInt(),
                          st.value("monitor/pollSeconds", 2).toInt(),
-                         st.value("monitor/gpuEnabled", gpuEnabled_->isChecked()).toBool(),
+                         st.value("monitor/gpuEnabled", gpuOn_).toBool(),
                          policy_);
   monitorEnabled_ = true;
   monBtn_->setChecked(true); paintMonBtn();
