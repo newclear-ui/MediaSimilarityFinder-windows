@@ -158,7 +158,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"cpu")) return S("CPU 사용","CPU usage");
   if (!std::strcmp(key,"ram")) return S("RAM 사용","RAM usage");
   if (!std::strcmp(key,"monitor")) return S("모니터","Monitor");
-  if (!std::strcmp(key,"monitorGpu")) return S("GPU 가속","GPU");
+  if (!std::strcmp(key,"monitorGpu")) return S("모니터링 GPU가속","Monitoring GPU acceleration");
   if (!std::strcmp(key,"general")) return S("일반","General");
   if (!std::strcmp(key,"tabFolder")) return S("폴더","Folders");
   if (!std::strcmp(key,"tabImages")) return S("결과: 이미지","Results: Images");
@@ -2782,6 +2782,14 @@ void MainWindow::dropThumbCache(const QString& path) {
   }
 }
 QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool /*bypassBudget*/) const {
+  // 0.9.4.97: never request art no surface can show. A grid whose iconSize
+  // was never set (e.g. the hidden middle grid in details/tree view) would
+  // otherwise burn backend WIC decodes whose arrivals normalize to null and
+  // can never paint. The visible grid re-requests through fill/catch-up.
+  if (!size.isValid() || size.width() <= 0 || size.height() <= 0) {
+    ++thumbStatPlace_;
+    return placeholderIcon(path);
+  }
   // Cache key carries the requested size: cells follow the delivered pixmap
   // size (probed 90x91..262x283 for one view), so sharing one pixmap across
   // sizes would keep cells uneven.
@@ -2864,6 +2872,26 @@ void MainWindow::onThumbReady(quint64 requestId, const ThumbResult& thumb) {
   if (currentFile_ == path && size == QSize(220, 190)) {
     preview_->setPixmap(ic.pixmap(QSize(220, 190)));
     painted = true;
+  }
+  // 0.9.4.97: the right file grid paints on arrival too. It used to heal
+  // only on the next manual refresh (selection change), so after a Load —
+  // with no clicks following — it kept placeholders forever. Same
+  // stale-drop discipline as the middle grids (stored path + current icon
+  // size); a group switch recreates the rows, so a late arrival can never
+  // paint the wrong files.
+  if (grid_ && grid_->iconSize() == size) {
+    bool filePainted = false;
+    for (int r = 0; r < grid_->count(); ++r) {
+      auto* item = grid_->item(r);
+      if (!item || item->data(Qt::UserRole).toString() != path) continue;
+      if (item->icon().cacheKey() == ic.cacheKey()) continue;
+      item->setIcon(ic);
+      filePainted = true;
+    }
+    if (filePainted) {
+      grid_->doItemsLayout();
+      painted = true;
+    }
   }
   // The right-pane file list recreates its items on every selection, so it
   // heals through the memory cache on next refresh without special handling.

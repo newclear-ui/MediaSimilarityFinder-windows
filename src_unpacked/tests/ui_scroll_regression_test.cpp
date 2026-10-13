@@ -422,6 +422,65 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Phase 11 (0.9.4.97): a fresh session's Load paints thumbnails.
+    // Regression: the right file grid never painted on arrival (it healed
+    // only on the next manual selection), so a Load with no clicks following
+    // kept placeholders forever; requests at an unset iconSize burned backend
+    // decodes for art that can never paint. Second MainWindow on the same
+    // settings/index, no scan: drive loadIndex, pump catch-up ticks.
+    {
+        MainWindow w2;
+        w2.show();
+        QApplication::processEvents();
+        auto* folder2 = w2.findChild<QLineEdit*>("folder");
+        check(folder2 != nullptr, "second window folder field found");
+        if (folder2) {
+            // Deterministic grid view (not the inherited details mode).
+            QMetaObject::invokeMethod(&w2, "groupViewChanged", Q_ARG(int, 0));
+            QApplication::processEvents();
+            folder2->setText(QString::fromStdString((d / "media").string()));
+            QApplication::processEvents();
+            const qulonglong p0 = w2.testThumbPaintedCount();
+            std::cout << "PHASE11-LOAD-START" << std::endl;
+            QMetaObject::invokeMethod(&w2, "loadIndex");
+            QApplication::processEvents();
+            auto* g2 = w2.findChild<QListWidget*>("imgGrid");
+            std::cout << "  [info] load grid items=" << (g2 ? g2->count() : -1)
+                      << " rebuilds=" << w2.testFullRebuildCount()
+                      << " pendingRightAfterLoad=" << w2.testThumbPendingCount() << "\n";
+            check(g2 && g2->count() >= 80, "load lists the stored groups");
+            for (int i = 0; i < 12; ++i) {
+                w2.testUiTick();
+                QApplication::processEvents();
+                QThread::msleep(100);
+            }
+            const qulonglong painted = w2.testThumbPaintedCount() - p0;
+            const qulonglong pending = w2.testThumbPendingCount();
+            std::cout << "  [info] load final painted=" << painted
+                      << " pending=" << pending << "\n";
+            check(painted > 0 && pending == 0, "fresh-session Load paints thumbnails");
+            // Right pane: selecting a group must show real art, not
+            // placeholders (offscreen placeholders are null icons).
+            auto* fileGrid2 = w2.findChild<QListWidget*>("fileGrid");
+            check(fileGrid2 != nullptr, "second window file grid found");
+            if (fileGrid2 && g2 && g2->count() > 0) {
+                if (auto* first = g2->item(0)) g2->setCurrentItem(first);
+                for (int i = 0; i < 8; ++i) {
+                    w2.testUiTick();
+                    QApplication::processEvents();
+                    QThread::msleep(100);
+                }
+                std::cout << "  [info] fileGrid items=" << fileGrid2->count() << "\n";
+                check(fileGrid2->count() == 2, "selected group shows its two files");
+                bool artShown = false;
+                for (int r = 0; r < fileGrid2->count(); ++r) {
+                    if (!fileGrid2->item(r)->icon().isNull()) { artShown = true; break; }
+                }
+                check(artShown, "right pane shows decoded art after Load");
+            }
+        }
+    }
+
     fs::remove_all(d, ec);
     std::cout << "scroll_regression_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";
