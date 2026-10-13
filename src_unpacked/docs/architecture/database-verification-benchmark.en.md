@@ -162,3 +162,27 @@ Baseline is the 0.9.4.91 log (177,372 files). **Note**: this run had `cudaAvaila
 - **Confound**: `cudaAvailable=False` -> CPU hashing (177,392). The CUDA-unavailable cause needs a separate check (ran the CPU build? driver?). wall (101m vs 112m) is not directly comparable because of this and the index deletion.
 - dataset fingerprint: full re-hash 1,393 s (content_hash empty after the index deletion — expected cold cost).
 - Status: **PASS** (user dataset, verify-key metrics). The absolute wall needs a re-measurement with CUDA available.
+
+### 7.2 User-dataset Stable-mode rescan example (0.9.4.94 GUI run, 2026-10-13)
+
+User log `detailed-log-2026-10-13T200015.json` (original kept by the user, reviewed from `D:\Temp\OpenCodeWork\`). Dataset `G:\Downloads\ss_twit`, 177,581 files with **only 80 new/changed and 177,501 unchanged** — an incremental rescan. `analyze.mode = B` (Stable, the default) — Fast (A) / Auto (AB) measurements will follow the same format from §7.3 on.
+
+| Metric | Value | Note |
+|---|---|---|
+| wall / walk / analyze | 980.6 s / 347.0 s / 591.9 s | walk 35% + verify 60% closes the account (~976 s) |
+| scanned / analyzed / unchanged | 177,581 / 80 / 177,501 | incremental verdicts correct |
+| verifyCalls (= candidates) | 19,234 | Stable global re-verify: all pairs re-verified regardless of the 80 changed files |
+| verifyDecodeMisses / hits | 12,887 / 1,935 | hit 13.1% (matches §7.1's 13.2%; reuse-rate ceiling) |
+| verifyQuickHashReads/Bytes | 0 / 0 | DBV-1 holds |
+| verifyKeyMs | 6.6 s | DBV-1 holds (same class as §7.1's 4.6 s) |
+| verifyMs / msPerVerifyCall | 590.3 s / 30.7 ms | G: decode tax (3.6x the standard 8.5 ms; `decodeCopy` 87%) |
+| dataset fingerprint | 34.4 s (69.1 GB logical) | incremental `content_hash` hit — cold 1,393 s -> 34 s |
+| revalidateMs | 0 | skipped, engine versions unchanged — correct |
+| pairs / groups | 15,193 / 9,060 | +5 groups reasonable for the added files |
+| GPU | 80 hashed, duty 0.0% | 3.7 ms of batching over 980 s — no contradiction; matching is CPU work |
+| decodeOrientApplied | 2 | slow files (`hkdrh69*` 0.4–1.2 s) are size/G: latency, not a rotation-runaway recurrence |
+| procIoRead | 46.4 GB | consistent with walk quickHash + verify decodes + decoder re-reads |
+
+- **Stable-mode cost confirmed**: even a 177,501-unchanged rescan re-verifies every pair under Stable, costing the full 592 s. Switch to Fast (A) for changed-files-only rescans (identical verdicts).
+- **Reading note**: `verifyBreakdownOverMs = 651 s` — the part-sums are thread-summed (since parallel analyze in 0.9.4.80) and exceed wall. The D9c-era "sum == verifyMs" invariant does not hold on multi-worker runs; read shares.
+- Status: **PASS** (measurement-record example — not a defect; Fast/Auto measurements pending).

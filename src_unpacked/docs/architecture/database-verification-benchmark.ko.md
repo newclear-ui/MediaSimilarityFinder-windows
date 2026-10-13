@@ -162,3 +162,27 @@
 - **교란 요인**: `cudaAvailable=False` → CPU 해싱(177,392). CUDA 미가용 원인은 별도 확인 필요(CPU 빌드 실행 여부/드라이버). wall(101m vs 112m)은 이 요인과 인덱스 삭제로 직접 비교 불가.
 - dataset fingerprint: 전체 재해시 1,393 s(인덱스 삭제로 content_hash 비어 있음 — 예상된 콜드 비용).
 - Status: **PASS** (사용자 dataset, verify key 지표). wall 절대값은 CUDA 가용 상태 재측정 필요.
+
+### 7.2 사용자 dataset 안정형 재스캔 예제 (0.9.4.94 GUI run, 2026-10-13)
+
+사용자 실행 로그 `detailed-log-2026-10-13T200015.json`(원본은 사용자 보관, `D:\Temp\OpenCodeWork\`에서 리뷰). dataset `G:\Downloads\ss_twit` 177,581 파일 중 **80개만 신규/변경, 177,501개 무변경**인 증분 재스캔. `analyze.mode = B`(안정형, 기본값) — 이후 §7.3부터 고속형(A)/자동(AB) 측정 기록을 같은 형식으로 추가한다.
+
+| 지표 | 값 | 비고 |
+|---|---|---|
+| wall / walk / analyze | 980.6 s / 347.0 s / 591.9 s | walk 35% + verify 60%로 결산 (≈976 s) |
+| scanned / analyzed / unchanged | 177,581 / 80 / 177,501 | 증분 판정 정상 |
+| verifyCalls (= candidates) | 19,234 | 안정형 전역 재검증: 변경 80개와 무관하게 전 쌍 재검증 |
+| verifyDecodeMisses / hits | 12,887 / 1,935 | hit 13.1% (§7.1의 13.2%와 일치, 재사용률 상한) |
+| verifyQuickHashReads/Bytes | 0 / 0 | DBV-1 유지 |
+| verifyKeyMs | 6.6 s | DBV-1 유지 (§7.1의 4.6 s와 동급) |
+| verifyMs / msPerVerifyCall | 590.3 s / 30.7 ms | G: 디코드 세금(표준 8.5 ms의 3.6배, `decodeCopy` 87%) |
+| dataset fingerprint | 34.4 s (69.1 GB 논리) | 증분 `content_hash` 적중 — 콜드 1,393 s → 34 s |
+| revalidateMs | 0 | 엔진 버전 불변이라 생략, 정상 |
+| pairs / groups | 15,193 / 9,060 | +5 그룹은 추가 파일분으로 합리적 |
+| GPU | hash 80, duty 0.0% | 배치 3.7 ms/980 s — 모순 아님, 매칭은 CPU 작업 |
+| decodeOrientApplied | 2 | 느린 파일(`hkdrh69*` 0.4~1.2 s)은 크기/G: latency, 회전 폭주 재발 아님 |
+| procIoRead | 46.4 GB | walk quickHash + verify 디코드 + 디코더 재읽기 수준에서 정합 |
+
+- **안정형 비용 확정**: 무변경 177,501개 재스캔도 안정형은 전 쌍을 재검증하므로 592 s가 그대로 든다. 변경 파일만 빠르게 재검사하려면 고속형(A)으로 전환(동일 판정).
+- **읽기 주의**: `verifyBreakdownOverMs = 651 s` — 세부 합은 스레드 합산(0.9.4.80 병렬 analyze 이후)이라 wall을 초과한다. D9c 시절 "합계 = verifyMs" 불변식은 다-worker run에서 성립하지 않으므로 비율로 읽는다.
+- Status: **PASS** (측정 기록 예제 — 결함 아님, Fast/Auto 측정 대기).
