@@ -286,6 +286,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogClose")) return S("닫기","Close");
   if (!std::strcmp(key,"detailLogSaved")) return S("상세 로그 저장됨: ","Detailed log saved: ");
   if (!std::strcmp(key,"detailLogSaveFail")) return S("상세 로그 저장 실패","Detailed log save failed");
+  if (!std::strcmp(key,"sumVerify")) return S("쌍검증 (전체/확정)","Pair verify (total/confirmed)");
   if (!std::strcmp(key,"detailLogParseFail")) return S("상세 로그 열기 실패 (기록 손상)","Could not open the detailed log (record damaged)");
   if (!std::strcmp(key,"detailLogDone")) return S("완료","Completed");
   if (!std::strcmp(key,"detailLogStopped")) return S("중단","Stopped");
@@ -864,18 +865,18 @@ void MainWindow::buildLeft(QWidget* w) {
   lay->addWidget(sumTitle);
   auto* form = new QFormLayout; lay->addLayout(form);
   sumTotal_ = new QLabel("-", w); sumDone_ = new QLabel("-", w); sumIndexed_ = new QLabel("-", w); sumGroups_ = new QLabel("-", w);
-  sumDup_ = new QLabel("-", w); sumTime_ = new QLabel("-", w); sumGpu_ = new QLabel("-", w);
+  sumDup_ = new QLabel("-", w); sumVerify_ = new QLabel("-", w); sumTime_ = new QLabel("-", w); sumGpu_ = new QLabel("-", w);
   sumCpu_ = new QLabel("-", w); sumRam_ = new QLabel("-", w);
-  sumTotal_->setObjectName("sumTotal"); sumDone_->setObjectName("sumDone"); sumIndexed_->setObjectName("sumIndexed"); sumGroups_->setObjectName("sumGroups");
-  sumDup_->setObjectName("sumDup"); sumTime_->setObjectName("sumTime"); sumGpu_->setObjectName("sumGpu");
+  sumDup_->setObjectName("sumDup"); sumVerify_->setObjectName("sumVerify"); sumTime_->setObjectName("sumTime"); sumGpu_->setObjectName("sumGpu");
   sumCpu_->setObjectName("sumCpu"); sumRam_->setObjectName("sumRam");
   // value labels are the field widgets; refreshSummary() writes "name: value" into the name labels
   // and keeps raw values here for layout stability.
   sumValTotal_ = new QLabel("-", w); sumValDone_ = new QLabel("-", w); sumValIndexed_ = new QLabel("-", w); sumValGroups_ = new QLabel("-", w);
-  sumValDup_ = new QLabel("-", w); sumValTime_ = new QLabel("-", w); sumValGpu_ = new QLabel("-", w);
+  sumValDup_ = new QLabel("-", w); sumValVerify_ = new QLabel("-", w); sumValTime_ = new QLabel("-", w); sumValGpu_ = new QLabel("-", w);
   sumValCpu_ = new QLabel("-", w); sumValRam_ = new QLabel("-", w);
+  sumValDup_->setObjectName("sumValDup"); sumValVerify_->setObjectName("sumValVerify");
   form->addRow(sumTotal_, sumValTotal_); form->addRow(sumDone_, sumValDone_); form->addRow(sumIndexed_, sumValIndexed_);
-  form->addRow(sumGroups_, sumValGroups_); form->addRow(sumDup_, sumValDup_);
+  form->addRow(sumGroups_, sumValGroups_); form->addRow(sumDup_, sumValDup_); form->addRow(sumVerify_, sumValVerify_);
   form->addRow(sumTime_, sumValTime_); form->addRow(sumGpu_, sumValGpu_);
   form->addRow(sumCpu_, sumValCpu_); form->addRow(sumRam_, sumValRam_);
   refreshFolders();
@@ -1171,7 +1172,7 @@ void MainWindow::applyStaticTexts() {
   }
   auto* sumTitle = findChild<QLabel*>("sumTitle"); if (sumTitle) sumTitle->setText(trStr(l, "summary"));
   sumTotal_->setText(trStr(l, "total")); sumDone_->setText(trStr(l, "readDone")); sumIndexed_->setText(trStr(l, "indexDone")); sumGroups_->setText(trStr(l, "groups"));
-  sumDup_->setText(trStr(l, "dups")); sumTime_->setText(trStr(l, "elapsed")); sumGpu_->setText(trStr(l, "gpu"));
+  sumDup_->setText(trStr(l, "dups")); sumVerify_->setText(trStr(l, "sumVerify")); sumTime_->setText(trStr(l, "elapsed")); sumGpu_->setText(trStr(l, "gpu"));
   sumCpu_->setText(trStr(l, "cpu")); sumRam_->setText(trStr(l, "ram"));
   refreshSummary();
   groupTitle_->setText(trStr(l, "groups") + QString(" (%1)").arg(groups_.size()));
@@ -1294,6 +1295,9 @@ void MainWindow::setRunning(bool v) {
     targetKnown_ = false;
     // 0.9.4.94: a new scan invalidates the previous completion rebuild mark.
     resultsApplied_ = false;
+    // 0.9.4.95: pair-verify counts belong to the finished scan, not the new one.
+    lastVerifyTotal_ = 0; lastVerifyDone_ = 0;
+    if (sumValVerify_) sumValVerify_->setText(QStringLiteral("-"));
     // Lock the group sort to None for the whole scan. A similarity/name order
     // must re-place every streamed match, which churned the pane (new groups
     // inserted into a sorted list). None keeps the union-find build order, so
@@ -1512,6 +1516,17 @@ void MainWindow::onRevalidated(int kept, int dropped) {
 }
 void MainWindow::onDetailedLog(QString json) {
   lastTelemetryJson_ = json;
+  // 0.9.4.95: summary-panel pair-verify row (total/confirmed). Parsed here so
+  // the panel never depends on the dialog being opened or saved.
+  {
+    QJsonParseError perr;
+    const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &perr);
+    if (perr.error == QJsonParseError::NoError && doc.isObject()) {
+      const QJsonObject mat = doc.object()["matches"].toObject();
+      lastVerifyTotal_ = (qulonglong)mat["candidates"].toDouble();
+      lastVerifyDone_ = (qulonglong)mat["pairs"].toDouble();
+    }
+  }
   logBtn_->setEnabled(true);
   logBtn_->setStyleSheet(QStringLiteral("background:#ebf4ff; border:1px solid #2b6cb0; color:#2b6cb0; font-weight:bold;"));
   showDetailedLogDialog(json);
@@ -1980,6 +1995,8 @@ void MainWindow::loadIndex() {
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
   matchSeq_ = 0; groupsDirty_ = false; lastFillSig_ = 0;
   resultsApplied_ = false; lastFileSig_.clear();
+  lastVerifyTotal_ = 0; lastVerifyDone_ = 0;
+  if (sumValVerify_) sumValVerify_->setText(QStringLiteral("-"));
   // Load shows the stored order: sort = None, locked until the next scan.
   sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
   loadLockSort_ = true;
@@ -3582,7 +3599,7 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
     // during fingerprint/walk did real work that "-" would erase.
     if (lastReadN_ == 0) {
       sumValTotal_->setText("-"); sumValDone_->setText("-"); sumValIndexed_->setText("-"); sumValGroups_->setText("-");
-      sumValDup_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(gpuStateText());
+      sumValDup_->setText("-"); sumValVerify_->setText("-"); sumValTime_->setText("-"); sumValGpu_->setText(gpuStateText());
       sumValCpu_->setText("-"); sumValRam_->setText("-");
     }
     return;
@@ -3606,6 +3623,11 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
   qulonglong dupFiles = 0;
   for (const auto& g : groups_) dupFiles += (qulonglong)g.paths.size();
   sumValDup_->setText(QString::number(dupFiles));
+  // 0.9.4.95: pair-verify totals (candidates / confirmed duplicate pairs,
+  // result-oriented) from the finished scan's telemetry record.
+  sumValVerify_->setText(lastVerifyTotal_ > 0
+      ? QString("%1 / %2").arg(lastVerifyTotal_).arg(lastVerifyDone_)
+      : QStringLiteral("-"));
   sumValTime_->setText(fmtElapsed(repElapsedMs_));
   sumValGpu_->setText(gpuStateText());
 }

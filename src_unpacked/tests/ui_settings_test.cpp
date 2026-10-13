@@ -167,6 +167,8 @@ int main(int argc, char** argv) {
       "backendDown",
       // left summary panel rows: total / read-complete / index-complete split
       "readDone", "indexDone",
+      // left summary pair-verify row (total/confirmed)
+      "sumVerify",
     };
     int missing = 0;
     for (const char* k : kKeys) {

@@ -309,9 +309,13 @@ private:
   QComboBox* strategyBox_=nullptr;
   // left
   QTreeWidget* folders_=nullptr;   QLabel *sumTotal_=nullptr,*sumDone_=nullptr,*sumIndexed_=nullptr,*sumGroups_=nullptr,
-    *sumDup_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;
+    *sumDup_=nullptr,*sumVerify_=nullptr,*sumTime_=nullptr,*sumGpu_=nullptr,*sumCpu_=nullptr,*sumRam_=nullptr;
   QLabel *sumValTotal_=nullptr,*sumValDone_=nullptr,*sumValIndexed_=nullptr,*sumValGroups_=nullptr,
-    *sumValDup_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr;
+    *sumValDup_=nullptr,*sumValVerify_=nullptr,*sumValTime_=nullptr,*sumValGpu_=nullptr,*sumValCpu_=nullptr,*sumValRam_=nullptr;
+  // 0.9.4.95: summary-panel pair-verify row (total/confirmed duplicate pairs,
+  // result-oriented). Parsed from the telemetry record in onDetailedLog so the
+  // panel never depends on the dialog. Zero means "no record yet".
+  qulonglong lastVerifyTotal_=0, lastVerifyDone_=0;
   // middle
   // Group sort: 0=none (default, top), 1=similarity, 2=name. "None" keeps a
   // stable append order (existing groups keep their position, new groups are

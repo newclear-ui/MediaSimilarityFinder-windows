@@ -26,6 +26,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMetaObject>
 #include <QPushButton>
 #include <QScrollBar>
@@ -396,6 +398,28 @@ int main(int argc, char** argv) {
         std::cout << "  [info] parse-fail status=" << shown.toStdString() << "\n";
         check(msgOk, "damaged record shows a failure message, no silent return");
         check(QApplication::activeModalWidget() == nullptr, "no dialog opened for a damaged record");
+    }
+
+    // Phase 10 (0.9.4.95): the summary panel shows pair-verify totals.
+    // total = candidates, verified = confirmed duplicate pairs
+    // (result-oriented, per user decision), read from the same telemetry
+    // record as the dialog — never dependent on opening or saving it.
+    {
+        auto* verifyVal = w.findChild<QLabel*>("sumValVerify");
+        check(verifyVal != nullptr, "summary pair-verify value label found");
+        const std::string tj = w.telemetryJsonForTest();
+        check(!tj.empty(), "telemetry record available for the summary");
+        if (verifyVal && !tj.empty()) {
+            const QJsonDocument tdoc = QJsonDocument::fromJson(QByteArray::fromStdString(tj));
+            const QJsonObject tobj = tdoc.object();
+            const QJsonObject tmat = tobj["matches"].toObject();
+            const qulonglong tc = (qulonglong)tmat["candidates"].toDouble();
+            const qulonglong tp = (qulonglong)tmat["pairs"].toDouble();
+            const QString expect = QString("%1 / %2").arg(tc).arg(tp);
+            std::cout << "  [info] summary verify=" << verifyVal->text().toStdString()
+                      << " expected=" << expect.toStdString() << "\n";
+            check(tc > 0 && verifyVal->text() == expect, "summary shows total/confirmed pair counts");
+        }
     }
 
     fs::remove_all(d, ec);
