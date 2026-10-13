@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 0.9.4.89 증분 dataset fingerprint → 0.9.4.90 그룹 정렬 없음 + 스캔 중 정렬 잠금 → 0.9.4.91 그룹 정렬 없음 최상단/기본값 + append-only 목록 → 0.9.4.92 쌍검증 DBV-1/DBV-2 → 0.9.4.93 불러오기(인덱스 로드 전용) + 팝업 분리 → 0.9.4.94 완료 경로 중복 제거 + 스크롤 점프 수정 → 0.9.4.95 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 → 0.9.4.96 자원 정책 UI 개편 → 0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 → 수동 GUI acceptance → 제품 acceptance 재확인
+> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 0.9.4.89 증분 dataset fingerprint → 0.9.4.90 그룹 정렬 없음 + 스캔 중 정렬 잠금 → 0.9.4.91 그룹 정렬 없음 최상단/기본값 + append-only 목록 → 0.9.4.92 쌍검증 DBV-1/DBV-2 → 0.9.4.93 불러오기(인덱스 로드 전용) + 팝업 분리 → 0.9.4.94 완료 경로 중복 제거 + 스크롤 점프 수정 → 0.9.4.95 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 → 0.9.4.96 자원 정책 UI 개편 → 0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 → 0.9.4.98 테스트 버튼 표시 설정 → 수동 GUI acceptance → 제품 acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -129,6 +129,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 | **완료(0.9.4.95)** | 좌측 요약에 `쌍검증 (전체/확정)` 행(값 `후보 쌍 / 확정 쌍`). 데이터원은 완료 텔레메트리의 `matches.candidates/pairs`(`onDetailedLog` 파싱). `finished` 규약 불변. 측정 기록 `database-verification-benchmark` §7.2(0.9.4.94 안정형 재스캔 예제, §7.3부터 Fast/Auto 예정). engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
 | 자원 정책 UI 개편 | **완료(0.9.4.96)** | 프리셋 4종(Maximum/High/Balanced/Minimum — Gaming 개명 25/25 유지, Custom 삭제). CPU 박스 읽기전용 + `ui/showCpuPercent`(기본 OFF)로 표시 전환. GPU 가속 체크박스를 설정 일반 탭으로 이전(`ui/gpuEnabled`, 기본 ON, CPU 단독 강제 OFF 유지). 실행 전략 3종·정책 계층 불변. engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
 | 설정 GPU 개명 + 불러오기 썸네일 수정 | **완료(0.9.4.97)** | `GPU 가속`→`모니터링 GPU가속` 개명(기능 불변). `onThumbReady`가 우측 파일 그리드도 도착 즉시 그림. 무효 크기 요청 억제. 불러오기 미표시 원인 확정(백엔드 정상 응답, GUI 미페인팅). engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
+| 테스트 버튼 표시 설정 | **완료(0.9.4.98)** | 설정 일반 탭에 `테스트 버튼 표시` 체크박스(기본 ON, 순서: 상세로그 → CPU 표기 → GPU 가속 → 테스트 버튼 → 매칭 검증 방식). 툴바 표시만 전환, 토글 상태 불변. engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -215,12 +216,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.97 (설정 GPU 개명 + 불러오기 썸네일 수정) |
+| 기준 코드 | 0.9.4.98 (테스트 버튼 표시 설정) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 완료** — 직전 0.9.4.96은 자원 정책 UI 개편. `모니터링 GPU가속` 개명, 우측 도착 즉시 그리기, 무효 크기 요청 억제. engine/DB/schema/cache 불변. 다음 빌드: CUDA 미가용 + Fast/Auto 실측. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.98 테스트 버튼 표시 설정 완료** — 직전 0.9.4.97은 설정 GPU 개명 + 불러오기 썸네일 수정. 일반 탭 `테스트 버튼 표시` 체크박스(기본 ON), 툴바 표시만 전환. engine/DB/schema/cache 불변. 다음 빌드: CUDA 미가용 + Fast/Auto 실측. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.97 |
+| 현재 버전 | 0.9.4.98 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
