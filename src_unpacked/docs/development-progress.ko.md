@@ -57,7 +57,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 0.9.4.89 증분 dataset fingerprint → 0.9.4.90 그룹 정렬 없음 + 스캔 중 정렬 잠금 → 0.9.4.91 그룹 정렬 없음 최상단/기본값 + append-only 목록 → 0.9.4.92 쌍검증 DBV-1/DBV-2 → 0.9.4.93 불러오기(인덱스 로드 전용) + 팝업 분리 → 0.9.4.94 완료 경로 중복 제거 + 스크롤 점프 수정 → 0.9.4.95 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 → 0.9.4.96 자원 정책 UI 개편 → 0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 → 0.9.4.98 테스트 버튼 표시 설정 → 0.9.4.99 종류 드롭다운 + 대표 제외 마크 + 상세정보 소실 수정 → 0.9.4.100 상세정보 원격 진단 + 파일명 견고화 → 0.9.4.101 열기 경로 상세 동기화 → 0.9.4.102 상세 폼 동기 활성화 → 0.9.4.103 체크 우선 파일 액션 + 파일바 구분선 → 0.9.4.104 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측 → 수동 GUI acceptance → 제품 acceptance 재확인
+> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 0.9.4.89 증분 dataset fingerprint → 0.9.4.90 그룹 정렬 없음 + 스캔 중 정렬 잠금 → 0.9.4.91 그룹 정렬 없음 최상단/기본값 + append-only 목록 → 0.9.4.92 쌍검증 DBV-1/DBV-2 → 0.9.4.93 불러오기(인덱스 로드 전용) + 팝업 분리 → 0.9.4.94 완료 경로 중복 제거 + 스크롤 점프 수정 → 0.9.4.95 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 → 0.9.4.96 자원 정책 UI 개편 → 0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 → 0.9.4.98 테스트 버튼 표시 설정 → 0.9.4.99 종류 드롭다운 + 대표 제외 마크 + 상세정보 소실 수정 → 0.9.4.100 상세정보 원격 진단 + 파일명 견고화 → 0.9.4.101 열기 경로 상세 동기화 → 0.9.4.102 상세 폼 동기 활성화 → 0.9.4.103 체크 우선 파일 액션 + 파일바 구분선 → 0.9.4.104 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측 → 0.9.4.105 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화 → manual GUI acceptance → 제품 acceptance 재확인
 > → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
@@ -136,6 +136,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 상세 폼 동기 활성화 | **완료(0.9.4.102)** | 행 추가 직후 `activate()`로 확정 지오메트리. 트립와이어는 보이는 창에서만 발화. engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
 | 체크 우선 파일 액션 + 파일바 구분선 | **완료(0.9.4.103)** | 복사/잘라내기/이동/휴지통이 체크 집합 우선(`actionFiles()`), 없으면 기존 하이라이트. 열기/탐색기/붙여넣기 불변. 탐색기에서 보기 다음 1px 구분선. engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
 | 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측 | **완료(0.9.4.104)** | `recycleFiles()` 1회 셸 호출(N→1 왕복, 개별 존재 확인+재시도). `dropThumbCache()` 삭제 집합 1회 순회(3000×N→3000). `delete`/`move`/`prune` wall time 로그 기록. engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
+| 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화 | **완료(0.9.4.105)** | (D) 대량 채우기 중 백엔드 요청 억제(`thumbBulkFill_`) + 가시 항목 펌프(`pending=2 items=120` 실측) + pending 상한 초과 시 새 요청 거부(unknown 드롭 제거) + 백엔드 단절 시 추적 맵 초기화. (상세) `fileMetaAsked_` 경로별 1회 요청 + 표시 변경 시에만 `refreshDetail`(무한 요청/재구축 핑퐁 제거, `m1=m2=240` 실측). (E) `ThumbnailStore::kMemMax` 256→1024. (F) `Database::forget`(files+matches+thumbs 1 트랜잭션) + IPC `FORGET_PATHS` + `BackendSession::forgetPaths`(스캔 중 거부) + 삭제/이동/이름변경/붙여넣기 배선. (C) 휴지통/이동 워커 스레드 + 진행 다이얼로그(이동 취소 지원). engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. GUI 육안 확인 필요. |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -222,12 +223,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.104 (휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측) |
+| 기준 코드 | 0.9.4.105 (미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.104 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측 완료** — 직전 0.9.4.103은 체크 우선 파일 액션 + 파일바 구분선. 셸 왕복 1회화, 캐시 삭제 상수화, 단계별 wall time 로그. engine/DB/schema/cache 불변. 다음 빌드: 증분 목록 갱신(D) + 상세정보 건 + CUDA 미가용 + Fast/Auto 실측. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.105 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화 완료** — 직전 0.9.4.104는 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측. 썸네일 요청 폭풍 제거(가시 항목만 요청+거부식 상한), 메타 무한 핑퐁 제거, 삭제/이동 직후 인덱스 행 반영(FORGET_PATHS), 파일 조작 백그라운드화+진행 표시. engine/DB/schema/cache 불변. 다음 빌드: 실기 대량 조작/진행 표시 확인 + CUDA 미가용 + Fast/Auto 실측. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.104 |
+| 현재 버전 | 0.9.4.105 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
