@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.103` (Checked-first file actions + file-bar separator) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.104` (Batched recycle + batched cache drop + phase timing) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-10
 
 ## Role of this document
