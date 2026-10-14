@@ -3128,17 +3128,26 @@ void MainWindow::refreshDetail() {
   // hash tab
   const QString fp = fileFp_.value(currentFile_);
   hashLabel_->setText(QString("%1\n%2").arg(trStr(lang(), "phash")).arg(fp.isEmpty() ? "-" : ("0x" + fp)));
+  // 0.9.4.102: activate synchronously. The rebuilt form is virgin (never
+  // laid out); under thumbnail burst traffic the deferred activation can be
+  // postponed indefinitely, leaving valid rows unpainted (blank text beside
+  // a live fixed-size preview). Middle/right grids force their own layout
+  // passes for the same reason. Cheap (9 rows) and idempotent.
+  detailForm_->activate();
   // 0.9.4.100: remote-diagnosis tripwire for "detail text all blank".
   // Healthy runs never log here: ~9 rows, a visible form box with width,
   // tab 0. Fires only on row-count divergence, a collapsed/invisible form
   // box, or an unexpected tab — exactly the states that render blank.
+  // 0.9.4.102: gated on the main window being visible. A hidden window
+  // (background fileMeta refresh while minimized/covered) reports vis=0
+  // normally; logging that would drown the real signal.
   {
     QWidget* box = qobject_cast<QWidget*>(detailForm_->parent());
     const int rows = detailForm_->rowCount();
     const bool wild = rows < 0 || rows > 24;
     const bool narrow = box && box->isVisible() && box->width() < 60;
     const bool homeless = !box || !box->isVisible() || box->layout() != detailForm_;
-    if (wild || narrow || homeless)
+    if ((wild || narrow || homeless) && isVisible())
       scanLog(QString("detailAnomaly file=%1 rows=%2 box=%3x%4 vis=%5 tab=%6").arg(
           currentFile_.isEmpty() ? QStringLiteral("<empty>") : QFileInfo(currentFile_).fileName()).arg(rows).arg(
           box ? box->width() : -1).arg(box ? box->height() : -1).arg(
