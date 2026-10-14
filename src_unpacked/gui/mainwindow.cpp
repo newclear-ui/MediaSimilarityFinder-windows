@@ -1100,7 +1100,8 @@ void MainWindow::buildRight(QWidget* w) {
   applySelectionStyle(list_);
   connect(list_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem*, QTreeWidgetItem*) { fileListSelected(); });
   connect(list_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* it, int) {
-    if (it) { currentFile_ = it->data(1, Qt::UserRole).toString(); openSelected(); }
+    // 0.9.4.101: same detail sync as fileActivated (see above).
+    if (it) { showFileDetails(it->data(1, Qt::UserRole).toString()); openSelected(); }
   });
   connect(list_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* it, int col) {
     if (!it || col != 0) return;
@@ -3007,7 +3008,14 @@ void MainWindow::fileListSelected() {
   refreshDetail();
 }
 void MainWindow::fileActivated(QListWidgetItem* it) {
-  if (it) { currentFile_ = it->data(Qt::UserRole).toString(); openSelected(); }
+  // 0.9.4.101: every currentFile_ writer must refresh the detail pane.
+  // fileActivated used to skip it, leaving stale "-" rows while a later
+  // thumbnail arrival painted the preview (blank text + live preview).
+  if (it) { showFileDetails(it->data(Qt::UserRole).toString()); openSelected(); }
+}
+void MainWindow::showFileDetails(const QString& path) {
+  currentFile_ = path;
+  refreshDetail();
 }
 void MainWindow::detailTabChanged(int) { refreshDetail(); }
 void MainWindow::refreshDetail() {

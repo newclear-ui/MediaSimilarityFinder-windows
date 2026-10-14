@@ -163,7 +163,7 @@ private slots:
   QStringList selectedFiles() const;
   void prunePaths(const QSet<QString>&);
   void refreshAfterFileOperation(const QString&);
-  void detailTabChanged(int); void fileActivated(QListWidgetItem*);
+  void detailTabChanged(int); void fileActivated(QListWidgetItem*); void showFileDetails(const QString&);
   // monitor
   void configureMonitor(); void toggleMonitor();
   void monitorEvent(const BackendMonitorEvent&); void showMonitorMatch(const BackendMonitorEvent&); void

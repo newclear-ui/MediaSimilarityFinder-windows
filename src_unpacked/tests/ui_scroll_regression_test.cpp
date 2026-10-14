@@ -602,6 +602,27 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Phase 15 (0.9.4.101): open-path selection (double-click) syncs detail
+    // without any view selection change. fileActivated used to set
+    // currentFile_ with no refreshDetail, leaving stale "-" rows while a
+    // later thumbnail arrival painted the preview (blank text + live art).
+    {
+        auto* fgrid = w.findChild<QListWidget*>("fileGrid");
+        if (fgrid && fgrid->count() > 0) {
+            const QString p = fgrid->item(0)->data(Qt::UserRole).toString();
+            QMetaObject::invokeMethod(&w, "showFileDetails", Q_ARG(QString, p));
+            QApplication::processEvents();
+            const QString shown = w.testDetailFileName();
+            const QString expect = QFileInfo(p).fileName();
+            std::cout << "  [info] open-path detail shows=" << shown.toStdString()
+                      << " expected=" << expect.toStdString() << "\n";
+            check(!expect.isEmpty() && shown == expect, "open-path selection shows file detail");
+        } else {
+            std::cout << "  [info] no file grid items; phase skipped\n";
+            ++gChecks;
+        }
+    }
+
     fs::remove_all(d, ec);
     std::cout << "scroll_regression_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";
