@@ -49,6 +49,7 @@
 #include <QMimeData>
 #include <QMetaObject>
 #include <QProgressBar>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QTextBrowser>
 #include <QProcess>
@@ -65,6 +66,7 @@
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QPainter>
+#include <QPointer>
 #include <QSystemTrayIcon>
 #include <QTabWidget>
 #include <QTextEdit>
@@ -442,6 +444,24 @@ static bool isVideoExt(const QString& path) {
 // so they never land mid-gesture. Short on purpose (inside one 600ms timer
 // interval): input is never blocked, the rebuild is only deferred.
 constexpr qint64 kScrollGateCooldownMs = 500;
+// 0.9.4.105 (C): shared progress dialog for background file operations.
+// total<=0 renders an indefinite busy bar (the single-call shell recycle);
+// total>0 a determinate bar plus a cancel button (the per-file move loop).
+// minimumDuration suppresses the dialog for quick ops; the operation's finish
+// handler always closes it, and closing it must not auto-quit anything.
+static QProgressDialog* newFileOpDialog(QWidget* parent, const QString& title, int total,
+                                        bool cancellable, const QString& cancelText) {
+  auto* dlg = new QProgressDialog(title, cancellable ? cancelText : QString(),
+                                  0, total <= 0 ? 0 : total, parent);
+  dlg->setWindowTitle(title);
+  dlg->setWindowModality(Qt::WindowModal);
+  dlg->setMinimumDuration(250);
+  dlg->setAutoClose(false);
+  dlg->setAutoReset(false);
+  dlg->setValue(0);
+  dlg->show();
+  return dlg;
+}
 // One shared provider: constructing QFileIconProvider per call plus a
 // per-file SHGetFileInfo costs milliseconds each — times 11k groups per
 // 600ms tick it blocked the GUI thread for tens of seconds (blank pane,
@@ -1438,6 +1458,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
   if (cancelWait_) { cancelWait_->close(); cancelWait_->deleteLater(); cancelWait_ = nullptr; }
   thumbStatMem_ = thumbStatBackend_ = thumbStatPlace_ = 0;
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
+  fileMetaAsked_.clear(); // 0.9.4.105: new scan generation re-asks metadata
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
   refreshGroupList(); refreshFileViews(); refreshDetail();
@@ -2035,6 +2056,7 @@ void MainWindow::loadIndex() {
   // The view is replaced: drop the previous accumulation so old groups cannot
   // linger next to the loaded ones.
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
+  fileMetaAsked_.clear(); // 0.9.4.105: new load generation re-asks metadata
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   pathParent_.clear(); groups_.clear(); pathGroup_.clear();
   noneOrder_.clear(); imgShown_.clear(); vidShown_.clear();
@@ -2532,6 +2554,12 @@ QString MainWindow::groupSig(const DupGroup& g) const {
   return QString::number(g.paths.size()) + ':' + QString::number(g.best, 'f', 1);
 }
 void MainWindow::addGroupItems(QTreeWidget* tree, QListWidget* grid, int i, int wantKind, bool syncSel) {
+  // 0.9.4.105 (D): every row added here is part of a bulk fill; its icon is
+  // served from cache or drawn as a placeholder (no backend request). The
+  // fill's caller hands the visible viewport to thumbCatchUpVisible() when
+  // the fill completes, so no row is left without a request path.
+  const bool bulkPrev = thumbBulkFill_;
+  thumbBulkFill_ = true;
   const auto& g = groups_[i];
   qulonglong bytes = 0;
   for (const auto& p : g.paths) bytes += fileSizeCached(p);
@@ -2561,6 +2589,7 @@ void MainWindow::addGroupItems(QTreeWidget* tree, QListWidget* grid, int i, int 
   li->setToolTip(rep);
   grid->addItem(li);
   if (syncSel && i == currentGroup_) grid->setCurrentItem(li);
+  thumbBulkFill_ = bulkPrev;
 }
 void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel, bool append) {
   // Ordered rows for this kind, each with a signature. The append path extends
@@ -2597,6 +2626,9 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     grid->doItemsLayout();
     tree->blockSignals(false); grid->blockSignals(false);
     shown = cur;
+    // 0.9.4.105 (D): the appended rows were bulk-filled without requests;
+    // hand the visible viewport to the catch-up pump.
+    thumbCatchUpVisible();
     return;
   }
   // Full rebuild: clear and repopulate, restoring the scroll anchors.
@@ -2679,6 +2711,10 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   if (!restoredGrid && grid->verticalScrollBar()) grid->verticalScrollBar()->setValue(gridPos);
   shown = cur;
   tree->blockSignals(false); grid->blockSignals(false);
+  // 0.9.4.105 (D): the rebuilt rows were bulk-filled without requests; the
+  // visible-only pump requests exactly what the user can see (0.9.4.104's
+  // per-row request storm is gone).
+  thumbCatchUpVisible();
 }
 void MainWindow::refreshGroupList(bool append) {
   // Test-only instrumentation: every middle-pane refill (full rebuild or the
@@ -2780,7 +2816,15 @@ QString MainWindow::fileResolution(const QString& path) const {
 }
 void MainWindow::requestFileMeta(const QString& path) const {
   if (path.isEmpty() || !backend_) return;
-  if (fileMetaPending_.values().contains(path)) return; // in flight: dedup
+  // 0.9.4.105: exactly one request per path per scan/load generation. Without
+  // the asked-set, an answer carrying dimensions but no duration (every image
+  // file) left fileDur_ empty, so the refreshDetail it triggered asked again;
+  // the endless request/rebuild ping-pong deleted and recreated the detail
+  // rows continuously (the "detail text appears then disappears/blanks"
+  // defect). The set is cleared together with resCache_ at scan/load start.
+  if (fileMetaAsked_.contains(path)) return;
+  fileMetaAsked_.insert(path);
+  ++fileMetaRequestCount_;
   const quint64 id = ++fileMetaRequestId_;
   fileMetaPending_[id] = path;
   backend_->requestFileMeta(path, id);
@@ -2791,11 +2835,21 @@ void MainWindow::onFileMetaReady(quint64 requestId, const FileMetaResult& meta) 
   const QString path = it.value();
   fileMetaPending_.erase(it);
   if (!meta.ok || meta.path != path) return; // stale or failed: drop
-  if (meta.width > 0 && meta.height > 0)
-    resCache_[path] = QString("%1x%2").arg(meta.width).arg(meta.height);
-  if (meta.duration > 0) fileDur_[path] = meta.duration;
+  // 0.9.4.105: rebuild the detail only when the answer changed something it
+  // displays. An image answer (dims, no duration) now refreshes once and the
+  // asked-set prevents the follow-up request; a duration answer updates the
+  // duration row. List rows refresh in place either way.
+  bool changed = false;
+  if (meta.width > 0 && meta.height > 0) {
+    const QString r = QString("%1x%2").arg(meta.width).arg(meta.height);
+    if (resCache_.value(path) != r) { resCache_[path] = r; changed = true; }
+  }
+  if (meta.duration > 0 && fileDur_.value(path, 0.0) != meta.duration) {
+    fileDur_[path] = meta.duration;
+    changed = true;
+  }
   refreshFileMetaRow(path);
-  if (currentFile_ == path) refreshDetail();
+  if (changed && currentFile_ == path) refreshDetail();
 }
 void MainWindow::refreshFileMetaRow(const QString& path) {
   // In-place text refresh for every surface showing this path's resolution.
@@ -2870,6 +2924,14 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool /*bypas
   // onThumbReady. Record the pending request so it paints exactly the
   // requested size (stale-drop); cap the map so a lost backend cannot grow
   // it without bound.
+  // 0.9.4.105 (D): a bulk fill (middle-list rebuild/append) must not request
+  // art for every row. One rebuild covers thousands of rows; thousands of
+  // simultaneous requests overflowed the capped pending map, so in-flight
+  // answers arrived as "unknown" and were dropped — the storm left permanent
+  // placeholders exactly on the rows the user could see. Bulk fills serve
+  // cache hits/placeholders only; the visible-only catch-up pump (run right
+  // after every fill and on idle ticks) requests what is actually visible.
+  if (thumbBulkFill_) { ++thumbStatPlace_; return placeholderIcon(path); }
   if (backend_) {
     // Visible-item catch-up can revisit the same miss on consecutive ticks
     // before the backend answers. Re-issuing each miss would queue duplicate
@@ -2881,8 +2943,14 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool /*bypas
         return placeholderIcon(path);
       }
     }
+    // 0.9.4.105 (D): at the cap, refuse the new request instead of evicting
+    // the oldest entry. Eviction dropped the tracking row of an in-flight
+    // answer; the answer then arrived as unknown and was discarded, and the
+    // cell kept its placeholder until something happened to re-ask. A refused
+    // request costs nothing: the cell is still a cache miss, so the next
+    // visible catch-up tick retries it once the backlog drains.
+    if (thumbPendingReq_.size() >= 2000) { ++thumbStatPlace_; return placeholderIcon(path); }
     const quint64 id = ++thumbRequestId_;
-    if (thumbPendingReq_.size() > 2000) thumbPendingReq_.erase(thumbPendingReq_.begin());
     thumbPendingReq_[id] = {path, size};
     backend_->requestThumb(path, size, isVideoExt(path), id);
   }
@@ -3646,28 +3714,56 @@ void MainWindow::renameSelected() {
   const QString n = QInputDialog::getText(this, trStr(lang(), "rename"), trStr(lang(), "newName"),
                                           QLineEdit::Normal, fi.fileName(), &ok);
   if (ok && !n.isEmpty() && n != fi.fileName()) {
+    const QString oldPath = fi.absoluteFilePath();
     if (!QFile::rename(fi.filePath(), fi.dir().filePath(n)))
       QMessageBox::warning(this, trStr(lang(), "rename"), trStr(lang(), "renameFail"));
-    else refreshAfterFileOperation(QFileInfo(fi.dir().filePath(n)).absoluteFilePath());
+    else {
+      // 0.9.4.105 (F): the old path left the filesystem; drop its stored row.
+      if (backend_) backend_->forgetPaths(QStringList{oldPath});
+      refreshAfterFileOperation(QFileInfo(fi.dir().filePath(n)).absoluteFilePath());
+    }
   }
 }
 void MainWindow::deleteSelected() {
   const auto ps = actionFiles();
-  if (ps.isEmpty()) return;
+  if (ps.isEmpty() || fileOpBusy_) return;
   if (QMessageBox::question(this, trStr(lang(), "delTitle"),
                             trStr(lang(), "delAsk").arg(ps.size())) != QMessageBox::Yes) return;
-  QElapsedTimer t; t.start(); // 0.9.4.104 (G): phase timing, see scanLog below
-  QStringList gone;
+  // 0.9.4.105 (C): the shell recycle runs on a worker thread with a progress
+  // dialog, so a large checked set never freezes the window. Results are
+  // applied back on the GUI thread (prune + stored-index cleanup + timing log).
+  fileOpBusy_ = true;
+  QProgressDialog* dlg = newFileOpDialog(this, trStr(lang(), "delTitle"), 0, false, QString());
+  auto gone = std::make_shared<QStringList>();
+  auto ms = std::make_shared<qint64>(0);
+  QThread* th = QThread::create([ps, gone, ms] {
+    QElapsedTimer t; t.start();
 #ifdef _WIN32
-  gone = recycleFiles(ps); // 0.9.4.104 (A): one shell call for the whole set
+    // Shell APIs need COM on the calling thread; this worker is a raw OS
+    // thread, so it initializes an apartment for the duration of the call.
+    const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    *gone = recycleFiles(ps); // 0.9.4.104 (A): one shell call for the whole set
+    if (SUCCEEDED(hr)) CoUninitialize();
 #else
-  for (const auto& p : ps) if (QFile::remove(p)) gone << p;
+    for (const auto& p : ps) if (QFile::remove(p)) *gone << p;
 #endif
-  const qint64 recycleMs = t.elapsed();
-  if (gone.size() != ps.size())
-    QMessageBox::warning(this, trStr(lang(), "delTitle"), trStr(lang(), "delFail"));
-  if (!gone.isEmpty()) prunePaths(QSet<QString>(gone.begin(), gone.end()));
-  scanLog(QString("delete files=%1 gone=%2 recycleMs=%3").arg(ps.size()).arg(gone.size()).arg(recycleMs));
+    *ms = t.elapsed();
+  });
+  connect(th, &QThread::finished, this, [this, th, dlg, ps, gone, ms] {
+    th->deleteLater();
+    if (dlg) { dlg->close(); dlg->deleteLater(); }
+    fileOpBusy_ = false;
+    if (gone->size() != ps.size())
+      QMessageBox::warning(this, trStr(lang(), "delTitle"), trStr(lang(), "delFail"));
+    if (!gone->isEmpty()) {
+      prunePaths(QSet<QString>(gone->begin(), gone->end()));
+      // 0.9.4.105 (F): reflect the removal in the stored index immediately
+      // (files + match pairs + thumbnails), not on the next scan.
+      if (backend_) backend_->forgetPaths(*gone);
+    }
+    scanLog(QString("delete files=%1 gone=%2 recycleMs=%3").arg(ps.size()).arg(gone->size()).arg(*ms));
+  });
+  th->start();
 }
 void MainWindow::copySelected() {
   const auto ps = actionFiles();
@@ -3685,33 +3781,71 @@ void MainWindow::pasteFiles() {
   const QMimeData* d = QApplication::clipboard()->mimeData();
   if (!d || !d->hasUrls() || folder_->text().isEmpty()) return;
   const QDir dst(folder_->text());
+  QStringList movedSrcs;
   for (const auto& u : d->urls()) {
     const QString src = u.toLocalFile();
     const QString target = dst.filePath(QFileInfo(src).fileName());
     if (cutPaths_.contains(src)) {
-    if (QFile::rename(src, target)) cutPaths_.removeOne(src);
-    else if (QFile::copy(src, target) && QFile::remove(src)) cutPaths_.removeOne(src);
+    if (QFile::rename(src, target)) { cutPaths_.removeOne(src); movedSrcs << src; }
+    else if (QFile::copy(src, target) && QFile::remove(src)) { cutPaths_.removeOne(src); movedSrcs << src; }
     } else QFile::copy(src, target);
   }
+  // 0.9.4.105 (F): cut sources left the filesystem; drop their stored rows.
+  if (!movedSrcs.isEmpty() && backend_) backend_->forgetPaths(movedSrcs);
   refreshAfterFileOperation(QString());
 }
 void MainWindow::moveSelected() {
   const auto ps = actionFiles();
-  if (ps.isEmpty()) return;
+  if (ps.isEmpty() || fileOpBusy_) return;
   const QString dst = QFileDialog::getExistingDirectory(this, trStr(lang(), "chooseDest"), folder_->text());
   if (dst.isEmpty()) return;
-  QElapsedTimer t; t.start(); // 0.9.4.104 (G): phase timing, see scanLog below
-  QStringList gone;
-  for (const auto& p : ps) {
-    const QString target = QDir(dst).filePath(QFileInfo(p).fileName());
-    if (QFile::rename(p, target)) gone << p;
-    else if (QFile::copy(p, target) && QFile::remove(p)) gone << p;
-  }
-  const qint64 moveMs = t.elapsed();
-  if (gone.size() != ps.size())
-    QMessageBox::warning(this, trStr(lang(), "move"), trStr(lang(), "moveFail"));
-  if (!gone.isEmpty()) prunePaths(QSet<QString>(gone.begin(), gone.end()));
-  scanLog(QString("move files=%1 gone=%2 moveMs=%3").arg(ps.size()).arg(gone.size()).arg(moveMs));
+  // 0.9.4.105 (C): per-file rename/copy (cross-volume fallback included) runs
+  // on a worker thread with a determinate progress dialog. Cancel stops
+  // between files; only completed moves are pruned / dropped from the index.
+  fileOpBusy_ = true;
+  QProgressDialog* dlg = newFileOpDialog(this, trStr(lang(), "move"), ps.size(), true,
+                                         trStr(lang(), "stop"));
+  auto gone = std::make_shared<QStringList>();
+  auto ms = std::make_shared<qint64>(0);
+  auto done = std::make_shared<std::atomic<int>>(0);
+  auto cancel = std::make_shared<std::atomic<bool>>(false);
+  connect(dlg, &QProgressDialog::canceled, this, [cancel] { cancel->store(true); });
+  auto* poll = new QTimer(this);
+  poll->setInterval(100);
+  // QPointer: a queued timer event may still fire after the finish handler
+  // deleted the dialog; never touch a dangling pointer.
+  QPointer<QProgressDialog> dlgPtr(dlg);
+  connect(poll, &QTimer::timeout, this, [dlgPtr, done] { if (dlgPtr) dlgPtr->setValue(done->load()); });
+  poll->start();
+  QThread* th = QThread::create([ps, dst, gone, ms, done, cancel] {
+    QElapsedTimer t; t.start();
+    for (const auto& p : ps) {
+      if (cancel->load()) break;
+      const QString target = QDir(dst).filePath(QFileInfo(p).fileName());
+      if (QFile::rename(p, target)) *gone << p;
+      else if (QFile::copy(p, target) && QFile::remove(p)) *gone << p;
+      done->fetch_add(1);
+    }
+    *ms = t.elapsed();
+  });
+  connect(th, &QThread::finished, this, [this, th, dlg, poll, ps, gone, ms, cancel] {
+    poll->stop(); poll->deleteLater();
+    if (dlg) { dlg->close(); dlg->deleteLater(); }
+    th->deleteLater();
+    fileOpBusy_ = false;
+    const bool wasCancelled = cancel->load();
+    if (!wasCancelled && gone->size() != ps.size())
+      QMessageBox::warning(this, trStr(lang(), "move"), trStr(lang(), "moveFail"));
+    if (!gone->isEmpty()) {
+      prunePaths(QSet<QString>(gone->begin(), gone->end()));
+      // 0.9.4.105 (F): the moved sources left the filesystem; drop their
+      // stored index rows now (their new locations index on the next scan).
+      if (backend_) backend_->forgetPaths(*gone);
+    }
+    scanLog(QString("move files=%1 gone=%2 moveMs=%3 cancelled=%4")
+        .arg(ps.size()).arg(gone->size()).arg(*ms).arg(wasCancelled ? 1 : 0));
+  });
+  th->start();
 }
 void MainWindow::prunePaths(const QSet<QString>& gone) {
   QElapsedTimer t; t.start(); // 0.9.4.104 (G): phase timing, see scanLog below
@@ -4105,6 +4239,15 @@ void MainWindow::onBackendConnection(bool available, QString message) {
   if (!available) {
     backendRestarting_ = message.contains(QStringLiteral("restarting"));
     statusMsg_->setText(message);
+    // 0.9.4.105 (D): in-flight thumbnail/metadata requests die with the
+    // backend. Clearing the tracking maps keeps a restarted backend's answers
+    // from being matched against stale ids, and lets the next catch-up tick
+    // re-request once READY is back (the cells are still cache misses). The
+    // asked-set clears too so metadata that was lost with the crash is asked
+    // again; resolved entries still answer from resCache_ without a request.
+    thumbPendingReq_.clear();
+    fileMetaPending_.clear();
+    fileMetaAsked_.clear();
     // The supervisor sends a separate failed() event for an interrupted scan.
     // Do not open a modal here: restart timers and auto-resume must keep running.
     if (!scanning_) scan_->setEnabled(false);

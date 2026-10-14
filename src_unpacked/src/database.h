@@ -29,6 +29,12 @@ struct FileTrace { std::string path; std::int64_t admittedMs=0, startedMs=0, fin
 // finished_ms!=0 settled without analysis.
 class Database {
 public: ~Database(); bool open(const std::string& path); void close(); bool initialize(); bool beginTransaction(); bool commitTransaction(); bool rollbackTransaction(); bool upsert(const FileState& state); bool remove(const std::string& path); bool containsUnchanged(const FileState& state) const; std::vector<FileState> all() const;
+  // 0.9.4.105 (F): drop every stored row belonging to paths that left the
+  // filesystem (user delete/move): the files row, match pairs touching the
+  // path on either side, and the stored thumbnail — all in one transaction.
+  // Returns true for empty input (nothing to do) and false on any failure
+  // (rolled back).
+  bool forget(const std::vector<std::string>& paths);
   bool saveMatches(const std::vector<StoredMatch>& matches); std::vector<StoredMatch> loadMatches() const;
   // Scan-trace writers (same-transaction, called from the scan worker thread
   // only). traceAdmit inserts/resets the row at admission; traceStart stamps

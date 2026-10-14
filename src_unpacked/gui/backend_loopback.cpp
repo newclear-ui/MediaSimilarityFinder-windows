@@ -166,6 +166,11 @@ void LoopbackBackendClient::requestFileMeta(const QString& path, quint64 request
         this, [=, this] { emit fileMetaReady(requestId, r); }, Qt::QueuedConnection);
 }
 
+void LoopbackBackendClient::forgetPaths(const QStringList& paths) {
+    // Same contract as the supervisor path: fire-and-forget index cleanup.
+    session_->forgetPaths(paths);
+}
+
 BackendStatus LoopbackBackendClient::lastStatus() const {
     const SessionStatus s = session_->lastStatus();
     BackendStatus out;

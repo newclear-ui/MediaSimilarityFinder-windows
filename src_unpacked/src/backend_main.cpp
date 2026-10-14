@@ -187,6 +187,15 @@ private:
             out.payload[QStringLiteral("duration")] = fm.duration;
             out.payload[QStringLiteral("ok")] = fm.ok;
             send(out);
+        } else if (t == QLatin1String(msf_ipc::kForgetPaths)) {
+            // 0.9.4.105 (F): fire-and-forget index cleanup; the log line is the
+            // only feedback (refused during scans is expected, not an error).
+            QStringList paths;
+            for (const auto& v : m.payload.value(QStringLiteral("paths")).toArray())
+                paths << v.toString();
+            log(QStringLiteral("forget paths=%1 ok=%2")
+                    .arg(paths.size())
+                    .arg(session_->forgetPaths(paths) ? 1 : 0));
         } else if (t == QLatin1String(msf_ipc::kShutdown)) {
             onShutdown(m.requestId);
         } else {

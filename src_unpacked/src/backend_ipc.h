@@ -43,6 +43,9 @@ inline const char* kShutdown = "SHUTDOWN";
 inline const char* kUpdatePolicy = "UPDATE_RESOURCE_POLICY";
 inline const char* kGetThumbnail = "GET_THUMBNAIL";
 inline const char* kGetFileMeta = "GET_FILE_META";
+// 0.9.4.105 (F): drop stored index rows (files/matches/thumbs) for paths the
+// user deleted or moved. Fire-and-forget; refused while a scan owns the index.
+inline const char* kForgetPaths = "FORGET_PATHS";
 
 // Event types (Backend → GUI).
 inline const char* kHelloAck = "HELLO_ACK";

@@ -673,6 +673,59 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Phase 17 (0.9.4.105, D): a bulk middle-list refill must not issue one
+    // backend thumbnail request per row. Regression: the full rebuild asked
+    // for art of every row (thousands), overflowed the capped pending map and
+    // dropped in-flight answers as "unknown" — permanent placeholder blanks
+    // exactly where the user had scrolled. Only the visible viewport may be
+    // requested (bulk fills serve cache hits/placeholders only).
+    {
+        auto* grid = w.findChild<QListWidget*>("imgGrid");
+        check(grid != nullptr, "group grid found for bulk-fill phase");
+        if (grid) {
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 0));
+            QApplication::processEvents();
+            w.testDropThumbCache();
+            w.testRefreshGroupList();
+            const qulonglong pending = w.testThumbPendingCount();
+            std::cout << "  [info] bulk refill pending=" << pending
+                      << " items=" << grid->count() << "\n";
+            check(pending > 0, "rebuild asks for the visible viewport");
+            check(pending < (qulonglong)grid->count(),
+                  "bulk rebuild requests only visible rows (no storm)");
+            // The visible requests paint on arrival; nothing stays stuck.
+            const qulonglong p0 = w.testThumbPaintedCount();
+            for (int i = 0; i < 6; ++i) { w.testUiTick(); QApplication::processEvents(); QThread::msleep(30); }
+            check(w.testThumbPaintedCount() > p0, "visible rows fill after the bulk refill");
+        }
+    }
+
+    // Phase 18 (0.9.4.105): selecting a file must issue exactly one metadata
+    // request. Regression: a duration-less answer (any image) made the next
+    // refreshDetail ask again — an endless request/rebuild ping-pong whose
+    // widget churn blanked the detail text.
+    {
+        auto* fgrid = w.findChild<QListWidget*>("fileGrid");
+        if (fgrid && fgrid->count() > 0) {
+            fgrid->setCurrentItem(nullptr);
+            QApplication::processEvents();
+            if (auto* f = fgrid->item(0)) fgrid->setCurrentItem(f);
+            for (int i = 0; i < 6; ++i) { w.testUiTick(); QApplication::processEvents(); QThread::msleep(30); }
+            const qulonglong m1 = w.testFileMetaRequestCount();
+            for (int i = 0; i < 6; ++i) { w.testUiTick(); QApplication::processEvents(); QThread::msleep(30); }
+            const qulonglong m2 = w.testFileMetaRequestCount();
+            std::cout << "  [info] fileMeta requests settle m1=" << m1 << " m2=" << m2 << "\n";
+            check(m2 == m1, "detail selection: metadata requests settle (no ping-pong)");
+            check(w.testDetailInstalled(), "detail form still installed after selection");
+            const QString shown = w.testDetailFileName();
+            check(!shown.isEmpty() && shown != QStringLiteral("-"),
+                  "detail text present and stable after selection");
+        } else {
+            std::cout << "  [info] no file grid items; metadata phase skipped\n";
+            ++gChecks;
+        }
+    }
+
     fs::remove_all(d, ec);
     std::cout << "scroll_regression_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";

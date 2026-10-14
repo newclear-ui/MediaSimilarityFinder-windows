@@ -37,6 +37,7 @@ public:
                       quint64 requestId) override;
     QVector<BackendFile> requestFiles() override;
     void requestFileMeta(const QString& path, quint64 requestId) override;
+    void forgetPaths(const QStringList& paths) override;
     BackendStatus lastStatus() const override;
     BackendMonitorStatus lastMonitorStatus() const override;
     std::string telemetryJsonForTest() const override;

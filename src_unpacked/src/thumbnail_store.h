@@ -62,7 +62,11 @@ private:
         int width = 0;
         int height = 0;
     };
-    static constexpr std::size_t kMemMax = 256;
+    // 0.9.4.105 (E): 256 -> 1024. The disk table is authoritative; this LRU
+    // absorbs repeat requests (middle-pane representative + right pane +
+    // detail preview ask the same paths) before they touch SQLite. 1024 JPEG
+    // entries (~5-40 KB each) stay well under ~40 MB worst case.
+    static constexpr std::size_t kMemMax = 1024;
 
     bool diskGet(const std::string& path, std::int64_t modified, std::uint64_t size,
                  StoredThumb& out);

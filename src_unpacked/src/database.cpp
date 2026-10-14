@@ -140,6 +140,37 @@ bool Database::remove(const std::string& p){
  return sqlite3_step(s)==SQLITE_DONE;
 }
 
+// 0.9.4.105 (F): immediate index reflection for user delete/move. One
+// transaction so a failure cannot leave a half-forgotten path (file row gone
+// but its matches alive, or the reverse).
+bool Database::forget(const std::vector<std::string>& paths){
+ if(!db_||paths.empty()) return paths.empty();
+ if(!removeStmt_ && !prepareStatements()) return false;
+ sqlite3_stmt* rm=S(removeStmt_);
+ sqlite3_stmt* m=nullptr; sqlite3_stmt* t=nullptr;
+ if(sqlite3_prepare_v2(D(db_),"DELETE FROM matches WHERE left_path=? OR right_path=?",-1,&m,nullptr)!=SQLITE_OK) return false;
+ if(sqlite3_prepare_v2(D(db_),"DELETE FROM thumbs WHERE path=?",-1,&t,nullptr)!=SQLITE_OK){sqlite3_finalize(m);return false;}
+ bool ok=exec("BEGIN IMMEDIATE TRANSACTION;");
+ for(std::size_t i=0;ok&&i<paths.size();++i){
+   const std::string& p=paths[i];
+   sqlite3_reset(rm); sqlite3_clear_bindings(rm); sqlite3_bind_text(rm,1,p.c_str(),-1,SQLITE_TRANSIENT);
+   ok=sqlite3_step(rm)==SQLITE_DONE;
+   if(ok){
+     sqlite3_reset(m); sqlite3_clear_bindings(m);
+     sqlite3_bind_text(m,1,p.c_str(),-1,SQLITE_TRANSIENT);
+     sqlite3_bind_text(m,2,p.c_str(),-1,SQLITE_TRANSIENT);
+     ok=sqlite3_step(m)==SQLITE_DONE;
+   }
+   if(ok){
+     sqlite3_reset(t); sqlite3_clear_bindings(t); sqlite3_bind_text(t,1,p.c_str(),-1,SQLITE_TRANSIENT);
+     ok=sqlite3_step(t)==SQLITE_DONE;
+   }
+ }
+ sqlite3_finalize(m); sqlite3_finalize(t);
+ if(!ok){exec("ROLLBACK;");return false;}
+ return exec("COMMIT;");
+}
+
 bool Database::containsUnchanged(const FileState& x) const{
  if(!db_) return false;
  auto* self=const_cast<Database*>(this); if(!self->containsStmt_ && !self->prepareStatements()) return false;

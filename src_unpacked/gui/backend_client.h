@@ -214,6 +214,12 @@ public:
     // File metadata (Type B, async): dimensions + duration for paths the
     // engine may never have analyzed. Answers via fileMetaReady.
     virtual void requestFileMeta(const QString& path, quint64 requestId) = 0;
+    // 0.9.4.105 (F): drop stored index rows (file + match pairs + thumbnail)
+    // for paths that left the filesystem (user delete/move). Fire-and-forget;
+    // the backend refuses while a scan owns the index (the next scan
+    // reconciles anyway). Keeps a later Load/report from showing removed
+    // files and their pairs.
+    virtual void forgetPaths(const QStringList& paths) = 0;
 
     // ---- Type C: cached snapshots (updated by signals, never polled) ----
     virtual BackendStatus lastStatus() const = 0;

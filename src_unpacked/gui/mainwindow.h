@@ -101,7 +101,14 @@ public:
   // requests through the real catch-up path instead of setting item icons
   // directly and bypassing it. Arrivals paint via onThumbReady.
   void testThumbCatchUp() { thumbCatchUpVisible(); }
+  // 0.9.4.105 (D): force one middle-pane refill through the real fill path so
+  // tests can prove a bulk rebuild issues no per-row thumbnail requests.
+  void testRefreshGroupList() { refreshGroupList(); }
   qulonglong testFullRebuildCount() const { return fullRebuildCount_; }
+  // 0.9.4.105: backend metadata request counter. Pins "select a file -> one
+  // metadata request" (the old code re-requested on every duration-less
+  // answer, an endless rebuild/request ping-pong that blanked the detail).
+  qulonglong testFileMetaRequestCount() const { return fileMetaRequestCount_; }
   // Mark-state probe (0.9.4.99): all marked paths. Pins reference-exclusion
   // (the group checkbox never auto-marks paths[0]).
   QStringList testMarkedPaths() const { return QStringList(marked_.begin(), marked_.end()); }
@@ -231,6 +238,12 @@ private:
   // Mutable: refreshDetail and fileResolution are const but trigger requests.
   mutable QMap<quint64, QString> fileMetaPending_;
   mutable quint64 fileMetaRequestId_ = 0;
+  // 0.9.4.105: one metadata request per path per scan/load generation. Without
+  // this, a duration-less answer (any image) let the next refreshDetail ask
+  // again, whose answer rebuilt the detail again: an endless request/rebuild
+  // ping-pong whose widget churn blanked the detail text.
+  mutable QSet<QString> fileMetaAsked_;
+  mutable qulonglong fileMetaRequestCount_ = 0;
   // In-place fileMeta paint, mirroring the 0.9.4.66 thumbnail pattern: update
   // the matching grid cell / list row text without recreating widgets (which
   // would destroy the user's selection — the P4 selection-lock regression).
@@ -270,6 +283,10 @@ private:
   qulonglong lastListN_=0; // directory-walk listing count (heartbeat-visible)
   QString qlPendingPath_; int qlPollLeft_ = 0; // pending preview while its server starts
   QStringList cutPaths_;
+  // 0.9.4.105 (C): recycle/move run on a worker thread with a progress dialog
+  // (the shell call / copy loop no longer blocks the GUI). Busy flag refuses
+  // re-entrant file operations while one is in flight.
+  bool fileOpBusy_ = false;
   bool scanning_=false; qint64 scanStartMs_=0; bool groupsDirty_=false; bool scanPaused_=false;
   // Backend-crash auto-resume. A backend crash mid-scan aborts the scan; when
   // the supervisor brings a fresh backend back to READY, the GUI re-issues the
@@ -307,6 +324,13 @@ private:
   struct ThumbReq { QString path; QSize size; };
   mutable QMap<quint64, ThumbReq> thumbPendingReq_;
   mutable quint64 thumbRequestId_ = 0;
+  // 0.9.4.105 (D): true while a bulk fill populates the middle list. fileThumb
+  // then serves cache hits/placeholders only — a full rebuild used to request
+  // art for every row (thousands of requests), which overflowed the pending
+  // map so in-flight answers arrived as "unknown" and were dropped, leaving
+  // permanent placeholder blanks. The visible-only catch-up pump runs right
+  // after the fill and on every idle tick, so visible rows still fill.
+  bool thumbBulkFill_ = false;
   // P3: GUI no longer decodes (all decode is Backend-side), so the per-tick
   // budgets and the starvation flag are gone. Miss accounting lives in the
   // pending-request map; arrivals paint via onThumbReady.

@@ -261,6 +261,18 @@ void BackendSupervisor::requestFileMeta(const QString& path, quint64 requestId) 
     sendCommand(msf_ipc::kGetFileMeta, p, requestId);
 }
 
+void BackendSupervisor::forgetPaths(const QStringList& paths) {
+    // 0.9.4.105 (F): fire-and-forget. No backend / not ready = nothing stored
+    // to forget; the next scan reconciles. During a scan the backend refuses
+    // (the scan owns the index) and logs that outcome.
+    if (paths.isEmpty() || !backendReady_ || !processAlive()) return;
+    QJsonObject p;
+    QJsonArray arr;
+    for (const auto& path : paths) arr.append(path);
+    p[QStringLiteral("paths")] = arr;
+    sendCommand(msf_ipc::kForgetPaths, p);
+}
+
 // ---- lifecycle ----
 
 void BackendSupervisor::spawn() {

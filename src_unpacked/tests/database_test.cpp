@@ -39,7 +39,31 @@ int main(){
     if(db.analyzeFrontier()!="eng|8|3|abcd#5") return 19;
     if(!db.setAnalyzeFrontier("")) return 20;
     if(!db.analyzeFrontier().empty()) return 21;
-    std::cout<<"database=ok\nincremental=ok\ntransaction=ok\nfrontier=ok\n";
+    // 0.9.4.105 (F): forget() drops the files row, match pairs touching the
+    // path on either side, and the stored thumbnail — in one transaction,
+    // leaving unrelated rows intact.
+    if(!db.upsert(msf::FileState{"gone.jpg",100,10,"x"})) return 22;
+    if(!db.upsert(msf::FileState{"keep.png",300,30,"q"})) return 23;
+    {
+      std::vector<msf::StoredMatch> ms{
+          {"gone.jpg","keep.png",91.0},
+          {"keep.png","other.png",88.0}};
+      if(!db.saveMatches(ms)) return 24;
+    }
+    {
+      const std::vector<unsigned char> jpeg{0xFF,0xD8,0xFF,0xD9};
+      if(!db.putThumb("gone.jpg",10,100,jpeg)) return 25;
+    }
+    if(!db.forget({"gone.jpg"})) return 26;
+    for(const auto& x : db.all()) if(x.path=="gone.jpg") return 27;
+    {
+      const auto ms=db.loadMatches();
+      for(const auto& m : ms) if(m.left=="gone.jpg"||m.right=="gone.jpg") return 28;
+      bool keepPair=false; for(const auto& m : ms) if(m.left=="keep.png"||m.right=="keep.png") keepPair=true;
+      if(!keepPair) return 29;
+    }
+    if(!db.forget({})) return 30; // empty input: no-op success
+    std::cout<<"database=ok\nincremental=ok\ntransaction=ok\nfrontier=ok\nforget=ok\n";
     db.close(); // Windows cannot remove an open database file; close first.
     std::filesystem::remove(p);
     return 0;

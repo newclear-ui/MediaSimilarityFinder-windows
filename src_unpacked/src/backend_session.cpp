@@ -364,6 +364,29 @@ void BackendSession::loadIndex(const QString& root, const QString& appDir) {
     emit results(files, rows);
 }
 
+bool BackendSession::forgetPaths(const QStringList& paths) {
+    // 0.9.4.105 (F): remove rows for paths that left the filesystem. The scan
+    // worker owns the index while scanning, so refuse then (a concurrent
+    // writer would fight its transaction; the next scan reconciles anyway).
+    if (paths.isEmpty() || scanning_) return false;
+    if (lastRoot_.isEmpty() || lastAppDir_.isEmpty()) return false;
+    msf::IndexPaths ip;
+    if (!msf::IndexManager::resolve(msf::path_from_utf8(lastAppDir_.toStdString()),
+                                    msf::path_from_utf8(lastRoot_.toStdString()), ip))
+        return false;
+    msf::Database db;
+    if (!db.open(msf::path_to_utf8(ip.database)) || !db.initialize()) {
+        db.close();
+        return false;
+    }
+    std::vector<std::string> v;
+    v.reserve((std::size_t)paths.size());
+    for (const auto& p : paths) v.push_back(p.toStdString());
+    const bool ok = db.forget(v);
+    db.close();
+    return ok;
+}
+
 void BackendSession::updateResourcePolicy(int cpuMode, int cpuPercent, int gpuPercent,
                                           int strategy, bool gpuEnabled) {
     // Monitor applies immediately. The engine side applies at the next scan

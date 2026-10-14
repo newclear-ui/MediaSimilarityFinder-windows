@@ -75,6 +75,11 @@ public:
     // and pairs, and reports them through results()/quickLoaded() without any
     // walk or analysis. Replaces the current view with the index content.
     void loadIndex(const QString& root, const QString& appDir);
+    // 0.9.4.105 (F): immediate index reflection for user delete/move. Drops
+    // the files/matches/thumbs rows for the given paths in one transaction on
+    // the last scan/load root. Refused while a scan owns the index (the same
+    // worker would race the writes); returns false when nothing was done.
+    bool forgetPaths(const QStringList& paths);
     void pause();
     void resume();
     void cancel();
