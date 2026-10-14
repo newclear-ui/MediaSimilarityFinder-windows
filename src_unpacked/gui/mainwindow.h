@@ -236,7 +236,7 @@ private:
   // would destroy the user's selection — the P4 selection-lock regression).
   void refreshFileMetaRow(const QString& path);
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
-  void dropThumbCache(const QString& path); // exact + sized variants
+  void dropThumbCache(const QSet<QString>& paths); // 0.9.4.104 (B): single sweep
   double pathBest(const QString&) const;
   void addMatch(const QString&, const QString&, double, int kind);
   QString findRoot(const QString&); // union-find over pathParent_

@@ -398,6 +398,35 @@ static bool recycleFile(const QString& path) {
   op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
   return SHFileOperationW(&op) == 0;
 }
+// 0.9.4.104 (A): batch recycle — one SHFileOperationW call for the whole set.
+// Per-file shell calls cost one COM/shell round-trip each, so N checked files
+// meant N round-trips on the GUI thread. A single double-null-terminated
+// multi-string call does them all at once. SHFileOperationW reports only
+// overall success, so existence is verified per file afterwards: survivors
+// are retried individually (locked/long paths), keeping the previous
+// partial-progress semantics (gone = actually recycled).
+static QStringList recycleFiles(const QStringList& paths) {
+  QStringList gone;
+  if (paths.isEmpty()) return gone;
+  std::wstring multi;
+  for (const auto& path : paths) {
+    const std::wstring p = path.toStdWString();
+    multi.append(p.c_str(), p.size() + 1);
+  }
+  multi.push_back(L'\0');
+  SHFILEOPSTRUCTW op{};
+  op.wFunc = FO_DELETE; op.pFrom = multi.c_str();
+  op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
+  if (SHFileOperationW(&op) == 0 && !op.fAnyOperationsAborted) {
+    for (const auto& path : paths) {
+      if (!QFile::exists(path)) gone << path;
+      else if (recycleFile(path) && !QFile::exists(path)) gone << path;
+    }
+    return gone;
+  }
+  for (const auto& path : paths) if (recycleFile(path)) gone << path;
+  return gone;
+}
 #endif
 
 // ------------------------------------------------------------ ScanWorker
@@ -2805,12 +2834,18 @@ QPixmap squareFittedPixmap(const QPixmap& src, const QSize& size) {
                 src, QRect(QPoint(0, 0), src.size()));
   return canvas;
 }
-void MainWindow::dropThumbCache(const QString& path) {
-  thumbCache_.remove(path);
-  // Sized variants are keyed "path|WxH"; drop those too.
+// 0.9.4.104 (B): batch drop — one sweep over the cache for the whole gone
+// set. The per-file version scanned up to 3000 entries per deleted file
+// (O(3000xN) QString work on the GUI thread). Keys are "path|WxH" ('|'
+// cannot appear in Windows paths); a bare "path" key predates sized
+// variants and is dropped too.
+void MainWindow::dropThumbCache(const QSet<QString>& paths) {
+  if (paths.isEmpty()) return;
   for (auto it = thumbCache_.begin(); it != thumbCache_.end();) {
     const QString& k = it.key();
-    if (k.size() > path.size() && k.startsWith(path) && k[path.size()] == '|') it = thumbCache_.erase(it);
+    const int bar = k.indexOf('|');
+    const QString base = (bar < 0) ? k : k.left(bar);
+    if (paths.contains(base)) it = thumbCache_.erase(it);
     else ++it;
   }
 }
@@ -3621,17 +3656,18 @@ void MainWindow::deleteSelected() {
   if (ps.isEmpty()) return;
   if (QMessageBox::question(this, trStr(lang(), "delTitle"),
                             trStr(lang(), "delAsk").arg(ps.size())) != QMessageBox::Yes) return;
+  QElapsedTimer t; t.start(); // 0.9.4.104 (G): phase timing, see scanLog below
   QStringList gone;
-  for (const auto& p : ps) {
 #ifdef _WIN32
-    if (recycleFile(p)) gone << p;
+  gone = recycleFiles(ps); // 0.9.4.104 (A): one shell call for the whole set
 #else
-    if (QFile::remove(p)) gone << p;
+  for (const auto& p : ps) if (QFile::remove(p)) gone << p;
 #endif
-  }
+  const qint64 recycleMs = t.elapsed();
   if (gone.size() != ps.size())
     QMessageBox::warning(this, trStr(lang(), "delTitle"), trStr(lang(), "delFail"));
   if (!gone.isEmpty()) prunePaths(QSet<QString>(gone.begin(), gone.end()));
+  scanLog(QString("delete files=%1 gone=%2 recycleMs=%3").arg(ps.size()).arg(gone.size()).arg(recycleMs));
 }
 void MainWindow::copySelected() {
   const auto ps = actionFiles();
@@ -3664,24 +3700,32 @@ void MainWindow::moveSelected() {
   if (ps.isEmpty()) return;
   const QString dst = QFileDialog::getExistingDirectory(this, trStr(lang(), "chooseDest"), folder_->text());
   if (dst.isEmpty()) return;
+  QElapsedTimer t; t.start(); // 0.9.4.104 (G): phase timing, see scanLog below
   QStringList gone;
   for (const auto& p : ps) {
     const QString target = QDir(dst).filePath(QFileInfo(p).fileName());
     if (QFile::rename(p, target)) gone << p;
     else if (QFile::copy(p, target) && QFile::remove(p)) gone << p;
   }
+  const qint64 moveMs = t.elapsed();
   if (gone.size() != ps.size())
     QMessageBox::warning(this, trStr(lang(), "move"), trStr(lang(), "moveFail"));
   if (!gone.isEmpty()) prunePaths(QSet<QString>(gone.begin(), gone.end()));
+  scanLog(QString("move files=%1 gone=%2 moveMs=%3").arg(ps.size()).arg(gone.size()).arg(moveMs));
 }
 void MainWindow::prunePaths(const QSet<QString>& gone) {
+  QElapsedTimer t; t.start(); // 0.9.4.104 (G): phase timing, see scanLog below
   for (const auto& p : gone) {
     marked_.remove(p); resCache_.remove(p); fileSize_.remove(p); fileFp_.remove(p);
-    fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p); dropThumbCache(p);
+    fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p);
     pathParent_.remove(p);
     if (currentFile_ == p) currentFile_.clear();
   }
+  dropThumbCache(gone); // 0.9.4.104 (B): single sweep, was one full scan per file
+  const qint64 dropMs = t.elapsed();
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
+  scanLog(QString("prune files=%1 dropCacheMs=%2 rebuildMs=%3 totalMs=%4")
+      .arg(gone.size()).arg(dropMs).arg(t.elapsed() - dropMs).arg(t.elapsed()));
 }
 void MainWindow::refreshAfterFileOperation(const QString&) {
   // file set changed on disk; simplest correct step is a fresh incremental scan
