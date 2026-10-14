@@ -59,7 +59,23 @@ bool MediaSearchEngine::saveMatches(const std::vector<SearchMatch>& matches){
 static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf);
 std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
   std::vector<SearchMatch> out; const auto s=db_.loadMatches(); out.reserve(s.size());
-  for(const auto& m:s) out.push_back({m.left,m.right,m.percent});
+  // 0.9.4.106: content-identity flag for the display badge. candidateStates_ is
+  // the DB snapshot taken at open — the same generation the quick-load reads —
+  // so the join costs no extra table scan on the hot path.
+  std::vector<FileState> local;
+  const std::vector<FileState>* sp=&candidateStates_;
+  if(candidateStates_.empty()){ local=db_.all(); sp=&local; }
+  std::unordered_map<std::string,std::pair<std::uint64_t,const std::string*>> id;
+  id.reserve(sp->size()*2+1);
+  for(const auto& x:*sp) id.emplace(x.path,std::make_pair(x.size,&x.quickHash));
+  for(const auto& m:s){
+    SearchMatch sm{m.left,m.right,m.percent};
+    const auto a=id.find(m.left), b=id.find(m.right);
+    if(a!=id.end()&&b!=id.end()&&a->second.first==b->second.first&&
+       !a->second.second->empty()&&*a->second.second==*b->second.second)
+      sm.contentIdentical=true;
+    out.push_back(std::move(sm));
+  }
   return out;
 }
 bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* dropped){
@@ -82,6 +98,7 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
   };
   auto toMedia=[&](const FileState& x)->MediaFile{
     MediaFile mf{x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration};
+    mf.quickHash=x.quickHash; // 0.9.4.106: content-identity badge input
     if((MediaKind)x.kind==MediaKind::Video) loadVideoAnchors(videoEngine_,mf);
     return mf;
   };
@@ -518,6 +535,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   const auto& lf=livePipe.files();
   if(m.left>=lf.size()||m.right>=lf.size()) return;
   SearchMatch sm{lf[m.left].path,lf[m.right].path,m.percent};
+  sm.contentIdentical=m.contentIdentical;
   control->onMatch(sm);
  };
  const bool liveMatch = control && (bool)control->onMatch;
@@ -697,7 +715,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // Outcome-time classification: the file now has a real fingerprint, so
     // reporting it as added/modified is finally backed by a usable index row.
     if(oldByPath.find(x.path)==oldByPath.end()) ++nAdded; else ++nModified;
-    MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);
+    MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; mf.quickHash=x.quickHash; files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);
    } else {
     // Analysis ran and produced nothing. Record that outcome on the row so the
     // next scan sees a settled state instead of re-queuing it forever, and count
@@ -782,7 +800,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
       taken[i]=1; --remaining; progressed=true;
        auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true;
-       if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
+       if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};mf.quickHash=vs.quickHash;files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
        else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed; }
        // Settlement trace (0.9.4.78) + slow-file log. rangeFileMs holds the
        // actual build time, a better elapsed metric than harvest latency.
@@ -994,6 +1012,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    const bool video=kindOf(x.path)==MediaKind::Video;
    if(control && ((video&&!control->scanVideos)||(!video&&!control->scanImages))) continue;
    files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration});
+   files_.back().quickHash=x.quickHash; // 0.9.4.106: content-identity badge input
    if(video){ loadVideoAnchors(videoEngine_, files_.back()); ++r.indexedVideos; }
   }
   ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_); pipe.setVideoGpuBackend(&videoGpu_); pipe.setVideoGpuActivity(&gpuActive_); for(auto&f:files_)pipe.add(f);
@@ -1100,14 +1119,16 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    }
    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
-   if(control && control->onMatch) {
-     SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
-     if(files_[m.left].kind==MediaKind::Video) ++r.videoMatches;
-     control->onMatch(sm);
-   }
+    if(control && control->onMatch) {
+      SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
+      sm.contentIdentical=m.contentIdentical;
+      if(files_[m.left].kind==MediaKind::Video) ++r.videoMatches;
+      control->onMatch(sm);
+    }
     if(!control || control->retainMatches) {
       if(!control || control->maxRetainedMatches==0 || r.matches.size()<control->maxRetainedMatches) {
         SearchMatch sm{files_[m.left].path,files_[m.right].path,m.percent};
+        sm.contentIdentical=m.contentIdentical;
         r.matches.push_back(std::move(sm));
       }
     }

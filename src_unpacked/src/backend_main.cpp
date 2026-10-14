@@ -48,12 +48,13 @@ void printUsage(QTextStream& out) {
         << "Backend process for MediaSimilarityFinder (GUI-spawned IPC endpoint).\n";
 }
 
-QJsonObject matchJson(const QString& l, const QString& r, double pct, int kind) {
+QJsonObject matchJson(const QString& l, const QString& r, double pct, int kind, bool identical) {
     QJsonObject o;
     o[QStringLiteral("left")] = l;
     o[QStringLiteral("right")] = r;
     o[QStringLiteral("percent")] = pct;
     o[QStringLiteral("kind")] = kind;
+    o[QStringLiteral("identical")] = identical; // 0.9.4.106: display badge
     return o;
 }
 
@@ -405,7 +406,8 @@ private:
             QJsonArray arr;
             for (int k = i; k < batch.size() && k < i + kMaxMatchBatch; ++k)
                 arr.push_back(matchJson(batch[k].left, batch[k].right,
-                                        batch[k].percent, batch[k].kind));
+                                        batch[k].percent, batch[k].kind,
+                                        batch[k].contentIdentical));
             Message m;
             m.type = QString::fromLatin1(msf_ipc::kMatchesBatch);
             m.payload[QStringLiteral("matches")] = arr;

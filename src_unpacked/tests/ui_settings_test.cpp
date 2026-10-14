@@ -254,6 +254,8 @@ int main(int argc, char** argv) {
       "readDone", "indexDone",
       // left summary pair-verify row (total/confirmed)
       "sumVerify",
+      // 0.9.4.106: 100.0% badge meaning (identical content vs perceptual)
+      "identicalContent", "perceptualMatch",
     };
     int missing = 0;
     for (const char* k : kKeys) {

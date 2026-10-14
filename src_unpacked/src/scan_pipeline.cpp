@@ -33,6 +33,13 @@ static bool durationGate(const MediaFile&a,const MediaFile&b){
   if(lo<kMinDurationSeconds) return true;
   return hi/lo<=kMaxDurationRatio;
 }
+// 0.9.4.106: content identity for the display badge. Size + scanner quick hash
+// equal means the two files are byte-identical in practice (same 64 KiB head
+// and length); a hash-identical pair that fails this test is a derivative
+// (watermark/sticker/re-encode/crop) and is shown as "지각 동일" instead.
+static bool sameContent(const MediaFile& a, const MediaFile& b) {
+  return a.size == b.size && !a.quickHash.empty() && a.quickHash == b.quickHash;
+}
 // Full pairwise verdict: normal/mirror Hamming plus same-ratio crop aware
 // comparison. Shared verbatim by batch analyze() and incremental addAndMatch()
 // so live matches carry identical similarity values.
@@ -84,7 +91,7 @@ void ScanPipeline::addAndMatch(const MediaFile& f,unsigned maxDistance,const Mat
      // re-scores grey-zone pairs with SSIM; near-identical and video pairs
      // pass through untouched, decode failures fall back to Hamming.
      const double v=verifyImagePair(f.path,o.path,f.kind==MediaKind::Image,sim,threshold);
-     if(v>=threshold) onMatch(MediaMatch{c.index,idx,v});
+     if(v>=threshold){ MediaMatch match{c.index,idx,v}; match.contentIdentical=sameContent(o,f); onMatch(match); }
    }
   };
   if(f.kind==MediaKind::Image){
@@ -197,7 +204,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
   };
   auto emitVideo=[&](const VideoResult& vr){
     if(vr.verified) ++s.videoTemporalChecks;
-    if(vr.matched){ MediaMatch match{vr.i,vr.j,vr.percent}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups; }
+    if(vr.matched){ MediaMatch match{vr.i,vr.j,vr.percent}; match.contentIdentical=sameContent(files_[vr.i],files_[vr.j]); if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups; }
   };
   auto flushVideo=[&](){
     if(pendingVideo.empty()) return;
@@ -268,7 +275,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
        const auto vt1=std::chrono::steady_clock::now();
        const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&tel);
        verifyMs+=msSince(vt1);
-       if(v>=threshold){MediaMatch match{i,j,v}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
+       if(v>=threshold){MediaMatch match{i,j,v}; match.contentIdentical=sameContent(files_[i],files_[j]); if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
        return;
       }
      } else {
@@ -280,7 +287,7 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
        const auto vt1=std::chrono::steady_clock::now();
        const double v=verifyImagePair(files_[i].path,files_[j].path,false,full,threshold,&tel);
        verifyMs+=msSince(vt1);
-       if(v>=threshold){MediaMatch match{i,j,full}; if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
+       if(v>=threshold){MediaMatch match{i,j,full}; match.contentIdentical=sameContent(files_[i],files_[j]); if(onMatch) onMatch(match); else s.matches.push_back(match); ++s.groups;}
        return;
       }
      }
@@ -381,7 +388,7 @@ if(isVideo){
           const auto vt1=std::chrono::steady_clock::now();
           const double v=verifyImagePair(files_[i].path,files_[j].path,true,sim,threshold,&pr.tel);
           pr.verifyMs+=msSince(vt1);
-          if(v>=threshold) seg.push_back(MediaMatch{i,j,v});
+          if(v>=threshold){ MediaMatch m{i,j,v}; m.contentIdentical=sameContent(files_[i],files_[j]); seg.push_back(m); }
          }
         });
         pr.segGroups.push_back(g);

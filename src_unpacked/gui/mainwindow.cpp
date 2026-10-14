@@ -202,6 +202,10 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"remain")) return S("남음","Left");
   if (!std::strcmp(key,"similarity")) return S("유사도","Similarity");
   if (!std::strcmp(key,"reference")) return S("기준 파일","reference");
+  // 0.9.4.106: what a displayed 100.0% actually means (size + quick hash equal
+  // vs only perceptually identical derivative). Display-only badges.
+  if (!std::strcmp(key,"identicalContent")) return S("동일 내용","identical content");
+  if (!std::strcmp(key,"perceptualMatch")) return S("지각 동일","perceptual match");
   if (!std::strcmp(key,"tabDetail")) return S("상세 정보","Details");
   if (!std::strcmp(key,"tabExif")) return S("EXIF 정보","EXIF");
   if (!std::strcmp(key,"tabSim")) return S("유사도 분석","Similarity");
@@ -433,7 +437,7 @@ static QStringList recycleFiles(const QStringList& paths) {
 
 // ------------------------------------------------------------ ScanWorker
 static QString fmtElapsed(qint64 ms);
-static QString pctText(double v, bool ref, UiLang l);
+static QString pctText(double v, bool ref, UiLang l, int identity = 0);
 static bool isVideoExt(const QString& path) {
   const QString e = QFileInfo(path).suffix().toLower();
   return e == "mp4" || e == "mkv" || e == "avi" || e == "mov" || e == "webm" || e == "m4v" || e == "wmv";
@@ -1459,6 +1463,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
   thumbStatMem_ = thumbStatBackend_ = thumbStatPlace_ = 0;
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
   fileMetaAsked_.clear(); // 0.9.4.105: new scan generation re-asks metadata
+  contentFlag_.clear();   // 0.9.4.106: badge flags belong to one result set
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
   refreshGroupList(); refreshFileViews(); refreshDetail();
@@ -1889,8 +1894,11 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   // fold final retained matches (same data as streamed, dedup by rebuild)
   for (const auto& row : matchRows_) {
     const QStringList p = row.split('\t');
-    if (p.size() != 3) continue;
-    addMatch(p[0], p[1], p[2].toDouble(), isVideoExt(p[0]) ? 2 : 1);
+    if (p.size() < 3) continue;
+    // 0.9.4.106: the 4th field carries the content-identity badge flag;
+    // producers older than this build simply omit it (no badge).
+    const bool identical = p.size() > 3 && p[3] == QLatin1String("1");
+    addMatch(p[0], p[1], p[2].toDouble(), isVideoExt(p[0]) ? 2 : 1, identical);
   }
   rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
   // 0.9.4.94: mark this scan's rebuild done so scanFinished (which always
@@ -2057,6 +2065,7 @@ void MainWindow::loadIndex() {
   // linger next to the loaded ones.
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
   fileMetaAsked_.clear(); // 0.9.4.105: new load generation re-asks metadata
+  contentFlag_.clear();   // 0.9.4.106: badge flags belong to one result set
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   pathParent_.clear(); groups_.clear(); pathGroup_.clear();
   noneOrder_.clear(); imgShown_.clear(); vidShown_.clear();
@@ -2117,7 +2126,7 @@ QString MainWindow::findRoot(const QString& p) {
   while (pathParent_.value(q, q) != r) { const QString n = pathParent_.value(q); pathParent_[q] = r; q = n; }
   return r;
 }
-void MainWindow::addMatch(const QString& l, const QString& r, double pct, int kind) {
+void MainWindow::addMatch(const QString& l, const QString& r, double pct, int kind, bool contentIdentical) {
   if (l.isEmpty() || r.isEmpty() || l == r) return;
   ++matchSeq_;
   if (!pathParent_.contains(l)) pathParent_[l] = l;
@@ -2128,6 +2137,14 @@ void MainWindow::addMatch(const QString& l, const QString& r, double pct, int ki
   bestPct_[r] = std::max(bestPct_.value(r, 0.0), pct);
   if (!pathKind_.contains(l)) pathKind_[l] = kind;
   if (!pathKind_.contains(r)) pathKind_[r] = kind;
+  // 0.9.4.106: badge flags for pairs that display as 100.0%. "Identical" wins
+  // over "perceptual" (any byte-identical 100% pair makes the file honestly
+  // identical); the flags are display-only and never touch the verdict.
+  if (pct >= 99.9) {
+    const int bit = contentIdentical ? 1 : 2;
+    contentFlag_[l] |= bit;
+    contentFlag_[r] |= bit;
+  }
 }
 void MainWindow::onMatchesBatch(const QVector<BackendMatch>& batch) {
   // P2: push-based delivery replaces the takePending() pull. The loopback
@@ -2135,7 +2152,7 @@ void MainWindow::onMatchesBatch(const QVector<BackendMatch>& batch) {
   // time a batch arrives everything streamed so far is in it.
   if (!backend_) return;
   if (batch.isEmpty()) return;
-  for (const auto& m : batch) addMatch(m.left, m.right, m.percent, m.kind);
+  for (const auto& m : batch) addMatch(m.left, m.right, m.percent, m.kind, m.contentIdentical);
   groupsDirty_ = true;
 }
 void MainWindow::testUiTick() { onUiTick(); }
@@ -2867,7 +2884,7 @@ void MainWindow::refreshFileMetaRow(const QString& path) {
     if (!item || item->data(Qt::UserRole).toString() != path) continue;
     const QFontMetrics fm(grid_->font());
     const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width());
-    item->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(path) + "\n" + pctText(pct, ref, lang()));
+    item->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(path) + "\n" + pctText(pct, ref, lang(), contentFlag_.value(path, 0)));
   }
   for (int r = 0; r < list_->topLevelItemCount(); ++r) {
     auto* item = list_->topLevelItem(r);
@@ -3038,9 +3055,17 @@ void MainWindow::setViewMode(int i) {
   viewStack_->setCurrentIndex(i == 1 ? 1 : 0);
 }
 void MainWindow::zoomChanged(int v) { grid_->setIconSize(QSize(v, v)); refreshFileViews(); }
-static QString pctText(double v, bool ref, UiLang l) {
+static QString pctText(double v, bool ref, UiLang l, int identity) {
   if (ref) return QString("100% · ") + trStr(l, "reference");
-  return QString("%1%").arg(v, 0, 'f', 1);
+  QString t = QString("%1%").arg(v, 0, 'f', 1);
+  // 0.9.4.106: a displayed 100.0% now says WHAT the 100 means — byte-identical
+  // content (size + quick hash) or only a perceptually identical derivative
+  // (watermark/sticker/re-encode/crop). The number itself is unchanged.
+  if (v >= 99.9) {
+    if (identity & 1) t += QString(" · ") + trStr(l, "identicalContent");
+    else if (identity & 2) t += QString(" · ") + trStr(l, "perceptualMatch");
+  }
+  return t;
 }
 void MainWindow::refreshFileViews() {
   grid_->blockSignals(true); list_->blockSignals(true);
@@ -3076,13 +3101,13 @@ void MainWindow::refreshFileViews() {
     // every cell keeps the same geometry; the full path stays in the tooltip.
     const QFontMetrics fm(grid_->font());
     const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width());
-    gi->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(p) + "\n" + pctText(pct, ref, lang()));
+    gi->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(p) + "\n" + pctText(pct, ref, lang(), contentFlag_.value(p, 0)));
     gi->setToolTip(p);
     grid_->addItem(gi);
     auto* li = new QTreeWidgetItem(list_);
     li->setCheckState(0, marked_.contains(p) ? Qt::Checked : Qt::Unchecked);
     li->setText(1, fi.fileName()); li->setData(1, Qt::UserRole, p);
-    li->setText(2, pctText(pct, ref, lang()));
+    li->setText(2, pctText(pct, ref, lang(), contentFlag_.value(p, 0)));
     li->setText(3, fileResolution(p));
     li->setText(4, fi.suffix().toUpper());
     li->setText(5, fmtSize(fi.size()));
@@ -3210,8 +3235,7 @@ void MainWindow::refreshDetail() {
   detailForm_->addRow(trStr(lang(), "duration"),
                       new QLabel(dur > 0 ? QString("%1:%2").arg(int(dur) / 60, 2, 10, QChar('0')).arg(int(dur) % 60, 2, 10, QChar('0')) : "-", this));
   detailForm_->addRow(trStr(lang(), "similarity"),
-                      new QLabel(ref ? QString("100% · ") + trStr(lang(), "reference")
-                                     : QString("%1%").arg(pct, 0, 'f', 1), this));
+                      new QLabel(pctText(pct, ref, lang(), contentFlag_.value(currentFile_, 0)), this));
   // EXIF tab
   QImageReader rd(currentFile_);
   const auto keys = rd.textKeys();
@@ -3852,6 +3876,7 @@ void MainWindow::prunePaths(const QSet<QString>& gone) {
   for (const auto& p : gone) {
     marked_.remove(p); resCache_.remove(p); fileSize_.remove(p); fileFp_.remove(p);
     fileDur_.remove(p); bestPct_.remove(p); pathKind_.remove(p);
+    contentFlag_.remove(p); // 0.9.4.106
     pathParent_.remove(p);
     if (currentFile_ == p) currentFile_.clear();
   }

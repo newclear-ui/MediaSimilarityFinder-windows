@@ -137,7 +137,7 @@ void ScanWorker::run() {
       for (const auto& m : stored) {
         const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
         const bool video = isVideoExt(l) || isVideoExt(r);
-        const LiveMatch lm{l, r, m.percent, video ? 2 : 1};
+        const LiveMatch lm{l, r, m.percent, video ? 2 : 1, m.contentIdentical};
         allMatches_.push_back(lm);
         if ((video && !scanVideos_) || (!video && !scanImages_)) continue;
         if (control_.ignoredPaths.find(m.leftPath) != control_.ignoredPaths.end() ||
@@ -189,10 +189,10 @@ void ScanWorker::run() {
     control_.onMatch = [this](const msf::SearchMatch& m) {
       { QMutexLocker g(&pendingMutex_);
         const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-        pending_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1});
+        pending_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1, m.contentIdentical});
       }
       const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
-      allMatches_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1});
+      allMatches_.push_back(LiveMatch{l, r, m.percent, isVideoExt(l) ? 2 : 1, m.contentIdentical});
       ++matchesSinceSave_;
       const qint64 now = QDateTime::currentMSecsSinceEpoch();
       if (now - lastEmitMs_ > 200) { lastEmitMs_ = now; emit matchesArrived(); }
@@ -264,7 +264,8 @@ void ScanWorker::run() {
     QStringList matches;
     for (const auto& m : r.matches)
       matches << (QString::fromStdString(m.leftPath) + "\t" + QString::fromStdString(m.rightPath)
-                  + "\t" + QString::number(m.percent, 'f', 1));
+                  + "\t" + QString::number(m.percent, 'f', 1)
+                  + "\t" + (m.contentIdentical ? "1" : "0")); // 0.9.4.106: identity badge
     emit results(files, matches);
     if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson);
     // Analysis failures are a settled state, not silently dropped files. Surface

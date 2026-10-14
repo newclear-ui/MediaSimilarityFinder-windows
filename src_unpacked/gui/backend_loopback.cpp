@@ -33,7 +33,7 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
             [this](const QVector<LiveMatch>& batch) {
                 QVector<BackendMatch> out;
                 out.reserve(batch.size());
-                for (const auto& m : batch) out.push_back({m.left, m.right, m.percent, m.kind});
+                for (const auto& m : batch) out.push_back({m.left, m.right, m.percent, m.kind, m.contentIdentical});
                 emit matchesBatch(out);
             });
     connect(session_.get(), &BackendSession::results, this,

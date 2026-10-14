@@ -3,6 +3,8 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QHash>
+#include <QPair>
 #include <QUuid>
 #include <functional>
 #include <sstream>
@@ -356,10 +358,24 @@ void BackendSession::loadIndex(const QString& root, const QString& appDir) {
     }
     QStringList rows;
     rows.reserve((int)matches.size());
-    for (const auto& m : matches)
-        rows << (QString::fromStdString(m.leftPath) + "\t" +
-                 QString::fromStdString(m.rightPath) + "\t" +
-                 QString::number(m.percent, 'f', 1));
+    // 0.9.4.106: content-identity flag for the display badge (size + quick hash
+    // equal). The states list is already loaded here, so the join is free.
+    QHash<QString, QPair<qulonglong, QString>> ident;
+    ident.reserve(states.size() * 2 + 1);
+    for (const auto& f : states)
+        ident.insert(QString::fromStdString(f.path),
+                     qMakePair((qulonglong)f.size, QString::fromStdString(f.quickHash)));
+    for (const auto& m : matches) {
+        const QString lp = QString::fromStdString(m.leftPath);
+        const QString rp = QString::fromStdString(m.rightPath);
+        bool identical = false;
+        const auto a = ident.constFind(lp);
+        const auto b = ident.constFind(rp);
+        if (a != ident.constEnd() && b != ident.constEnd())
+            identical = a->first == b->first && !a->second.isEmpty() && a->second == b->second;
+        rows << (lp + "\t" + rp + "\t" + QString::number(m.percent, 'f', 1)
+                 + "\t" + (identical ? "1" : "0"));
+    }
     emit quickLoaded((int)matches.size());
     emit results(files, rows);
 }

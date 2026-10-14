@@ -19,7 +19,7 @@
 #include "resource_policy.h"
 
 // A single streamed match (paths resolved in the worker thread).
-struct LiveMatch { QString left, right; double percent=0; int kind=1; };
+struct LiveMatch { QString left, right; double percent=0; int kind=1; bool contentIdentical=false; };
 // Per-file data snapshot handed to the GUI thread when a scan finishes.
 struct GuiFile { QString path; qulonglong size=0; QString fpHex; double duration=0; };
 Q_DECLARE_METATYPE(LiveMatch)

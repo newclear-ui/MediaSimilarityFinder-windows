@@ -507,7 +507,8 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
         for (const auto& mm : payload.value("matches").toArray()) {
             const QJsonObject o = mm.toObject();
             batch.push_back({o.value("left").toString(), o.value("right").toString(),
-                             o.value("percent").toDouble(), o.value("kind").toInt(1)});
+                             o.value("percent").toDouble(), o.value("kind").toInt(1),
+                             o.value("identical").toBool(false)});
         }
         emit matchesBatch(batch);
         return;

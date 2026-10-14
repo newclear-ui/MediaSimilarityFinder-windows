@@ -23,7 +23,10 @@
 #include <cstddef>
 #include <cstdint>
 namespace msf {
-struct SearchMatch { std::string leftPath,rightPath; double percent=0; };
+struct SearchMatch { std::string leftPath,rightPath; double percent=0;
+  // 0.9.4.106: size + quick hash equal (byte-identical copies). Display-only
+  // flag; it never changes the verdict or the stored percent.
+  bool contentIdentical=false; };
 // Compact result reference for large-result consumers. It avoids duplicating file-path
 // strings for every match; indices refer to MediaSearchEngine::files() for the scan.
 struct SearchMatchRef { std::size_t leftIndex=0, rightIndex=0; double percent=0; };

@@ -726,6 +726,26 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Phase 19 (0.9.4.106): byte-identical pairs carry the "identical content"
+    // badge flag (bit 1), so a displayed 100.0% is no longer ambiguous. The
+    // test fixtures are deterministic copies, so every group member qualifies.
+    {
+        auto* fgrid = w.findChild<QListWidget*>("fileGrid");
+        if (fgrid && fgrid->count() > 0) {
+            const QString p = fgrid->item(0)->data(Qt::UserRole).toString();
+            const int flag = w.testContentFlag(p);
+            std::cout << "  [info] contentFlag(" << QFileInfo(p).fileName().toStdString()
+                      << ")=" << flag << "\n";
+            check((flag & 1) != 0, "byte-identical test pair sets the identical-content badge");
+            const QString shown = w.testDetailFileName();
+            check(!shown.isEmpty() && shown != QStringLiteral("-"),
+                  "detail text still present with the badge feature");
+        } else {
+            std::cout << "  [info] no file grid items; badge phase skipped\n";
+            ++gChecks;
+        }
+    }
+
     fs::remove_all(d, ec);
     std::cout << "scroll_regression_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";

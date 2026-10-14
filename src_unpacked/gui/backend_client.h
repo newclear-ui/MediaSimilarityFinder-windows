@@ -73,6 +73,9 @@ struct BackendMatch {
     QString right;
     double percent = 0.0;
     int kind = 1;
+    // 0.9.4.106: size + quick hash equal (byte-identical copies). Display-only
+    // flag for the "동일 내용" badge; never changes the verdict.
+    bool contentIdentical = false;
 };
 
 // One indexed file for the results event. Same shape as GuiFile.

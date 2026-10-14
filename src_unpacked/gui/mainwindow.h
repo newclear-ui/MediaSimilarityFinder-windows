@@ -109,6 +109,11 @@ public:
   // metadata request" (the old code re-requested on every duration-less
   // answer, an endless rebuild/request ping-pong that blanked the detail).
   qulonglong testFileMetaRequestCount() const { return fileMetaRequestCount_; }
+  // 0.9.4.106: display badge flags per path. Bit 1 = a 100.0% pair with equal
+  // content (size + quick hash) was seen; bit 2 = a 100.0% pair that is only
+  // perceptually identical (watermark/sticker/re-encode/crop variant). Shown
+  // next to the percentage so "100%" no longer reads as "same file" blindly.
+  int testContentFlag(const QString& path) const { return contentFlag_.value(path, 0); }
   // Mark-state probe (0.9.4.99): all marked paths. Pins reference-exclusion
   // (the group checkbox never auto-marks paths[0]).
   QStringList testMarkedPaths() const { return QStringList(marked_.begin(), marked_.end()); }
@@ -251,7 +256,7 @@ private:
   QIcon placeholderIcon(const QString& path) const; // per-suffix file-type icon
   void dropThumbCache(const QSet<QString>& paths); // 0.9.4.104 (B): single sweep
   double pathBest(const QString&) const;
-  void addMatch(const QString&, const QString&, double, int kind);
+  void addMatch(const QString&, const QString&, double, int kind, bool contentIdentical = false);
   QString findRoot(const QString&); // union-find over pathParent_
   // scan state (P2: the backend lives behind BackendClient; the loopback
   // implementation runs the real ScanWorker/MediaMonitor in-process)
@@ -315,6 +320,11 @@ private:
   QStringList lastStats_; // scanned|analyzed|unchanged|groups|candidates from finished()
   qint64 repElapsedMs_=0;
   QHash<QString,double> bestPct_; QSet<QString> marked_;
+  // 0.9.4.106: per-path display badge. bit1 = a 100.0% pair with equal content
+  // (size + quick hash) was seen; bit2 = a 100.0% pair that is only
+  // perceptually identical (watermark/sticker/re-encode/crop derivative).
+  // Cleared at scan/load start and on prunePaths; display-only, never a verdict.
+  QHash<QString,int> contentFlag_;
   QHash<QString,int> pathKind_; QHash<QString,double> fileDur_;
   mutable QHash<QString,QIcon> thumbCache_; // memory presentation cache (P3: disk cache lives in Backend)
   mutable QHash<QString,QIcon> phCache_; // placeholder icons by lowercase suffix
