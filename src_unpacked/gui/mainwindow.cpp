@@ -1120,6 +1120,9 @@ void MainWindow::buildRight(QWidget* w) {
   viewStack_->addWidget(grid_); viewStack_->addWidget(list_);
   lay->addWidget(viewStack_, 3);
   fileBar_ = new QToolBar(w); fileBar_->setMovable(false);
+  fileBar_->setObjectName("fileBar"); // automation hook
+  // 1px separator like the main toolbar's gray rules (which are 2px).
+  fileBar_->setStyleSheet(QStringLiteral("QToolBar::separator { background-color: #8c8c8c; width: 1px; margin-top: 6px; margin-bottom: 6px; }"));
   lay->addWidget(fileBar_);
   detailTabs_ = new QTabWidget(w);
   auto* tabD = new QWidget(detailTabs_); auto* tabDlay = new QHBoxLayout(tabD);
@@ -1236,6 +1239,9 @@ void MainWindow::applyStaticTexts() {
   fileBar_->clear();
   fileBar_->addAction(trStr(l, "open"), this, &MainWindow::openSelected);
   fileBar_->addAction(trStr(l, "reveal"), this, &MainWindow::revealSelected);
+  // 0.9.4.103: separator between reveal and copy (open/reveal act on one
+  // file; copy/cut/paste/move/recycle act on checked files first).
+  fileBar_->addSeparator();
   fileBar_->addAction(trStr(l, "copy"), this, &MainWindow::copySelected);
   fileBar_->addAction(trStr(l, "cut"), this, &MainWindow::cutSelected);
   fileBar_->addAction(trStr(l, "paste"), this, &MainWindow::pasteFiles);
@@ -3170,6 +3176,18 @@ QStringList MainWindow::selectedFiles() const {
   out.removeDuplicates();
   return out;
 }
+// 0.9.4.103: copy/cut/move/recycle prioritize checked files. When any box is
+// checked, the action targets the whole checked set (sorted for determinism);
+// otherwise it falls back to the highlighted selection. Open/reveal/paste
+// intentionally stay out: open/reveal act on one file, paste on the clipboard.
+QStringList MainWindow::actionFiles() const {
+  if (!marked_.isEmpty()) {
+    QStringList out(marked_.begin(), marked_.end());
+    std::sort(out.begin(), out.end());
+    return out;
+  }
+  return selectedFiles();
+}
 void MainWindow::toggleMarkSelected() {
   // Space in the middle (group) pane marks the whole group; elsewhere it marks files.
   QWidget* fw = QApplication::focusWidget();
@@ -3599,7 +3617,7 @@ void MainWindow::renameSelected() {
   }
 }
 void MainWindow::deleteSelected() {
-  const auto ps = selectedFiles();
+  const auto ps = actionFiles();
   if (ps.isEmpty()) return;
   if (QMessageBox::question(this, trStr(lang(), "delTitle"),
                             trStr(lang(), "delAsk").arg(ps.size())) != QMessageBox::Yes) return;
@@ -3616,7 +3634,7 @@ void MainWindow::deleteSelected() {
   if (!gone.isEmpty()) prunePaths(QSet<QString>(gone.begin(), gone.end()));
 }
 void MainWindow::copySelected() {
-  const auto ps = selectedFiles();
+  const auto ps = actionFiles();
   if (ps.isEmpty()) return;
   auto* d = new QMimeData; QList<QUrl> urls;
   for (const auto& p : ps) urls << QUrl::fromLocalFile(p);
@@ -3625,7 +3643,7 @@ void MainWindow::copySelected() {
 }
 void MainWindow::cutSelected() {
   copySelected();
-  cutPaths_ = selectedFiles();
+  cutPaths_ = actionFiles();
 }
 void MainWindow::pasteFiles() {
   const QMimeData* d = QApplication::clipboard()->mimeData();
@@ -3642,7 +3660,7 @@ void MainWindow::pasteFiles() {
   refreshAfterFileOperation(QString());
 }
 void MainWindow::moveSelected() {
-  const auto ps = selectedFiles();
+  const auto ps = actionFiles();
   if (ps.isEmpty()) return;
   const QString dst = QFileDialog::getExistingDirectory(this, trStr(lang(), "chooseDest"), folder_->text());
   if (dst.isEmpty()) return;

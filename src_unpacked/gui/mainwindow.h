@@ -105,6 +105,8 @@ public:
   // Mark-state probe (0.9.4.99): all marked paths. Pins reference-exclusion
   // (the group checkbox never auto-marks paths[0]).
   QStringList testMarkedPaths() const { return QStringList(marked_.begin(), marked_.end()); }
+  // Action-operand probe (0.9.4.103): copy/cut/move/recycle target set.
+  QStringList testActionFiles() const { return actionFiles(); }
   // Detail-pane probe (0.9.4.99): fileName value text of the first detail
   // row ("-" when no file is shown). Pins the user-visible symptom of the
   // check/uncheck-then-select blank-detail defect regardless of cause.
@@ -161,6 +163,8 @@ private slots:
   void loadIndex(); // 0.9.4.93: load the selected folder's index (no scan)
   void populateFolderChildren(QTreeWidgetItem*);
   QStringList selectedFiles() const;
+  // 0.9.4.103: copy/cut/move/recycle operand (checked files first).
+  QStringList actionFiles() const;
   void prunePaths(const QSet<QString>&);
   void refreshAfterFileOperation(const QString&);
   void detailTabChanged(int); void fileActivated(QListWidgetItem*); void showFileDetails(const QString&);

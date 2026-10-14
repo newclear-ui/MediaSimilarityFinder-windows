@@ -32,9 +32,11 @@
 #include <QMetaObject>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QSet>
 #include <QSettings>
 #include <QThread>
 #include <QTimer>
+#include <QToolBar>
 #include <QTreeWidget>
 #include <filesystem>
 #include <fstream>
@@ -112,6 +114,8 @@ int topGroupIndex(QListWidget* grid) {
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
+    // Unbuffered stdout: a crash must not eat the tail identifying its phase.
+    std::cout << std::unitbuf;
     namespace fs = std::filesystem;
     std::error_code ec;
     auto d = fs::temp_directory_path() / "msf_scroll_test";
@@ -620,6 +624,52 @@ int main(int argc, char** argv) {
         } else {
             std::cout << "  [info] no file grid items; phase skipped\n";
             ++gChecks;
+        }
+    }
+
+    // Phase 16 (0.9.4.103): file actions prioritize checked files; the file
+    // bar reads open/reveal/separator/copy/cut/paste/move/recycle.
+    {
+        auto* mgrid = w.findChild<QListWidget*>("imgGrid");
+        auto* fgrid = w.findChild<QListWidget*>("fileGrid");
+        auto* fbar = w.findChild<QToolBar*>("fileBar");
+        check(fbar != nullptr, "file action bar found");
+        if (fbar) {
+            const auto acts = fbar->actions();
+            check(acts.size() == 8, "file bar holds 8 entries");
+            check(acts.size() == 8 && acts[2]->isSeparator(), "separator sits between reveal and copy");
+        }
+        if (mgrid && fgrid && mgrid->count() > 0) {
+            if (auto* first = mgrid->item(0)) mgrid->setCurrentItem(first);
+            QApplication::processEvents();
+            auto* grow = mgrid->item(0);
+            const QString refPath = grow->toolTip();
+            grow->setCheckState(Qt::Checked);
+            QApplication::processEvents();
+            QSet<QString> fileSet;
+            for (int r = 0; r < fgrid->count(); ++r)
+                fileSet.insert(fgrid->item(r)->data(Qt::UserRole).toString());
+            // Named list: begin()/end() must come from ONE object. Calling
+            // w.testActionFiles() twice (once per iterator) yields iterators
+            // from two distinct temporaries — out-of-bounds reads (0xC0000005,
+            // proven in-test). Never chain iterators off two temporaries.
+            const QStringList actList = w.testActionFiles();
+            QSet<QString> got(actList.begin(), actList.end());
+            std::cout << "  [info] action files=" << got.size()
+                      << " group files=" << fileSet.size() << "\n";
+            check(fileSet.size() >= 2 && got == fileSet - QSet<QString>({refPath}),
+                "checked files (minus reference) are the action target");
+            grow->setCheckState(Qt::Unchecked);
+            QApplication::processEvents();
+            if (fgrid->count() > 0) {
+                if (auto* f = fgrid->item(0)) fgrid->setCurrentItem(f);
+                QApplication::processEvents();
+            }
+            const QStringList fallback = w.testActionFiles();
+            const QString single = fgrid->count() > 0
+                ? fgrid->item(0)->data(Qt::UserRole).toString() : QString();
+            check(!single.isEmpty() && fallback.size() == 1 && fallback[0] == single,
+                "no checks falls back to the highlighted file");
         }
     }
 
