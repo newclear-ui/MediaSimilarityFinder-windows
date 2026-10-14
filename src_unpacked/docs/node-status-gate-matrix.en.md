@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.101` (Open-path detail sync) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.102` (Synchronous detail-form activation) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-10
 
 ## Role of this document
