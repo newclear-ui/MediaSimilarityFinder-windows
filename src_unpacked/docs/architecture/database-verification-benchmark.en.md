@@ -187,31 +187,34 @@ User log `detailed-log-2026-10-13T200015.json` (original kept by the user, revie
 - **Reading note**: `verifyBreakdownOverMs = 651 s` — the part-sums are thread-summed (since parallel analyze in 0.9.4.80) and exceed wall. The D9c-era "sum == verifyMs" invariant does not hold on multi-worker runs; read shares.
 - Status: **PASS** (measurement-record example — not a defect; Fast/Auto measurements pending).
 
-### 7.3 User-dataset Fast-mode (A) full-refresh example (0.9.4.106 GUI run, 2026-10-15)
+### 7.3 User-dataset Fast(A) / Stable(B) full-refresh comparison (0.9.4.106 GUI runs, 2026-10-15/16)
 
-User log `detailed-log-2026-10-15T234751.json` (original kept by the user, reviewed from `D:\Temp\OpenCodeWork\`). Dataset `G:\Downloads\ss_twit`, **177,572 files (69.1 GB), full search update with the index kept (2 changed / 177,570 unchanged)**, `analyze.mode = A` (Fast — verification during the scan). The counterpart to §7.2 (B, 0.9.4.94, 177,581 files / 80 changed) on the same dataset family.
+User logs: A `detailed-log-2026-10-15T234751.json`, B `detailed-log-2026-10-16T002443.json` (originals kept by the user, reviewed from `D:\Temp\OpenCodeWork\`). Dataset `G:\Downloads\ss_twit`, **full search update with the index kept**. A and B are directly compared on the same build (0.9.4.106); §7.2 (B, 0.9.4.94) is kept as the historical reference. Auto (AB) has not been run.
 
-| Metric | §7.2 B (0.9.4.94) | §7.3 A (0.9.4.106) | Note |
-|---|---|---|---|
-| wall | 980.6 s | **632.3 s (-35.5%)** | includes walk variance |
-| walk (enumeration) | 347.0 s | 399.7 s | drive/session variance, dataset -9 files |
-| analyze | 591.9 s | **185.8 s (-68.6%)** | |
-| ├ index | (not recorded) | 1.4 s | |
-| ├ verify | 590.3 s (thread-summed / cap caveat) | **0.0 s** | A: only 2 changed -> zero verifies |
-| └ scan (remainder) | (converges to 0 via cap) | **184.4 s** | A: seed + crop enumeration fixed cost |
-| candidates | 19,234 | 19,175 | same dataset family |
-| pairs / groups (report) | 15,193 / 9,060 | **0 / 0** | A report = new verdicts only (the stored 15,187 pairs stay in the DB / quick-load — not a defect) |
-| verifyCalls | 19,234 | 0 | |
-| verifyDecodeMisses | 12,887 | 0 | |
-| dataset fingerprint | 34.4 s | 42.2 s | incremental `content_hash` hit holds |
-| procIoRead | 46.4 GB | 25.0 GB | the verify decodes are gone |
-| changed files | 80 | 2 | A's cost scales with changed-file pairs |
-| image stage | 80 GPU | 2 GPU, decode avg 110.2 ms | the G: decode tax holds |
-| GPU duty | 0.0% | 0.0% (longest idle 510.3 s) | matching is CPU work |
+| Metric | §7.2 B (0.9.4.94) | A (0.9.4.106) | **B (0.9.4.106)** | Note |
+|---|---|---|---|---|
+| wall | 980.6 s | **632.3 s** | 1012.3 s | A is -380.0 s (-37.5%) vs B |
+| walk | 347.0 s | 399.7 s | 359.1 s | drive/session variance |
+| analyze | 591.9 s | **185.8 s** | 605.7 s | A vs B: -419.9 s |
+| ├ index | (not recorded) | 1.4 s | 1.7 s | |
+| ├ verify | 590.3 s (cap caveat) | **0.0 s / 0 calls** | 604.0 s (capped/thread-summed; wall ~= 420 s) | |
+| └ scan (remainder) | (converges to 0 via cap) | **184.4 s** | 0.0 s (cap artifact) | A's 184.4 = measured enumeration fixed cost |
+| candidates | 19,234 | 19,175 | 19,160 | same dataset family |
+| verifyCalls | 19,234 | 0 | 19,160 | B re-verifies every pair even with 0 changed |
+| verifyDecodeMisses / hit | 12,887 / 13.1% | 0 | 12,859 / 13.1% | reuse-rate ceiling reproduced |
+| msPerVerifyCall | 30.7 ms | — | 31.5 ms | the G: decode tax holds |
+| pairs / groups (report) | 15,193 / 9,060 | **0 / 0** | 15,118 / 9,050 | A report = new verdicts only (stored pairs stay via quick-load — not a defect) |
+| dataset fingerprint | 34.4 s | 42.2 s | 43.3 s | incremental `content_hash` hit holds |
+| procIoRead | 46.4 GB | 25.0 GB | 43.1 GB | the verify-decode difference |
+| peak memory | (not recorded) | 1025 MB | 1548 MB | the verify buffer cache (1024) |
+| CPU avg / max | (not recorded) | 8.8% / 91.2% | 10.6% / 71.1% | B waits on decode I/O |
+| changed files | 80 | 2 | 0 | |
+| GPU duty | 0.0% | 0.0% | 0.0% (idle 819.8 s) | matching is CPU work |
 
-- **Interpretation**: A removed the **verify stage** for this workflow (full search update with the index kept). 177,570 unchanged + 2 changed -> zero verifies, zero new verdicts. B (§7.2) re-verified every pair (19,234) regardless of the change count and paid the ~590 s class cost.
-- **Cap caveat**: §7.2's `verifyMs 590.3 s` may be the value capped at `verifyCap` (~= totalMs) per the D9a slice rule. Read the A/B difference from wall (analyze 591.9 -> 185.8 s); do not over-interpret B's internal split.
-- **Build caveat**: §7.2 = 0.9.4.94, §7.3 = 0.9.4.106 — the scan/verify engine path is unchanged since 0.9.4.86 (0.9.4.106 only adds the display flag). The walk delta (-52.7 s) is a confounder.
+- **Same-build A vs B (key)**: on a full search update with the index kept, A did 0 verifies (2 changed) with a 185.8 s analyze; B re-verified all 19,160 pairs despite 0 changed files with a 605.7 s analyze — **the 419.9 s difference is B's verification cost**. On wall A is 380.0 s (-37.5%) faster. B re-confirmed the 15,118 stored pairs (report pairs/groups filled); A reports new verdicts only (identical verdicts — no engine bump means no revalidation).
+- **Cap caveat**: B's `verifyMs 604.0 s` hit `verifyCap` (~= totalMs - index), which pressed the scan bucket to 0.0 s. A's zero-verify run measured the enumeration fixed cost at 184.4 s, which exists in B as well, so read **B's real verify wall as ~= 420 s** (do not over-interpret the internal split). `verifyBreakdownOverMs = 687 s` is likewise a thread-summed artifact.
+- **B-only structural overhead**: Sequential (B) calls `analyzeCheckpoint` (= `persistMatchesSnapshot`, a full accumulated-match save) every 1000-file slice. This zero-change run repeated ~15k-pair snapshots once per slice (~177 times) — part of B's cost, absent in A (sliceGroups=0).
+- **Dataset caveat**: A run 177,572 -> B run 177,567 files (-5). B's 15,118 pairs is §7.2's 15,193 minus the file decrease.
 - **New finding (fixed cost)**: of A's 185.8 s analyze, verify is 0 s and **scan (enumeration) is 184.4 s** — even with only 2 changed files the full index seed + crop (4:3/1:1/9:16) enumeration runs in full (`consumeWindowed` is sequential). Restricting the enumeration to changed-file queries in A/AB would cut this fixed cost proportionally to the change count (candidate, not implemented — worklog index `P-0.9.4.106-A-targeted-enum`).
-- walker: queued 273,481 (all media, incl. 95,909 videos; `scanVideos=false` means the walk hashed them but the scan excludes them), blocked 0, starved 6,012 ticks.
-- Status: **PASS** (measurement record). The Auto (AB) measurement has not been run.
+- walker (B): queued 273,476 (incl. 95,909 videos; `scanVideos=false`), blocked 0, starved 5,343 ticks.
+- Status: **PASS** (measurement record). Auto (AB) measurement pending.

@@ -187,31 +187,34 @@
 - **읽기 주의**: `verifyBreakdownOverMs = 651 s` — 세부 합은 스레드 합산(0.9.4.80 병렬 analyze 이후)이라 wall을 초과한다. D9c 시절 "합계 = verifyMs" 불변식은 다-worker run에서 성립하지 않으므로 비율로 읽는다.
 - Status: **PASS** (측정 기록 예제 — 결함 아님, Fast/Auto 측정 대기).
 
-### 7.3 사용자 dataset 고속형(A) 풀 리프래쉬 예제 (0.9.4.106 GUI run, 2026-10-15)
+### 7.3 사용자 dataset 고속형(A)·안정형(B) 풀 리프래쉬 대조 (0.9.4.106 GUI runs, 2026-10-15/16)
 
-사용자 실행 로그 `detailed-log-2026-10-15T234751.json`(원본은 사용자 보관, `D:\Temp\OpenCodeWork\`에서 리뷰). dataset `G:\Downloads\ss_twit` **177,572 파일(69.1 GB), 인덱스 유지 상태의 전체 검색 업데이트(변경 2 / 무변경 177,570)**, `analyze.mode = A`(고속형 — 스캔 중 검증). §7.2(B, 0.9.4.94, 177,581 파일/변경 80)와 같은 dataset 계열의 대조군이다.
+사용자 실행 로그: A `detailed-log-2026-10-15T234751.json`, B `detailed-log-2026-10-16T002443.json`(원본은 사용자 보관, `D:\Temp\OpenCodeWork\`에서 리뷰). dataset `G:\Downloads\ss_twit`, **인덱스 유지 상태의 전체 검색 업데이트**. 같은 빌드(0.9.4.106)에서 A/B를 직접 대조하고 §7.2(B, 0.9.4.94)를 역사 기준으로 병기한다. Auto(AB)는 미실행.
 
-| 지표 | §7.2 B(0.9.4.94) | §7.3 A(0.9.4.106) | 비고 |
-|---|---|---|---|
-| wall | 980.6 s | **632.3 s (-35.5%)** | walk 변동 포함 |
-| walk (enumeration) | 347.0 s | 399.7 s | 드라이브 상태/세션 변동, dataset -9 파일 |
-| analyze | 591.9 s | **185.8 s (-68.6%)** | |
-| ├ index | (미기록) | 1.4 s | |
-| ├ verify | 590.3 s (스레드 합/캡 주의) | **0.0 s** | A: 변경 2개 → 검증 0회 |
-| └ scan(나머지) | (캡으로 0 수렴) | **184.4 s** | A: seed + 크롭 열거 고정비 |
-| candidates | 19,234 | 19,175 | 동일 dataset 계열 |
-| pairs / groups(리포트) | 15,193 / 9,060 | **0 / 0** | A 리포트 = 신규 판정만(저장 15,187쌍은 DB/quick-load 유지 — 결함 아님) |
-| verifyCalls | 19,234 | 0 | |
-| verifyDecodeMisses | 12,887 | 0 | |
-| dataset fingerprint | 34.4 s | 42.2 s | 증분 `content_hash` 적중 유지 |
-| procIoRead | 46.4 GB | 25.0 GB | verify 디코드 제거분 |
-| 변경 파일 | 80 | 2 | A 비용은 변경 파일 관련 쌍에 비례 |
-| 이미지 스테이지 | 80 GPU | 2 GPU, decode avg 110.2 ms | G: 디코드 세금 유지 |
-| GPU duty | 0.0% | 0.0% (longest idle 510.3 s) | 매칭은 CPU 작업 |
+| 지표 | §7.2 B(0.9.4.94) | A(0.9.4.106) | **B(0.9.4.106)** | 비고 |
+|---|---|---|---|---|
+| wall | 980.6 s | **632.3 s** | 1012.3 s | A가 B보다 -380.0 s (-37.5%) |
+| walk | 347.0 s | 399.7 s | 359.1 s | 드라이브/세션 변동 |
+| analyze | 591.9 s | **185.8 s** | 605.7 s | A vs B: -419.9 s |
+| ├ index | (미기록) | 1.4 s | 1.7 s | |
+| ├ verify | 590.3 s (캡 주의) | **0.0 s / 0회** | 604.0 s (캡·스레드 합, wall ≈ 420 s) | |
+| └ scan(나머지) | (캡으로 0) | **184.4 s** | 0.0 s (캡 아티팩트) | A의 184.4 = 열거 고정비 실측 |
+| candidates | 19,234 | 19,175 | 19,160 | 동일 dataset 계열 |
+| verifyCalls | 19,234 | 0 | 19,160 | B: 변경 0이어도 전 쌍 재검증 |
+| verifyDecodeMisses / hit | 12,887 / 13.1% | 0 | 12,859 / 13.1% | 재사용률 상한 재현 |
+| msPerVerifyCall | 30.7 ms | — | 31.5 ms | G: 디코드 세금 유지 |
+| pairs / groups (리포트) | 15,193 / 9,060 | **0 / 0** | 15,118 / 9,050 | A 리포트 = 신규 판정만(저장 쌍은 quick-load 유지 — 결함 아님) |
+| dataset fingerprint | 34.4 s | 42.2 s | 43.3 s | 증분 `content_hash` 적중 유지 |
+| procIoRead | 46.4 GB | 25.0 GB | 43.1 GB | verify 디코드분 차이 |
+| 메모리 최대 | (미기록) | 1025 MB | 1548 MB | verify 버퍼 캐시(1024) 반영 |
+| CPU avg / max | (미기록) | 8.8% / 91.2% | 10.6% / 71.1% | B: 디코드 I/O 대기 |
+| 변경 파일 | 80 | 2 | 0 | |
+| GPU duty | 0.0% | 0.0% | 0.0% (idle 819.8 s) | 매칭은 CPU 작업 |
 
-- **해석**: A는 이 워크플로(인덱스 유지 전체 검색 업데이트)에서 **verify 단계를 제거**했다. 무변경 177,570 + 변경 2 → 검증 0회·신규 판정 0. §7.2의 B는 변경 수와 무관하게 전 쌍(19,234)을 재검증해 590 s급 비용을 지불했다.
-- **주의(캡)**: §7.2의 `verifyMs 590.3 s`는 워커 합산값이 `verifyCap`(≈totalMs)에 닿은 **캡된 값**일 수 있다(D9a slice 규칙). A/B 차이는 wall(analyze 591.9 → 185.8 s)로 읽고, B의 세부 분해는 단정하지 않는다.
-- **주의(빌드)**: §7.2 = 0.9.4.94, §7.3 = 0.9.4.106 — scan/verify 엔진 경로는 0.9.4.86 이후 불변(0.9.4.106은 표시 플래그만 추가). walk -52.7 s 변동은 교란 요인.
+- **같은 빌드 A vs B(핵심)**: 인덱스 유지 전체 검색 업데이트에서 A는 verify 0회(변경 2)로 analyze 185.8 s, B는 **변경 0인데도 전 쌍 19,160개를 재검증**해 analyze 605.7 s — 차이 419.9 s가 곧 B의 검증 비용이다. wall 기준 A가 380.0 s(-37.5%) 빠르다. B는 저장 쌍 15,118개를 재확인(리포트 pairs/groups 채움), A는 신규 판정만 보고(동일 판정 — 엔진 버전 불변이라 재검증 생략).
+- **주의(캡)**: B의 `verifyMs 604.0 s`는 워커 합산값이 `verifyCap`(≈totalMs−index)에 닿은 값이라 scan 버킷이 0.0 s로 눌렸다. A의 verify 0 run이 측정한 열거 고정비 184.4 s가 B에도 동일하게 존재하므로 **B의 verify 실 wall ≈ 420 s**로 읽는다(세부 분해는 단정하지 않음). `verifyBreakdownOverMs = 687 s`도 스레드 합산 아티팩트.
+- **B 전용 오버헤드(구조)**: Sequential(B)은 1000파일 슬라이스마다 `analyzeCheckpoint`(= `persistMatchesSnapshot`, 누적 쌍 전체 저장)를 호출한다. 이번 run은 무변경이라 슬라이스 수만큼(≈177회) 15k쌍 스냅샷이 반복됐다 — B 비용의 일부이며 A(sliceGroups=0)에는 없다.
+- **주의(dataset)**: A run 177,572 → B run 177,567 파일(-5). B pairs 15,118은 §7.2의 15,193에서 파일 감소분만큼 줄어든 값.
 - **새 발견(고정비)**: A의 analyze 185.8 s 중 verify 0 s, **scan(열거) 184.4 s** — 변경이 2개뿐인데도 전체 index seed + 크롭(4:3/1:1/9:16) 열거가 전량 수행된다(`consumeWindowed`는 순차). A/AB에서 열거를 "변경 파일 대상 질의"로 한정하면 이 고정비를 변경 수 비례로 줄일 수 있다(후보, 미구현 — worklog 색인 `P-0.9.4.106-A-targeted-enum`).
-- walker: queued 273,481(media 전체 — 영상 95,909 포함. `scanVideos=false`라 walk는 전부 해시했지만 스캔에서는 제외), blocked 0, starved 6,012틱.
-- Status: **PASS** (측정 기록). Auto(AB) 측정은 미실행.
+- walker(B): queued 273,476(영상 95,909 포함 — `scanVideos=false`), blocked 0, starved 5,343틱.
+- Status: **PASS** (측정 기록). Auto(AB) 측정 대기.
