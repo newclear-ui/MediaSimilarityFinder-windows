@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.110` (보기 전환 후 휠 스크롤 속도 복원 — List 단위 잠금 수정) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.111` (G4 IPC backpressure + G6 Job Object/GUI 종료 검증 — 프로세스 분리 release gate) · CPU CTest 122/122 · GPU CTest 123/123
 최종 갱신: 2026-10-16
 
 ## 이 문서의 역할
@@ -106,16 +106,16 @@
 ## 현재 초점 / Current Focus
 
 ```text
-기준선           0.9.4.106 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
-활성 상태        프로세스 분리 P1–P4 완료; .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
-다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → G4 IPC backpressure / G6 Job Object OpenCode 검토 → S4 저장 acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
-OpenCode 검토    G4: send/flush 동기 경로와 유계 outgoing queue/느린 소비자 검증 증거 부족(결함 미확정).
-                 G6: Job Object API 반환값 처리와 GUI 종료 후 Backend 종료 E2E 증거 부족(결함 미확정).
+기준선           0.9.4.111 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
+활성 상태        프로세스 분리 P1–P4 완료 + G4/G6 검증 완료(.111); .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
+다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → S4 저장 acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
+G4/G6 검증 완료  G4: 스트레스 PASS — 3초 소비자 정지에서 무손실(갭 0·600건 전달)·무교착·RSS 유계(20/20/21 MB). 결함 미확정(설계 검토: GUI→Backend pending 상한, Backend→GUI 백로그=산출물 크기).
+                 G6: 실결함 2건 수정 — 종료 3 s 고정 지연(3049→6 ms, `waitForFinished` 핸들 대기 + 재진입 차단) + Job Object Win32 반환값 검사/로그. 부모 급사 E2E: Job이 웨지 백엔드 회수, `--no-job` 대조군 생존으로 필수성 입증.
 현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
                  Search/Index/Comparison = NOT ACCEPTED; S4 최종 acceptance 미완료; XMP = CONDITIONAL;
                  color_thumb production correction 미수행; S5/S6는 선행 Gate 대기.
 측정            Fast(A) 사용자 데이터셋 run=1 측정은 2026-10-15 Work Log/DBV §7.3에 기록됐으나 비교 조건에 교란 요인 존재.
-                 Auto(AB) 비교 실측은 미완료. CUDA 미가용 기록은 build/runtime 조건 확인 필요.
+                 Auto(AB) 실측 2026-10-16 완료(변경 64, verify 1회) — 최종 패스 의미·반복 수는 후속. CUDA 미가용 기록은 build/runtime 조건 확인 필요.
 잔여 위험        thumbCatchUpVisible()의 매 tick 전체 목록 순회는 correctness blocker가 아닌 후순위 성능 위험.
                  원래 .72 dump의 정확한 crash caller는 PDB 부재로 미확정; 새 crash 때 runbook으로 증거 보존.
 ```
