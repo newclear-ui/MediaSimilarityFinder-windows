@@ -2558,6 +2558,14 @@ void MainWindow::groupViewChanged(int idx) {
     // (0.9.4.66) Delegate/size swaps must take effect immediately: force the
     // pass explicitly. This never rebuilds items (see fillPair prohibition)
     // and never touches scroll.
+    // 0.9.4.110: Qt's ListMode sets the vertical scrollbar's singleStep
+    // explicitly (setSingleStep(1), item units) and that public call latches
+    // viewMayChangeSingleStep=false; the icon modes rely on the view's
+    // automatic step (one cell per notch), so after List -> icon the wheel
+    // kept stepping 1px ("wheel speed never returns"). -1 re-enables the
+    // automatic step and the layout pass below re-pushes it for the new mode.
+    grid->verticalScrollBar()->setSingleStep(-1);
+    grid->horizontalScrollBar()->setSingleStep(-1);
     grid->doItemsLayout();
     // 0.9.4.109: re-apply the icons for the new size right away. Items whose
     // thumb at this size is already in the memory cache get it back here

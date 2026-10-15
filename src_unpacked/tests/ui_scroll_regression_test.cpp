@@ -841,6 +841,37 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Phase 22 (0.9.4.110): the wheel step must come back with the mode.
+    // Qt's ListMode sets the vertical scrollbar's singleStep explicitly
+    // (setSingleStep(1), scrolling in item units) and that public call latches
+    // viewMayChangeSingleStep=false on the bar. The icon modes rely on the
+    // view's automatic step (one cell per notch, pushed through
+    // itemviewChangeSingleStep); once latched, the automatic update was
+    // ignored, so after List -> XL the wheel kept stepping 1px * 3 lines —
+    // "the wheel speed never returns". The fix re-enables the automatic step
+    // (setSingleStep(-1)) before the mode-switch layout pass.
+    {
+        auto* grid = w.findChild<QListWidget*>("imgGrid");
+        check(grid != nullptr && grid->count() > 0, "group grid ready for the wheel-step phase");
+        if (grid && grid->count() > 0) {
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 0)); // XL 256
+            QApplication::processEvents();
+            const int xlStep = grid->verticalScrollBar()->singleStep();
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 4)); // List
+            QApplication::processEvents();
+            const int listStep = grid->verticalScrollBar()->singleStep();
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 0)); // XL back
+            QApplication::processEvents();
+            const int backStep = grid->verticalScrollBar()->singleStep();
+            std::cout << "  [info] wheel step xl=" << xlStep << " list=" << listStep
+                      << " back=" << backStep << "\n";
+            check(xlStep > 1, "XL wheel step is one cell, not one pixel");
+            check(backStep == xlStep, "wheel step returns to the icon-mode value after List");
+        } else {
+            gChecks += 2;
+        }
+    }
+
     fs::remove_all(d, ec);
     std::cout << "scroll_regression_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";
