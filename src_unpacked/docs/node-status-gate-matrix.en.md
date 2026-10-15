@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.109` (View-mode overlap recurrence fix — warm-cache icon re-apply) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.110` (Wheel-speed restore after view-mode switches — List latch fix) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-16
 
 ## Role of this document
