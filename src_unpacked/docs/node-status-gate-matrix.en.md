@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.106` (What 100.0% means — identical content / perceptual badge) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.107` (A/AB targeted enumeration — changed-file candidate discovery) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-16
 
 ## Role of this document
