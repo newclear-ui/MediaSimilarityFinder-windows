@@ -21,27 +21,32 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> 이 절은 **현재 살아 있는 작업과 뒤로 밀린 대기 작업을 한곳에서 복구하기 위한 실행 대기표**다.
-> 완료된 작업은 큐에서 제거하되, 후순위/보류 항목은 별도 백로그로 남긴다.
-> **2026-10-07 갱신:** 0.9.4.62는 GUI usability 빌드가 아니라 **crash-response baseline**이다.
-> GUI usability 작업은 **0.9.4.63**으로 분리한다. 다음 크래시가 발생하면
-> `docs/architecture/crash-response-runbook.{ko,en}.md`에 따라 증거를 먼저 수집하며,
-> 현재 추측성 crash 원인 수정은 하지 않는다.
->
-> 0.9.4.61의 similar-group scroll 회귀는 실제 Windows GUI에서 현재 정상 동작하는 것으로
-> 관찰되어 핵심 기능 blocker에서는 제외한다. thumbnail catch-up의 전체 QListWidget 순회는
-> 별도 성능 리스크로 남긴다.
+> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.106이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
+> G4/G6는 **OpenCode 추가 검토가 필요한 미확정 Gate**이며, 현재 소스만으로 결함이 확정됐다고 주장하지 않는다.
+> 과거 2026-10-07의 .62 crash-response / .63 GUI usability 분리는 당시 기록으로 유지하며, 현재 큐는 아래 표가 기준이다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
 | --- | --- | --- | --- | --- |
-| 0 | **0.9.4.64+** | **GUI usability 수동 acceptance (0.9.4.66·0.9.4.75 포함)** | 설정 대화상자 일반 탭(상세 로그 표시), 창 resize 체감, filename selection, Tiles/ListMode, 대규모 dataset traversal 확인 + 보기 전환 겹침 재확인 + Test Mode 토글·scratch 격리 수동 확인 | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
-| 1 | **0.9.4.74** | **Crash-response follow-up** | telemetry sampler destructor abort 경로 결정적 재현·수정 완료. 원래 .72 Backend dump caller는 PDB 부재로 미확정; 다음 재현 시 .74 PDB로 fault thread/function 특정 | **GUARDRAIL / 다음 dump에서 root cause 확정** |
-| 2 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance 재확인** | 실제 dataset에서 분석 실패 파일 포함 edge-case의 silent indexing/modified semantics를 최종 확정 | **NOT ACCEPTED / UI 작업 후 재검증** |
-| 3 | S4 | **GUI Detailed Logs 실제 화면 + 저장 최종 acceptance** | Search/Update → Detailed Logs → 저장/종료까지 사용자 경로 확인 | **PENDING / product acceptance와 연계** |
-| 4 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture PASS를 실제 dataset evidence로 확장하여 CONDITIONAL 해소 | **PENDING** |
-| 5 | color_thumb | **R1 fixture + no-FFmpeg skip/pass** | `color_thumb_test`의 no-FFmpeg 환경 의미론을 정상적인 PASS/SKIP으로 확정 | **PENDING / production correction 전** |
-| 6 | S5 | **실제 dataset product benchmark** | 제품 acceptance 완료 후 controlled benchmark 실행 | **GATE 대기** |
-| 7 | S6 | **measurement / data-mining gate** | S5 실제 표본을 이용한 build/case comparison 후보 생성 및 gate 판정 | **DEFERRED / S5 선행** |
+| 0 | **0.9.4.105/.106 + 0.9.4.64+** | **현장 GUI acceptance** | .105 대량 삭제/이동·진행창·preview/index·`delete/move/prune/forget` 로그; .106 파생본/동일 복사본 배지 + real Backend IPC `identical`; 설정/resize/filename selection/Tiles·ListMode/traversal/Test Mode scratch 격리/crash recovery | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
+| 1 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance** | 실제 데이터의 analysis-failed·unchanged·modified 의미론, 삭제/이동 정합성, cancel/restart edge-case를 명시된 기대값과 비교 | **NOT ACCEPTED** |
+| 2 | 프로세스 분리 G4 | **IPC backpressure slow-consumer 검증** | `send/flush` blocking 경로와 pending bound 검토, 느린 GUI 소비자 스트레스, 결과 무손실·coalescing·메모리 상한 입증 | **OPENCODE REVIEW REQUIRED / DEFECT NOT CONFIRMED** |
+| 3 | 프로세스 분리 G6 | **Job Object / GUI 종료 E2E 검증** | Win32 API 반환값·실패 처리·로그 검토, GUI 부모 종료 후 Backend PID 종료 확인 | **OPENCODE REVIEW REQUIRED / NOT VALIDATED** |
+| 4 | S4 | **GUI Detailed Logs 최종 화면 + 저장 acceptance** | 기존 UI 관찰 기록과 실제 Search/Update → Detailed Logs → 저장/종료 경로를 확인하고 문서 상태 충돌 해결 | **PENDING / product acceptance와 연계** |
+| 5 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture 결과를 실제 데이터셋/전체 스캔으로 확장 | **CONDITIONAL** |
+| 6 | color_thumb | **R1 fixture + no-FFmpeg PASS/SKIP** | FFmpeg 미설치/비활성 구성의 테스트 의미론을 확인한 후에만 production correction 재검토 | **PENDING / production correction 전** |
+| 7 | S5 | **실제 dataset product benchmark** | 제품 acceptance 이후 controlled benchmark 실행 | **GATE PENDING** |
+| 8 | S6 | **measurement / data-mining gate** | S5 실측 표본을 이용해 build/case 비교 후보와 gate 판정 | **DEFERRED / S5 선행** |
+
+### 측정 사이드 트랙 (제품 acceptance Gate와 별도)
+
+- Fast(A): .106의 사용자 데이터셋 측정 1회가 Work Log/DBV §7.3에 기록됨. 빌드·변경 수·walk 시간의 교란 때문에 성능 결론은 잠정적이다.
+- Auto(AB): 동일한 조건으로 비교할 실측 기록이 아직 없음.
+- CUDA 가용성: `cudaAvailable=False` 과거 실행의 빌드/런타임 조건을 확인한다. 이를 곧바로 “GPU 하드웨어 미가용”으로 해석하지 않는다.
+- 사용자 G: DBV 재측정은 같은 빌드·인덱스/데이터 상태·자원 조건을 가능한 한 맞추고, 반복 수와 parity 확인 기준을 사전 정의한다.
+
+### 조건부 crash-response 백로그
+
+원래 .72 dump의 정확한 caller는 PDB 부재로 미확정이다. 현재 .74의 telemetry sampler abort 경로는 별도로 재현·수정되었다. 새로운 crash가 발생하면 우선 `docs/architecture/crash-response-runbook.{ko,en}.md` 절차로 dump/PDB/로그를 보존하고, 재현이 없을 때 추측성 수정은 하지 않는다.
 
 ### 후순위 대기 백로그
 

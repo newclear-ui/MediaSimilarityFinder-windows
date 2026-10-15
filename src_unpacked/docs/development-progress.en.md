@@ -21,26 +21,32 @@ A separate `workprogress` document is intentionally not created; this document i
 
 ## Active Build Queue / Current Work Priority
 
-> This section is the **single execution waiting list for both live work and intentionally deferred work**.
-> Completed items are removed from the live queue; deferred/lower-priority items remain in a separate backlog.
-> **Updated 2026-10-07:** 0.9.4.62 is **the crash-response baseline, not the GUI usability build**.
-> GUI usability is therefore assigned to **0.9.4.63**. If another crash occurs, collect evidence first
-> according to `docs/architecture/crash-response-runbook.{ko,en}.md`; do not make speculative root-cause changes.
->
-> The 0.9.4.61 similar-group scroll regression is now observed as normal in the real Windows GUI,
-> so it is no longer a current functional blocker. The thumbnail catch-up full-list traversal remains
-> a separate performance risk.
+> **Refreshed 2026-10-16 after cross-review:** the baseline is 0.9.4.106. This queue summarizes the interim review in `docs/worklog/0.9.4.{ko,en}.md` as execution items.
+> G4/G6 are **unresolved gates requiring further OpenCode review**; the current source alone does not prove a defect.
+> Preserve the 2026-10-07 .62 crash-response / .63 GUI-usability split as historical context. The table below is the current queue.
 
 | Priority | Baseline / Target | Work item | Purpose / Next Gate | Status |
 | --- | --- | --- | --- | --- |
-| 0 | **0.9.4.64+** | **GUI usability manual acceptance (incl. 0.9.4.66 and 0.9.4.75)** | Settings dialog general tab (Show Detailed Logs), resize behavior, filename selection, Tiles/ListMode, large-dataset traversal, plus overlap re-check after mode switches and Test Mode toggle/scratch-isolation manual check | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
-| 1 | **0.9.4.74** | **Crash-response follow-up** | The telemetry-sampler destructor abort path is deterministically reproduced and fixed. The original .72 Backend dump caller is unresolved without a PDB; symbolize the next dump with the .74 PDB | **GUARDRAIL / confirm root cause on next dump** |
-| 2 | Product acceptance | **Final Search / Index / Comparison acceptance recheck** | Resolve the latest real-dataset edge-case semantics around silent analysis failures / modified state | **NOT ACCEPTED / recheck after GUI work** |
-| 3 | S4 | **Final real-screen + save acceptance for GUI Detailed Logs** | Validate Search/Update → Detailed Logs → save/finish on the real user path | **PENDING / tied to product acceptance** |
-| 4 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | Extend fixture PASS to real-dataset evidence and clear the CONDITIONAL production acceptance | **PENDING** |
-| 5 | color_thumb | **R1 fixture + no-FFmpeg skip/pass handling** | Define correct PASS/SKIP semantics for `color_thumb_test` without FFmpeg | **PENDING / before production correction** |
-| 6 | S5 | **Real-dataset product benchmark** | Run the controlled benchmark only after product acceptance | **GATE PENDING** |
-| 7 | S6 | **Measurement / data-mining gate** | Generate build/case comparison candidates and evaluate the measurement gate from real S5 samples | **DEFERRED / S5 first** |
+| 0 | **0.9.4.105/.106 + 0.9.4.64+** | **Real-world GUI acceptance** | .105 bulk delete/move, progress dialog, preview/index, `delete/move/prune/forget` logs; .106 derivative/copy badges plus real Backend IPC `identical`; settings/resize/filename selection/Tiles·ListMode/traversal/Test Mode scratch isolation/crash recovery | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
+| 1 | Product acceptance | **Final Search / Index / Comparison acceptance** | Compare analysis-failed/unchanged/modified semantics, delete/move consistency, and cancel/restart edge cases against explicit expected results on a real dataset | **NOT ACCEPTED** |
+| 2 | Process split G4 | **IPC slow-consumer/backpressure validation** | Review `send/flush` blocking path and pending bounds; stress a slow GUI consumer; prove lossless results, coalescing, and bounded memory | **OPENCODE REVIEW REQUIRED / DEFECT NOT CONFIRMED** |
+| 3 | Process split G6 | **Job Object / GUI-exit E2E validation** | Review Win32 API return values, failure handling/logging, and verify Backend PID termination after its GUI parent exits | **OPENCODE REVIEW REQUIRED / NOT VALIDATED** |
+| 4 | S4 | **Final real-screen + save acceptance for GUI Detailed Logs** | Check prior UI-observation evidence and the real Search/Update → Detailed Logs → save/exit path; reconcile inconsistent documentation status | **PENDING / tied to product acceptance** |
+| 5 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | Extend fixture evidence to a real dataset/full scan | **CONDITIONAL** |
+| 6 | color_thumb | **R1 fixture + no-FFmpeg PASS/SKIP** | Determine test semantics for absent/disabled FFmpeg before reconsidering production correction | **PENDING / before production correction** |
+| 7 | S5 | **Real-dataset product benchmark** | Run controlled benchmark only after product acceptance | **GATE PENDING** |
+| 8 | S6 | **Measurement / data-mining gate** | Derive build/case comparisons and evaluate the gate from real S5 samples | **DEFERRED / S5 first** |
+
+### Measurement side track (separate from product acceptance gates)
+
+- Fast(A): one .106 user-dataset run is already recorded in the Work Log / DBV §7.3. Build, changed-file count, and walk-time confounders make the performance conclusion provisional.
+- Auto(AB): a comparable measurement is still missing.
+- CUDA availability: verify build/runtime conditions for the historical `cudaAvailable=False` run; do not assume it means the GPU hardware was unavailable.
+- User G: before another DBV measurement, define comparable build/index/dataset/resource conditions, run count, and verdict-parity checks.
+
+### Conditional crash-response backlog
+
+The exact caller in the original .72 dump remains unconfirmed because its matching PDB was absent. The .74 telemetry-sampler abort path was separately reproduced and fixed. If another crash occurs, preserve the dump/PDB/logs using `docs/architecture/crash-response-runbook.{ko,en}.md`; avoid speculative fixes without a reproducible case.
 
 ### Deferred Backlog
 

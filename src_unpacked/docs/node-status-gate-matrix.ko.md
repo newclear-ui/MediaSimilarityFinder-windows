@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
 기준: `0.9.4.106` (100.0% 의미 표시 — 동일 내용 / 지각 동일 배지) · CPU CTest 122/122 · GPU CTest 123/123
-최종 갱신: 2026-10-10
+최종 갱신: 2026-10-16
 
 ## 이 문서의 역할
 
@@ -106,26 +106,18 @@
 ## 현재 초점 / Current Focus
 
 ```text
-활성 Node        프로세스 분리 P1–P4 완료 (0.9.4.67~0.9.4.70), 0.9.4.71~.81 corrective builds 완료
-다음             실제 Windows GUI manual acceptance (미리보기 표시, selection, crash 후 자동 재개,
-                 Test Mode 토글·scratch 격리, Tiles/ListMode, 대규모 dataset traversal) → 제품 acceptance 재확인
-                 → S4 real-screen acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
-현재 판단        0.9.4.72 walk/analyze 병렬화와 표시/ETR 수정, 0.9.4.73 crash defense/PDB/auto-resume,
-                 0.9.4.74 telemetry sampler 종료 abort 재현·수정 + count/read progress + READY 재개 검증,
-                 0.9.4.75 Test Mode 재도입 + 스크롤 gate/썸네일 burst/앵커 후속 수정,
-                 0.9.4.76 admission 스켈레톤 배치 진입 checkpoint 확정,
-                 0.9.4.77 ANSI 밖 파일명 narrow 경로 수정,
-                 0.9.4.78 추적·워치독·비디오취소·supervisor 확정,
-                 0.9.4.79 인덱스 생명주기 관리,
-                 0.9.4.80 analyze 병렬 개선,
-                 0.9.4.81 매칭 검증 모드 선택(안정형/고속형/자동, 설정 옵션) + B 1000 파일 슬라이스/프론티어 재개(scanAnalyzeMode/analyzeSlice 로그).
-                 사용자의 .72 dump는 PDB 부재로 exact caller 미확정. stdout backpressure는 가설로 보류.
-잔여 위험        GUI 미리보기/선택/복귀/Test Mode 체감은 headless에서 육안 검증 불가 → 수동 acceptance 필요.
-                 GPU MAX share boost는 문서화된 미구현 공백. thumbCatchUpVisible()은 매 tick 전체 목록을
-                 순회하지만 decode는 보이는 것만 하며 correctness blocker가 아니므로 후순위 성능 검토로 둔다.
-후속             상세 로그 표시 설정, splitter 폭 정책, filename selection은 0.9.4.63에서 완료.
-                 Test Mode는 0.9.4.75 별도 버전으로 재도입되어 수동 acceptance만 남았다.
-                 1.0 이후 Burst-shot / scheduler-pipeline 성능 백로그는 계속 별도 유지한다.
+기준선           0.9.4.106 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
+활성 상태        프로세스 분리 P1–P4 완료; .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
+다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → G4 IPC backpressure / G6 Job Object OpenCode 검토 → S4 저장 acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
+OpenCode 검토    G4: send/flush 동기 경로와 유계 outgoing queue/느린 소비자 검증 증거 부족(결함 미확정).
+                 G6: Job Object API 반환값 처리와 GUI 종료 후 Backend 종료 E2E 증거 부족(결함 미확정).
+현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
+                 Search/Index/Comparison = NOT ACCEPTED; S4 최종 acceptance 미완료; XMP = CONDITIONAL;
+                 color_thumb production correction 미수행; S5/S6는 선행 Gate 대기.
+측정            Fast(A) 사용자 데이터셋 run=1 측정은 2026-10-15 Work Log/DBV §7.3에 기록됐으나 비교 조건에 교란 요인 존재.
+                 Auto(AB) 비교 실측은 미완료. CUDA 미가용 기록은 build/runtime 조건 확인 필요.
+잔여 위험        thumbCatchUpVisible()의 매 tick 전체 목록 순회는 correctness blocker가 아닌 후순위 성능 위험.
+                 원래 .72 dump의 정확한 crash caller는 PDB 부재로 미확정; 새 crash 때 runbook으로 증거 보존.
 ```
 
 **S4 acceptance 가 막히지 않는 이유**: 이 환경은 headless 이며, 결과 다이얼로그의

@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
 Baseline: `0.9.4.106` (What 100.0% means — identical content / perceptual badge) - CPU CTest 122/122 - GPU CTest 123/123
-Last updated: 2026-10-10
+Last updated: 2026-10-16
 
 ## Role of this document
 
@@ -109,28 +109,18 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-active node        Process split P1-P4 complete (0.9.4.67-0.9.4.70), corrective builds 0.9.4.71-0.9.4.81 done
-next               Real Windows manual GUI acceptance (new-file read progress, auto-resume after crash,
-                   preview display, selection, Test Mode toggle/scratch isolation, Tiles/ListMode,
-                   large-dataset traversal) -> final acceptance recheck
-                   -> S4 real-screen acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
-current verdict    0.9.4.72 parallelized walk/analyze and fixed display/ETR; 0.9.4.73 added crash hardening/PDB/auto-resume;
-                   0.9.4.74 reproduced and fixed the telemetry-sampler destructor abort path, exposed count/read progress,
-                   corrected restart-before-modal ordering, and verified one-shot saved-config auto-resume;
-                   0.9.4.75 reintroduced Test Mode plus scroll-gate/thumbnail-burst/anchor follow-up;
-                   0.9.4.76 commits admission skeletons at batch-entry checkpoints;
-                   0.9.4.77 moves narrow UTF-8 path sites to the wide path;
-                   0.9.4.78 adds tracing, watchdog, video cancel, supervisor finality;
-                   0.9.4.79 adds index lifecycle management;
-                   0.9.4.80 reworks analyze parallelism;
-                   0.9.4.81 adds selectable matching-verification modes (Stable/Fast/Auto; Settings option) plus a B 1000-file slice with a resume frontier (scanAnalyzeMode/analyzeSlice logs). The user's
-                   old .72 dump lacks PDB, so exact crash caller remains unproven.
-remaining risk     GUI preview/selection/recovery/Test Mode feel cannot be eyeballed headless -> manual acceptance needed.
-                   GPU MAX share boost is a documented gap. thumbCatchUpVisible() scans the whole list each
-                   tick but decodes visible items only and is not the present correctness blocker, so it stays a lower-priority perf item.
-immediate         0.9.4.63: Detailed Logs visibility setting, right-pane width cap / center-pane expansion, filename selection: done.
-later             Test Mode was reintroduced as separate version 0.9.4.75; only manual acceptance remains.
-                   Post-1.0 burst-shot and scheduler/pipeline throughput work remains separate.
+baseline          0.9.4.106 (CPU CTest 122/122, GPU CTest 123/123 — results recorded in Work Log)
+active status     Process split P1-P4 complete; field GUI acceptance for .105/.106 and final Search/Index/Comparison acceptance remain open
+next              .105/.106 field acceptance -> real-dataset Search/Index/Comparison acceptance -> OpenCode review of G4 IPC backpressure / G6 Job Object -> S4 save acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
+OpenCode review   G4: insufficient evidence for bounded outgoing queue / slow-consumer behavior on the synchronous send/flush path (defect not confirmed).
+                  G6: insufficient evidence for Job Object API failure handling and Backend exit after GUI termination (defect not confirmed).
+current verdict   .105 file-operation/preview/index logs and .106 badge/real-process IPC await field evidence.
+                  Search/Index/Comparison = NOT ACCEPTED; S4 final acceptance open; XMP = CONDITIONAL;
+                  color_thumb production correction not performed; S5/S6 await prerequisites.
+measurement       Fast(A) user-dataset run=1 is recorded in Work Log/DBV §7.3 on 2026-10-15, but confounders limit comparison.
+                  Comparable Auto(AB) measurement is pending. Verify build/runtime conditions for CUDA-unavailable records.
+remaining risk     thumbCatchUpVisible() scans the full list each tick; lower-priority performance risk, not a correctness blocker.
+                  Exact caller in the original .72 crash dump remains unconfirmed due to missing PDB; retain new crash evidence via runbook.
 ```
 
 **Why S4 acceptance is blocked**: this environment is headless, and the actual
