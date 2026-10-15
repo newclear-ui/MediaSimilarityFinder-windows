@@ -5,14 +5,18 @@
 //
 // - G3: no synchronous wait anywhere on the live path. Kill escalation and
 //   backoff run on QTimer; the only bounded synchronous wait is shutdown()
-//   on the application-exit path (documented exception, no event pumping).
+//   on the application-exit path (documented exception: it waits on the
+//   process handle via QProcess::waitForFinished with QProcess signals
+//   disconnected first, so the blocking drain cannot re-enter GUI handlers).
 // - G4: the scan never blocks on IPC. Qt buffers stdin writes; MATCHES are
 //   chunked backend-side and never dropped (lossless); progress is
 //   coalesced by arrival (latest wins downstream).
 // - G5: never spawn while the old backend is alive: terminate() → 3s grace
 //   → kill() → 5s verify, all asynchronous, spawn only after exit verified.
 // - G6: the backend lives in a Win32 Job Object with KILL_ON_JOB_CLOSE, so
-//   a dead GUI cannot orphan it. The backend additionally self-exits on
+//   a dead GUI cannot orphan it. Every Win32 step is return-checked and
+//   logged (0.9.4.111); on failure the fallback is the backend's own
+//   stdin-EOF self-exit. The backend additionally self-exits on
 //   control-channel loss.
 // - Bounded restart (default 3 attempts, 2s/5s/10s backoff) then FAILED.
 //   Success is proven by HELLO_ACK + READY, never by spawn alone.
@@ -36,6 +40,9 @@ struct SupervisorOptions {
     int killWaitMs = 5000;
     int shutdownWaitMs = 3000;
     int malformedLimit = 10;
+    // 0.9.4.111: test-only negative control for the G6 E2E (prove the Job
+    // Object is load-bearing). Production default stays ON.
+    bool jobObjectEnabled = true;
 };
 
 class BackendSupervisor : public BackendClient {

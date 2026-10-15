@@ -143,18 +143,24 @@ void BackendSupervisor::cancel() {
 
 void BackendSupervisor::shutdown() {
     // Application-exit path: bounded synchronous wind-down (documented G3
-    // exception — no event pumping, so no reentrancy). The Job Object
-    // finishes the job if we exit first.
+    // exception). 0.9.4.111: wait on the process handle directly
+    // (QProcess::waitForFinished) instead of polling state() — Qt updates the
+    // state only when the event loop dispatches WinEventAct, so the old poll
+    // could never observe the exit and burned the full shutdownWaitMs on every
+    // app exit. QProcess signals are disconnected first: the blocking drain
+    // can emit readyRead synchronously, which would re-enter GUI handlers
+    // mid-teardown (the old "no event pumping" guarantee, kept). The Job
+    // Object KILL_ON_JOB_CLOSE finishes the job if we exit first.
+    if (explicitShutdown_) return; // idempotent: never wait twice
     explicitShutdown_ = true;
     restartTimer_.stop();
     escTimer_.stop();
     if (!processAlive()) return;
     sendCommand(msf_ipc::kShutdown, {});
-    const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
-    while (processAlive() &&
-           QDateTime::currentMSecsSinceEpoch() - t0 < opt_.shutdownWaitMs)
-        QThread::msleep(50);
-    if (processAlive()) proc_->terminate();
+    proc_->disconnect(this);
+    if (!proc_->waitForFinished(opt_.shutdownWaitMs) &&
+        proc_->state() != QProcess::NotRunning)
+        proc_->terminate();
 }
 
 static QJsonObject policyJson(const msf::ResourcePolicy& policy) {
@@ -309,20 +315,48 @@ void BackendSupervisor::spawn() {
 
 void BackendSupervisor::assignJobObject() {
 #ifdef _WIN32
+    // 0.9.4.111 (G6): every Win32 step is return-checked and logged. The
+    // channel-loss self-exit remains as the fallback, but a silent failure
+    // here would degrade orphan protection without any evidence in the log.
+    if (!opt_.jobObjectEnabled) {
+        emit backendLogLine(QStringLiteral("job object disabled (test mode): orphan protection is channel-loss self-exit only"));
+        return;
+    }
     if (!job_) {
         job_ = CreateJobObjectW(nullptr, nullptr);
-        if (job_) {
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            SetInformationJobObject(job_, JobObjectExtendedLimitInformation, &info, sizeof(info));
+        if (!job_) {
+            emit backendLogLine(QStringLiteral("job object create failed (error %1): orphan protection is channel-loss self-exit only")
+                                    .arg(GetLastError()));
+            return;
+        }
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(job_, JobObjectExtendedLimitInformation, &info, sizeof(info))) {
+            const DWORD err = GetLastError();
+            CloseHandle((HANDLE)job_);
+            job_ = nullptr;
+            emit backendLogLine(QStringLiteral("job object limit setup failed (error %1): orphan protection is channel-loss self-exit only")
+                                    .arg(err));
+            return;
         }
     }
     if (job_ && proc_) {
-        HANDLE h = OpenProcess(PROCESS_ALL_ACCESS, FALSE, (DWORD)proc_->processId());
-        if (h) {
-            AssignProcessToJobObject(job_, h);
-            CloseHandle(h);
+        // PROCESS_SET_QUOTA|PROCESS_TERMINATE are the documented rights for
+        // AssignProcessToJobObject; QUERY_LIMITED_INFORMATION for diagnostics.
+        HANDLE h = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+                               FALSE, (DWORD)proc_->processId());
+        if (!h) {
+            emit backendLogLine(QStringLiteral("job assign: OpenProcess failed (error %1) pid=%2: orphan protection degraded")
+                                    .arg(GetLastError())
+                                    .arg(proc_->processId()));
+            return;
         }
+        if (!AssignProcessToJobObject(job_, h)) {
+            emit backendLogLine(QStringLiteral("job assign failed (error %1) pid=%2: orphan protection degraded to channel-loss self-exit")
+                                    .arg(GetLastError())
+                                    .arg(proc_->processId()));
+        }
+        CloseHandle(h);
     }
 #else
     (void)0;

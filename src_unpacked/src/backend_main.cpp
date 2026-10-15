@@ -19,6 +19,7 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
+#include <chrono>
 #include <thread>
 
 #include "backend_ipc.h"
@@ -615,11 +616,18 @@ int main(int argc, char** argv) {
     // Test-only fault injection (P3): deterministic startup failures for the
     // supervisor budget tests. Production never sets these variables.
     // FAIL_FAST exits before the handshake (unexpected-exit budget path);
-    // SILENT never answers (READY-timeout budget path).
+    // SILENT never answers (READY-timeout budget path);
+    // WEDGE (0.9.4.111, G6) starts the stdin reader but never enters the event
+    // loop, so both SHUTDOWN and the stdin-EOF self-exit are blocked — the Job
+    // Object is then the only way the process can die (E2E negative control).
     if (qEnvironmentVariableIsSet("MSF_TEST_BACKEND_FAIL_FAST")) return 1;
     const bool silent = qEnvironmentVariableIsSet("MSF_TEST_BACKEND_SILENT");
+    const bool wedged = qEnvironmentVariableIsSet("MSF_TEST_BACKEND_WEDGE");
     Q_UNUSED(appDir);
     BackendServer server(nonce, silent);
     server.run();
+    if (wedged) {
+        for (;;) std::this_thread::sleep_for(std::chrono::seconds(10));
+    }
     return app.exec();
 }
