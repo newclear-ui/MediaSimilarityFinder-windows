@@ -39,8 +39,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ### 측정 사이드 트랙 (제품 acceptance Gate와 별도)
 
-- Fast(A)/Stable(B): .106의 사용자 데이터셋 풀 리프래쉬 측정(A 2026-10-15, B 2026-10-16)이 Work Log/DBV §7.3에 기록됨. 같은 빌드 A/B 대조: A wall 632.3 s vs B 1012.3 s(-37.5%, B는 변경 0에서도 전 쌍 재검증). 변경 수·walk 시간 교란은 남아 있어 성능 일반화는 잠정적이다.
-- Auto(AB): 동일한 조건으로 비교할 실측 기록이 아직 없음.
+- Fast(A)/Stable(B)/Auto(AB): .106의 사용자 데이터셋 풀 리프래쉬 측정 3회(A 2026-10-15, B/AB 2026-10-16)가 Work Log/DBV §7.3에 기록됨. 같은 빌드 대조: analyze 기준 A 185.8 s / AB 170.2 s(verify 0~1회) vs B 605.7 s(전 쌍 19,160회 재검증). walk 306.5~399.7 s 변동이 wall 비교의 교란으로 남아 있어 성능 일반화는 잠정적이다.
+- Auto(AB): 2026-10-16 측정 완료(변경 64, verify 1회/0.25 s) — 최종 패스는 한쪽만 변경된 쌍만 검증하고 양쪽 변경 쌍은 live 패스가 담당한다. 반복 수 증가와 리포트 집계 의미(제품 결정)는 후속.
 - CUDA 가용성: `cudaAvailable=False` 과거 실행의 빌드/런타임 조건을 확인한다. 이를 곧바로 “GPU 하드웨어 미가용”으로 해석하지 않는다.
 - 사용자 G: DBV 재측정은 같은 빌드·인덱스/데이터 상태·자원 조건을 가능한 한 맞추고, 반복 수와 parity 확인 기준을 사전 정의한다.
 
@@ -232,7 +232,7 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 | 기준 코드 | 0.9.4.106 (100.0% 의미 표시 — 동일 내용 / 지각 동일 배지) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.106 100.0% 의미 표시 (동일 내용 / 지각 동일 배지) 완료** — 직전 0.9.4.105는 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화. 파생본 감사(프로브·인덱스 실측) → A안 비용 과다 → B안(표시 전용, 비용 0) 채택. `contentIdentical` 전 경로 배선 + `pctText` 배지. engine/DB/schema/cache 불변. 다음 빌드: 실기 배지 육안 + CUDA 미가용 + Auto(AB) 실측(A·B 풀 리프래쉬 실측은 §7.3 완료). — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.106 100.0% 의미 표시 (동일 내용 / 지각 동일 배지) 완료** — 직전 0.9.4.105는 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화. 파생본 감사(프로브·인덱스 실측) → A안 비용 과다 → B안(표시 전용, 비용 0) 채택. `contentIdentical` 전 경로 배선 + `pctText` 배지. engine/DB/schema/cache 불변. 다음 빌드: 실기 배지 육안 + CUDA 미가용 + (A·B·AB 풀 리프래쉬 실측은 §7.3 완료). — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
 | 현재 버전 | 0.9.4.106 |
 | GPU 구현 기준 | NVIDIA CUDA |
