@@ -431,9 +431,45 @@ if(isVideo){
     backendLogLine(sh.str());
    }
   };
+  // 0.9.4.107 (A/AB targeted enumeration): when the caller supplies a changed
+  // set, this pass can only verify pairs touching a changed file (included()
+  // rejects everything else), yet the full/crop passes used to enumerate the
+  // whole dataset and discard them -- a measured fixed ~170-186 s analyze cost
+  // with 0-64 changed files on a 177k-file dataset. The identical candidate
+  // set is reachable by querying the indexes with each changed file's own
+  // hashes (the same discovery the live addAndMatch path uses for its new
+  // file), so discovery, included() filtering and emission stay identical and
+  // verdicts do not change (analyze_mode_test pins the parity). candidates now
+  // counts the pairs this pass actually considered, not every dataset pair.
+  const auto consumeTargeted=[&](){
+   dedupCrop=true;
+   const std::size_t reserveHint=std::min<std::size_t>(s.possiblePairs, std::max<std::size_t>(1024, files_.size()*2));
+   seen.reserve(reserveHint);
+   for(std::size_t i=0;i<files_.size();++i){
+    if(i>=changedFiles->size()||!(*changedFiles)[i]) continue;
+    poll();
+    const MediaFile& f=files_[i];
+    if(!f.fingerprint) continue;
+    auto consider=[&](const CandidateIndex& ix,std::uint64_t h){
+     if(!h) return;
+     for(const auto& c:ix.query(h,maxDistance)) process(i,c);
+    };
+    if(f.kind==MediaKind::Image){
+     consider(imageIdx_,f.fingerprint); consider(imageIdx_,f.mirrorFingerprint);
+     consider(c4_,f.crop4x3); consider(c1_,f.crop1x1); consider(c916_,f.crop9x16);
+    } else if(f.kind==MediaKind::Video){
+     consider(videoIdx_,f.fingerprint); consider(videoIdx_,f.mirrorFingerprint);
+     for(auto a:f.anchors) consider(videoIdx_,a);
+     consider(vc4_,f.crop4x3); consider(vc1_,f.crop1x1); consider(vc916_,f.crop9x16);
+    }
+   }
+  };
   // Full indexes are authoritative first. If they already cover every possible pair
   // of a media kind, crop indexes cannot add anything and are skipped entirely.
   try {
+  if(changedFiles){
+   consumeTargeted();
+  } else {
   const auto imageBefore=s.candidates; consumeImageParallel(); imageFullCandidates=s.candidates-imageBefore;
   const auto videoBefore=s.candidates;
   {
@@ -466,6 +502,7 @@ if(isVideo){
     if(!videoComplete) videoIdx_.forEachCandidatePair(maxDistance,seed);
     if(!imageComplete){consumeWindowed(c4_);consumeWindowed(c1_);consumeWindowed(c916_);}
     if(!videoComplete){consumeWindowed(vc4_);consumeWindowed(vc1_);consumeWindowed(vc916_);}
+  }
   }
   flushVideo();
   } catch (const LocalCancel&) {

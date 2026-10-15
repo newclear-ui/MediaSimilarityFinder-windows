@@ -95,6 +95,20 @@ int main() {
   expect(abAll.matches.empty(),
          "AB cold: final pass emits no image pairs (live pass owns them)");
 
+  // (3b) 0.9.4.107 targeted enumeration: A/AB enumerate only the candidate
+  // pairs touching a changed file (the pairs the pass can actually verify), so
+  // the candidates counter reflects the pass's real work, not the dataset.
+  {
+    const auto aSub2 = p.analyze(8, {}, {}, &dirty, false);
+    expect(aSub2.candidates == 3, "A partial: candidates count only changed-touching pairs");
+    const auto abSub2 = p.analyze(8, {}, {}, &dirty, true);
+    expect(abSub2.candidates == 3, "AB partial: candidates count only changed-touching pairs");
+    const auto aAll2 = p.analyze(8, {}, {}, &all, false);
+    expect(aAll2.candidates == full.candidates, "A cold: candidate count matches B");
+    const auto none2 = p.analyze(8, {}, {}, nullptr, false);
+    expect(none2.candidates == full.candidates, "B: candidate count unchanged");
+  }
+
   // No filter still equals the reference (guards the default/B regression).
   const auto none = p.analyze(8, {}, {}, nullptr, false);
   expect(none.matches.size() == full.matches.size(),
