@@ -2284,20 +2284,42 @@ void MainWindow::thumbCatchUpVisible() {
   // Tree rows carry no thumbnails, so only the visible grid participates.
   // Bounded by construction: the loop covers at most the viewport's items
   // (index math only for the rest).
-  // P3: this is the request pump, not the painter. fileThumb() serves the
-  // memory cache or records a backend request and returns a placeholder;
-  // arrivals paint through onThumbReady (which forces the 0.9.4.66 layout
-  // pass). Nothing here rebuilds, and scroll position is untouched.
+  // P3: misses are only *requested* here; arrivals paint through onThumbReady
+  // (which forces the 0.9.4.66 layout pass).
+  // 0.9.4.109: cache HITS are applied here. The P3 migration made this pump
+  // request-only, but a cache hit produces no backend request and therefore
+  // no arrival — after a view-mode switch (or zoom) the item kept its
+  // old-size pixmap while the cells were recomputed, which is exactly the
+  // 0.9.4.66 overlap ("art paints outside its cell"), re-opened for every
+  // warm-cache switch. Applying the hit is a pure memory-cache write: no
+  // decode, no request, no rebuild; the coalesced layout pass below is the
+  // same one arrivals use, so the scroll-gate contract is unchanged.
   QListWidget* grid = groupsList_;
   if (!grid || !grid->isVisible()) return;
   const QRect vis = grid->viewport()->rect();
   const QSize iconSize = grid->iconSize();
+  bool changed = false;
   for (int row = 0; row < grid->count(); ++row) {
     QListWidgetItem* item = grid->item(row);
     if (!item || !grid->visualItemRect(item).intersects(vis)) continue;
     const int gi = item->data(Qt::UserRole).toInt();
     if (gi < 0 || gi >= groups_.size() || groups_[gi].paths.isEmpty()) continue;
-    fileThumb(groups_[gi].paths.front(), iconSize);
+    const QString& rep = groups_[gi].paths.front();
+    const QString key = rep + '|' + QString::number(iconSize.width()) + 'x' + QString::number(iconSize.height());
+    auto tc = thumbCache_.constFind(key);
+    if (tc != thumbCache_.cend()) {
+      if (item->icon().cacheKey() != tc.value().cacheKey()) {
+        item->setIcon(tc.value());
+        changed = true;
+      }
+      ++thumbStatMem_;
+    } else {
+      fileThumb(rep, iconSize); // miss: async request pump (no placeholder paint)
+    }
+  }
+  if (changed && !thumbLayoutPending_) {
+    thumbLayoutPending_ = true;
+    QTimer::singleShot(0, this, [this] { flushThumbLayout(); });
   }
 }
 void MainWindow::updateGroupFoot() {
@@ -2537,6 +2559,12 @@ void MainWindow::groupViewChanged(int idx) {
     // pass explicitly. This never rebuilds items (see fillPair prohibition)
     // and never touches scroll.
     grid->doItemsLayout();
+    // 0.9.4.109: re-apply the icons for the new size right away. Items whose
+    // thumb at this size is already in the memory cache get it back here
+    // (the catch-up pump used to drop cache hits, so they kept the previous
+    // mode's pixmap while the cells were recomputed -> 0.9.4.66 overlap);
+    // misses are requested asynchronously and paint through onThumbReady.
+    thumbCatchUpVisible();
   } else {
     grid->setItemDelegate(defaultDelegate_);
     grid->setVisible(false); tree->setVisible(true);

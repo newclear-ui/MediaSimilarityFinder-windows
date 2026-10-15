@@ -101,6 +101,14 @@ public:
   // requests through the real catch-up path instead of setting item icons
   // directly and bypassing it. Arrivals paint via onThumbReady.
   void testThumbCatchUp() { thumbCatchUpVisible(); }
+  // 0.9.4.109: memory-cache probe. Returns the presentation icon stored for
+  // (path, size) — empty when not cached. Lets the view-mode round-trip test
+  // assert that a warm-cache switch restores exactly the cached pixmap on the
+  // item (the regression: catch-up dropped cache hits, so items kept the
+  // previous mode's pixmap).
+  QIcon testCachedThumb(const QString& path, const QSize& size) const {
+    return thumbCache_.value(path + '|' + QString::number(size.width()) + 'x' + QString::number(size.height()));
+  }
   // 0.9.4.105 (D): force one middle-pane refill through the real fill path so
   // tests can prove a bulk rebuild issues no per-row thumbnail requests.
   void testRefreshGroupList() { refreshGroupList(); }

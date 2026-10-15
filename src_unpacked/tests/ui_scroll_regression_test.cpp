@@ -789,6 +789,58 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Phase 21 (0.9.4.109): a view-mode round trip with a WARM thumbnail cache
+    // must still re-size every visible icon. The P3 migration made the
+    // catch-up pump request-only; a cache hit produced no backend request and
+    // therefore no arrival, so after XL -> L -> XL the items kept their 128px
+    // pixmaps while the cells were recomputed — the 0.9.4.66 overlap ("art
+    // paints outside its cell") re-opened for every warm-cache switch.
+    {
+        auto* grid = w.findChild<QListWidget*>("imgGrid");
+        check(grid != nullptr && grid->count() > 0, "group grid ready for the warm-cache phase");
+        if (grid && grid->count() > 0) {
+            if (auto* first = grid->item(0)) grid->setCurrentItem(first); // anchor on group 1
+            grid->scrollToTop();
+            grid->doItemsLayout();
+            QApplication::processEvents();
+            const auto pump = [&](int n) {
+                for (int i = 0; i < n; ++i) {
+                    w.testThumbCatchUp();
+                    QApplication::processEvents();
+                    QThread::msleep(30);
+                }
+            };
+            // Warm both sizes through the real async arrival path.
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 0)); // XL 256
+            pump(8);
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 1)); // L 128
+            pump(8);
+            const QString rep = grid->item(0)->toolTip();
+            const QIcon want256 = w.testCachedThumb(rep, QSize(256, 256));
+            const QIcon want128 = w.testCachedThumb(rep, QSize(128, 128));
+            check(!want256.isNull() && !want128.isNull(), "both sizes cached after the warm visits");
+            // Back to XL: the 256px pixmap must come from the warm cache even
+            // though no backend request follows a cache hit.
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 0));
+            pump(3);
+            grid->scrollToTop();
+            grid->doItemsLayout();
+            QApplication::processEvents();
+            pump(2);
+            const bool xl = !want256.isNull() && grid->item(0)->icon().cacheKey() == want256.cacheKey();
+            std::cout << "  [info] warm-cache XL icon restored=" << xl << "\n";
+            check(xl, "warm-cache switch back to XL restores the cached 256px icon");
+            // And back to L restores the 128px pixmap the same way.
+            QMetaObject::invokeMethod(&w, "groupViewChanged", Q_ARG(int, 1));
+            pump(3);
+            const bool l = !want128.isNull() && grid->item(0)->icon().cacheKey() == want128.cacheKey();
+            std::cout << "  [info] warm-cache L icon restored=" << l << "\n";
+            check(l, "warm-cache switch back to L restores the cached 128px icon");
+        } else {
+            ++gChecks;
+        }
+    }
+
     fs::remove_all(d, ec);
     std::cout << "scroll_regression_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";
