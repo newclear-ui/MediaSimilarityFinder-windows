@@ -347,6 +347,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"analyzeModeFast")) return S("고속형 (스캔 중 검증)","Fast (verify during scan)");
   if (!std::strcmp(key,"analyzeModeAuto")) return S("자동 (혼합 검증)","Auto (hybrid)");
   if (!std::strcmp(key,"analyzeModeTip")) return S("중복 후보 검증을 언제/어떻게 수행할지 선택합니다. 결과(판정)는 동일하며 기본은 안정형입니다.","Choose when/how duplicate candidates are verified. Results are identical; default is Stable.");
+  // 0.9.4.108: detailed-log summary header rows (mode + scanned folder).
+  if (!std::strcmp(key,"summaryMode")) return S("검색 방법","Search method");
+  if (!std::strcmp(key,"summaryFolder")) return S("검색 폴더","Search folder");
   if (!std::strcmp(key,"detailLogTip")) return S("실제 검색에 상세 로그 연결 (별도 벤치마크 실행 아님)","Attach detailed logging to the actual search (not a separate benchmark run)");
   if (!std::strcmp(key,"repWaitTitle")) return S("검색 리포트 작성 중","Writing search report");
   if (!std::strcmp(key,"repWait")) return S("검색 리포트를 작성 중입니다. 잠시만 기다려 주세요…","Writing the search report. Please wait a moment…");
@@ -1669,6 +1672,23 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
     const qulonglong vDf = (qulonglong)mat["videoDuplicateFiles"].toDouble();
     const qulonglong vPr = (qulonglong)mat["videoPairs"].toDouble();
     lines << QString("== %1 ==").arg(trStr(lang(), "detailLogSummary"));
+    // 0.9.4.108: the summary states which matching-verification mode produced
+    // this record and which folder was scanned, so the user never has to
+    // remember or annotate the mode by hand. (A field run was once reported as
+    // Auto while the record's analyze.mode said Fast -- exactly the ambiguity
+    // this display removes.) Mode values come from the record, not from the
+    // current settings, so an old log always shows its own mode.
+    {
+      const QString m = root["analyze"].toObject()["mode"].toString();
+      const QString modeStr = m == QLatin1String("B") ? trStr(lang(), "analyzeModeStable")
+                            : m == QLatin1String("A") ? trStr(lang(), "analyzeModeFast")
+                            : m == QLatin1String("AB") ? trStr(lang(), "analyzeModeAuto")
+                            : QStringLiteral("-");
+      const QString rootPath = meta["root"].toString();
+      lines << QString("%1: %2").arg(trStr(lang(), "summaryMode"), modeStr);
+      lines << QString("%1: %2").arg(trStr(lang(), "summaryFolder"),
+                                    rootPath.isEmpty() ? QStringLiteral("-") : rootPath);
+    }
     lines << QString("%1: %2").arg(trStr(lang(), "detailLogDuration"), fmtDur(sum["wallMs"].toDouble()));
     lines << QString("%1  scanned: %2  analyzed: %3  %4: %5 files/sec").arg(trStr(lang(), "detailLogImages"))
         .arg(iScan).arg(iAn).arg(trStr(lang(), "detailLogThroughput")).arg(f1(iRate));

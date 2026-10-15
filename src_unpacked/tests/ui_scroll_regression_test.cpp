@@ -34,6 +34,7 @@
 #include <QScrollBar>
 #include <QSet>
 #include <QSettings>
+#include <QTextBrowser>
 #include <QThread>
 #include <QTimer>
 #include <QToolBar>
@@ -743,6 +744,48 @@ int main(int argc, char** argv) {
         } else {
             std::cout << "  [info] no file grid items; badge phase skipped\n";
             ++gChecks;
+        }
+    }
+
+    // Phase 20 (0.9.4.108): the detailed-log summary opens with the matching-
+    // verification mode and the scanned folder, both taken from the record
+    // itself, so the user never has to annotate which of Stable/Fast/Auto
+    // produced a run.
+    {
+        const std::string tj = w.telemetryJsonForTest();
+        check(!tj.empty(), "telemetry record available for the summary header");
+        if (!tj.empty()) {
+            // The dialog is modal (exec()). Capture its text from inside the
+            // event loop, then close it; the periodic modal-closer is paused so
+            // it cannot close the dialog before the capture fires.
+            closer.stop();
+            QString captured;
+            QTimer::singleShot(0, &w, [&]() {
+                if (QWidget* modal = QApplication::activeModalWidget()) {
+                    if (auto* tb = modal->findChild<QTextBrowser*>()) captured = tb->toPlainText();
+                    modal->close();
+                }
+            });
+            QMetaObject::invokeMethod(&w, "showDetailedLogDialog",
+                                      Q_ARG(QString, QString::fromStdString(tj)));
+            closer.start();
+            QApplication::processEvents();
+            const bool hasMode = captured.contains(trStr(UiLang::Ko, "summaryMode") + ":") ||
+                                 captured.contains(trStr(UiLang::En, "summaryMode") + ":");
+            const bool hasFolder = captured.contains(trStr(UiLang::Ko, "summaryFolder") + ":") ||
+                                   captured.contains(trStr(UiLang::En, "summaryFolder") + ":");
+            const bool modeShown = captured.contains(trStr(UiLang::Ko, "analyzeModeStable")) ||
+                                   captured.contains(trStr(UiLang::En, "analyzeModeStable")) ||
+                                   captured.contains(trStr(UiLang::Ko, "analyzeModeFast")) ||
+                                   captured.contains(trStr(UiLang::En, "analyzeModeFast")) ||
+                                   captured.contains(trStr(UiLang::Ko, "analyzeModeAuto")) ||
+                                   captured.contains(trStr(UiLang::En, "analyzeModeAuto"));
+            const QString folderStr = QString::fromStdString((d / "media").string());
+            std::cout << "  [info] summary header mode=" << hasMode << " folder=" << hasFolder
+                      << " modeValue=" << modeShown
+                      << " folderPath=" << captured.contains(folderStr) << "\n";
+            check(hasMode && modeShown, "summary shows the matching-verification mode");
+            check(hasFolder && captured.contains(folderStr), "summary shows the scanned folder path");
         }
     }
 

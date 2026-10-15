@@ -256,6 +256,8 @@ int main(int argc, char** argv) {
       "sumVerify",
       // 0.9.4.106: 100.0% badge meaning (identical content vs perceptual)
       "identicalContent", "perceptualMatch",
+      // 0.9.4.108: detailed-log summary header rows (mode + scanned folder)
+      "summaryMode", "summaryFolder",
     };
     int missing = 0;
     for (const char* k : kKeys) {
