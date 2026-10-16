@@ -12,6 +12,10 @@
 // - dataset fingerprint equals the fingerprint of the scanned root
 // - cancelled/failed are false (no zero-masked states)
 // - the Detailed Logs dialog actually opened (result path reached)
+// - 0.9.4.112 (S4 save/exit acceptance): the dialog's REAL Save button is
+//   clicked, the file picker is driven, the record is written to disk and
+//   byte-parses equal to the telemetry record; the status shows the path;
+//   an unwritable path must report failure (never a false "saved").
 //
 // What this does NOT prove (recorded, not claimed): on-screen visual
 // rendering of the dialog (headless environment).
@@ -24,7 +28,9 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -87,15 +93,72 @@ int main(int argc, char** argv) {
   if (!strategy || strategy->currentIndex() != 0) return fail("strategy not AUTO");
 
   // The end-of-scan detailed-log dialog is modal: dismiss it on a timer.
-  // Seeing it proves the GUI result path was reached.
+  // Seeing it proves the GUI result path was reached. 0.9.4.112: the REAL
+  // Save button is clicked once; the file picker it opens is driven by
+  // selecting the target path and accepting, so the production save path
+  // (button -> picker -> file write -> status) runs end to end.
+  const auto savePath = d / "saved-log.json";
   bool dialogSeen = false;
+  bool saveClicked = false;
+  bool fileDialogHandled = false;
+  bool statusShown = false;
+  int fileDialogTicks = 0;
   QTimer closer;
   closer.setInterval(250);
   QObject::connect(&closer, &QTimer::timeout, [&]() {
-    if (QWidget* m = QApplication::activeModalWidget()) {
-      dialogSeen = true;
-      m->close();
+    QWidget* m = QApplication::activeModalWidget();
+    if (!m) return;
+    if (auto* fd = qobject_cast<QFileDialog*>(m)) {
+      // selectFile() changes the directory but SKIPS the name when the name
+      // edit has focus (the save dialog's default state), and the dialog
+      // reports paths with forward slashes. Set the name edit directly and
+      // accept only once the dialog itself reports the target path.
+      const QString want =
+          QDir::fromNativeSeparators(QString::fromStdString(savePath.string()));
+      fd->selectFile(want);
+      if (auto* le = fd->findChild<QLineEdit*>()) le->setText(want);
+      const QString got =
+          QDir::fromNativeSeparators(fd->selectedFiles().value(0));
+      if (QString::compare(got, want, Qt::CaseInsensitive) != 0) {
+        if (++fileDialogTicks > 20) { // safety valve: 5 s of re-applying
+          std::cerr << "file dialog stuck: selected=" << got.toStdString()
+                    << " want=" << want.toStdString() << " (forcing accept)\n";
+          fileDialogHandled = true;
+          QMetaObject::invokeMethod(fd, "accept");
+        }
+        return;
+      }
+      fileDialogHandled = true;
+      QMetaObject::invokeMethod(fd, "accept");
+      return;
     }
+    dialogSeen = true;
+    if (!saveClicked) {
+      for (auto* b : m->findChildren<QPushButton*>()) {
+        if (b->text().contains(QStringLiteral("JSON"))) {
+          saveClicked = true;
+          // The click opens the file picker's nested exec. It must run OUTSIDE
+          // this timer's emission: Qt does not re-enter the same timer while
+          // its handler is on the stack, so the closer could never handle the
+          // file dialog from inside the click. A zero-delay singleShot runs
+          // from the event loop instead; when click() returns, the save
+          // routine has just run, so the status text is captured before any
+          // later scan-finish message can overwrite it.
+          QTimer::singleShot(0, b, [&, b]() {
+            b->click();
+            // The status shows the path the file dialog returned (forward
+            // slashes); normalize both sides before searching.
+            const QString want =
+                QDir::fromNativeSeparators(QString::fromStdString(savePath.string()));
+            for (auto* lb : w.findChildren<QLabel*>())
+              if (QDir::fromNativeSeparators(lb->text()).contains(want, Qt::CaseInsensitive))
+                statusShown = true;
+          });
+          return;
+        }
+      }
+    }
+    m->close();
   });
   closer.start();
 
@@ -113,6 +176,16 @@ int main(int argc, char** argv) {
   }
   QApplication::processEvents();
   if (!dialogSeen) return fail("detailed-log dialog never opened");
+  // The save flow (button -> file picker -> write) runs inside the modal
+  // exec; wait boundedly for it to complete.
+  {
+    QElapsedTimer saveWait;
+    saveWait.start();
+    while (!saveClicked && saveWait.elapsed() < 30000) {
+      QApplication::processEvents();
+      QThread::msleep(50);
+    }
+  }
 
   // GUI result consistency: exactly 1 group rendered.
   auto* tree = w.findChild<QTreeWidget*>("imgTree");
@@ -154,7 +227,23 @@ int main(int argc, char** argv) {
   if (dataset["fingerprint"].toString().toStdString() != fp.fingerprint)
     return fail("telemetry fingerprint != root fingerprint");
 
+  // ---- 0.9.4.112 (S4 save/exit acceptance) ----
+  if (!saveClicked) return fail("detailed-log Save button never appeared");
+  if (!fileDialogHandled) return fail("save file dialog never appeared");
+  std::error_code sec;
+  if (!fs::exists(savePath, sec)) return fail("saved detailed log file missing");
+  std::ifstream in(savePath, std::ios::binary);
+  const std::string saved((std::istreambuf_iterator<char>(in)),
+                          std::istreambuf_iterator<char>());
+  const QJsonDocument savedDoc = QJsonDocument::fromJson(QByteArray::fromStdString(saved));
+  if (!savedDoc.isObject() || savedDoc != doc)
+    return fail("saved record != telemetry record");
+  if (!statusShown) return fail("status does not show the saved path");
+  // Failure branch: an unwritable path must report failure, never success.
+  if (w.testSaveDetailedLog(QString::fromStdString((d / "no_such_dir" / "x.json").string())))
+    return fail("unwritable save path reported success");
+
   fs::remove_all(d, ec);
-  std::cout << "detailed_log_acceptance=ok groups=1 purpose=UserDiagnostic\n";
+  std::cout << "detailed_log_acceptance=ok groups=1 purpose=UserDiagnostic save=ok\n";
   return 0;
 }

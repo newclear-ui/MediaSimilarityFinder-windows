@@ -1778,15 +1778,24 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
     const QString path = QFileDialog::getSaveFileName(this, trStr(lang(), "detailLogSave"),
         QCoreApplication::applicationDirPath() + "/" + name, "JSON (*.json)");
     if (path.isEmpty()) return;
-    QFile f(path);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(json.toUtf8()) >= 0)
-      statusMsg_->setText(trStr(lang(), "detailLogSaved") + path);
-    else
-      statusMsg_->setText(trStr(lang(), "detailLogSaveFail"));
+    saveDetailedLogTo(path, json);
   });
   connect(close, &QPushButton::clicked, &dlg, &QDialog::accept);
   dlg.resize(620, 480);
   dlg.exec();
+}
+// 0.9.4.112 (S4): save unit behind the dialog's Save button. The old
+// `write() >= 0` accepted a zero/partial write as success; the exact byte
+// count is required so "Detailed log saved" never lies.
+bool MainWindow::saveDetailedLogTo(const QString& path, const QString& json) {
+  const QByteArray bytes = json.toUtf8();
+  QFile f(path);
+  if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(bytes) == bytes.size()) {
+    statusMsg_->setText(trStr(lang(), "detailLogSaved") + path);
+    return true;
+  }
+  statusMsg_->setText(trStr(lang(), "detailLogSaveFail"));
+  return false;
 }
 void MainWindow::scanFinished(QString msg) {
   // Entry/exit trace for hang diagnosis. If a future "stuck popup" report

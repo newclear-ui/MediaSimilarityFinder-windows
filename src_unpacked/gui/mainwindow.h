@@ -122,6 +122,12 @@ public:
   // perceptually identical (watermark/sticker/re-encode/crop variant). Shown
   // next to the percentage so "100%" no longer reads as "same file" blindly.
   int testContentFlag(const QString& path) const { return contentFlag_.value(path, 0); }
+  // 0.9.4.112 (S4): write the last detailed-log record through the exact
+  // production save routine (the dialog's Save button only adds the file
+  // picker on top). Returns true when the record was written.
+  bool testSaveDetailedLog(const QString& path) {
+    return !lastTelemetryJson_.isEmpty() && saveDetailedLogTo(path, lastTelemetryJson_);
+  }
   // Mark-state probe (0.9.4.99): all marked paths. Pins reference-exclusion
   // (the group checkbox never auto-marks paths[0]).
   QStringList testMarkedPaths() const { return QStringList(marked_.begin(), marked_.end()); }
@@ -230,6 +236,10 @@ private:
   void refreshGroupList(bool append=false); // middle pane from groups_ (append=extend only)
   void refreshFileViews();       // right grid+list from selected group
   void refreshDetail();          // tabs for current file
+  // 0.9.4.112 (S4): the detailed-log save path as a unit — the dialog's Save
+  // button calls this after the file picker; the acceptance test drives it
+  // directly. Returns false (and shows the failure status) when not written.
+  bool saveDetailedLogTo(const QString& path, const QString& json);
   void refreshSummary(const msf::SearchReport* r=nullptr);
   void updateGpuLabel();
   QString gpuStateText() const;
