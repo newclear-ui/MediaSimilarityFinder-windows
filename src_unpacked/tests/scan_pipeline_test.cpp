@@ -1,5 +1,10 @@
 #include "scan_pipeline.h"
+#include <algorithm>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <vector>
 int main(){
  msf::ScanPipeline p;
  p.add({"a.jpg",msf::MediaKind::Image,10,1,0xFFFF});
@@ -57,25 +62,56 @@ int main(){
  // stats instead of grinding through every pair.
  auto cut=big.analyze(8,{},[](){return true;});
  if(!(cut.candidates<full.candidates)) return 22;
- // 0.9.4.106: the content-identity flag distinguishes byte-identical copies
- // (size + quick hash equal) from hash-identical derivatives. Both pairs are
- // 100.0% (distance 0); only the first carries the badge flag.
- {
-  msf::ScanPipeline idp;
-  msf::MediaFile ia{"ia.jpg",msf::MediaKind::Image,10,1,0xABCD};
-  msf::MediaFile ib{"ib.jpg",msf::MediaKind::Image,10,1,0xABCD};
-  ia.quickHash="h1"; ib.quickHash="h1";
-  idp.add(ia); idp.add(ib);
-  auto si=idp.analyze(8);
-  if(si.matches.size()!=1||!si.matches[0].contentIdentical) return 33;
-  msf::ScanPipeline dv;
-  msf::MediaFile da{"da.jpg",msf::MediaKind::Image,10,1,0xABCD};
-  msf::MediaFile db{"db.jpg",msf::MediaKind::Image,10,1,0xABCD};
-  da.quickHash="h1"; db.quickHash="h2";
-  dv.add(da); dv.add(db);
-  auto sd=dv.analyze(8);
-  if(sd.matches.size()!=1||sd.matches[0].contentIdentical) return 34;
-  std::cout<<"content_identical_flag=ok\n";
- }
+  // 0.9.4.106/0.9.4.113: the content-identity flag distinguishes byte-identical
+  // copies from hash-identical derivatives. Both pairs are 100.0% (distance 0);
+  // only the first carries the badge flag. 0.9.4.113 (audit B1): the 64 KiB
+  // quick hash is only a candidate gate — "identical" now requires a full byte
+  // comparison, so same-size/same-prefix files with different tails must NOT
+  // carry the flag (this fixture reproduced the mislabel before the fix).
+  {
+    namespace fs = std::filesystem;
+    const auto idDir = fs::temp_directory_path() / "msf_scan_pipeline_id";
+    std::error_code idEc;
+    fs::remove_all(idDir, idEc);
+    fs::create_directories(idDir, idEc);
+    const auto writeFile = [&](const char* name, std::size_t size, unsigned char fill,
+                               std::size_t tailStart, unsigned char tailFill) {
+      std::vector<char> b(size, (char)fill);
+      if (tailStart < size) std::fill(b.begin() + (std::ptrdiff_t)tailStart, b.end(), (char)tailFill);
+      std::ofstream f(idDir / name, std::ios::binary);
+      f.write(b.data(), (std::streamsize)b.size());
+    };
+    writeFile("same_a.bin", 200000, 0x5A, 200000, 0x00);   // identical pair
+    writeFile("same_b.bin", 200000, 0x5A, 200000, 0x00);
+    writeFile("adv_a.bin", 200000, 0x5A, 65536, 0x00);     // same first 64 KiB
+    writeFile("adv_b.bin", 200000, 0x5A, 65536, 0xFF);     // different tail
+
+    msf::ScanPipeline idp;
+    msf::MediaFile ia{(idDir / "same_a.bin").string(), msf::MediaKind::Image, 200000, 1, 0xABCD};
+    msf::MediaFile ib{(idDir / "same_b.bin").string(), msf::MediaKind::Image, 200000, 1, 0xABCD};
+    ia.quickHash = "h1"; ib.quickHash = "h1";
+    idp.add(ia); idp.add(ib);
+    auto si = idp.analyze(8);
+    if (si.matches.size() != 1 || !si.matches[0].contentIdentical) return 33;
+
+    msf::ScanPipeline adv;
+    msf::MediaFile aa{(idDir / "adv_a.bin").string(), msf::MediaKind::Image, 200000, 1, 0xABCD};
+    msf::MediaFile ab{(idDir / "adv_b.bin").string(), msf::MediaKind::Image, 200000, 1, 0xABCD};
+    aa.quickHash = "h1"; ab.quickHash = "h1"; // gate passes; bytes differ
+    adv.add(aa); adv.add(ab);
+    auto sAdv = adv.analyze(8);
+    if (sAdv.matches.size() != 1 || sAdv.matches[0].contentIdentical) return 35;
+
+    msf::ScanPipeline dv;
+    msf::MediaFile da{"da.jpg", msf::MediaKind::Image, 10, 1, 0xABCD};
+    msf::MediaFile db{"db.jpg", msf::MediaKind::Image, 10, 1, 0xABCD};
+    da.quickHash = "h1"; db.quickHash = "h2";
+    dv.add(da); dv.add(db);
+    auto sd = dv.analyze(8);
+    if (sd.matches.size() != 1 || sd.matches[0].contentIdentical) return 34;
+
+    fs::remove_all(idDir, idEc);
+    std::cout << "content_identical_flag=ok\n";
+  }
  msf::ScanPipeline mixed; mixed.add({"i1",msf::MediaKind::Image,1,1,0x1234}); mixed.add({"i2",msf::MediaKind::Image,1,1,0x1235}); mixed.add({"v1",msf::MediaKind::Video,1,1,0x1234}); mixed.add({"v2",msf::MediaKind::Video,1,1,0x1235}); auto ms=mixed.analyze(1); if(ms.possiblePairs!=2) return 8; std::cout<<"mixed_kind=ok\n"; std::cout<<"scan_pipeline=ok\n";return 0;
 }

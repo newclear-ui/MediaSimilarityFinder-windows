@@ -1,6 +1,7 @@
 #include <cmath>
 #include "media_search_engine.h"
 #include "backend_log.h"
+#include "dataset_fingerprint.h"
 #include "image_verify.h"
 #include "semver.h"
 #include "path_utils.h"
@@ -59,21 +60,34 @@ bool MediaSearchEngine::saveMatches(const std::vector<SearchMatch>& matches){
 static void loadVideoAnchors(const VideoFingerprintEngine& engine, MediaFile& mf);
 std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
   std::vector<SearchMatch> out; const auto s=db_.loadMatches(); out.reserve(s.size());
-  // 0.9.4.106: content-identity flag for the display badge. candidateStates_ is
-  // the DB snapshot taken at open — the same generation the quick-load reads —
-  // so the join costs no extra table scan on the hot path.
+  // 0.9.4.106/0.9.4.113: content-identity flag for the display badge.
+  // candidateStates_ is the DB snapshot taken at open — the same generation
+  // the quick-load reads — so the join costs no extra table scan. The quick
+  // hash is only the candidate gate; the badge requires full-content hash
+  // equality (audit B1), memoized per path so one load reads each candidate
+  // file at most once.
   std::vector<FileState> local;
   const std::vector<FileState>* sp=&candidateStates_;
   if(candidateStates_.empty()){ local=db_.all(); sp=&local; }
   std::unordered_map<std::string,std::pair<std::uint64_t,const std::string*>> id;
   id.reserve(sp->size()*2+1);
   for(const auto& x:*sp) id.emplace(x.path,std::make_pair(x.size,&x.quickHash));
+  std::unordered_map<std::string,std::string> fullMemo;
+  const auto fullHex=[&](const std::string& p)->const std::string&{
+    const auto it=fullMemo.find(p);
+    if(it!=fullMemo.end()) return it->second;
+    std::string hex; sha256FileHex(p,hex);
+    return fullMemo.emplace(p,std::move(hex)).first->second;
+  };
   for(const auto& m:s){
     SearchMatch sm{m.left,m.right,m.percent};
     const auto a=id.find(m.left), b=id.find(m.right);
     if(a!=id.end()&&b!=id.end()&&a->second.first==b->second.first&&
-       !a->second.second->empty()&&*a->second.second==*b->second.second)
-      sm.contentIdentical=true;
+       a->second.first<=kContentConfirmMaxBytes&&
+       !a->second.second->empty()&&*a->second.second==*b->second.second){
+      const std::string& ha=fullHex(m.left); const std::string& hb=fullHex(m.right);
+      if(!ha.empty()&&ha==hb) sm.contentIdentical=true;
+    }
     out.push_back(std::move(sm));
   }
   return out;

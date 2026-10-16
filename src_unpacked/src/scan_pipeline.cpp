@@ -1,6 +1,8 @@
 #include "scan_pipeline.h"
 #include "backend_log.h"
 #include "candidate_index.h"
+#include "dataset_fingerprint.h"
+#include "path_utils.h"
 #include "similarity.h"
 #include "image_verify.h"
 #include "video_fingerprint.h"
@@ -17,6 +19,7 @@ void ScanPipeline::add(const MediaFile& f){files_.push_back(f);}
 void ScanPipeline::clear(){
  files_.clear(); imageMap_.clear(); videoMap_.clear();
  imageIdx_.clear(); videoIdx_.clear(); vc4_.clear(); vc1_.clear(); vc916_.clear(); c4_.clear(); c1_.clear(); c916_.clear();
+ { std::lock_guard<std::mutex> g(fullHashMutex_); fullHashCache_.clear(); }
 }
 static double thresholdFor(unsigned maxDistance){
   return 100.0-100.0*std::min<unsigned>(64,maxDistance)/64.0;
@@ -33,12 +36,34 @@ static bool durationGate(const MediaFile&a,const MediaFile&b){
   if(lo<kMinDurationSeconds) return true;
   return hi/lo<=kMaxDurationRatio;
 }
-// 0.9.4.106: content identity for the display badge. Size + scanner quick hash
-// equal means the two files are byte-identical in practice (same 64 KiB head
-// and length); a hash-identical pair that fails this test is a derivative
-// (watermark/sticker/re-encode/crop) and is shown as "지각 동일" instead.
-static bool sameContent(const MediaFile& a, const MediaFile& b) {
-  return a.size == b.size && !a.quickHash.empty() && a.quickHash == b.quickHash;
+// 0.9.4.106/0.9.4.113 (audit B1): content identity for the display badge. The
+// 64 KiB scanner quick hash is only a CANDIDATE gate; a pair that passes it is
+// confirmed by full-content SHA-256 equality, so same-size files that share
+// the first 64 KiB but differ later can never carry the "동일 내용" badge again
+// (the audit reproduced that mislabel). The per-file hash is memoized for the
+// scan, so each distinct candidate file is read at most once; files above the
+// confirmation cap stay unconfirmed (false negatives allowed, false positives
+// not).
+bool ScanPipeline::sameContent(const MediaFile& a, const MediaFile& b) const {
+  if (a.size != b.size || a.quickHash.empty() || a.quickHash != b.quickHash) return false;
+  if (a.size > kContentConfirmMaxBytes) return false; // cost cap: never claim
+  const auto full = [this](const std::string& p) -> std::string {
+    {
+      std::lock_guard<std::mutex> g(fullHashMutex_);
+      const auto it = fullHashCache_.find(p);
+      if (it != fullHashCache_.end()) return it->second;
+    }
+    std::string hex; // read outside the lock: I/O must not serialize the shards
+    sha256FileHex(p, hex);
+    std::lock_guard<std::mutex> g(fullHashMutex_);
+    const auto it = fullHashCache_.find(p); // another worker may have won the race
+    if (it != fullHashCache_.end()) return it->second;
+    fullHashCache_.emplace(p, hex);
+    return hex;
+  };
+  const std::string ha = full(a.path);
+  const std::string hb = full(b.path);
+  return !ha.empty() && ha == hb;
 }
 // Full pairwise verdict: normal/mirror Hamming plus same-ratio crop aware
 // comparison. Shared verbatim by batch analyze() and incremental addAndMatch()

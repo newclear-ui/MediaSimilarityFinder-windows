@@ -37,14 +37,48 @@ int main() {
   }
   if (red * 2 < n) { std::cerr << "red pixels " << red << "/" << n << "\n"; return 3; }
 #endif
-  // FFmpeg RGB24 lane: testsrc color bars must come back colorful.
+  // FFmpeg RGB24 lane: testsrc color bars must come back colorful. In a
+  // no-FFmpeg build this lane depends on the ffmpeg CLI fallback; when neither
+  // the native libs nor the CLI are available the lane is SKIPped, not failed
+  // (brief R1, 0.9.4.113: a supported configuration must not be classified as
+  // a product defect). Full builds keep the strict behavior.
+#ifdef MSF_HAS_FFMPEG
+  const bool ffmpegLaneRequired = true;
+#else
+  const bool ffmpegLaneRequired = false;
+#endif
   const std::string vp = (d / "bars.mp4").string();
   std::string gen = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc=size=160x90:rate=10:duration=3 -c:v mpeg4 -pix_fmt yuv420p \"" + vp + "\"";
-  if (std::system(gen.c_str()) != 0) return 4;
+  if (std::system(gen.c_str()) != 0) {
+    if (!ffmpegLaneRequired) {
+      fs::remove_all(d, ec);
+      std::cout << "color_thumb=ok wic=ok ffmpeg_lane=skip (no-ffmpeg build, no CLI)\n";
+      return 0;
+    }
+    return 4;
+  }
   msf::VideoDecoder dec;
-  if (!dec.open(vp)) return 5;
+  if (!dec.open(vp)) {
+    if (!ffmpegLaneRequired) {
+      fs::remove_all(d, ec);
+      std::cout << "color_thumb=ok wic=ok ffmpeg_lane=skip (no-ffmpeg build, no decode lane)\n";
+      return 0;
+    }
+    return 5;
+  }
   msf::ColorFrame cf;
-  if (!dec.frameAtColor(1.0, 80, 45, cf)) return 6;
+  if (!dec.frameAtColor(1.0, 80, 45, cf)) {
+    dec.close();
+    // No-FFmpeg builds do not implement the RGB24 frame lane at all
+    // (frameAtColor returns false by design), so this is a configuration
+    // capability gap, not a product defect (brief R1).
+    if (!ffmpegLaneRequired) {
+      fs::remove_all(d, ec);
+      std::cout << "color_thumb=ok wic=ok ffmpeg_lane=skip (no-ffmpeg build, frame lane unavailable)\n";
+      return 0;
+    }
+    return 6;
+  }
   dec.close();
   if (cf.rgb.size() != (size_t)cf.width * cf.height * 3) return 7;
   std::size_t colorful = 0; const std::size_t m = (size_t)cf.width * cf.height;
@@ -55,6 +89,6 @@ int main() {
   }
   if (colorful * 20 < m) { std::cerr << "colorful pixels " << colorful << "/" << m << "\n"; return 8; }
   fs::remove_all(d, ec);
-  std::cout << "color_thumb=ok\n";
+  std::cout << "color_thumb=ok wic=ok ffmpeg=ok\n";
   return 0;
 }

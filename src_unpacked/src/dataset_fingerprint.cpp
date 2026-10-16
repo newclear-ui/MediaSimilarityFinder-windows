@@ -120,6 +120,11 @@ std::string sha256Hex(const unsigned char* data, std::size_t len) {
     return s.finish();
 }
 
+bool sha256FileHex(const std::string& path, std::string& outHex) {
+    std::uint64_t sizeOut = 0;
+    return hashWholeFile(path_from_utf8(path), outHex, sizeOut, nullptr);
+}
+
 std::string canonicalRelativePath(const std::string& root, const std::string& file) {
     // Both inputs are UTF-8 by product convention. A narrow fs::path(string)
     // would reinterpret them as the ANSI code page and throw

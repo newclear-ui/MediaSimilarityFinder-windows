@@ -3,7 +3,9 @@
 #include "analyze_telemetry.h"
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <functional>
 namespace msf {
@@ -11,11 +13,15 @@ class VideoFingerprintEngine; // cache-backed temporal source (optional, see bel
 class GpuBackend;
 enum class MediaKind { Unknown, Image, Video };
 struct MediaFile { std::string path; MediaKind kind=MediaKind::Unknown; std::uint64_t size=0,modified=0,fingerprint=0,mirrorFingerprint=0; std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0,mirrorCrop4x3=0,mirrorCrop1x1=0,mirrorCrop9x16=0; double duration=0; std::vector<std::uint64_t> anchors;
-  // 0.9.4.106: scanner quick hash (64 KiB head). Pairs whose size AND quick
-  // hash match are content-identical copies; a hash-identical pair with
-  // different content (watermark/sticker/re-encode) keeps the same percent but
-  // loses this flag, which the GUI shows as "지각 동일" instead of "동일 내용".
+  // 0.9.4.106/0.9.4.113: scanner quick hash (64 KiB head). Size + quick-hash
+  // equality is only the CANDIDATE gate; the identical-content badge requires
+  // full-content hash confirmation (ScanPipeline::sameContent), so a same-size
+  // pair with a different tail is never labeled "동일 내용" (audit B1).
   std::string quickHash; };
+// 0.9.4.113 (audit B1): per-file confirmation cap for the identical-content
+// badge. Above this size a candidate pair stays unconfirmed and loses the
+// badge: false negatives are allowed, false positives are not.
+inline constexpr std::uint64_t kContentConfirmMaxBytes = 512ull * 1024 * 1024;
 struct MediaMatch { std::size_t left=0,right=0; double percent=0; bool contentIdentical=false; };
 struct ScanStats { std::size_t files=0,indexed=0,candidates=0,groups=0,possiblePairs=0; double candidateReductionPercent=0; std::vector<MediaMatch> matches; std::size_t videoCandidates=0,videoTemporalChecks=0;
   // D9a: per-stage timing and verify counters from the batch analyze() pass.
@@ -70,5 +76,14 @@ public:
   const VideoFingerprintEngine* temporalEngine_ = nullptr;
   GpuBackend* videoGpu_ = nullptr;
   std::atomic<bool>* videoGpuActivity_ = nullptr;
+  // 0.9.4.113 (audit B1): candidate gate + full-content hash confirmation,
+  // memoized per file (one read per distinct candidate file per scan) so the
+  // live and final passes share the work. sameContent runs on parallel shard
+  // and batch workers, so the memo is mutex-guarded (an unsynchronized map was
+  // corrupted by concurrent inserts and hung the final pass — found by the
+  // full suite run). Cleared by clear() (a new scan).
+  bool sameContent(const MediaFile& a, const MediaFile& b) const;
+  mutable std::mutex fullHashMutex_;
+  mutable std::unordered_map<std::string, std::string> fullHashCache_; // path -> sha256 hex
 };
 }

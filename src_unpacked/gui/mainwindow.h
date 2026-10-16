@@ -128,6 +128,10 @@ public:
   bool testSaveDetailedLog(const QString& path) {
     return !lastTelemetryJson_.isEmpty() && saveDetailedLogTo(path, lastTelemetryJson_);
   }
+  // 0.9.4.113 (B2): last detailed-log telemetry JSON received from the backend
+  // over the real process path. Lets tests verify settings -> engine ->
+  // telemetry (the same record the dialog displays) without a file log.
+  QString testLastTelemetryJson() const { return lastTelemetryJson_; }
   // Mark-state probe (0.9.4.99): all marked paths. Pins reference-exclusion
   // (the group checkbox never auto-marks paths[0]).
   QStringList testMarkedPaths() const { return QStringList(marked_.begin(), marked_.end()); }

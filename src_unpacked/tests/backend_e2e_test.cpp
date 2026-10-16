@@ -265,10 +265,17 @@ int main(int argc, char** argv) {
     const qint64 pid1 = supervisor->backendPid();
     check(pid1 > 0, "backend PID known");
     check(pid1 != guiPid, "GUI PID != Backend PID (separate OS processes)");
+    // 0.9.4.113 (B2): the settings value must reach the engine AND the record
+    // the GUI receives. Fast(A) here; the telemetry's analyze.mode is the
+    // same field the detailed-log summary displays.
+    QSettings().setValue("ui/analyzeMode", 1);
+    QSettings().sync();
     scan->click();
     QApplication::processEvents();
     pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1 scan finished");
     if (!gOk) return 3;
+    pumpUntil([&] { return w.testLastTelemetryJson().contains(QStringLiteral("\"mode\":\"A\"")); },
+              15000, "test1 telemetry records Fast(A) from the settings value");
     check(grid->count() >= 2, "test1 groups displayed");
     check(finishedCount == 1, "test1 finished event observed");
     std::cout << "  [info] guiPid=" << guiPid << " backendPid=" << pid1 << "\n";
@@ -334,6 +341,9 @@ int main(int argc, char** argv) {
         const int finishedBefore = finishedCount;
         gapLines = 0;
         batchEntries = 0;
+        // 0.9.4.113 (B2): back to the default Stable(B) for this scan.
+        QSettings().setValue("ui/analyzeMode", 0);
+        QSettings().sync();
         const qint64 g4Pid = supervisor->backendPid();
         const quint64 rssBefore = rssMB(g4Pid);
         scan->click();
@@ -345,6 +355,8 @@ int main(int argc, char** argv) {
         const quint64 rssAfter = rssMB(g4Pid);
         std::cout << "  [info] test4 rssMB before=" << rssBefore << " during=" << rssDuring
                   << " after=" << rssAfter << " batchEntries=" << batchEntries << "\n";
+        pumpUntil([&] { return w.testLastTelemetryJson().contains(QStringLiteral("\"mode\":\"B\"")); },
+                  15000, "test4 telemetry records Stable(B) from the settings value");
         check(gapLines == 0, "test4 no backend event gaps (nothing dropped)");
         check(batchEntries > 0, "test4 match batches delivered after the stall");
         check(grid->count() == rowsControl, "test4 every group delivered after the stall");

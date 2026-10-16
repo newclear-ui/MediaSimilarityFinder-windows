@@ -62,6 +62,11 @@ struct DatasetHashCache {
 // primitive is the per-file content hash inside the manifest.
 std::string sha256Hex(const unsigned char* data, std::size_t len);
 
+// 0.9.4.113 (audit B1): streaming full-content SHA-256 of one file, exposed so
+// the identical-content badge can confirm candidate pairs with a single read
+// per file. Returns false (outHex untouched) on open/read failure; never throws.
+bool sha256FileHex(const std::string& path, std::string& outHex);
+
 // Canonical relative path form used inside the manifest: 'a/b/c.png' with
 // forward slashes, no leading or trailing separator, no case folding.
 // Case folding is omitted on purpose: it would merge genuinely distinct
