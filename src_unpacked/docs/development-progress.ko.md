@@ -21,8 +21,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.112이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
-> G4/G6는 **0.9.4.111에서 검증 완료**(G4 스트레스 PASS, G6 실결함 2건 수정 + 부모 급사 E2E PASS), S4 저장/종료 acceptance는 **0.9.4.112에서 완료**(실버튼 E2E, 저장 오판 제거; 최종 CLOSED는 product acceptance 연계)로 큐에서 제거됐다.
+> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.113이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
+> G4/G6는 **0.9.4.111에서 검증 완료**(G4 스트레스 PASS, G6 실결함 2건 수정 + 부모 급사 E2E PASS), S4 저장/종료 acceptance는 **0.9.4.112에서 완료**, 독립 감사 항목 B1(배지 전체 내용 확인)·B2(분석 모드 round-trip)·B3(color_thumb no-FFmpeg SKIP)·B7(문서 정합화)는 **0.9.4.113에서 완료**로 큐에서 제거됐다.
 > 과거 2026-10-07의 .62 crash-response / .63 GUI usability 분리는 당시 기록으로 유지하며, 현재 큐는 아래 표가 기준이다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
@@ -30,9 +30,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 0 | **0.9.4.105/.106 + 0.9.4.64+** | **현장 GUI acceptance** | .105 대량 삭제/이동·진행창·preview/index·`delete/move/prune/forget` 로그; .106 파생본/동일 복사본 배지 + real Backend IPC `identical`; 설정/resize/filename selection/Tiles·ListMode/traversal/Test Mode scratch 격리/crash recovery | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
 | 1 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance** | 실제 데이터의 analysis-failed·unchanged·modified 의미론, 삭제/이동 정합성, cancel/restart edge-case를 명시된 기대값과 비교 | **NOT ACCEPTED** |
 | 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture 결과를 실제 데이터셋/전체 스캔으로 확장 | **CONDITIONAL** |
-| 3 | color_thumb | **R1 fixture + no-FFmpeg PASS/SKIP** | FFmpeg 미설치/비활성 구성의 테스트 의미론을 확인한 후에만 production correction 재검토 | **PENDING / production correction 전** |
-| 4 | S5 | **실제 dataset product benchmark** | 제품 acceptance 이후 controlled benchmark 실행 | **GATE PENDING** |
-| 5 | S6 | **measurement / data-mining gate** | S5 실측 표본을 이용해 build/case 비교 후보와 gate 판정 | **DEFERRED / S5 선행** |
+| 3 | S5 | **실제 dataset product benchmark** | 제품 acceptance 이후 controlled benchmark 실행 | **GATE PENDING** |
+| 4 | S6 | **measurement / data-mining gate** | S5 실측 표본을 이용해 build/case 비교 후보와 gate 판정 | **DEFERRED / S5 선행** |
 
 ### 측정 사이드 트랙 (제품 acceptance Gate와 별도)
 
@@ -59,8 +58,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 > **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
 > 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
 >
-> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 0.9.4.89 증분 dataset fingerprint → 0.9.4.90 그룹 정렬 없음 + 스캔 중 정렬 잠금 → 0.9.4.91 그룹 정렬 없음 최상단/기본값 + append-only 목록 → 0.9.4.92 쌍검증 DBV-1/DBV-2 → 0.9.4.93 불러오기(인덱스 로드 전용) + 팝업 분리 → 0.9.4.94 완료 경로 중복 제거 + 스크롤 점프 수정 → 0.9.4.95 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 → 0.9.4.96 자원 정책 UI 개편 → 0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 → 0.9.4.98 테스트 버튼 표시 설정 → 0.9.4.99 종류 드롭다운 + 대표 제외 마크 + 상세정보 소실 수정 → 0.9.4.100 상세정보 원격 진단 + 파일명 견고화 → 0.9.4.101 열기 경로 상세 동기화 → 0.9.4.102 상세 폼 동기 활성화 → 0.9.4.103 체크 우선 파일 액션 + 파일바 구분선 → 0.9.4.104 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측 → 0.9.4.105 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화 → 0.9.4.106 100.0% 의미 표시 (동일 내용 / 지각 동일 배지) → 0.9.4.107 A/AB 타깃 열거 (변경 파일 한정 후보 탐색) → 0.9.4.108 상세 로그 요약 헤더 (검색 방법 + 검색 폴더) → 0.9.4.109 보기 모드 전환 겹침 재발 수정 (웜 캐시 아이콘 재적용) → 0.9.4.110 보기 전환 후 휠 속도 복원 (List 단위 잠금 수정) → 0.9.4.111 G4 IPC backpressure + G6 Job Object/GUI 종료 검증 (프로세스 분리 release gate) → 0.9.4.112 S4 상세 로그 저장/종료 acceptance (저장 단위 분리 + 실버튼 E2E) → manual GUI acceptance → 제품 acceptance 재확인
-> → S4 final acceptance → XMP coverage / color_thumb R1 → S5 product benchmark → S6 measurement gate.
+> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 0.9.4.89 증분 dataset fingerprint → 0.9.4.90 그룹 정렬 없음 + 스캔 중 정렬 잠금 → 0.9.4.91 그룹 정렬 없음 최상단/기본값 + append-only 목록 → 0.9.4.92 쌍검증 DBV-1/DBV-2 → 0.9.4.93 불러오기(인덱스 로드 전용) + 팝업 분리 → 0.9.4.94 완료 경로 중복 제거 + 스크롤 점프 수정 → 0.9.4.95 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 → 0.9.4.96 자원 정책 UI 개편 → 0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 → 0.9.4.98 테스트 버튼 표시 설정 → 0.9.4.99 종류 드롭다운 + 대표 제외 마크 + 상세정보 소실 수정 → 0.9.4.100 상세정보 원격 진단 + 파일명 견고화 → 0.9.4.101 열기 경로 상세 동기화 → 0.9.4.102 상세 폼 동기 활성화 → 0.9.4.103 체크 우선 파일 액션 + 파일바 구분선 → 0.9.4.104 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측 → 0.9.4.105 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화 → 0.9.4.106 100.0% 의미 표시 (동일 내용 / 지각 동일 배지) → 0.9.4.107 A/AB 타깃 열거 (변경 파일 한정 후보 탐색) → 0.9.4.108 상세 로그 요약 헤더 (검색 방법 + 검색 폴더) → 0.9.4.109 보기 모드 전환 겹침 재발 수정 (웜 캐시 아이콘 재적용) → 0.9.4.110 보기 전환 후 휠 속도 복원 (List 단위 잠금 수정) → 0.9.4.111 G4 IPC backpressure + G6 Job Object/GUI 종료 검증 (프로세스 분리 release gate) → 0.9.4.112 S4 상세 로그 저장/종료 acceptance (저장 단위 분리 + 실버튼 E2E) → 0.9.4.113 독립 감사 B1~B3·B7 반영 (동일 내용 배지 전체 확인 + 분석 모드 round-trip + no-FFmpeg SKIP) → manual GUI acceptance → 제품 acceptance 재확인
+> → XMP coverage / color_thumb R1(완료, production correction은 결정 대기) → S5 product benchmark → S6 measurement gate.
 > Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
 
 ## 완료된 주요 이정표
@@ -146,6 +145,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 보기 전환 후 휠 스크롤 속도 복원 (List 단위 잠금 수정) | **완료(0.9.4.110)** | 사용자 보고: 리스트/자세히/타일 후 아이콘 모드 복귀 시 휠이 매우 느려짐(앱 재시작 전 지속). 원인(Qt 6.11 소스 확인): ListMode의 public `setSingleStep(1)`이 `viewMayChangeSingleStep`을 잠가 아이콘 모드 자동 step(셀 크기) 갱신이 무시됨 → step=1 고정(휠=3px). 실측 수정 전 `xl=175 list=1 back=1`. 수정: `groupViewChanged`가 전환 시 두 스크롤바에 `setSingleStep(-1)`(자동 step 재허용) 후 기존 `doItemsLayout()`이 현재 모드 step 재푸시(리스트 자체 동작 불변). 테스트 phase 22(수정 전 `back=1` FAIL, 수정 후 `back=175` PASS, checks=88). 표시 전용(판정·저장·스크롤 계약 불변). engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. 실기 육안 확인 필요. |
 | G4 IPC backpressure + G6 Job Object/GUI 종료 검증 (프로세스 분리 release gate) | **완료(0.9.4.111)** | G6 실결함 2건: ① `shutdown()`의 `state()` 폴링은 Qt가 `WinEventAct`를 이벤트 루프 디스패치에서만 처리해 종료를 관측 못 함 → 매 앱 종료마다 3 s 전액 소모(실측 3049 ms). 수정: `disconnect`+`waitForFinished`(핸들 직접 대기, 재진입 차단) → **6 ms**. ② `assignJobObject()` Win32 반환값 3곳 무시(무로그) → 전부 검사+`GetLastError` 로그, 문서화 권한으로 교체. G4는 결함 미확정 — `MSF_TEST_BACKEND_WEDGE` 시임 + `backend_e2e_test` Test 4(3초 소비자 정지: 갭 0·600건 전달·RSS 20/20/21 MB)·Test 5(3049→6 ms, 수정 전 FAIL 재현)·Test 6(부모 급사 시 Job 회수 + `--no-job` 대조군 생존 → Job 필수성 입증). checks=37. 판정·저장·프로토콜·engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. 실기(종료 체감) 확인 필요. |
 | S4 GUI 상세 로그 저장/종료 acceptance (저장 단위 분리 + 실버튼 E2E) | **완료(0.9.4.112)** | 저장 로직을 `MainWindow::saveDetailedLogTo`로 분리하고 **부분/0바이트 기록을 성공으로 표시하던 오판(`write() >= 0`) 제거**(정확한 바이트 수 요구). `scan_detailed_log_acceptance_test` 확장: 실제 Save 버튼(0지연 singleShot — Qt 타이머 재진입 한계 우회) → 파일 피커 이름 에디트 직접 설정(`selectFile` 포커스 가드) + 목표 경로 보고 시에만 accept → 저장 직후 상태 캡처. 검증: 파일 존재·저장 레코드 == 텔레메트리(JSON 동등)·상태 경로·쓰기 불가 경로 false·종료 정상. `--repeat until-fail:3` PASS. S4 brief 현재 상태 갱신(기능 acceptance 자동화 PASS, 화면 육안 headless "하지 않음" 유지, 최종 CLOSED는 product acceptance 연계). engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. |
+| 독립 감사 B1~B3·B7 반영 (동일 내용 배지 전체 확인 + 분석 모드 round-trip + no-FFmpeg SKIP) | **완료(0.9.4.113)** | B1(FAIL 재현): 배지가 크기+앞 64 KiB quick hash만 비교 → 뒤가 다른 파일 `identical=true`(프로브 재현). 수정: quick hash는 후보 게이트로만, 통과 쌍은 **전체 내용 SHA-256 동일성**(파일당 1회 메모, 512 MiB 초과 배지 생략), 빠른 로드 경로 동일 계약. **검증 중 실결함(데이터 레이스)**: 무잠금 메모를 16개 샤드 동시 삽입 → 맵 손상 → 최종 B 패스 행(Heisenbug) → `std::mutex`(I/O 락 밖) 수정, 3회 연속 PASS. 비용 실측: 추가 읽기 **약 1.5 GiB/전체 스캔**(사용자 인덱스). B2: 설정 Fast(A)→수신 텔레메트리 `"mode":"A"`/Stable(B) `"mode":"B"` round-trip(checks 37→39; `.107` 원인 미확정 유지). B3: no-FFmpeg 구성 lane 불가 시 SKIP(exit 0) — 실제 no-FFmpeg configure 검증. B7: matrix S4 행·progress 문구 정합화. 판정·스키마·프로토콜·engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -232,12 +232,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.112 (S4 GUI 상세 로그 저장/종료 acceptance — 저장 단위 분리 + 실버튼 E2E) |
+| 기준 코드 | 0.9.4.113 (독립 감사 B1~B3·B7 반영 — 동일 내용 배지 전체 확인 + 분석 모드 round-trip + no-FFmpeg SKIP) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.112 S4 저장/종료 acceptance 완료** — 저장 단위 분리 + 부분 기록 오판 제거, 실버튼→파일 피커→기록→상태 E2E PASS(`save=ok`, 3회 반복). 직전 0.9.4.111은 G4/G6 프로세스 분리 gate 검증(종료 3049→6 ms, Job E2E). engine/DB/schema/cache 불변. 다음: 실기 육안(휠/종료 체감 + 팝업/배지 + 저장 파일 열기) + CUDA 미가용 → 제품 acceptance 재확인. S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 미착수. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
-| 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인 → S4 final acceptance** 순으로 진행한다. 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.112 |
+| 현재 노드 | **0.9.4.113 독립 감사 항목 반영 완료** — B1 배지 전체 내용 확인(검증 중 데이터 레이스 1건 발견·수정, 추가 읽기 약 1.5 GiB/스캔), B2 설정→기록 round-trip 테스트, B3 no-FFmpeg SKIP, B7 문서 정합화. 직전 0.9.4.112는 S4 저장/종료 acceptance(저장 오판 제거). engine/DB/schema/cache 불변. 다음: 실기 육안(배지 결과·추가 읽기 체감 + 휠/종료 + 팝업) + CUDA 미가용 → 제품 acceptance 재확인. S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU 122/122, GPU 123/123. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 완료(.113), production correction은 결정 대기. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인** 순으로 진행한다(S4 기능 acceptance는 0.9.4.112 완료, 최종 CLOSED 판단만 제품 acceptance와 함께). 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
+| 현재 버전 | 0.9.4.113 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

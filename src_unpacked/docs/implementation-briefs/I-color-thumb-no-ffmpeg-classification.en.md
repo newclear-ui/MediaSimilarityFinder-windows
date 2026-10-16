@@ -1,6 +1,6 @@
 # Implementation Brief — I-Color Thumb no-FFmpeg Classification (Pre-register)
 
-Status: **PRE-REGISTERED** (audit complete, before fixture/production correction)
+Status: **PRE-REGISTERED** (audit complete, before fixture/production correction) — **R1 done (0.9.4.113)**: `color_thumb_test` SKIPs (exit 0) when the lane is unavailable in a no-FFmpeg build, full builds stay strict; verified in an actual no-FFmpeg configure (`ffmpeg_lane=skip`). Production correction decision pending.
 
 ```text
 Base         v0.9.4.45 / 97db24f
@@ -170,8 +170,9 @@ Image -> video path entry : forbidden.
 ```text
 color_thumb production correction = NOT PERFORMED
 color_thumb fixture implementation = NOT PERFORMED
+R1 (no-FFmpeg PASS/SKIP semantics)  = DONE (0.9.4.113, see build-history/0.9.4.113.*)
 CPU/GPU regression for color_thumb = NOT PERFORMED (no product code change)
-S4 final GUI visual/save acceptance  = DEFERRED
+S4 final GUI visual/save acceptance  = automated PASS (0.9.4.112), on-screen visual DEFERRED
 S5 product benchmark                = DEFERRED
 S6                                = DEFERRED
 NVDEC production adoption          = DEFERRED

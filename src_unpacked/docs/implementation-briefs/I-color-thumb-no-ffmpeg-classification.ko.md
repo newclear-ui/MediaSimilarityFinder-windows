@@ -1,6 +1,6 @@
 # Implementation Brief — I-Color Thumb no-FFmpeg Classification (Pre-register)
 
-Status: **PRE-REGISTERED** (audit 완료, fixture/production 수정 이전)
+Status: **PRE-REGISTERED** (audit 완료, fixture/production 수정 이전) — **R1 완료(0.9.4.113)**: `color_thumb_test`가 no-FFmpeg 구성에서 lane 불가 시 SKIP(exit 0), 전체 빌드는 엄격 유지. 실제 no-FFmpeg configure로 `ffmpeg_lane=skip` 검증. production correction은 결정 대기.
 
 ```text
 Base         v0.9.4.45 / 97db24f
@@ -162,8 +162,9 @@ Image -> video 경로 진입 : 금지.
 ```text
 color_thumb production correction = NOT PERFORMED
 color_thumb fixture implementation = NOT PERFORMED
+R1 (no-FFmpeg PASS/SKIP semantics)  = DONE (0.9.4.113, see build-history/0.9.4.113.*)
 CPU/GPU regression for color_thumb = NOT PERFORMED (제품 코드 변경 없음)
-S4 final GUI visual/save acceptance  = DEFERRED
+S4 final GUI visual/save acceptance  = 자동화 PASS(0.9.4.112), 화면 육안 DEFERRED
 S5 product benchmark                = DEFERRED
 S6                                = DEFERRED
 NVDEC production adoption          = DEFERRED

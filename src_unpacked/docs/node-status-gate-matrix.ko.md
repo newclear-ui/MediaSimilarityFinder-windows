@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.112` (S4 GUI 상세 로그 저장/종료 acceptance — 저장 단위 분리 + 실버튼 E2E) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.113` (독립 감사 B1~B3·B7 반영 — 동일 내용 배지 전체 확인 + 분석 모드 round-trip + no-FFmpeg SKIP) · CPU CTest 122/122 · GPU CTest 123/123
 최종 갱신: 2026-10-16
 
 ## 이 문서의 역할
@@ -91,7 +91,7 @@
 | **S1** | Console entry foundation | S0 | 완료 | PASS | **CLOSED** | — | CLI 파싱 계층. production 검색 엔진과 별도 엔진 없음 | S2 | `development-progress.*` |
 | **S2** | Run / Suite benchmark core | S1 | 완료 | PASS | **CLOSED** | — | ordering/status 집계/취소/결과 보존. injected `BenchmarkExecutor` 로 production scan 경로 재사용 | S3 | `architecture/benchmark-telemetry-roadmap.*` |
 | **S3** | Benchmark storage isolation | S2 | 완료 | PASS | **CLOSED** | — | `runs.jsonl` append-only journal. `summary.json` 은 파생이며 권위 아님. `kBenchmarkSchemaVersion` 9 | S4 | `implementation-briefs/S4-*`, `S5-*` |
-| **S4** | GUI Detailed Logging | S3 | 구현 완료 | **acceptance 미완료** | **IN PROGRESS** | product acceptance 미완료 | S4 semantic reset 반영. `TelemetryPurpose{UserDiagnostic,Benchmark}` 로 GUI/CLI 분리. GUI 문자열 `[Benchmark]`→`[Detailed Logs]`. **CLOSED 로 올리지 않음** | S5 | `implementation-briefs/S4-gui-diagnostic-logging.*`, `architecture/gui-diagnostic-logging.*` |
+| **S4** | GUI Detailed Logging | S3 | 구현 완료 | **기능 acceptance PASS (0.9.4.112)** | **IN PROGRESS** | 최종 CLOSED 미선언 | S4 semantic reset 반영. `TelemetryPurpose{UserDiagnostic,Benchmark}` 로 GUI/CLI 분리. GUI 문자열 `[Benchmark]`→`[Detailed Logs]`. 저장/종료 acceptance 자동화 PASS(.112) — 화면 렌더링 육안은 headless "하지 않음" 기록. **CLOSED 로 올리지 않음** (product acceptance 연계) | S5 | `implementation-briefs/S4-gui-diagnostic-logging.*`, `architecture/gui-diagnostic-logging.*` |
 | **S5** | Console benchmark execution | S4 계약 | infra 완료 | **product benchmark 미실행** | **NOT CLOSED** | product acceptance 의존 | `runConsoleBenchmark()` 가 S3 `BenchmarkSession` + S2 `BenchmarkRunner` 재사용. `QCoreApplication` 사용으로 platform plugin 불필요. **실측 benchmark 미실행** | S6 | `implementation-briefs/S5-console-benchmark-execution.*` |
 | **S6** | Data-mining automation / measurement gate | S5 | gate 준비 | **실측 미실행** | **NOT STARTED** | 실측 dataset 필요 | threshold 는 **여전히 미정**. 보고된 조건만 만족할 뿐 임계 미정의 | S7 | `implementation-briefs/S6-data-mining-automation.*`, `S6-measurement-gate.*` |
 | **S7** | Help / usability | S6 | 미착수 | — | **NOT STARTED** | — | — | S8 | — |
@@ -106,15 +106,16 @@
 ## 현재 초점 / Current Focus
 
 ```text
-기준선           0.9.4.112 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
-활성 상태        프로세스 분리 P1–P4 완료 + G4/G6 검증 완료(.111) + S4 저장/종료 acceptance 완료(.112); .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
-다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
+기준선           0.9.4.113 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
+활성 상태        프로세스 분리 P1–P4 완료 + G4/G6 검증 완료(.111) + S4 저장/종료 acceptance 완료(.112) + 독립 감사 B1~B3·B7 반영(.113); .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
+다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → XMP coverage → S5 benchmark → S6 gate
 G4/G6 검증 완료  G4: 스트레스 PASS — 3초 소비자 정지에서 무손실(갭 0·600건 전달)·무교착·RSS 유계(20/20/21 MB). 결함 미확정(설계 검토: GUI→Backend pending 상한, Backend→GUI 백로그=산출물 크기).
                  G6: 실결함 2건 수정 — 종료 3 s 고정 지연(3049→6 ms, `waitForFinished` 핸들 대기 + 재진입 차단) + Job Object Win32 반환값 검사/로그. 부모 급사 E2E: Job이 웨지 백엔드 회수, `--no-job` 대조군 생존으로 필수성 입증.
 S4 저장/종료      실결함 수정 — 부분/0바이트 기록을 성공으로 표시하던 오판 제거(`saveDetailedLogTo`, 정확한 바이트 수). 실버튼→파일 피커→기록→상태 E2E PASS(`save=ok`, 3회 반복). 화면 렌더링 육안은 headless "하지 않음" 기록 유지. 최종 CLOSED는 product acceptance 연계(§10).
+감사 B1~B3·B7    B1(FAIL 재현): 배지가 크기+앞 64 KiB quick hash만 비교 → 뒤가 다른 파일 `identical=true`. 수정: quick hash는 후보 게이트로만, 통과 쌍은 전체 내용 SHA-256 동일성(파일당 1회 메모, 512 MiB 초과 배지 생략; 빠른 로드 동일 계약). 검증 중 데이터 레이스 1건 발견·수정(16 샤드 동시 삽입 → `std::mutex`). 비용 실측: 추가 읽기 약 1.5 GiB/전체 스캔(사용자 인덱스). B2: 설정→수신 텔레메트리 `"mode":"A"/"B"` round-trip 테스트. B3: no-FFmpeg 구성 lane SKIP(exit 0) 검증. B7: S4 행·체인 문구 정합화.
 현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
                  Search/Index/Comparison = NOT ACCEPTED; S4 기능 acceptance 자동화 PASS(최종 CLOSED 대기); XMP = CONDITIONAL;
-                 color_thumb production correction 미수행; S5/S6는 선행 Gate 대기.
+                 color_thumb R1 완료(.113), production correction은 결정 대기; S5/S6는 선행 Gate 대기.
 측정            Fast(A) 사용자 데이터셋 run=1 측정은 2026-10-15 Work Log/DBV §7.3에 기록됐으나 비교 조건에 교란 요인 존재.
                  Auto(AB) 실측 2026-10-16 완료(변경 64, verify 1회) — 최종 패스 의미·반복 수는 후속. CUDA 미가용 기록은 build/runtime 조건 확인 필요.
 잔여 위험        thumbCatchUpVisible()의 매 tick 전체 목록 순회는 correctness blocker가 아닌 후순위 성능 위험.
@@ -133,7 +134,7 @@ NVDEC production adoption            PRODUCTION ADOPTION = NO — F-1 CONDITIONA
 F-2 production integration           금지 — IDR-start fixture 가 없음을 확인
 1360x808 mismatch root cause          INCONCLUSIVE — video cohort 로 재검토
 Intel/AMD/Vulkan backend              착수 조건 미충족
-color_thumb production correction    NOT PERFORMED — audit 만 완료 (R1 fixture + skip/pass 가 다음)
+color_thumb production correction    NOT PERFORMED — R1 fixture/skip 완료(.113); production correction은 결정·승인 대기
 XMP production acceptance            CONDITIONAL — fixture PASS, coverage/regression 없음
 vcpkg 이동                            하지 않음 (project-local 유지)
 ```
@@ -150,7 +151,7 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
 | 제품 acceptance (Search/Index/Comparison) | `NOT ACCEPTED` → **결함 수정 완료 (0.9.4.46)** | `build-history/0.9.4.46.*`, `worklog/0.9.4.*` acceptance audit 항목 |
 | GUI Stop 무응답 | **수정 완료 (0.9.4.48, 엔진 레벨)** | `build-history/0.9.4.48.*`. 실제 GUI 버튼 클릭은 NOT_VALIDATED |
-| `color_thumb` no-FFmpeg classification | `DESIGNED` (audit 완료) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*` |
+| `color_thumb` no-FFmpeg classification | R1 완료(0.9.4.113) — production correction은 결정 대기 | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
 | nvcc 경고 release gate 등록 | 미결정 | `worklog/0.9.4.*` |
 | 콘솔 출력 전용 회귀 테스트 | 미추가 | `worklog/0.9.4.*` |
 
