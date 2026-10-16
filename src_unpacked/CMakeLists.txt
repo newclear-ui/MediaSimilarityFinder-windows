@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.116 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.117 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -814,6 +814,14 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_thumb_layout_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_thumb_layout_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME thumb_layout_test COMMAND msf_thumb_layout_test)
+      # 0.9.4.117: large result-set application must not freeze the GUI (a
+      # synthetic 9,055-group onResults call; the fill must return promptly
+      # and complete with the event loop kept responsive).
+      add_executable(msf_group_fill_probe tests/group_fill_perf_probe.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
+      target_link_libraries(msf_group_fill_probe PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_group_fill_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME group_fill_probe COMMAND msf_group_fill_probe)
+      set_tests_properties(group_fill_probe PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
       # QuickLook pipe protocol probe (fake in-process server, exact-bytes check).
       add_executable(msf_quicklook_test tests/quicklook_pipe_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_quicklook_test PRIVATE msf_core Qt6::Widgets)

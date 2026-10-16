@@ -1915,12 +1915,17 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   }
   allPaths_.clear(); matchRows_ = matchRows;
   fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
+  // 0.9.4.117: stage timing for the field-diagnosed result-apply stall (a
+  // 9,055-group apply froze the GUI for minutes; see group_fill_probe).
+  QElapsedTimer applyT;
+  applyT.start();
   for (const auto& f : files) {
     allPaths_ << f.path;
     fileSize_[f.path] = QString::number(f.size);
     fileFp_[f.path] = f.fpHex;
     fileDur_[f.path] = f.duration;
   }
+  const qint64 tMaps = applyT.elapsed();
   // fold final retained matches (same data as streamed, dedup by rebuild)
   for (const auto& row : matchRows_) {
     const QStringList p = row.split('\t');
@@ -1930,7 +1935,17 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
     const bool identical = p.size() > 3 && p[3] == QLatin1String("1");
     addMatch(p[0], p[1], p[2].toDouble(), isVideoExt(p[0]) ? 2 : 1, identical);
   }
-  rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); updateStatusCounts();
+  const qint64 tMatch = applyT.elapsed();
+  rebuildGroups();
+  const qint64 tGroups = applyT.elapsed();
+  refreshGroupList();
+  const qint64 tFill = applyT.elapsed();
+  refreshFileViews(); refreshDetail(); updateStatusCounts();
+  const qint64 tTail = applyT.elapsed();
+  scanLog(QString("resultsApply files=%1 rows=%2 groups=%3 maps=%4ms matches=%5ms rebuild=%6ms fill=%7ms tail=%8ms")
+              .arg(files.size()).arg(matchRows_.size()).arg(groups_.size())
+              .arg(tMaps).arg(tMatch - tMaps).arg(tGroups - tMatch)
+              .arg(tFill - tGroups).arg(tTail - tFill));
   // 0.9.4.94: mark this scan's rebuild done so scanFinished (which always
   // follows for a completed scan) does not repeat it. Load answers take the
   // wasLoad branch above and never reach scanFinished; leave the mark clear.
@@ -2309,7 +2324,22 @@ void MainWindow::thumbCatchUpVisible() {
   const QRect vis = grid->viewport()->rect();
   const QSize iconSize = grid->iconSize();
   bool changed = false;
-  for (int row = 0; row < grid->count(); ++row) {
+  // 0.9.4.117: iterate only the visible row window. The old loop called
+  // visualItemRect() for every row (9,000+ per catch-up at the user's group
+  // count), which was one of the bulk-apply stalls. Rows are in visual order,
+  // so the window is [first visible .. last visible] plus a small margin; the
+  // slow full-range fallback covers the rare case itemAt() cannot resolve.
+  int first = -1, last = -1;
+  if (auto* top = grid->itemAt(vis.topLeft())) first = grid->row(top);
+  if (auto* bottom = grid->itemAt(vis.bottomRight())) last = grid->row(bottom);
+  if (first < 0 || last < 0) {
+    first = 0;
+    last = grid->count() - 1;
+  } else {
+    first = std::max(0, first - 4);
+    last = std::min(grid->count() - 1, last + 4);
+  }
+  for (int row = first; row <= last; ++row) {
     QListWidgetItem* item = grid->item(row);
     if (!item || !grid->visualItemRect(item).intersects(vis)) continue;
     const int gi = item->data(Qt::UserRole).toInt();
@@ -2427,7 +2457,13 @@ QString MainWindow::fmtSize(qulonglong n) const {
 }
 double MainWindow::pathBest(const QString& p) const { return bestPct_.value(p, 0.0); }
 qulonglong MainWindow::filePixels(const QString& p) const {
-  const QString r = fileResolution(p);
+  // 0.9.4.117: cached-only. This runs once per path inside the tie sorting of
+  // a full group rebuild; the old requesting variant issued a backend
+  // FILE_META request per path (2,000+ requests at the user's group count,
+  // with an ffprobe fallback per missing file on the loopback engine) and
+  // turned the rebuild into minutes of GUI stall. Tie ordering now uses
+  // whatever resolution is already cached and degrades to size order.
+  const QString r = resCache_.value(p, QStringLiteral("-"));
   const int x = r.indexOf('x');
   if (x <= 0) return 0;
   bool okW = false, okH = false;
@@ -2675,6 +2711,15 @@ void MainWindow::addGroupItems(QTreeWidget* tree, QListWidget* grid, int i, int 
   thumbBulkFill_ = bulkPrev;
 }
 void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bool syncSel, bool append) {
+  // 0.9.4.117: a new fill (append, rebuild, tab switch, sort, search)
+  // supersedes any deferred job; while one is mid-flight the pane is only
+  // partially populated, so an append must not extend it - fall back to a
+  // full (re)build below, which may defer again.
+  constexpr int kDeferFillMin = 800;
+  const bool hadPending = fillJob_ != nullptr;
+  ++fillGen_;
+  fillJob_.reset();
+  if (hadPending) append = false;
   // Ordered rows for this kind, each with a signature. The append path extends
   // the existing pane; any structural change (merge/removal/order change) fails
   // the prefix check and falls back to a full rebuild below.
@@ -2718,36 +2763,37 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   tree->blockSignals(true); grid->blockSignals(true);
   const int treePos = tree->verticalScrollBar() ? tree->verticalScrollBar()->value() : 0;
   const int gridPos = grid->verticalScrollBar() ? grid->verticalScrollBar()->value() : 0;
-  // Rebuilding the widgets can make setCurrentItem() scroll to the selected
-  // group (usually group 1) after the old pixel offset was captured. Preserve
-  // the group at the viewport's top edge as a semantic anchor instead, along
-  // with its exact content offset so the restored view does not drift by a
-  // partial row/cell.
   QString treeAnchorPath;
   int treeAnchorContent = 0;
-  if (auto* top = tree->itemAt(QPoint(2, 2))) {
-    const int index = top->data(0, Qt::UserRole).toInt();
-    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty()) {
-      treeAnchorPath = groups_[index].paths.front();
-      treeAnchorContent = treePos + tree->visualItemRect(top).top();
-    }
-  }
   QString gridAnchorPath;
   int gridAnchorContent = 0;
-  {
-    // Large icon cells wrap with spacing, so the tree-oriented (2,2) corner
-    // can probe empty space. Probe the viewport center instead.
-    const int viewportWidth = grid->viewport()->width();
-    const int probeX = std::clamp(viewportWidth / 2, 2, std::max(2, viewportWidth - 1));
-    if (auto* top = grid->itemAt(QPoint(probeX, 10))) {
-      const int index = top->data(Qt::UserRole).toInt();
-      if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty()) {
-        gridAnchorPath = groups_[index].paths.front();
-        gridAnchorContent = gridPos + grid->visualItemRect(top).top();
-      }
-    }
-  }
+  captureFillAnchors(tree, grid, treePos, gridPos,
+                     treeAnchorPath, treeAnchorContent, gridAnchorPath, gridAnchorContent);
   tree->clear(); grid->clear();
+  // 0.9.4.117: a fill of thousands of rows must not run synchronously — the
+  // field measured minutes of frozen UI for the user's 9,055-group index.
+  // Large fills are deferred and completed in chunks across event-loop turns.
+  if (curIndex.size() > kDeferFillMin) {
+    auto job = std::make_shared<GroupFillJob>();
+    job->index = curIndex;
+    job->shown = cur;
+    job->wantKind = wantKind;
+    job->syncSel = syncSel;
+    job->tree = tree;
+    job->grid = grid;
+    job->treePos = treePos;
+    job->gridPos = gridPos;
+    job->treeAnchorPath = treeAnchorPath;
+    job->treeAnchorContent = treeAnchorContent;
+    job->gridAnchorPath = gridAnchorPath;
+    job->gridAnchorContent = gridAnchorContent;
+    job->t0.start();
+    fillJob_ = job;
+    const int gen = fillGen_;
+    tree->blockSignals(false); grid->blockSignals(false);
+    QTimer::singleShot(0, this, [this, job, gen] { continueGroupFill(job, gen); });
+    return;
+  }
   // The middle grids use SinglePass (see construction), so the layout below
   // observes the final scrollbar maximum and the anchor restore is exact.
   // (Batched would collapse the maximum mid-rebuild and clamp deep offsets.)
@@ -2758,6 +2804,46 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   // selection.
   tree->doItemsLayout();
   grid->doItemsLayout();
+  restoreFillAnchors(tree, grid, treePos, gridPos,
+                     treeAnchorPath, treeAnchorContent, gridAnchorPath, gridAnchorContent);
+  shown = cur;
+  tree->blockSignals(false); grid->blockSignals(false);
+  // 0.9.4.105 (D): the rebuilt rows were bulk-filled without requests; the
+  // visible-only pump requests exactly what the user can see (0.9.4.104's
+  // per-row request storm is gone).
+  thumbCatchUpVisible();
+}
+// 0.9.4.117: shared by the synchronous and deferred full-fill paths.
+void MainWindow::captureFillAnchors(QTreeWidget* tree, QListWidget* grid, int treePos, int gridPos,
+                                    QString& treeAnchorPath, int& treeAnchorContent,
+                                    QString& gridAnchorPath, int& gridAnchorContent) {
+  // Rebuilding the widgets can make setCurrentItem() scroll to the selected
+  // group (usually group 1) after the old pixel offset was captured. Preserve
+  // the group at the viewport's top edge as a semantic anchor instead, along
+  // with its exact content offset so the restored view does not drift by a
+  // partial row/cell.
+  if (auto* top = tree->itemAt(QPoint(2, 2))) {
+    const int index = top->data(0, Qt::UserRole).toInt();
+    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty()) {
+      treeAnchorPath = groups_[index].paths.front();
+      treeAnchorContent = treePos + tree->visualItemRect(top).top();
+    }
+  }
+  // Large icon cells wrap with spacing, so the tree-oriented (2,2) corner
+  // can probe empty space. Probe the viewport center instead.
+  const int viewportWidth = grid->viewport()->width();
+  const int probeX = std::clamp(viewportWidth / 2, 2, std::max(2, viewportWidth - 1));
+  if (auto* top = grid->itemAt(QPoint(probeX, 10))) {
+    const int index = top->data(Qt::UserRole).toInt();
+    if (index >= 0 && index < groups_.size() && !groups_[index].paths.isEmpty()) {
+      gridAnchorPath = groups_[index].paths.front();
+      gridAnchorContent = gridPos + grid->visualItemRect(top).top();
+    }
+  }
+}
+void MainWindow::restoreFillAnchors(QTreeWidget* tree, QListWidget* grid, int treePos, int gridPos,
+                                    const QString& treeAnchorPath, int treeAnchorContent,
+                                    const QString& gridAnchorPath, int gridAnchorContent) {
   bool restoredTree = false;
   if (!treeAnchorPath.isEmpty()) {
     for (int row = 0; row < tree->topLevelItemCount(); ++row) {
@@ -2792,12 +2878,38 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   }
   if (!restoredTree && tree->verticalScrollBar()) tree->verticalScrollBar()->setValue(treePos);
   if (!restoredGrid && grid->verticalScrollBar()) grid->verticalScrollBar()->setValue(gridPos);
-  shown = cur;
+}
+// 0.9.4.117: deferred large-fill continuation. One bounded chunk per
+// event-loop turn keeps timers, paints and clicks alive while thousands of
+// rows are added; a stale generation (a newer fill started) stops silently.
+void MainWindow::continueGroupFill(const std::shared_ptr<GroupFillJob>& job, int gen) {
+  if (!job || gen != fillGen_ || fillJob_ != job) return;
+  constexpr int kChunk = 100; // ~1 ms/row x two panes: keeps each turn short
+  QTreeWidget* tree = job->tree;
+  QListWidget* grid = job->grid;
+  const std::size_t total = (std::size_t)job->index.size();
+  tree->blockSignals(true); grid->blockSignals(true);
+  tree->setUpdatesEnabled(false); grid->setUpdatesEnabled(false);
+  const std::size_t end = std::min(job->pos + (std::size_t)kChunk, total);
+  for (std::size_t k = job->pos; k < end; ++k)
+    addGroupItems(tree, grid, job->index[(int)k], job->wantKind, job->syncSel);
+  job->pos = end;
+  tree->setUpdatesEnabled(true); grid->setUpdatesEnabled(true);
   tree->blockSignals(false); grid->blockSignals(false);
-  // 0.9.4.105 (D): the rebuilt rows were bulk-filled without requests; the
-  // visible-only pump requests exactly what the user can see (0.9.4.104's
-  // per-row request storm is gone).
+  if (job->pos < job->index.size()) {
+    QTimer::singleShot(0, this, [this, job, gen] { continueGroupFill(job, gen); });
+    return;
+  }
+  tree->resizeColumnToContents(0);
+  tree->doItemsLayout();
+  grid->doItemsLayout();
+  restoreFillAnchors(tree, grid, job->treePos, job->gridPos,
+                     job->treeAnchorPath, job->treeAnchorContent,
+                     job->gridAnchorPath, job->gridAnchorContent);
+  (job->wantKind == 2 ? vidShown_ : imgShown_) = job->shown;
   thumbCatchUpVisible();
+  scanLog(QString("groupFill done rows=%1 ms=%2").arg(job->index.size()).arg(job->t0.elapsed()));
+  fillJob_.reset();
 }
 void MainWindow::refreshGroupList(bool append) {
   // Test-only instrumentation: every middle-pane refill (full rebuild or the

@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QMutex>
 #include <QComboBox>
+#include <QElapsedTimer>
 #include <QIcon>
 #include <QStringList>
 #include <QVector>
@@ -15,6 +16,7 @@
 #include <QSet>
 #include <QPair>
 #include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 #include "../src/media_search_engine.h"
@@ -256,6 +258,9 @@ private:
   QString scanStatusText(qulonglong done, qulonglong total, int pct, const QString& path, qint64 elapsedMs) const;
   qint64 elapsedActiveMs() const; // scan clock minus paused intervals
   QString fileResolution(const QString&) const; // cached backend dimensions (P4: no GUI decode)
+  // 0.9.4.117: cached-only pixel count for the tie ordering of a full group
+  // rebuild. Never issues a backend request (the requesting variant made the
+  // rebuild issue one FILE_META request per path - minutes of GUI stall).
   qulonglong filePixels(const QString&) const;
   QIcon fileThumb(const QString&, const QSize&, bool bypassBudget = false) const;
   void onThumbReady(quint64 requestId, const ThumbResult& thumb);
@@ -280,6 +285,34 @@ private:
   double pathBest(const QString&) const;
   void addMatch(const QString&, const QString&, double, int kind, bool contentIdentical = false);
   QString findRoot(const QString&); // union-find over pathParent_
+  // 0.9.4.117: deferred bulk fill for large result sets. A synchronous fill of
+  // the user's loaded index (9,055 groups) froze the GUI event loop for
+  // minutes (measured by group_fill_perf_probe). Rows are added in chunks on
+  // successive event-loop turns; a generation counter cancels stale jobs when
+  // a newer fill starts (append/rebuild/tab switch).
+  struct GroupFillJob {
+    QVector<int> index;                      // groups_ indices, in order
+    QVector<QPair<QString, QString>> shown;  // signature snapshot on completion
+    int wantKind = 1;
+    bool syncSel = false;
+    std::size_t pos = 0;
+    QTreeWidget* tree = nullptr;
+    QListWidget* grid = nullptr;
+    int treePos = 0, gridPos = 0;
+    QString treeAnchorPath, gridAnchorPath;
+    int treeAnchorContent = 0, gridAnchorContent = 0;
+    QElapsedTimer t0;
+  };
+  void continueGroupFill(const std::shared_ptr<GroupFillJob>& job, int gen);
+  // Shared by the synchronous and deferred full-fill paths.
+  void captureFillAnchors(QTreeWidget* tree, QListWidget* grid, int treePos, int gridPos,
+                          QString& treeAnchorPath, int& treeAnchorContent,
+                          QString& gridAnchorPath, int& gridAnchorContent);
+  void restoreFillAnchors(QTreeWidget* tree, QListWidget* grid, int treePos, int gridPos,
+                          const QString& treeAnchorPath, int treeAnchorContent,
+                          const QString& gridAnchorPath, int gridAnchorContent);
+  std::shared_ptr<GroupFillJob> fillJob_;
+  int fillGen_ = 0;
   // scan state (P2: the backend lives behind BackendClient; the loopback
   // implementation runs the real ScanWorker/MediaMonitor in-process)
   BackendClient* backend_ = nullptr; QDialog* cancelWait_=nullptr; msf::ResourcePolicy policy_;
