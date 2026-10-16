@@ -30,4 +30,40 @@ auto vf1=(d/"v1.mp4").string(); auto vf2=(d/"v2.mp4").string();
 if(!e.upsertFingerprint(vf1,0x1111000011110000ULL,(int)msf::MediaKind::Video,10,5,0,0xABCDEF01ULL,0,0,0x10ULL,0,0)) return 14;
 if(!e.upsertFingerprint(vf2,0x2222000022220000ULL,(int)msf::MediaKind::Video,10,6,0,0xABCDEF01ULL,0,0,0x20ULL,0,0)) return 15;
 auto vm=e.compareFingerprint(0x9999000099990000ULL,(int)msf::MediaKind::Video,100.0,"",0,0xABCDEF01ULL); if(vm.empty()||vm[0].rightPath!=vf1) return 16;
+// 0.9.4.114 regression: loadMatches (Load button + scan quick-load) must
+// survive large candidate sets. The 0.9.4.113 memo returned a reference into
+// an unordered_map; the second lookup's insert/rehash invalidated the first
+// reference (use-after-free) and crashed the backend on real datasets
+// (field: crash exit code 62097 on Load and Start Scan). 300 distinct
+// byte-identical pairs force many memo inserts/rehashes.
+{
+  auto big=d/"big"; std::filesystem::create_directories(big);
+  auto noise=[&](const std::filesystem::path&p,unsigned seed){
+    std::ofstream f(p,std::ios::binary);
+    const int w=8,h=8,row=w*3,im=row*h,fs=54+im; unsigned char hd[54]={0};
+    hd[0]='B'; hd[1]='M'; hd[2]=(unsigned char)(fs&0xFF); hd[3]=(unsigned char)((fs>>8)&0xFF);
+    hd[10]=54; hd[14]=40; hd[18]=(unsigned char)w; hd[22]=(unsigned char)h; hd[26]=1; hd[28]=24;
+    hd[34]=(unsigned char)(im&0xFF); hd[35]=(unsigned char)((im>>8)&0xFF);
+    f.write((const char*)hd,54);
+    unsigned s=seed*2654435761u+1;
+    for(int y=0;y<h;++y) for(int x=0;x<w;++x){ s=s*1103515245u+12345u; const unsigned char v=(unsigned char)(((s>>16)&0xFF)>127?255:0); f.put((char)v); f.put((char)v); f.put((char)v); }
+  };
+  for(int i=0;i<3000;++i){
+    noise(big/("p"+std::to_string(i)+"_a.bmp"),(unsigned)(i+1));
+    std::filesystem::copy_file(big/("p"+std::to_string(i)+"_a.bmp"),big/("p"+std::to_string(i)+"_b.bmp"));
+  }
+  msf::MediaSearchEngine e2; if(!e2.openIndex((d/"big.sqlite").string())) return 20;
+  const auto rb=e2.scan(big.string());
+  if(rb.scanned!=6000||rb.groups<3000) return 21;
+  // The engine-level scan() keeps matches in memory; persistence is the
+  // worker's job. Store the found pairs so loadMatches (the quick-load path)
+  // actually processes a large candidate set.
+  if(!e2.saveMatches(rb.matches)) return 22;
+  const auto lm=e2.loadMatches();
+  if(lm.size()<3000) return 23;
+  std::size_t identical=0; for(const auto&m:lm) if(m.contentIdentical) ++identical;
+  if(identical!=lm.size()) return 24; // every stored pair is a byte-identical copy
+  e2.close();
+  std::cout<<"load_matches_big=ok pairs="<<lm.size()<<"\n";
+}
 std::cout<<"search_engine=ok\nfirst_analyzed="<<a.analyzed<<"\nincremental_analyzed="<<b.analyzed<<"\nremoved="<<c.removed<<"\nmirror_query=ok\n";e.close();std::filesystem::remove_all(d);return 0;}

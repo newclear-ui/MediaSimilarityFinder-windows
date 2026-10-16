@@ -73,11 +73,18 @@ std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
   id.reserve(sp->size()*2+1);
   for(const auto& x:*sp) id.emplace(x.path,std::make_pair(x.size,&x.quickHash));
   std::unordered_map<std::string,std::string> fullMemo;
-  const auto fullHex=[&](const std::string& p)->const std::string&{
+  // 0.9.4.114 hotfix: return BY VALUE. The 0.9.4.113 version returned a
+  // reference into the map and the second lookup's insert/rehash invalidated
+  // the first reference — a use-after-free that crashed the backend on real
+  // datasets (field: crash exit code 62097 on Load and on Start Scan, both of
+  // which run this quick-load path). Small test sets never rehashed, so CI
+  // missed it; the big-pairs case in search_engine_test now forces rehashes.
+  const auto fullHex=[&](const std::string& p)->std::string{
     const auto it=fullMemo.find(p);
     if(it!=fullMemo.end()) return it->second;
     std::string hex; sha256FileHex(p,hex);
-    return fullMemo.emplace(p,std::move(hex)).first->second;
+    fullMemo.emplace(p,hex);
+    return hex;
   };
   for(const auto& m:s){
     SearchMatch sm{m.left,m.right,m.percent};
@@ -85,7 +92,7 @@ std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
     if(a!=id.end()&&b!=id.end()&&a->second.first==b->second.first&&
        a->second.first<=kContentConfirmMaxBytes&&
        !a->second.second->empty()&&*a->second.second==*b->second.second){
-      const std::string& ha=fullHex(m.left); const std::string& hb=fullHex(m.right);
+      const std::string ha=fullHex(m.left); const std::string hb=fullHex(m.right);
       if(!ha.empty()&&ha==hb) sm.contentIdentical=true;
     }
     out.push_back(std::move(sm));
