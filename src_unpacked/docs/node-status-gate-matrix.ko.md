@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.111` (G4 IPC backpressure + G6 Job Object/GUI 종료 검증 — 프로세스 분리 release gate) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.112` (S4 GUI 상세 로그 저장/종료 acceptance — 저장 단위 분리 + 실버튼 E2E) · CPU CTest 122/122 · GPU CTest 123/123
 최종 갱신: 2026-10-16
 
 ## 이 문서의 역할
@@ -106,13 +106,14 @@
 ## 현재 초점 / Current Focus
 
 ```text
-기준선           0.9.4.111 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
-활성 상태        프로세스 분리 P1–P4 완료 + G4/G6 검증 완료(.111); .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
-다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → S4 저장 acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
+기준선           0.9.4.112 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
+활성 상태        프로세스 분리 P1–P4 완료 + G4/G6 검증 완료(.111) + S4 저장/종료 acceptance 완료(.112); .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
+다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → XMP coverage → color_thumb R1 → S5 benchmark → S6 gate
 G4/G6 검증 완료  G4: 스트레스 PASS — 3초 소비자 정지에서 무손실(갭 0·600건 전달)·무교착·RSS 유계(20/20/21 MB). 결함 미확정(설계 검토: GUI→Backend pending 상한, Backend→GUI 백로그=산출물 크기).
                  G6: 실결함 2건 수정 — 종료 3 s 고정 지연(3049→6 ms, `waitForFinished` 핸들 대기 + 재진입 차단) + Job Object Win32 반환값 검사/로그. 부모 급사 E2E: Job이 웨지 백엔드 회수, `--no-job` 대조군 생존으로 필수성 입증.
+S4 저장/종료      실결함 수정 — 부분/0바이트 기록을 성공으로 표시하던 오판 제거(`saveDetailedLogTo`, 정확한 바이트 수). 실버튼→파일 피커→기록→상태 E2E PASS(`save=ok`, 3회 반복). 화면 렌더링 육안은 headless "하지 않음" 기록 유지. 최종 CLOSED는 product acceptance 연계(§10).
 현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
-                 Search/Index/Comparison = NOT ACCEPTED; S4 최종 acceptance 미완료; XMP = CONDITIONAL;
+                 Search/Index/Comparison = NOT ACCEPTED; S4 기능 acceptance 자동화 PASS(최종 CLOSED 대기); XMP = CONDITIONAL;
                  color_thumb production correction 미수행; S5/S6는 선행 Gate 대기.
 측정            Fast(A) 사용자 데이터셋 run=1 측정은 2026-10-15 Work Log/DBV §7.3에 기록됐으나 비교 조건에 교란 요인 존재.
                  Auto(AB) 실측 2026-10-16 완료(변경 64, verify 1회) — 최종 패스 의미·반복 수는 후속. CUDA 미가용 기록은 build/runtime 조건 확인 필요.

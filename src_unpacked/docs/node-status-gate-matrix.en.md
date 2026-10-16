@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.111` (G4 IPC backpressure + G6 Job Object/GUI-exit verification — process-split release gates) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.112` (S4 GUI detailed-log save/exit acceptance — save unit split + real-button E2E) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-16
 
 ## Role of this document
@@ -109,13 +109,14 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-baseline          0.9.4.111 (CPU CTest 122/122, GPU CTest 123/123 — results recorded in Work Log)
-active status     Process split P1-P4 complete + G4/G6 verified in .111; field GUI acceptance for .105/.106 and final Search/Index/Comparison acceptance remain open
-next              .105/.106 field acceptance -> real-dataset Search/Index/Comparison acceptance -> S4 save acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
+baseline          0.9.4.112 (CPU CTest 122/122, GPU CTest 123/123 — results recorded in Work Log)
+active status     Process split P1-P4 complete + G4/G6 verified (.111) + S4 save/exit acceptance done (.112); field GUI acceptance for .105/.106 and final Search/Index/Comparison acceptance remain open
+next              .105/.106 field acceptance -> real-dataset Search/Index/Comparison acceptance -> XMP coverage -> color_thumb R1 -> S5 benchmark -> S6 gate
 G4/G6 verified    G4: stress PASS — a 3 s consumer stall stays lossless (0 gaps, 600 delivered), no deadlock, bounded RSS (20/20/21 MB). No defect confirmed (design review: GUI->Backend bounded by pending cap; Backend->GUI backlog = output size).
                   G6: two real defects fixed — fixed 3 s exit delay (3049->6 ms; `waitForFinished` handle wait with re-entry blocked) + Job Object Win32 return checks/logs. Parent-crash E2E: the job reaps the wedged backend; the `--no-job` control survives, proving the job is load-bearing.
+S4 save/exit      Real defect fixed — the partial/zero-write false-success is removed (`saveDetailedLogTo`, exact byte count). Real button -> file picker -> write -> status E2E PASS (`save=ok`, 3 repeats). On-screen rendering stays recorded as "not done" (headless). Final CLOSED remains tied to product acceptance (§10).
 current verdict   .105 file-operation/preview/index logs and .106 badge/real-process IPC await field evidence.
-                  Search/Index/Comparison = NOT ACCEPTED; S4 final acceptance open; XMP = CONDITIONAL;
+                  Search/Index/Comparison = NOT ACCEPTED; S4 functional acceptance automated PASS (final CLOSED pending); XMP = CONDITIONAL;
                   color_thumb production correction not performed; S5/S6 await prerequisites.
 measurement       Fast(A) user-dataset run=1 is recorded in Work Log/DBV §7.3 on 2026-10-15, but confounders limit comparison.
                   Auto(AB) measurement completed 2026-10-16 (64 changed, 1 verify) — final-pass semantics/repetitions are follow-ups. Verify build/runtime conditions for CUDA-unavailable records.

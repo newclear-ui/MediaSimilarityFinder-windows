@@ -132,8 +132,9 @@ GUI 상세 로그의 최종 durable path와 report UI는 코드 구현 단계에
 
 ---
 
-## 현재 상태 (2026-10-03, cf126c4 기준)
+## 현재 상태 (2026-10-03, cf126c4 기준 → 2026-10-16, 0.9.4.112 갱신)
 
 - S4 implementation: PASS. GUI visible UI는 사용자가 직접 확인하여 PASS.
-- Functional Detailed Logs acceptance는 DEFERRED: 실제 Search/Update -> Detailed Logs 생성/표시/저장 경로는 코드와 회귀 테스트가 연결되어 있으나, 최종 제품 acceptance audit이 아직 완료되지 않았다.
-- S4 상태: verification in progress (CLOSED 아님). 위 §10 종료 조건은 설계 계약으로 유지된다.
+- Functional Detailed Logs acceptance(0.9.4.112): **자동화 PASS** — 실제 Search/Update → Detailed Logs 생성/표시/**저장**/종료 경로를 `scan_detailed_log_acceptance_test`가 실버튼 → 파일 피커 → 파일 기록 → 상태 표시까지 E2E로 검증(`detailed_log_acceptance=ok ... save=ok`, `--repeat until-fail:3` 3회). 저장 로직은 `MainWindow::saveDetailedLogTo`로 분리하고 **부분/0바이트 기록을 성공으로 표시하던 오판(`write() >= 0`)을 제거**했다(쓰기 불가 경로는 실패로 보고).
+- 화면 렌더링 육안 확인은 headless 환경으로 **하지 않음**(기록 유지, "통과"로 주장하지 않음).
+- S4 상태: verification in progress (CLOSED 아님). 최종 CLOSED는 위 §10 종료 조건에 따라 product acceptance 재확인과 연계한다.

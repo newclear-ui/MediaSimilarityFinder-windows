@@ -132,8 +132,9 @@ S4 is not CLOSED until the documents and code agree, [Detailed Logs] works on th
 
 ---
 
-## Current status (2026-10-03, at cf126c4)
+## Current status (2026-10-03, at cf126c4 -> updated 2026-10-16, 0.9.4.112)
 
 - S4 implementation: PASS. GUI visible UI verified directly by the user: PASS.
-- Functional Detailed Logs acceptance is DEFERRED: the real Search/Update -> Detailed Logs generation/display/save path is code-connected and regression-covered, but the final product acceptance audit has not yet been completed.
-- S4 status: verification in progress (not CLOSED). The section 10 exit condition above stands as the design contract.
+- Functional Detailed Logs acceptance (0.9.4.112): **automated PASS** — the real Search/Update -> Detailed Logs generation/display/**save**/exit path is verified E2E by `scan_detailed_log_acceptance_test` (real button -> file picker -> file write -> status; `detailed_log_acceptance=ok ... save=ok`, `--repeat until-fail:3` x3). The save logic is split into `MainWindow::saveDetailedLogTo` and the **partial/zero-write false-success (`write() >= 0`) is removed** (an unwritable path reports failure).
+- On-screen rendering was not visually verified (headless environment) — recorded as *not done*, not claimed as *passed*.
+- S4 status: verification in progress (not CLOSED). Final CLOSED remains tied to the product-acceptance recheck per the section 10 exit condition.
