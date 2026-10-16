@@ -88,6 +88,47 @@ int main(int argc, char** argv) {
     check(gridCount == kGroups, "grid holds every group after the fill");
     check(treeCount == kGroups, "tree holds every group after the fill");
 
+    // Scenario A (0.9.4.118): a second identical apply must not churn rows.
+    // The pre-fix full rebuild cleared the pane synchronously (item(0) became
+    // null) and re-created every row; the append-first path leaves it intact.
+    {
+        auto* first0 = grid ? grid->item(0) : nullptr;
+        QElapsedTimer et2;
+        et2.start();
+        QMetaObject::invokeMethod(&w, "onResults", Qt::DirectConnection,
+                                  Q_ARG(QVector<BackendFile>, files), Q_ARG(QStringList, rows));
+        const qint64 applyMs2 = et2.elapsed();
+        const bool sameRows = grid && first0 && grid->item(0) == first0;
+        std::cout << "  [info] second applyMs=" << applyMs2 << " rowsKept=" << sameRows << "\n";
+        check(applyMs2 < 1500, "repeat apply returns promptly");
+        check(sameRows, "repeat apply keeps the existing rows (no full rebuild)");
+    }
+    // Scenario B (0.9.4.118): the first apply on a FRESH window (an empty
+    // pane routes through the append path) must stay responsive - a large
+    // append must defer exactly like the full-rebuild path.
+    {
+        MainWindow w2;
+        w2.show();
+        QApplication::processEvents();
+        QElapsedTimer et3;
+        et3.start();
+        QMetaObject::invokeMethod(&w2, "onResults", Qt::DirectConnection,
+                                  Q_ARG(QVector<BackendFile>, files), Q_ARG(QStringList, rows));
+        const qint64 applyMs3 = et3.elapsed();
+        auto* g2 = w2.findChild<QListWidget*>("imgGrid");
+        QElapsedTimer wt;
+        wt.start();
+        while (wt.elapsed() < 60000) {
+            QApplication::processEvents();
+            if (g2 && g2->count() == kGroups) break;
+            QThread::msleep(5);
+        }
+        const int g2count = g2 ? g2->count() : -1;
+        std::cout << "  [info] fresh-window applyMs=" << applyMs3 << " rows=" << g2count << "\n";
+        check(applyMs3 < 1500, "fresh-window first apply returns promptly");
+        check(g2count == kGroups, "fresh-window list completes");
+    }
+
     std::cout << "group_fill_probe=" << (gOk ? "ok" : "FAILED") << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }

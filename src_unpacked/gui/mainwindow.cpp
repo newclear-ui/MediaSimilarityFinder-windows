@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "backend_loopback.h"
 #include "backend_sysinfo.h" // 0.9.4.88: GUI's own process CPU for the combined display
 #include "video_decoder.h"
@@ -1470,7 +1470,11 @@ void MainWindow::beginScan(bool resumeLastConfig) {
   contentFlag_.clear();   // 0.9.4.106: badge flags belong to one result set
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
   currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
-  refreshGroupList(); refreshFileViews(); refreshDetail();
+  // 0.9.4.118: append-first. The groups themselves are unchanged by the scan
+  // reset, so re-filling the pane synchronously churned every row (a 9k-row
+  // rebuild at every scan start, field-measured ~20 s). The prefix guard
+  // degrades to a full (deferred) rebuild when anything actually changed.
+  refreshGroupList(/*append=*/true); refreshFileViews(); refreshDetail();
   QString appDir = QApplication::applicationDirPath();
   // P2: the scan lifecycle lives behind BackendClient. The loopback
   // implementation tears down any previous worker internally, so the
@@ -1823,7 +1827,9 @@ void MainWindow::scanFinished(QString msg) {
   const bool skipRebuild = resultsApplied_ && !msg.startsWith(QStringLiteral("CANCELLED"));
   resultsApplied_ = false;
   if (skipRebuild) scanLog(QString("scanFinished rebuild skipped (already applied by onResults)"));
-  else { rebuildGroups(); refreshGroupList(); refreshFileViews(); refreshDetail(); }
+  // 0.9.4.118: append-first here too - the streamed list normally already
+  // holds, so this path must not churn 9k rows (field-measured ~19 s).
+  else { rebuildGroups(); refreshGroupList(/*append=*/true); refreshFileViews(); refreshDetail(); }
   if (msg.startsWith(QStringLiteral("CANCELLED"))) {
     // Partial progress is kept by design (checkpoints): report what survived.
     const QStringList st = msg.split('|');
@@ -1880,8 +1886,9 @@ void MainWindow::scanFailed(QString msg) {
   scanCrashed_ = backendInterrupted && haveLastScanCfg_;
   const bool willAutoResume = scanCrashed_ && backendRestarting_ && autoResumeTries_ < 1;
   // Keep matches streamed before the worker failure visible in the current UI.
+  // 0.9.4.118: append-first (no row churn when the streamed list already holds).
   rebuildGroups();
-  refreshGroupList(); refreshFileViews(); refreshDetail();
+  refreshGroupList(/*append=*/true); refreshFileViews(); refreshDetail();
   if (willAutoResume) {
     statusMsg_->setText(lang() == UiLang::Ko
                             ? QStringLiteral("백엔드가 종료되었습니다. 재시작 후 검색을 자동으로 이어갑니다.")
@@ -1938,7 +1945,10 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   const qint64 tMatch = applyT.elapsed();
   rebuildGroups();
   const qint64 tGroups = applyT.elapsed();
-  refreshGroupList();
+  // 0.9.4.118: append-first. During a scan the streamed list usually already
+  // matches the rebuilt groups (prefix held), so the final apply no longer
+  // re-creates every row (field: repeated 9k-row rebuilds at scan start/end).
+  refreshGroupList(/*append=*/true);
   const qint64 tFill = applyT.elapsed();
   refreshFileViews(); refreshDetail(); updateStatusCounts();
   const qint64 tTail = applyT.elapsed();
@@ -2716,6 +2726,7 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
   // partially populated, so an append must not extend it - fall back to a
   // full (re)build below, which may defer again.
   constexpr int kDeferFillMin = 800;
+  constexpr int kDeferAppendMin = 300;
   const bool hadPending = fillJob_ != nullptr;
   ++fillGen_;
   fillJob_.reset();
@@ -2747,6 +2758,25 @@ void MainWindow::fillPair(QTreeWidget* tree, QListWidget* grid, int wantKind, bo
     if (cur.size() == shown.size()) return; // nothing new: leave the pane untouched
     // Append only the new rows at the bottom. Existing rows and their
     // thumbnails are never recreated, so the scrolled view stays put.
+    const int newRows = cur.size() - shown.size();
+    // 0.9.4.118: a large append (first scan without a prior Load, or a big
+    // streamed batch) defers through the same chunked job; the pane keeps its
+    // existing rows (no clear), so the UI stays responsive like the full path.
+    if (newRows > kDeferAppendMin) {
+      auto job = std::make_shared<GroupFillJob>();
+      job->index = curIndex.mid(shown.size());
+      job->shown = cur;
+      job->wantKind = wantKind;
+      job->syncSel = syncSel;
+      job->append = true;
+      job->tree = tree;
+      job->grid = grid;
+      job->t0.start();
+      fillJob_ = job;
+      const int gen = fillGen_;
+      QTimer::singleShot(0, this, [this, job, gen] { continueGroupFill(job, gen); });
+      return;
+    }
     tree->blockSignals(true); grid->blockSignals(true);
     for (int k = shown.size(); k < cur.size(); ++k) addGroupItems(tree, grid, curIndex[k], wantKind, syncSel);
     tree->resizeColumnToContents(0);
@@ -2903,12 +2933,18 @@ void MainWindow::continueGroupFill(const std::shared_ptr<GroupFillJob>& job, int
   tree->resizeColumnToContents(0);
   tree->doItemsLayout();
   grid->doItemsLayout();
-  restoreFillAnchors(tree, grid, job->treePos, job->gridPos,
-                     job->treeAnchorPath, job->treeAnchorContent,
-                     job->gridAnchorPath, job->gridAnchorContent);
+  if (!job->append) {
+    // Full rebuild: restore the pre-fill scroll anchors.
+    restoreFillAnchors(tree, grid, job->treePos, job->gridPos,
+                       job->treeAnchorPath, job->treeAnchorContent,
+                       job->gridAnchorPath, job->gridAnchorContent);
+  }
+  // Append jobs keep the existing rows (no clear, no anchor restore).
   (job->wantKind == 2 ? vidShown_ : imgShown_) = job->shown;
   thumbCatchUpVisible();
-  scanLog(QString("groupFill done rows=%1 ms=%2").arg(job->index.size()).arg(job->t0.elapsed()));
+  scanLog(QString("groupFill done rows=%1 ms=%2%3")
+              .arg(job->index.size()).arg(job->t0.elapsed())
+              .arg(job->append ? QStringLiteral(" append") : QString()));
   fillJob_.reset();
 }
 void MainWindow::refreshGroupList(bool append) {

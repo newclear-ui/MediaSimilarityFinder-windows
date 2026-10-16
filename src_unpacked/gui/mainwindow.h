@@ -291,10 +291,11 @@ private:
   // successive event-loop turns; a generation counter cancels stale jobs when
   // a newer fill starts (append/rebuild/tab switch).
   struct GroupFillJob {
-    QVector<int> index;                      // groups_ indices, in order
+    QVector<int> index;                      // groups_ indices to add, in order
     QVector<QPair<QString, QString>> shown;  // signature snapshot on completion
     int wantKind = 1;
     bool syncSel = false;
+    bool append = false;                     // extend an existing pane (no clear)
     std::size_t pos = 0;
     QTreeWidget* tree = nullptr;
     QListWidget* grid = nullptr;
