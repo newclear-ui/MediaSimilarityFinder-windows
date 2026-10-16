@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.115` (핫픽스 2: 62097 크래시 루프 — 이벤트 스레드 차단 + 잔존 킬 타이머) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.116` (삭제 파일 유령 그룹 수정 + GUI 자동 정리 — 잔존 인덱스 행) · CPU CTest 122/122 · GPU CTest 123/123
 최종 갱신: 2026-10-16
 
 ## 이 문서의 역할
@@ -114,7 +114,8 @@ G4/G6 검증 완료  G4: 스트레스 PASS — 3초 소비자 정지에서 무�
 S4 저장/종료      실결함 수정 — 부분/0바이트 기록을 성공으로 표시하던 오판 제거(`saveDetailedLogTo`, 정확한 바이트 수). 실버튼→파일 피커→기록→상태 E2E PASS(`save=ok`, 3회 반복). 화면 렌더링 육안은 headless "하지 않음" 기록 유지. 최종 CLOSED는 product acceptance 연계(§10).
 감사 B1~B3·B7    B1(FAIL 재현): 배지가 크기+앞 64 KiB quick hash만 비교 → 뒤가 다른 파일 `identical=true`. 수정: quick hash는 후보 게이트로만, 통과 쌍은 전체 내용 SHA-256 동일성(파일당 1회 메모, 512 MiB 초과 배지 생략; 빠른 로드 동일 계약). 검증 중 데이터 레이스 1건 발견·수정(16 샤드 동시 삽입 → `std::mutex`). 비용 실측: 추가 읽기 약 1.5 GiB/전체 스캔(사용자 인덱스). B2: 설정→수신 텔레메트리 `"mode":"A"/"B"` round-trip 테스트. B3: no-FFmpeg 구성 lane SKIP(exit 0) 검증. B7: S4 행·체인 문구 정합화.
 핫픽스 .114/.115  .114: 사용자 실기 크래시(불러오기/검색 시작, exit code 62097) — `loadMatches` 메모의 맵 내부 참조 반환(UAF) 수정(값 반환) + 필드 규모 회귀 테스트(3,000쌍).
-                 .115: 62097의 정체 확정(`KillProcessExitCode=0xf291` = 슈퍼바이저 kill). D1(.113 회귀): `loadIndex`가 IPC 이벤트 스레드에서 동기 실행 + 배지 확인의 후보 파일 읽기(~1.5 GiB) → health timeout → terminate(무효) → kill. D2(잠복): `spawn()`이 `escTimer_` 미중지 → 잔존 타이머가 새 백엔드를 사유 없이 kill(자기 유지 루프). 잔존: Load 행의 quick-hash-only 배지. 수정: Load QThread 비동기화 + `escTimer_.stop()` + rows `m.contentIdentical`; 테스트 Test 1b/3c(수정 전 FAIL 재현), checks 39→45. 실기 재확인 필요(로드 소요 시간 포함).
+                 .115: 62097의 정체 확정(`KillProcessExitCode=0xf291` = 슈퍼바이저 kill). D1(.113 회귀): `loadIndex`가 IPC 이벤트 스레드에서 동기 실행 + 배지 확인의 후보 파일 읽기(~1.5 GiB) → health timeout → terminate(무효) → kill. D2(잠복): `spawn()`이 `escTimer_` 미중지 → 잔존 타이머가 새 백엔드를 사유 없이 kill(자기 유지 루프). 잔존: Load 행의 quick-hash-only 배지. 수정: Load QThread 비동기화 + `escTimer_.stop()` + rows `m.contentIdentical`; 테스트 Test 1b/3c(수정 전 FAIL 재현), checks 39→45. 실기 확인 완료(2026-10-17: 스캔·불러오기 킬 0건).
+유령 그룹 .116     사용자 보고: 그룹 275(대표 Keren1286444-…) — 삭제된 유사 파일이 목록에 유령 멤버로 잔존(크기 0·상세 공란), 재스캔으로도 미제거. 원인: 스캔 삭제 정리가 `Database::remove()`(files 행만)라 matches·thumbs 잔존. 수정: `forgetRows`+`forgetNoTransaction`(스캔 트랜잭션 내 정리), `removePath`→`forget`, `cleanupMissingOnDisk`(매치 엔드포인트 존재 검증→정리+로그; 오프라인 무동작)를 불러오기·스캔 quick-load에서 자동 실행. 테스트 FAIL-first(exit 29)→PASS. 실기 육안 확인 필요.
 현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
                  Search/Index/Comparison = NOT ACCEPTED; S4 기능 acceptance 자동화 PASS(최종 CLOSED 대기); XMP = CONDITIONAL;
                  color_thumb R1 완료(.113), production correction은 결정 대기; S5/S6는 선행 Gate 대기.
