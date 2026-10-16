@@ -35,6 +35,11 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
   // Returns true for empty input (nothing to do) and false on any failure
   // (rolled back).
   bool forget(const std::vector<std::string>& paths);
+ // 0.9.4.116: same deletes as forget() but WITHOUT owning a transaction — the
+ // caller (the scan's outer transaction) is responsible for atomicity. The
+ // walk reconciliation used plain remove() (files row only), so deleted files
+ // survived as match pairs and kept showing as phantom group members.
+ bool forgetNoTransaction(const std::vector<std::string>& paths);
   bool saveMatches(const std::vector<StoredMatch>& matches); std::vector<StoredMatch> loadMatches() const;
   // Scan-trace writers (same-transaction, called from the scan worker thread
   // only). traceAdmit inserts/resets the row at admission; traceStart stamps
@@ -87,5 +92,6 @@ private:
     bool exec(const char* sql) const;
     bool prepareStatements();
     void finalizeStatements();
+    bool forgetRows(const std::vector<std::string>& paths);
 };
 }

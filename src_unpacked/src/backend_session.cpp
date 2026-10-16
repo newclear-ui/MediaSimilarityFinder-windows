@@ -370,6 +370,9 @@ void BackendSession::runLoadIndex(const QString& root, const QString& appDir) {
     }
     lastRoot_ = root;
     lastAppDir_ = appDir;
+    // 0.9.4.116: drop stale rows first so the Load list never shows deleted
+    // files as phantom members (auto-repair; an offline root is a no-op).
+    engine.cleanupMissingOnDisk(root.toStdString());
     const auto states = engine.storedFiles();
     const auto matches = engine.loadMatches();
     engine.close();

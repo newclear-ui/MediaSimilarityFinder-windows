@@ -143,14 +143,16 @@ bool Database::remove(const std::string& p){
 // 0.9.4.105 (F): immediate index reflection for user delete/move. One
 // transaction so a failure cannot leave a half-forgotten path (file row gone
 // but its matches alive, or the reverse).
-bool Database::forget(const std::vector<std::string>& paths){
+// 0.9.4.116: the row deletes are shared with forgetNoTransaction() so the
+// scan's outer transaction can reuse them (see the header).
+bool Database::forgetRows(const std::vector<std::string>& paths){
  if(!db_||paths.empty()) return paths.empty();
  if(!removeStmt_ && !prepareStatements()) return false;
  sqlite3_stmt* rm=S(removeStmt_);
  sqlite3_stmt* m=nullptr; sqlite3_stmt* t=nullptr;
  if(sqlite3_prepare_v2(D(db_),"DELETE FROM matches WHERE left_path=? OR right_path=?",-1,&m,nullptr)!=SQLITE_OK) return false;
  if(sqlite3_prepare_v2(D(db_),"DELETE FROM thumbs WHERE path=?",-1,&t,nullptr)!=SQLITE_OK){sqlite3_finalize(m);return false;}
- bool ok=exec("BEGIN IMMEDIATE TRANSACTION;");
+ bool ok=true;
  for(std::size_t i=0;ok&&i<paths.size();++i){
    const std::string& p=paths[i];
    sqlite3_reset(rm); sqlite3_clear_bindings(rm); sqlite3_bind_text(rm,1,p.c_str(),-1,SQLITE_TRANSIENT);
@@ -167,8 +169,18 @@ bool Database::forget(const std::vector<std::string>& paths){
    }
  }
  sqlite3_finalize(m); sqlite3_finalize(t);
- if(!ok){exec("ROLLBACK;");return false;}
+ return ok;
+}
+
+bool Database::forget(const std::vector<std::string>& paths){
+ if(!db_||paths.empty()) return paths.empty();
+ if(!exec("BEGIN IMMEDIATE TRANSACTION;")) return false;
+ if(!forgetRows(paths)){ exec("ROLLBACK;"); return false; }
  return exec("COMMIT;");
+}
+
+bool Database::forgetNoTransaction(const std::vector<std::string>& paths){
+ return forgetRows(paths);
 }
 
 bool Database::containsUnchanged(const FileState& x) const{

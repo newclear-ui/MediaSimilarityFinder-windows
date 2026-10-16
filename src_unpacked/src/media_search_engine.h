@@ -125,6 +125,11 @@ public:
  // Load the pairs persisted by the last completed scan. Paths use the same
  // canonical UTF-8 form as scan results, so reload maps 1:1 onto files().
   std::vector<SearchMatch> loadMatches() const;
+ // 0.9.4.116: drop rows for match endpoints that no longer exist on disk,
+ // before the stored list is shown (Load and scan quick-load). A no-op when
+ // the root is not a directory, so an offline drive's index is never wiped.
+ // Returns the number of forgotten paths.
+ std::size_t cleanupMissingOnDisk(const std::string& root);
   // 0.9.4.93: the stored index rows (one per indexed file). The load-only path
   // ("불러오기" / Load) uses this to populate the GUI list and previews from the
   // index without walking or analyzing anything.

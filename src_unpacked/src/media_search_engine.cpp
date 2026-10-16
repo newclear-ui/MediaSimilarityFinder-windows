@@ -99,6 +99,31 @@ std::vector<SearchMatch> MediaSearchEngine::loadMatches() const{
   }
   return out;
 }
+std::size_t MediaSearchEngine::cleanupMissingOnDisk(const std::string& root){
+  // 0.9.4.116: stale members from external deletes. The old rescan left the
+  // match pairs of deleted files behind (remove() touched the files row only),
+  // so Load / quick-load kept listing phantom group members (0-byte size,
+  // blank detail). Validate the stored match endpoints against the filesystem
+  // and forget the missing ones before the list is built. The root check
+  // makes an unreachable root a no-op: an offline drive must never wipe the
+  // index (and a rescan of an empty root would have the same authority, so
+  // the semantics stay consistent with the scan).
+  std::error_code ec;
+  if(root.empty()||!std::filesystem::is_directory(path_from_utf8(root),ec)||ec) return 0;
+  const auto stored=db_.loadMatches();
+  if(stored.empty()) return 0;
+  std::unordered_set<std::string> paths; paths.reserve(stored.size()*2+1);
+  for(const auto& m:stored){ paths.insert(m.left); paths.insert(m.right); }
+  std::vector<std::string> missing;
+  for(const auto& p:paths){
+    std::error_code e2;
+    if(!std::filesystem::exists(path_from_utf8(p),e2)&&!e2) missing.push_back(p);
+  }
+  if(missing.empty()) return 0;
+  if(!db_.forget(missing)) return 0;
+  msf::backendLogLine(std::string("diskCleanup missing=")+std::to_string(missing.size()));
+  return missing.size();
+}
 bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* dropped){
   if(kept) *kept=0; if(dropped) *dropped=0;
   if(!semverLess(db_.engineVersion(), kEngineVersion)) return true; // current: nothing to do
@@ -160,7 +185,13 @@ void MediaSearchEngine::rebuildCandidateIndexes(){
  imageCandidates_.reserve(candidateStates_.size()); videoCandidates_.reserve(candidateStates_.size()); videoCrop4x3_.reserve(candidateStates_.size()); videoCrop1x1_.reserve(candidateStates_.size()); videoCrop9x16_.reserve(candidateStates_.size()); imageCrop4x3_.reserve(candidateStates_.size()); imageCrop1x1_.reserve(candidateStates_.size()); imageCrop9x16_.reserve(candidateStates_.size());
  for(std::size_t i=0;i<candidateStates_.size();++i){ const auto& x=candidateStates_[i]; if(!x.fingerprint) continue; if(x.kind==(int)MediaKind::Image){ imageCandidates_.add(i,x.fingerprint); if(x.mirrorFingerprint) imageCandidates_.add(i,x.mirrorFingerprint); if(x.crop4x3) imageCrop4x3_.add(i,x.crop4x3); if(x.crop1x1) imageCrop1x1_.add(i,x.crop1x1); if(x.crop9x16) imageCrop9x16_.add(i,x.crop9x16); } else if(x.kind==(int)MediaKind::Video){ videoCandidates_.add(i,x.fingerprint); if(x.mirrorFingerprint) videoCandidates_.add(i,x.mirrorFingerprint); if(x.crop4x3) videoCrop4x3_.add(i,x.crop4x3); if(x.crop1x1) videoCrop1x1_.add(i,x.crop1x1); if(x.crop9x16) videoCrop9x16_.add(i,x.crop9x16); } }
 }
-bool MediaSearchEngine::removePath(const std::string& path) { if(!db_.remove(path)) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return true; }
+bool MediaSearchEngine::removePath(const std::string& path) {
+  // 0.9.4.116: also drop the match pairs and thumbnails. The old files-row-only
+  // removal left a phantom group member when the realtime monitor observed a
+  // deletion (same defect the scan reconciliation had).
+  if(!db_.forget(std::vector<std::string>{path})) return false;
+  candidateStates_=db_.all(); rebuildCandidateIndexes(); return true;
+}
 std::vector<SearchMatch> MediaSearchEngine::compareFingerprint(std::uint64_t fingerprint, int kind, double thresholdPercent, const std::string& excludePath, std::uint64_t mirrorFingerprint, std::uint64_t crop4x3, std::uint64_t crop1x1, std::uint64_t crop9x16, std::uint64_t mirrorCrop4x3, std::uint64_t mirrorCrop1x1, std::uint64_t mirrorCrop9x16) const {
  std::vector<SearchMatch> out; const double threshold=std::clamp(thresholdPercent,0.0,100.0); const unsigned maxDistance=static_cast<unsigned>(std::floor(64.0*(100.0-threshold)/100.0));
  const CandidateIndex* index=(kind==(int)MediaKind::Image)?&imageCandidates_:&videoCandidates_; std::vector<Candidate> candidates=index->query(fingerprint,maxDistance);
@@ -1008,11 +1039,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     telemetry_.addVideoStageMs(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-vt0).count());
    }
    if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(ScanTerminal::Failed); }
-  // Deleted detection needs the complete seen set: only on fully walked scans.
-  // Previously indexed files that no longer exist are removed then. Ignored rows
+ // Deleted detection needs the complete seen set: only on fully walked scans.
+ // Previously indexed files that no longer exist are removed then. Ignored rows
  // are retained in the database (they reappear only when unignored and rescanned).
+ // 0.9.4.116: the removal now also drops the match pairs and thumbnails
+ // (forgetRows inside the scan's own transaction). The old remove() deleted
+ // only the files row, so a deleted file survived as a phantom group member
+ // (0-byte size, blank detail) with its pair rows intact forever.
  if(walkCompleted){
-  for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; if(!db_.remove(o.path)){ failed=true; break; } ++nRemoved; }
+  std::vector<std::string> removedPaths;
+  for(auto& o:old){ if(seen.find(o.path)!=seen.end()) continue; if(hasIgnored && control->ignoredPaths.find(o.path)!=control->ignoredPaths.end()) continue; removedPaths.push_back(o.path); ++nRemoved; }
+  if(!removedPaths.empty() && !db_.forgetNoTransaction(removedPaths)) failed=true;
  }
    if(failed){ if(tx) db_.rollbackTransaction(); r.scanned=scanned; r.added=nAdded; r.modified=nModified; r.unchanged=nUnchanged; r.failed=nFailed; r.imgScanned=nImgScanned; r.vidScanned=nVidScanned; r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed; r.imgPairs=nImgPairs; r.vidPairs=nVidPairs; r.completed=false; return finishScan(ScanTerminal::Failed); }
  // Persist everything done so far, including on cancel: partial progress is

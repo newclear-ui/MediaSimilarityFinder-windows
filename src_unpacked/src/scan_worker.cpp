@@ -132,6 +132,9 @@ void ScanWorker::run() {
     // analyzing anything, so a repeat scan of the same folder shows previous
     // results immediately, then appends only files that changed meanwhile.
     {
+      // 0.9.4.116: repair stale rows before showing them (deleted files used
+      // to linger as phantom group members; an offline root is a no-op).
+      engine_.cleanupMissingOnDisk(root_.toStdString());
       const auto stored = engine_.loadMatches();
       int loaded = 0;
       for (const auto& m : stored) {

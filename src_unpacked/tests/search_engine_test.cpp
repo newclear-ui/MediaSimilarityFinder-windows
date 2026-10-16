@@ -30,6 +30,44 @@ auto vf1=(d/"v1.mp4").string(); auto vf2=(d/"v2.mp4").string();
 if(!e.upsertFingerprint(vf1,0x1111000011110000ULL,(int)msf::MediaKind::Video,10,5,0,0xABCDEF01ULL,0,0,0x10ULL,0,0)) return 14;
 if(!e.upsertFingerprint(vf2,0x2222000022220000ULL,(int)msf::MediaKind::Video,10,6,0,0xABCDEF01ULL,0,0,0x20ULL,0,0)) return 15;
 auto vm=e.compareFingerprint(0x9999000099990000ULL,(int)msf::MediaKind::Video,100.0,"",0,0xABCDEF01ULL); if(vm.empty()||vm[0].rightPath!=vf1) return 16;
+// 0.9.4.116 regression: deleting a file externally and rescanning must remove
+// its match pairs too, not only its files row. The old walk reconciliation
+// called Database::remove() (files row only), so the deleted file survived as
+// a phantom group member forever (0-byte size, blank detail) while its match
+// rows kept listing it.
+{
+  std::filesystem::copy_file(d/"a.jpg", d/"del_a.jpg", std::filesystem::copy_options::overwrite_existing);
+  std::filesystem::copy_file(d/"a.jpg", d/"del_b.jpg", std::filesystem::copy_options::overwrite_existing);
+  const auto pre=e.scan(d.string());
+  if(pre.analyzed<2) return 25;
+  if(!e.saveMatches(pre.matches)) return 26;
+  bool pairSeen=false;
+  for(const auto& m:e.loadMatches())
+    if(m.leftPath.find("del_")!=std::string::npos||m.rightPath.find("del_")!=std::string::npos) pairSeen=true;
+  if(!pairSeen) return 27;
+  std::filesystem::remove(d/"del_b.jpg");
+  const auto post=e.scan(d.string());
+  if(post.removed<1) return 28;
+  for(const auto& m:e.loadMatches())
+    if(m.leftPath.find("del_b.jpg")!=std::string::npos||m.rightPath.find("del_b.jpg")!=std::string::npos)
+      return 29; // pre-fix: the pair rows survive the rescan
+}
+// 0.9.4.116 Load-path auto-repair: cleanupMissingOnDisk drops vanished match
+// endpoints so a Load never lists phantom members; an unreachable root must
+// be a no-op (an offline drive must not wipe the index).
+{
+  std::filesystem::copy_file(d/"a.jpg", d/"rep_a.jpg", std::filesystem::copy_options::overwrite_existing);
+  std::filesystem::copy_file(d/"a.jpg", d/"rep_b.jpg", std::filesystem::copy_options::overwrite_existing);
+  const auto rp=e.scan(d.string());
+  if(!e.saveMatches(rp.matches)) return 30;
+  std::filesystem::remove(d/"rep_b.jpg");
+  const std::size_t cleaned=e.cleanupMissingOnDisk(d.string());
+  if(cleaned<1) return 31;
+  for(const auto& m:e.loadMatches())
+    if(m.leftPath.find("rep_b.jpg")!=std::string::npos||m.rightPath.find("rep_b.jpg")!=std::string::npos)
+      return 32;
+  if(e.cleanupMissingOnDisk((d/"no_such_root").string())!=0) return 33;
+}
 // 0.9.4.114 regression: loadMatches (Load button + scan quick-load) must
 // survive large candidate sets. The 0.9.4.113 memo returned a reference into
 // an unordered_map; the second lookup's insert/rehash invalidated the first
