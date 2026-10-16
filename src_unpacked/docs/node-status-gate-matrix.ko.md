@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.118` (스캔 목록 churn 제거 — append 우선 재사용 + 대형 append 지연) · CPU CTest 123/123 · GPU CTest 124/124
+기준: `0.9.4.119` (처리량 표기 의미 명확화 — 분석 단계 라벨 + 전체/신규 요율) · CPU CTest 123/123 · GPU CTest 124/124
 최종 갱신: 2026-10-17
 
 ## 이 문서의 역할

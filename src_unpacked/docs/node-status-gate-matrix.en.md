@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.118` (scan list churn removed — append-first reuse + deferred large appends) - CPU CTest 123/123 - GPU CTest 124/124
+Baseline: `0.9.4.119` (throughput display bases clarified — analysis-stage label + overall/new rates) - CPU CTest 123/123 - GPU CTest 124/124
 Last updated: 2026-10-17
 
 ## Role of this document
