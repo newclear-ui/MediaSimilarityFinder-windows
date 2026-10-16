@@ -21,8 +21,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.117이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
-> G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**로 완료되어 큐에서 제거됐다.
+> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.118이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
+> G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**, 스캔 흐름의 동일 목록 반복 재구축(churn) 제거는 **0.9.4.118**로 완료되어 큐에서 제거됐다.
 > 과거 2026-10-07의 .62 crash-response / .63 GUI usability 분리는 당시 기록으로 유지하며, 현재 큐는 아래 표가 기준이다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
@@ -150,6 +150,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 핫픽스 2: 62097 크래시 루프 (이벤트 스레드 차단 + 잔존 킬 타이머) | **완료(0.9.4.115)** | .114에서도 지속된 62097의 정체 확정: `KillProcessExitCode=0xf291` = 슈퍼바이저 `kill()` 코드. D1(.113 회귀): `loadIndex`가 IPC 이벤트 스레드에서 동기 실행 + 배지 확인의 후보 파일 읽기(~1.5 GiB) → 10초+ 침묵 → health timeout → terminate(무효) → kill. D2(잠복): `spawn()`이 `escTimer_` 미중지 → 잔존 타이머가 새 백엔드를 사유 없이 kill → 자기 유지 루프. 잔존: Load 행의 quick-hash-only 배지 재계산. 수정: Load QThread 비동기화(`stopLoad` 직렬화, 시임), `spawn()`에 `escTimer_.stop()`, rows는 `m.contentIdentical`. 테스트 Test 1b(12초 load 생존 — 수정 전 FAIL), Test 3c(kill 사유 불변식 — 수정 전 `reasonless=3` FAIL → 0), checks 39→45. engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. **실기 확인 완료(2026-10-17 세션: 스캔·불러오기 킬 0건)**. |
 | 삭제 파일 유령 그룹 수정 + GUI 자동 정리 (잔존 인덱스 행) | **완료(0.9.4.116)** | 사용자 보고: 그룹 275(대표 Keren1286444-…) — 삭제된 유사 파일이 목록에 유령 멤버로 잔존(크기 0·상세 공란), 재스캔으로도 미제거. 원인: 스캔 삭제 정리가 `Database::remove()`(files 행만)라 matches·thumbs 잔존. 수정: `forgetRows`+`forgetNoTransaction`(스캔 트랜잭션 내 정리), `removePath`→`forget`, **자동 정리 API `cleanupMissingOnDisk`를 불러오기·스캔 quick-load에서 자동 실행**(루트 존재 시 매치 엔드포인트 검증→정리+`diskCleanup missing=N` 로그; 오프라인 무동작). 테스트: 삭제+재스캔 FAIL-first(exit 29)→PASS. engine/DB/schema/cache 불변. CPU CTest 122/122, GPU CTest 123/123. 실기 육안 확인 필요. |
 | GUI 대량 결과 적용 정지 제거 (지연·청크 채우기 + 메타 요청 폭풍 수정) | **완료(0.9.4.117)** | 프로브 실측(9,055그룹 합성 적용): 동기 `onResults` **609.7초**(프리즈) → **applyMs 84ms + 18.1초 비동기 채우기(틱 91)**. 원인 3건: ① rebuildGroups 동률 정렬의 경로당 FILE_META 요청(캐시 미스; 루프백 ffprobe 폴백 — 1,000그룹 65.9초) ② fillPair 동기 대량 채우기(그룹당 tree+grid 2위젯) ③ thumbCatchUpVisible 전 행 visualItemRect. 수정: `filePixels` 캐시 전용, 800행 초과 `GroupFillJob` 지연(100행/턴, 세대 취소, 앵커 복원), catch-up 가시 창 한정, `resultsApply`/`groupFill` 계측 로그. 회귀 프로브 `group_fill_probe`(수정 전 FAIL 재현). 표시 전용; engine/DB/schema/cache 불변. CPU CTest 123/123, GPU CTest 124/124. 실기 확인 필요(점진 채우기·반응성). |
+| 스캔 목록 churn 제거 (append 우선 재사용 + 대형 append 지연) | **완료(0.9.4.118)** | 사용자 실기(.117): 불러오기 점진 채우기·썸네일·그룹 275 해소 확인. 검색 중 "천천히 하나씩 → 한번에 많이" 로그 분석: 동일 9,057행 전체 재구축이 반복(05:04/05:08/05:14/05:16, 각 16~20초). 원인: beginScan·scanFinished·onResults·scanFailed가 `refreshGroupList()`(append=false) → 그룹이 그대로여도 전 행 재생성+썸네일 캐시 폐기. 수정: 4곳 `refreshGroupList(true)`(prefix 가드, 동일 목록 무동작) + 대형 append(300행 초과) `GroupFillJob` 지연(팬 비클리어). 검증: 재적용 rowsKept=1(수정 전 0), 신규 창 applyMs=77ms(지연 없으면 15,641ms), `group_fill_probe` checks=8(FAIL-first 2사이클). 표시 전용; engine/DB/schema/cache 불변. CPU CTest 123/123, GPU CTest 124/124. 실기 확인 필요(스캔 시작/종료 시 목록 유지). |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -236,12 +237,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.117 (GUI 대량 결과 적용 정지 제거 — 지연·청크 채우기 + 메타 요청 폭풍 수정) |
+| 기준 코드 | 0.9.4.118 (스캔 목록 churn 제거 — append 우선 재사용 + 대형 append 지연) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.117 GUI 대량 결과 적용 정지 제거 완료** — 프로브 실측으로 동기 적용 609.7초(9,055그룹)를 확인·수정: 캐시 전용 filePixels로 요청 폭풍 제거(rebuild 65.9s→3ms), 800행 초과 지연 채우기(applyMs 84ms + 18.1s 비동기, 틱 91), catch-up 가시 창 한정. 직전 0.9.4.116은 유령 그룹 자동 정리. engine/DB/schema/cache 불변. 다음: **실기 확인(불러오기 목록 점진 채우기·창 반응 + `resultsApply`/`groupFill` 로그)** + 그룹 275 소멸·배지 문구 → 제품 acceptance 재확인. S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU CTest 123/123, GPU CTest 124/124. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 완료(.113), production correction은 결정 대기. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.118 스캔 목록 churn 제거 완료** — 사용자 실기(.117)에서 불러오기/썸네일/그룹 275 개선 확인, 검색 중 목록 동작 로그 분석으로 동일 9,057행 전체 재구축 반복(16~20초 ×4회) 확인 → 스캔 시작/종료/적용/중단 경로 append 우선화 + 300행 초과 append 지연. 재적용 rowsKept=1(수정 전 0), 신규 창 applyMs 77ms(지연 없으면 15,641ms). 직전 0.9.4.117은 대량 결과 적용 정지 제거(609.7s→84ms+비동기), 0.9.4.116은 유령 그룹 자동 정리. engine/DB/schema/cache 불변. 다음: **실기 확인(스캔 시작/종료 시 목록 유지·`groupFill` 반복 소멸)** + 배지 문구 육안 → 제품 acceptance 재확인. S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU CTest 123/123, GPU CTest 124/124. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 완료(.113), production correction은 결정 대기. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인** 순으로 진행한다(S4 기능 acceptance는 0.9.4.112 완료, 최종 CLOSED 판단만 제품 acceptance와 함께). 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.117 |
+| 현재 버전 | 0.9.4.118 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |
