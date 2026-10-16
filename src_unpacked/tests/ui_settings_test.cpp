@@ -245,6 +245,9 @@ int main(int argc, char** argv) {
       // the duplicate groups/files/pairs split)
       "detailLogSummary", "detailLogDuration", "detailLogDupGroups",
       "detailLogDupFiles", "detailLogDupPairs", "detailLogThroughput",
+      // 0.9.4.119: file-line rate bases (overall = scanned/wall, new =
+      // analyzed/wall) so the two numbers can never be confused again
+      "detailLogRateOverall", "detailLogRateNew",
       "detailLogTotal", "detailLogTimeSplit", "detailLogMatching",
       // fingerprint-phase live progress (indeterminate bar + file/byte text)
       "fpProgress",

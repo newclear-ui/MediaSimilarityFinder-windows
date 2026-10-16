@@ -315,7 +315,12 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogDupGroups")) return S("중복 그룹","duplicate groups");
   if (!std::strcmp(key,"detailLogDupFiles")) return S("중복 파일","duplicate files");
   if (!std::strcmp(key,"detailLogDupPairs")) return S("중복 쌍","duplicate pairs");
-  if (!std::strcmp(key,"detailLogThroughput")) return S("처리량","throughput");
+  if (!std::strcmp(key,"detailLogThroughput")) return S("처리량(분석 단계)","throughput (analysis stage)");
+  // 0.9.4.119: the file line now shows two explicitly-based rates. The old
+  // single "(0.0 files/s)" was analyzed/wall, which reads as nonsense next to
+  // scanned=177,781; both bases are named instead (JSON values unchanged).
+  if (!std::strcmp(key,"detailLogRateOverall")) return S("전체","overall");
+  if (!std::strcmp(key,"detailLogRateNew")) return S("신규","new");
   if (!std::strcmp(key,"detailLogTotal")) return S("합계","Total");
   if (!std::strcmp(key,"detailLogTimeSplit")) return S("시간 배분","Time split");
   if (!std::strcmp(key,"detailLogMatching")) return S("매칭","Matching");
@@ -1718,9 +1723,20 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
       .arg(f1(sum["wallMs"].toDouble() / 1000.0)).arg(f1(sum["walkMs"].toDouble() / 1000.0))
       .arg(f1(sum["revalidateMs"].toDouble() / 1000.0)).arg(f1(sum["imageStageMs"].toDouble() / 1000.0))
       .arg(f1(sum["videoStageMs"].toDouble() / 1000.0)).arg(f1(sum["analyzeMs"].toDouble() / 1000.0));
-  lines << QString("%1: scan %2, analyzed %3, unchanged %4 (%5 files/s)").arg(trStr(lang(), "detailLogFiles"))
+  // 0.9.4.119: two labelled rates. "전체/overall" = scanned/wall (how fast the
+  // scan actually ran); "신규/new" = analyzed/wall (the telemetry filesPerSec,
+  // meaning "newly analyzed per second"). The old single unlabelled value was
+  // the latter, and a field report rightly called "0.0 files/s" next to
+  // scanned=177,781 confusing. JSON semantics are untouched.
+  const double wallMsTotal = sum["wallMs"].toDouble();
+  const double rateOverall = wallMsTotal > 0
+      ? 1000.0 * sum["scanned"].toDouble() / wallMsTotal : 0.0;
+  lines << QString("%1: scan %2, analyzed %3, unchanged %4 (%5 %6 files/s · %7 %8 files/s)")
+      .arg(trStr(lang(), "detailLogFiles"))
       .arg((qulonglong)sum["scanned"].toDouble()).arg((qulonglong)sum["analyzed"].toDouble())
-      .arg((qulonglong)sum["unchanged"].toDouble()).arg(f1(sum["filesPerSec"].toDouble()));
+      .arg((qulonglong)sum["unchanged"].toDouble())
+      .arg(trStr(lang(), "detailLogRateOverall")).arg(f1(rateOverall))
+      .arg(trStr(lang(), "detailLogRateNew")).arg(f1(sum["filesPerSec"].toDouble()));
   const qulonglong imgN = (qulonglong)imgs["count"].toDouble();
   const qulonglong imgGpu = (qulonglong)imgs["gpuHashed"].toDouble();
   lines << QString("%1: %2 (GPU %3, CPU %4), decode avg %5 ms, hash avg %6 ms").arg(trStr(lang(), "detailLogImages"))

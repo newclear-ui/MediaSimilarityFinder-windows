@@ -37,6 +37,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
+#include <QTextBrowser>
 #include <QThread>
 #include <QTimer>
 #include <QTreeWidget>
@@ -102,6 +103,10 @@ int main(int argc, char** argv) {
   bool saveClicked = false;
   bool fileDialogHandled = false;
   bool statusShown = false;
+  // 0.9.4.119: the dialog's rendered text is captured so the clarified
+  // throughput bases (analysis-stage label + two named file-line rates) are
+  // pinned by the acceptance path, not just by code review.
+  QString dialogText;
   int fileDialogTicks = 0;
   QTimer closer;
   closer.setInterval(250);
@@ -133,6 +138,9 @@ int main(int argc, char** argv) {
       return;
     }
     dialogSeen = true;
+    if (dialogText.isEmpty()) {
+      if (auto* tb = m->findChild<QTextBrowser*>()) dialogText = tb->toPlainText();
+    }
     if (!saveClicked) {
       for (auto* b : m->findChildren<QPushButton*>()) {
         if (b->text().contains(QStringLiteral("JSON"))) {
@@ -239,6 +247,24 @@ int main(int argc, char** argv) {
   if (!savedDoc.isObject() || savedDoc != doc)
     return fail("saved record != telemetry record");
   if (!statusShown) return fail("status does not show the saved path");
+  // ---- 0.9.4.119: clarified throughput bases ----
+  // The field report could not tell why a 177,781-file scan printed
+  // "0.0 files/s". The dialog now names the analysis-stage throughput and
+  // labels both file-line rates. Accept either UI language.
+  if (dialogText.isEmpty()) return fail("detailed-log dialog text not captured");
+  if (!dialogText.contains(QStringLiteral("처리량(분석 단계)")) &&
+      !dialogText.contains(QStringLiteral("throughput (analysis stage)")))
+    return fail("throughput basis label missing from the summary");
+  const bool rateOverall = dialogText.contains(QStringLiteral("전체")) ||
+                           dialogText.contains(QStringLiteral("overall"));
+  const bool rateNew = dialogText.contains(QStringLiteral("신규")) ||
+                       dialogText.contains(QStringLiteral("new "));
+  if (!rateOverall || !rateNew) return fail("file-line rate labels missing");
+  // Images/videos lines say "files/sec" and each of those already contains
+  // "files/s" as a prefix, so the old dialog had 2 matches; the new file line
+  // adds two of its own, making 4 the minimum for a correct render.
+  const int rateCount = dialogText.count(QStringLiteral("files/s"));
+  if (rateCount < 4) return fail("file line does not show both rates");
   // Failure branch: an unwritable path must report failure, never success.
   if (w.testSaveDetailedLog(QString::fromStdString((d / "no_such_dir" / "x.json").string())))
     return fail("unwritable save path reported success");
