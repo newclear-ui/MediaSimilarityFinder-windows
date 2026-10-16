@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.116` (삭제 파일 유령 그룹 수정 + GUI 자동 정리 — 잔존 인덱스 행) · CPU CTest 122/122 · GPU CTest 123/123
+기준: `0.9.4.117` (GUI 대량 결과 적용 정지 제거 — 지연·청크 채우기 + 메타 요청 폭풍 수정) · CPU CTest 123/123 · GPU CTest 124/124
 최종 갱신: 2026-10-16
 
 ## 이 문서의 역할
@@ -116,6 +116,7 @@ S4 저장/종료      실결함 수정 — 부분/0바이트 기록을 성공으
 핫픽스 .114/.115  .114: 사용자 실기 크래시(불러오기/검색 시작, exit code 62097) — `loadMatches` 메모의 맵 내부 참조 반환(UAF) 수정(값 반환) + 필드 규모 회귀 테스트(3,000쌍).
                  .115: 62097의 정체 확정(`KillProcessExitCode=0xf291` = 슈퍼바이저 kill). D1(.113 회귀): `loadIndex`가 IPC 이벤트 스레드에서 동기 실행 + 배지 확인의 후보 파일 읽기(~1.5 GiB) → health timeout → terminate(무효) → kill. D2(잠복): `spawn()`이 `escTimer_` 미중지 → 잔존 타이머가 새 백엔드를 사유 없이 kill(자기 유지 루프). 잔존: Load 행의 quick-hash-only 배지. 수정: Load QThread 비동기화 + `escTimer_.stop()` + rows `m.contentIdentical`; 테스트 Test 1b/3c(수정 전 FAIL 재현), checks 39→45. 실기 확인 완료(2026-10-17: 스캔·불러오기 킬 0건).
 유령 그룹 .116     사용자 보고: 그룹 275(대표 Keren1286444-…) — 삭제된 유사 파일이 목록에 유령 멤버로 잔존(크기 0·상세 공란), 재스캔으로도 미제거. 원인: 스캔 삭제 정리가 `Database::remove()`(files 행만)라 matches·thumbs 잔존. 수정: `forgetRows`+`forgetNoTransaction`(스캔 트랜잭션 내 정리), `removePath`→`forget`, `cleanupMissingOnDisk`(매치 엔드포인트 존재 검증→정리+로그; 오프라인 무동작)를 불러오기·스캔 quick-load에서 자동 실행. 테스트 FAIL-first(exit 29)→PASS. 실기 육안 확인 필요.
+대량 적용 .117     프로브 실측(9,055그룹): 동기 결과 적용 **609.7초**(프리즈) → **applyMs 84ms + 18.1초 비동기 채우기(틱 91)**. 원인 3건: rebuildGroups 동률 정렬의 경로당 FILE_META 요청(캐시 미스; 루프백 ffprobe 폴백 — 1,000그룹 65.9초), fillPair 동기 대량 채우기, thumbCatchUpVisible 전 행 visualItemRect. 수정: `filePixels` 캐시 전용, `GroupFillJob` 지연(800행 초과/100행 턴/세대 취소/앵커 복원), catch-up 가시 창 한정, `resultsApply`/`groupFill` 계측. 회귀 프로브 `group_fill_probe`(수정 전 FAIL). 실기 확인 필요(점진 채우기·반응성).
 현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
                  Search/Index/Comparison = NOT ACCEPTED; S4 기능 acceptance 자동화 PASS(최종 CLOSED 대기); XMP = CONDITIONAL;
                  color_thumb R1 완료(.113), production correction은 결정 대기; S5/S6는 선행 Gate 대기.

@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.116` (phantom group members from external deletes fixed + GUI auto-repair) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.117` (bulk result-apply stall removed — deferred chunked fill + metadata request storm fix) - CPU CTest 123/123 - GPU CTest 124/124
 Last updated: 2026-10-16
 
 ## Role of this document
@@ -119,6 +119,7 @@ Audit B1-B3/B7    B1 (FAIL reproduced): the badge compared size + the 64 KiB qui
 Hotfix .114/.115  .114: field crash (Load/Start Scan, exit code 62097) — the loadMatches memo's map-internal reference (UAF) fixed by returning by value + a field-scale regression test (3,000 pairs).
                   .115: identified 62097 (`KillProcessExitCode=0xf291` = the supervisor's kill). D1 (.113 regression): `loadIndex` ran synchronously on the IPC event thread + the badge confirmation's candidate reads (~1.5 GiB) -> health timeout -> terminate (ineffective) -> kill. D2 (latent): `spawn()` never stopped `escTimer_` -> a stale timer killed each fresh backend with no reason (self-sustaining loop). Leftover: the Load row's quick-hash-only badge. Fix: Load on a QThread worker + `escTimer_.stop()` + rows use `m.contentIdentical`; tests Test 1b/3c (pre-fix FAIL reproduced), checks 39->45. Field-confirmed (2026-10-17: zero kills on scan and Load).
 Phantom .116      Field report: group 275 (representative Keren1286444-…) — deleted similar files lingered as phantom members (0-byte size, blank detail) and even a rescan did not remove them. Cause: scan reconciliation used `Database::remove()` (files row only), leaving matches/thumbs behind. Fix: `forgetRows` + `forgetNoTransaction` (cleanup in the scan's transaction), `removePath` -> `forget`, and `cleanupMissingOnDisk` (validates match endpoints -> forgets + logs; offline no-op) runs automatically on Load and scan quick-load. Test FAIL-first (exit 29) -> PASS. Field visual check needed.
+Bulk fill .117    Probe (9,055 groups): a synchronous result apply took **609.7 s** (freeze) -> **applyMs 84 ms + an 18.1 s asynchronous fill (91 ticks)**. Three causes: the tie sorting's per-path FILE_META requests (cache misses; ffprobe fallback on the loopback — 1,000 groups 65.9 s), fillPair's synchronous bulk fill, thumbCatchUpVisible's per-row visualItemRect. Fix: cached-only `filePixels`, a `GroupFillJob` deferred fill (>800 rows / 100 rows per turn / generation cancels / anchor restore), a bounded catch-up window, `resultsApply`/`groupFill` logs. Regression probe `group_fill_probe` (pre-fix FAIL). Field check needed (progressive fill + responsiveness).
 current verdict   .105 file-operation/preview/index logs and .106 badge/real-process IPC await field evidence.
                   Search/Index/Comparison = NOT ACCEPTED; S4 functional acceptance automated PASS (final CLOSED pending); XMP = CONDITIONAL;
                   color_thumb R1 done (.113), production correction decision pending; S5/S6 await prerequisites.
