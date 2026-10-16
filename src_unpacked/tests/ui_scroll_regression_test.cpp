@@ -451,6 +451,15 @@ int main(int argc, char** argv) {
             QMetaObject::invokeMethod(&w2, "loadIndex");
             QApplication::processEvents();
             auto* g2 = w2.findChild<QListWidget*>("imgGrid");
+            // 0.9.4.115: the Load answer is asynchronous now (the work runs on
+            // a worker thread so the backend's IPC event thread never blocks);
+            // wait boundedly for the stored groups to arrive.
+            QElapsedTimer loadWait;
+            loadWait.start();
+            while ((!g2 || g2->count() < 80) && loadWait.elapsed() < 15000) {
+                QApplication::processEvents();
+                QThread::msleep(50);
+            }
             std::cout << "  [info] load grid items=" << (g2 ? g2->count() : -1)
                       << " rebuilds=" << w2.testFullRebuildCount()
                       << " pendingRightAfterLoad=" << w2.testThumbPendingCount() << "\n";
