@@ -770,6 +770,7 @@ void MainWindow::buildToolbar() {
   folder_->setMinimumWidth(200);
   QSettings st; folder_->setText(st.value("ui/lastFolder", "").toString());
   refresh_ = new QPushButton(QStringLiteral("📂 ") + trStr(lang(), "load"), toolBar_);
+  refresh_->setObjectName("loadBtn"); // automation hook (backend e2e load test)
   refresh_->setToolTip(trStr(lang(), "load"));
   connect(refresh_, &QPushButton::clicked, this, &MainWindow::loadIndex);
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");

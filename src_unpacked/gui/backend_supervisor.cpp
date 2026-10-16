@@ -285,6 +285,12 @@ void BackendSupervisor::spawn() {
     if (processAlive()) return; // G5: never stack a new backend on a live one
     // Fresh process, fresh escalation state: a stale armed timer from a
     // previous round must never kill this backend (0.9.4.78).
+    // 0.9.4.115 hotfix: stopping escTimer_ is what actually enforces that.
+    // spawn() reset escStage_ to 0 while the timer stayed armed, so its next
+    // fire took the stage-0 branch and KILLED this fresh backend ~killWait
+    // after spawn with no reason logged — a self-sustaining kill loop (field:
+    // exit code 0xf291 = 62097; the invariant test test3c caught it).
+    escTimer_.stop();
     escStage_ = 0;
     killExhausted_ = false;
     healthMisses_ = 0;

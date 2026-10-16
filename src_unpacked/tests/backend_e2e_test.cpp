@@ -186,6 +186,10 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) raw << QString::fromLocal8Bit(argv[i]);
     if (raw.contains(QStringLiteral("--gui-helper"))) return runGuiHelper(argc, argv, raw);
     qputenv("QT_QPA_PLATFORM", "offscreen");
+    // 0.9.4.115 (D1): the load seam must exist BEFORE the first backend spawn
+    // (QProcess children inherit the environment at spawn time only). Every
+    // Load in this suite runs the slow load; only Test 1b performs one.
+    qputenv("MSF_TEST_SLOW_LOAD_MS", "12000");
     QApplication app(argc, argv);
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -232,6 +236,7 @@ int main(int argc, char** argv) {
     int finishedCount = 0;
     int gapLines = 0;     // 0.9.4.111 (G4): sequence gaps = dropped messages
     int batchEntries = 0; // 0.9.4.111 (G4): match entries delivered
+    int backendExits = 0; // 0.9.4.115 (D1): unexpected backend exits
     QObject::connect(supervisor, &BackendClient::finished, supervisor,
                      [&](const QString&) { ++finishedCount; });
     QObject::connect(supervisor, &BackendClient::matchesBatch, supervisor,
@@ -241,6 +246,7 @@ int main(int argc, char** argv) {
     QObject::connect(supervisor, &BackendClient::backendLogLine, supervisor,
                      [&](const QString& line) {
                          if (line.contains(QStringLiteral("event gap"))) ++gapLines;
+                         if (line.contains(QStringLiteral("unexpected exit"))) ++backendExits;
                          std::cerr << "  [sv] " << line.toStdString() << std::endl;
                      });
 
@@ -297,6 +303,29 @@ int main(int argc, char** argv) {
                 },
                 30000, "test1 detail shows 8x8 via fileMeta");
         }
+    }
+
+    // ---- Test 1b (0.9.4.115, D1): Load must not block the backend's IPC
+    // event thread. With the test seam the load outlives the health window;
+    // the pre-fix synchronous load silenced HEALTH, tripped the health
+    // timeout, and the backend was killed mid-load (field: exit code 0xf291 =
+    // 62097) on real datasets. ----
+    {
+        auto* loadBtn = w.findChild<QPushButton*>("loadBtn");
+        check(loadBtn != nullptr, "test1b load button found");
+        bool loadedSeen = false;
+        // Wait for the RESULTS answer (not quickLoaded): the GUI keeps
+        // loading_ set until results arrives, and a scan click while loading_
+        // is ignored — the later scan phases depend on the state being clear.
+        QObject::connect(supervisor, &BackendClient::results, supervisor,
+                         [&](const QVector<BackendFile>&, const QStringList&) { loadedSeen = true; });
+        const int exitsBefore = backendExits;
+        loadBtn->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return loadedSeen; }, 60000,
+                  "test1b slow load completed while the backend stayed alive");
+        qunsetenv("MSF_TEST_SLOW_LOAD_MS");
+        check(backendExits == exitsBefore, "test1b no backend restart during the load");
     }
 
     // ---- Test 2: forced kill right after scan start -> restart -> auto-resume. ----
@@ -398,6 +427,50 @@ int main(int argc, char** argv) {
     qunsetenv("MSF_TEST_BACKEND_SILENT");
     check(w.isVisible(), "test3b GUI alive after startup-timeout storm");
     delete supervisor2;
+
+    // ---- Test 3c (0.9.4.115, D2): a stale escalation timer must never kill a
+    // freshly spawned backend. The 0.9.4.78 comment promised this, but spawn()
+    // reset escStage_ while leaving escTimer_ armed, so the timer's next fire
+    // took the stage-0 branch and KILLED the new backend ~killWait after spawn
+    // with no reason logged (field: exit code 0xf291/62097 self-sustaining
+    // loop). Invariant: every unexpected exit must be preceded, since its own
+    // spawn, by a logged escalation reason. ----
+    {
+        qputenv("MSF_TEST_BACKEND_SILENT", "1");
+        SupervisorOptions opt4;
+        opt4.readyTimeoutMs = 4000;
+        opt4.healthTimeoutMs = 4000;
+        opt4.maxAttempts = 3;
+        opt4.backoffMs = {200, 200, 200};
+        opt4.killGraceMs = 300;
+        opt4.killWaitMs = 2500;
+        auto* supervisor4 = new BackendSupervisor(&app, opt4);
+        std::vector<QString> events;
+        QObject::connect(supervisor4, &BackendClient::backendLogLine, supervisor4,
+                         [&](const QString& line) { events.push_back(line); });
+        supervisor4->ensureRunning();
+        pumpUntil([&] { return supervisor4->phase() == QStringLiteral("Failed"); }, 60000,
+                  "test3c silent-budget supervisor FAILED");
+        qunsetenv("MSF_TEST_BACKEND_SILENT");
+        std::size_t exits = 0, violations = 0;
+        bool reasonSinceSpawn = false;
+        for (const auto& line : events) {
+            if (line.contains(QStringLiteral("backend spawn"))) reasonSinceSpawn = false;
+            else if (line.contains(QStringLiteral("READY timeout"))
+                     || line.contains(QStringLiteral("watchdog:"))
+                     || line.contains(QStringLiteral("FAILED"))
+                     || line.contains(QStringLiteral("refuses to die"))) reasonSinceSpawn = true;
+            else if (line.contains(QStringLiteral("unexpected exit"))) {
+                ++exits;
+                if (!reasonSinceSpawn) ++violations;
+            }
+        }
+        std::cout << "  [info] test3c exits=" << exits << " reasonless=" << violations << "\n";
+        check(exits >= 2, "test3c repeated escalations observed");
+        check(violations == 0,
+              "test3c every kill has its own logged escalation reason (no stale-timer kill)");
+        delete supervisor4;
+    }
 
     // ---- Test 5 (0.9.4.111, G6): graceful shutdown is bounded AND prompt. ----
     // Qt updates QProcess state only when the event loop dispatches

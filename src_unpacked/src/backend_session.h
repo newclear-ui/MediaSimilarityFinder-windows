@@ -144,9 +144,16 @@ private:
     void drainToGui();
     void pushStatusSnapshot();
     void teardownWorker();
+    // 0.9.4.115: the Load work (index open + stored matches, including the
+    // badge confirmation that reads candidate files) must never run on the
+    // IPC event thread. A >healthTimeout silence made the supervisor kill the
+    // backend (exit code 0xf291) and loop on real datasets.
+    void runLoadIndex(const QString& root, const QString& appDir);
+    void stopLoad();
     static SessionMonitorStatus convertStatus(const msf::MonitorStatus& s);
 
     QThread* thread_ = nullptr;
+    QThread* loadThread_ = nullptr;
     ScanWorker* worker_ = nullptr;
     std::unique_ptr<msf::MediaMonitor> monitor_;
     // 0.9.4.84: pushes the engine counters (analyzed/unchanged/gpu) on a timer

@@ -37,6 +37,7 @@ BackendSession::~BackendSession() {
 void BackendSession::teardownWorker() {
     scanning_ = false;
     if (statusTimer_) statusTimer_->stop();
+    stopLoad(); // a pending Load must finish before the session is reused/closed
     if (thread_) {
         thread_->quit();
         thread_->wait();
@@ -44,6 +45,14 @@ void BackendSession::teardownWorker() {
         delete thread_;
         thread_ = nullptr;
         worker_ = nullptr;
+    }
+}
+
+void BackendSession::stopLoad() {
+    if (loadThread_) {
+        loadThread_->wait();
+        loadThread_->deleteLater();
+        loadThread_ = nullptr;
     }
 }
 
@@ -336,6 +345,24 @@ void BackendSession::loadIndex(const QString& root, const QString& appDir) {
     // the stored files and pairs, and report them through the same
     // results()/quickLoaded() signals a scan uses, so the GUI reuses its
     // existing population path (onResults + onQuickLoaded).
+    // 0.9.4.115 hotfix: run the work on a worker thread. It includes the badge
+    // confirmation (0.9.4.113) that reads candidate files; executing that on
+    // the IPC event thread silenced HEALTH past the supervisor's health window
+    // and the backend was killed mid-load (exit code 0xf291 = 62097) on real
+    // datasets. The signals cross threads queued, exactly like scan answers.
+    stopLoad();
+    loadThread_ = QThread::create([this, root, appDir] { runLoadIndex(root, appDir); });
+    connect(loadThread_, &QThread::finished, this, [this] {
+        if (loadThread_) { loadThread_->deleteLater(); loadThread_ = nullptr; }
+    });
+    loadThread_->start();
+}
+
+void BackendSession::runLoadIndex(const QString& root, const QString& appDir) {
+    // 0.9.4.115: test-only seam proving the event thread stays responsive
+    // (MSF_TEST_SLOW_LOAD_MS, set before the backend spawns).
+    if (qEnvironmentVariableIsSet("MSF_TEST_SLOW_LOAD_MS"))
+        QThread::msleep(qEnvironmentVariableIntValue("MSF_TEST_SLOW_LOAD_MS"));
     msf::MediaSearchEngine engine;
     if (!engine.openIndexForRoot(root.toStdString(), appDir.toStdString())) {
         emit failed(QStringLiteral("load index failed: %1").arg(root));
@@ -358,23 +385,15 @@ void BackendSession::loadIndex(const QString& root, const QString& appDir) {
     }
     QStringList rows;
     rows.reserve((int)matches.size());
-    // 0.9.4.106: content-identity flag for the display badge (size + quick hash
-    // equal). The states list is already loaded here, so the join is free.
-    QHash<QString, QPair<qulonglong, QString>> ident;
-    ident.reserve(states.size() * 2 + 1);
-    for (const auto& f : states)
-        ident.insert(QString::fromStdString(f.path),
-                     qMakePair((qulonglong)f.size, QString::fromStdString(f.quickHash)));
+    // 0.9.4.106/0.9.4.113/0.9.4.115: the engine's loadMatches already carries
+    // the content-identity flag (quick-hash candidate gate + full-content
+    // confirmation). The earlier local recompute here still used the quick
+    // hash only, so the Load badge kept the pre-0.9.4.113 mislabel rule.
     for (const auto& m : matches) {
         const QString lp = QString::fromStdString(m.leftPath);
         const QString rp = QString::fromStdString(m.rightPath);
-        bool identical = false;
-        const auto a = ident.constFind(lp);
-        const auto b = ident.constFind(rp);
-        if (a != ident.constEnd() && b != ident.constEnd())
-            identical = a->first == b->first && !a->second.isEmpty() && a->second == b->second;
         rows << (lp + "\t" + rp + "\t" + QString::number(m.percent, 'f', 1)
-                 + "\t" + (identical ? "1" : "0"));
+                 + "\t" + (m.contentIdentical ? "1" : "0"));
     }
     emit quickLoaded((int)matches.size());
     emit results(files, rows);
