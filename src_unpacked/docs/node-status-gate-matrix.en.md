@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.113` (independent-audit items B1-B3, B7 — full-content badge confirmation + analyze-mode round trip + no-FFmpeg SKIP) - CPU CTest 122/122 - GPU CTest 123/123
+Baseline: `0.9.4.114` (hotfix: Load/Start-Scan backend crash — loadMatches reference-invalidation UAF) - CPU CTest 122/122 - GPU CTest 123/123
 Last updated: 2026-10-16
 
 ## Role of this document
@@ -109,13 +109,14 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-baseline          0.9.4.113 (CPU CTest 122/122, GPU CTest 123/123 — results recorded in Work Log)
-active status     Process split P1-P4 complete + G4/G6 verified (.111) + S4 save/exit acceptance done (.112) + independent-audit items B1-B3/B7 applied (.113); field GUI acceptance for .105/.106 and final Search/Index/Comparison acceptance remain open
+baseline          0.9.4.114 (CPU CTest 122/122, GPU CTest 123/123 — results recorded in Work Log)
+active status     Process split P1-P4 complete + G4/G6 verified (.111) + S4 save/exit acceptance done (.112) + independent-audit items B1-B3/B7 applied (.113) + Load/Start-Scan crash hotfix (.114); field GUI acceptance for .105/.106 and final Search/Index/Comparison acceptance remain open
 next              .105/.106 field acceptance -> real-dataset Search/Index/Comparison acceptance -> XMP coverage -> S5 benchmark -> S6 gate
 G4/G6 verified    G4: stress PASS — a 3 s consumer stall stays lossless (0 gaps, 600 delivered), no deadlock, bounded RSS (20/20/21 MB). No defect confirmed (design review: GUI->Backend bounded by pending cap; Backend->GUI backlog = output size).
                   G6: two real defects fixed — fixed 3 s exit delay (3049->6 ms; `waitForFinished` handle wait with re-entry blocked) + Job Object Win32 return checks/logs. Parent-crash E2E: the job reaps the wedged backend; the `--no-job` control survives, proving the job is load-bearing.
 S4 save/exit      Real defect fixed — the partial/zero-write false-success is removed (`saveDetailedLogTo`, exact byte count). Real button -> file picker -> write -> status E2E PASS (`save=ok`, 3 repeats). On-screen rendering stays recorded as "not done" (headless). Final CLOSED remains tied to product acceptance (§10).
 Audit B1-B3/B7    B1 (FAIL reproduced): the badge compared size + the 64 KiB quick hash only, so a differing tail was identical=true. Fix: the quick hash is a candidate gate only; passing pairs require full-content SHA-256 equality (per-file memo, >512 MiB loses the badge; quick-load uses the same contract). A data race found during verification was fixed (16 concurrent shard inserts -> `std::mutex`). Measured cost: ~1.5 GiB extra reads per full scan (user index). B2: settings -> received telemetry `"mode":"A"/"B"` round-trip tests. B3: no-FFmpeg lane SKIP (exit 0) verified. B7: S4 row/chain wording reconciled.
+Hotfix .114       Field crash (Load/Start Scan, exit code 62097 looping with the "loading index" notice hanging) — cause: the .113 B1 memo in `loadMatches` returned a reference into the map; the second insert/rehash invalidated the first reference (UAF). Its callers (Load and scan quick-load) match both symptoms. Fix: return by value. Field-scale regression test (3,000 pairs / 6,000 files). The user's index DB is undamaged. Field re-check needed (incl. Load duration).
 current verdict   .105 file-operation/preview/index logs and .106 badge/real-process IPC await field evidence.
                   Search/Index/Comparison = NOT ACCEPTED; S4 functional acceptance automated PASS (final CLOSED pending); XMP = CONDITIONAL;
                   color_thumb R1 done (.113), production correction decision pending; S5/S6 await prerequisites.
