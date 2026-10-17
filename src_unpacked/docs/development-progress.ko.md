@@ -21,8 +21,8 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.122이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
-> G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**, 스캔 흐름의 동일 목록 반복 재구축(churn) 제거는 **0.9.4.118**, 처리량 표기 의미 명확화(후보 3)는 **0.9.4.119**, GUI-less 구성 복구·배지 비용 판정(LOW PRIORITY)·제품 acceptance 런북(남은 후보 전부)은 **0.9.4.120**, 상세 정보창 폭주 수정(그룹 280 실기 3건)은 **0.9.4.121**, 우클릭 경로 외부 I/O 제거(우클릭 시스템 정지 조사 후속 선제 조치)는 **0.9.4.122**로 완료되어 큐에서 제거됐다.
+> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.123이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
+> G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**, 스캔 흐름의 동일 목록 반복 재구축(churn) 제거는 **0.9.4.118**, 처리량 표기 의미 명확화(후보 3)는 **0.9.4.119**, GUI-less 구성 복구·배지 비용 판정(LOW PRIORITY)·제품 acceptance 런북(남은 후보 전부)은 **0.9.4.120**, 상세 정보창 폭주 수정(그룹 280 실기 3건)은 **0.9.4.121**, 우클릭 경로 외부 I/O 제거는 **0.9.4.122**, 뷰모드 플레이크 근본 수정+PDB 동봉+덤프 원클릭+acceptance 재확인(판정 유지)은 **0.9.4.123**으로 완료되어 큐에서 제거됐다.
 > 과거 2026-10-07의 .62 crash-response / .63 GUI usability 분리는 당시 기록으로 유지하며, 현재 큐는 아래 표가 기준이다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
@@ -155,6 +155,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | GUI-less 구성 복구 + 배지 비용 판정 + 제품 acceptance 런북 | **완료(0.9.4.120)** | ① `MSF_BUILD_GUI=OFF`+`MSF_BUILD_TESTS=ON` 구성 실패(CMakeLists:456 `Qt6::Widgets` 미발견, FAIL-first 재현) 수정: `msf_ui_detailed_log_test`를 GUI 테스트 블록으로 이동 → 헤드리스 트리 configure/빌드 성공(CTest 98 등록), GUI=ON 등록 수 불변(123/124). ② 배지 확인 비용(후보 2) **LOW PRIORITY** 판정 기록: .113 실측 ~1.5 GiB/전체 스캔(69.2 GB의 2.2%, NVMe <1 s), 06:40 실기 후보 2쌍·불러오기 체감 정상, 부분 캡은 감사 B1 뒤 꼬리 오표기 재도입이므로 금지(재검토 조건 명시). ③ `docs/architecture/product-acceptance-runbook.{ko,en}.md` 신설(Search/Index/Comparison 최종 acceptance 체크리스트). 판정·저장·프로토콜·engine/DB/schema/cache 불변. CPU CTest 123/123, GPU CTest 124/124. |
 | 상세 정보창 폭주 수정 (유사도 라벨 래핑 + 값 행 규율 + 파일 썸네일 재시도) | **완료(0.9.4.121)** | 실기(그룹 280): 파일 선택 시 우측 폭주+스플리터 잠금, 가운데 침범, 검색 시작 후 대표 외 썸네일 소실. 프로브 실측: ① 유사도 탭 무래핑 → 탭 최소 2034px → 우측 2038 고정(공백 없는 경로는 wrap만으로 1812 유지 — 단어 1개) ② 값 행 7종 최소너비 요구 ③ 파일 목록 1회 요청 의존(중간 재시도 있으나 파일·프리뷰 재시도 없음). 수정: `simLabel_` wrap+`Ignored`+구분자 ZWSP(툴팁 원문), 값 행 `wrapVal` 통일, catch-up을 파일 가시창+프리뷰로 확장. 결과: tabPage2 2034→129, detailTabs 2038→344, 우측 최소 2038→592(고정 내용), 요청 델타 3→6. 회귀 `detail_layout_probe`(FAIL-first 3종, 5/5 PASS, CTest 총 125). 표시 전용; engine/DB/schema/cache 불변. CPU CTest 124/124, GPU CTest 125/125. 실기 육안 확인 필요. |
 | 우클릭 경로 외부 I/O 제거 (QuickLook 탐색 negative 캐시) | **완료(0.9.4.122)** | 실기: 파일 목록 우클릭 시 시스템 전체 일시 정지. 메뉴 경로 전수 조사: 생성 시점 유일 외부 호출=`quickLookTarget()`(QL 미설치 시 매 클릭 레지스트리 재탐색). 전역 입력 차단 수단 전무+메뉴 경로 GPU 작업 제로 → 메뉴 코드에 OS 커서 정지 수단 없음(증상은 TDR/후크 교착 서명). 선제 조치: 레지스트리 탐색에만 120초 negative 캐시(경로 확인·파이프 즉시성·전송 경로 불변). 판정·저장·프로토콜·engine/DB/schema/cache 불변. CPU CTest 124/124, GPU CTest 125/125. 실기 재현 확인 필요(이벤트 뷰어 4101 등 확증 절차는 조사 보고서에 기록). |
+| 뷰모드 플레이크 근본 수정 + PDB 동봉 + 덤프 수집 원클릭 + 제품 acceptance 재확인 | **완료(0.9.4.123)** | ① `view_mode_probe` 부하 플레이크 4회 관측(0.9.4.118 2회·0.9.4.121 2회, 모두 빌드 직후·재실행 PASS): 기준선 단일 재스냅샷 비교가 Batched 증분/병합 패스에 깨짐 → 최대 10회 수렴 루프로 교체(진성 진동은 여전히 실패). 단독 3연속 PASS. ② PDB 미동봉 해소: `package_portable.ps1`이 두 Release PDB를 exe 옆에 복사(누락 시 패키징 실패). 포터블 약 44→90 MB. ③ `scripts/enable_localdumps.ps1` 신설(양 이미지, Count 3·Type 1, 미승격 거부 검증, 런북 연결). ④ 런북 18개 항목 재확인 결과표 — Index I-1/I-3/I-4/I-5·Search S-1/S-3/S-4/S-5/S-6·Comparison C-1/C-2(의미)/C-4/C-6 PASS, 실기 항목 잔여로 최종 **NOT ACCEPTED 유지**. 판정·저장·프로토콜·engine/DB/schema/cache 불변. CPU CTest 124/124, GPU CTest 125/125. |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -241,12 +242,12 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 
 | 항목 | 상태 |
 | --- | --- |
-| 기준 코드 | 0.9.4.122 (우클릭 경로 외부 I/O 제거 — QuickLook 탐색 negative 캐시) |
+| 기준 코드 | 0.9.4.123 (뷰모드 플레이크 근본 수정 + PDB 동봉 + 덤프 수집 원클릭 + 제품 acceptance 재확인) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.122 우클릭 경로 외부 I/O 제거 완료** — 실기(파일 목록 우클릭 시 시스템 전체 일시 정지) 조사 후속 선제 조치. 메뉴 경로 전수 조사: 생성 시점 유일 외부 호출=`quickLookTarget()`(QL 미설치 시 매 클릭 레지스트리 재탐색). 전역 입력 차단 수단 전무+메뉴 경로 GPU 작업 제로 → 메뉴 코드에 OS 커서 정지 수단 없음(증상은 TDR/후크 교착 서명, 우클릭은 방아쇠). 수정: 레지스트리 탐색에만 120초 negative 캐시(경로 확인·파이프 즉시성·전송 경로 불변). 직전 0.9.4.121은 상세 정보창 폭주 수정(그룹 280 실기 3건). engine/DB/schema/cache 불변. 다음: **실기 재현 확인(이벤트 뷰어 4101·후크/셸 분리 테스트)** → 제품 acceptance 재확인(런북 기준). S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU CTest 124/124, GPU CTest 125/125. 남은 것: 비디오/크롭까지 프론티어 확장, LocalDumps+PDB 확보, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 완료(.113), production correction은 결정 대기. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.123 뷰모드 플레이크 근본 수정 + PDB 동봉 + 덤프 원클릭 + acceptance 재확인 완료** — ① 기준선 단일 재스냅샷 비교의 부하 flake(4회 관측) → 최대 10회 수렴 루프(진성 진동은 여전히 실패) ② 포터블에 두 Release PDB 동봉(누락 시 패키징 실패, 약 44→90 MB) ③ `scripts/enable_localdumps.ps1` 신설(거부 경로 검증, 런북 연결) ④ 런북 18개 항목 대조: PASS=I-1/I-3/I-4/I-5·S-1/S-3/S-4/S-5/S-6·C-1/C-2(의미)/C-4/C-6, 실기 잔여=I-2/I-6·S-2 edge·C-2(문구)/C-3(실데이터)/C-5·C-6(대량) → 최종 **NOT ACCEPTED 유지**. engine/DB/schema/cache 불변. 다음: **실기 항목 확인**(런북 기준) → 제품 acceptance 재확인. S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU CTest 124/124, GPU CTest 125/125. 남은 것: 비디오/크롭까지 프론티어 확장, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 완료(.113), production correction은 결정 대기. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인** 순으로 진행한다(S4 기능 acceptance는 0.9.4.112 완료, 최종 CLOSED 판단만 제품 acceptance와 함께). 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.122 |
+| 현재 버전 | 0.9.4.123 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

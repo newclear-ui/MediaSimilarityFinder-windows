@@ -37,7 +37,7 @@ Qt warning/critical/fatal의 최종 기록. fatal 직전 줄이 마지막 단서
 
 ## 2. 덤프 수집 설정 (다음 발생 대비)
 
-관리자 PowerShell에서 1회 실행한다.
+관리자 PowerShell에서 1회 실행한다. 원클릭 스크립트(`src_unpacked/scripts/enable_localdumps.ps1`, 관리자 권한 필요, 기본값 아래와 동일)를 권장하며, 수동 절차는 다음과 같다.
 
 ```powershell
 $dumpRoot = "D:\Temp\OpenCodeWork\dumps"

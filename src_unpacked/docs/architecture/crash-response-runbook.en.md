@@ -39,7 +39,7 @@ so set up dump collection below.
 
 ## 2. Dump collection setup (for the next occurrence)
 
-Run once in an elevated PowerShell:
+Run once in an elevated PowerShell. The one-click script (`src_unpacked/scripts/enable_localdumps.ps1`, requires elevation, same defaults as below) is recommended; the manual procedure follows:
 
 ```powershell
 $dumpRoot = "D:\Temp\OpenCodeWork\dumps"

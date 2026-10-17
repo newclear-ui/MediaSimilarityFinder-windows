@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.122` (우클릭 경로 외부 I/O 제거 — QuickLook 탐색 negative 캐시) · CPU CTest 124/124 · GPU CTest 125/125
+기준: `0.9.4.123` (뷰모드 플레이크 근본 수정 + PDB 동봉 + 덤프 수집 원클릭 + 제품 acceptance 재확인) · CPU CTest 124/124 · GPU CTest 125/125
 최종 갱신: 2026-10-17
 
 ## 이 문서의 역할
