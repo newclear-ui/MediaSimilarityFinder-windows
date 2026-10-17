@@ -3801,6 +3801,18 @@ static QString quickLookExePath() {
   if (!user.isEmpty()) cands << user + "\\scoop\\apps\\quicklook\\current\\QuickLook.exe";
   for (const auto& c : cands)
     if (QFileInfo(c).isFile()) { cached = QDir::toNativeSeparators(c); return cached; }
+  // 0.9.4.122: negative-cache the Uninstall-registry walk below. While
+  // QuickLook is absent it re-ran on every right-click (the well-known-path
+  // checks above are microsecond file stats, but the two-hive enumeration is
+  // tens of milliseconds of synchronous GUI-thread I/O per menu open).
+  // Skipping the re-walk for 120 s keeps a mid-session install discoverable
+  // while the click path stays cheap. The pipe check in quickLookTarget()
+  // is untouched, so a QuickLook start/stop still reflects immediately, and
+  // the send path (previewSelectedQuickLook) is unchanged.
+  static qint64 lastRegProbeMs = 0;
+  const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+  if (nowMs - lastRegProbeMs < 120000) return cached; // still empty
+  lastRegProbeMs = nowMs;
   // Uninstall registry (machine + user).
   for (const char* root : {"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
                            "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"}) {
