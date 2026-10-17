@@ -276,13 +276,25 @@ int main(int argc, char** argv) {
   }
   check(base.count >= 2, "baseline has groups");
   check(base.overlapPairs == 0, "baseline has no overlap");
+  // A forced layout pass can still catch Batched layout mid-flight, and a
+  // coalesced singleShot pass can land between the two pumps - so one
+  // re-snapshot is not proof of convergence. Under post-build load that
+  // single comparison flakes (field: 0.9.4.118/0.9.4.121 runs). Repeat the
+  // forced pass until two consecutive snapshots agree (bounded: a genuinely
+  // oscillating layout still fails after 10 attempts).
   {
-      grid->doItemsLayout();
-      QApplication::processEvents();
-      const Snap forced = snapshot(grid);
-      bool same = (forced.rects.size() == base.rects.size());
-      for (size_t k = 0; same && k < forced.rects.size(); ++k)
-          same = (forced.rects[k] == base.rects[k]);
+      Snap prev = base;
+      Snap forced;
+      bool same = false;
+      for (int attempt = 0; attempt < 10 && !same; ++attempt) {
+          grid->doItemsLayout();
+          QApplication::processEvents();
+          forced = snapshot(grid);
+          same = (forced.rects.size() == prev.rects.size());
+          for (size_t k = 0; same && k < forced.rects.size(); ++k)
+              same = (forced.rects[k] == prev.rects[k]);
+          prev = forced;
+      }
       check(same, "baseline geometry converged");
   }
 

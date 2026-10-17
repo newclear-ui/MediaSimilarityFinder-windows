@@ -20,6 +20,17 @@ Copy-Item $exe $OutputDir -Force
 # no shell command assembly). Present from P1 on; spawning arrives in P3.
 $backendExe = Join-Path (Split-Path $exe -Parent) "MediaSimilarityFinderBackend.exe"
 if (Test-Path $backendExe) { Copy-Item $backendExe $OutputDir -Force }
+# 0.9.4.123: ship the matching Release PDBs beside the executables so a field
+# crash dump can be symbolized against exactly this build (the runbook
+# requires the fault stack; without archived PDBs a dump only yields
+# module+offset). Codegen is unchanged (/Zi + /DEBUG add debug info only).
+# Missing PDBs fail the package: an un-symbolizable portable must never
+# ship silently.
+foreach ($pdbName in @("MediaSimilarityFinder.pdb", "MediaSimilarityFinderBackend.pdb")) {
+  $pdbSrc = Join-Path (Split-Path $exe -Parent) $pdbName
+  if (-not (Test-Path $pdbSrc)) { throw "PDB not found (symbols would be missing): $pdbSrc" }
+  Copy-Item $pdbSrc $OutputDir -Force
+}
 $qtBin = Split-Path $exe -Parent
 # Project-local vcpkg prefix used by the current Windows build.
 $vcpkgTripletRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "vcpkg_installed\x64-windows"
