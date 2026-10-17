@@ -3731,14 +3731,38 @@ QString quickLookToggleMessage(const QString& filePath) {
   return QStringLiteral("QuickLook.App.PipeMessages.Toggle|") +
          QDir::toNativeSeparators(filePath) + QStringLiteral("|\n");
 }
+// 0.9.4.125: bounded write. The synchronous version blocked the GUI thread
+// indefinitely when a wedged server held the pipe open without reading (the
+// small Toggle message normally fits the buffer and returns at once, so this
+// only triggers on a stuck server - exactly the unresponsive-UI class this
+// change eliminates). Overlapped WriteFile + a 5 s wait; on timeout the
+// pending write is cancelled and the send fails like any other error, which
+// the caller already reports. The open itself stays synchronous: with no
+// instance - or all instances busy - CreateFileW fails immediately, so only
+// a server that created an instance but never listens could still block the
+// open (a server-side bug outside our reach; documented, not handled).
+static const DWORD kQuickLookIoMs = 5000;
 bool quickLookSendMessage(const QString& pipeName, const QByteArray& payload) {
   HANDLE h = CreateFileW(reinterpret_cast<LPCWSTR>(pipeName.utf16()), GENERIC_WRITE,
-                         0, nullptr, OPEN_EXISTING, 0, nullptr);
+                         0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
   if (h == INVALID_HANDLE_VALUE) return false;
+  HANDLE ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  if (!ev) { CloseHandle(h); return false; }
+  OVERLAPPED ov{};
+  ov.hEvent = ev;
   DWORD written = 0;
-  const BOOL ok = WriteFile(h, payload.constData(), (DWORD)payload.size(), &written, nullptr);
+  BOOL ok = WriteFile(h, payload.constData(), (DWORD)payload.size(), &written, &ov);
+  bool done = false;
+  if (ok) {
+    done = true; // completed synchronously
+  } else if (GetLastError() == ERROR_IO_PENDING) {
+    if (WaitForSingleObject(ev, kQuickLookIoMs) == WAIT_OBJECT_0)
+      done = GetOverlappedResult(h, &ov, &written, FALSE) != FALSE;
+    if (!done) CancelIo(h); // best-effort unblock before close
+  }
+  CloseHandle(ev);
   CloseHandle(h);
-  return ok && written == (DWORD)payload.size();
+  return done && written == (DWORD)payload.size();
 }
 static QString quickLookUserSid() {
   HANDLE tok = nullptr;

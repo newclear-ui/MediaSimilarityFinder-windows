@@ -10,6 +10,8 @@
 #endif
 #include <windows.h>
 #include <QCoreApplication>
+#include <QElapsedTimer>
+#include <atomic>
 #include <future>
 #include <thread>
 #include <chrono>
@@ -46,6 +48,50 @@ int main(int argc, char** argv) {
     std::cerr << "mismatch got=" << got.size() << " want=" << expect.size() << "\n"; return 4;
   }
   std::cout << "quicklook_pipe=ok bytes=" << got.size() << "\n";
+
+  // 0.9.4.125: wedged server. The instance is connected but never reads, and
+  // the payload (4 MB) far exceeds any pipe buffer, so a synchronous
+  // WriteFile would block forever on the GUI thread. The bounded send must
+  // fail fast instead. (Pre-fix this check hangs the test binary; the
+  // FAIL-first reproduction is a run killed by an external timeout.)
+  const std::wstring wname = L"\\\\.\\pipe\\msf-ql-probe-wedge-" + std::to_wstring(GetCurrentProcessId());
+  HANDLE wh = CreateNamedPipeW(wname.c_str(), PIPE_ACCESS_INBOUND,
+                               PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                               1, 65536, 64, 0, nullptr);
+  if (wh == INVALID_HANDLE_VALUE) { std::cerr << "wedge setup failed\n"; return 6; }
+  std::atomic<bool> wedgeDone{false};
+  std::atomic<bool> wedgeListening{false};
+  std::thread wedge([&] {
+    wedgeListening.store(true); // about to listen; the client rendezvous below
+    if (ConnectNamedPipe(wh, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED) {
+      // Connected but deliberately never reads: the client's write must time
+      // out instead of blocking forever. Sleep in slices so the process can
+      // always exit (a detached thread never blocks the suite's teardown).
+      for (int i = 0; i < 600 && !wedgeDone.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    DisconnectNamedPipe(wh);
+    CloseHandle(wh);
+  });
+  wedge.detach();
+  // Wait until the server is listening (deterministic setup). Note this flag
+  // intentionally precedes ConnectNamedPipe: a "connected" flag could only be
+  // set after the client acts, which would deadlock this wait.
+  bool up = false;
+  for (int i = 0; i < 100 && !(up = wedgeListening.load()); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  if (!up) { wedgeDone.store(true); std::cerr << "wedge setup: server never listened\n"; return 6; }
+  const std::wstring wpipe = wname;
+  const QString wqpipe = QString::fromStdWString(wpipe);
+  const QByteArray big = payload + QByteArray(4 * 1024 * 1024, 'x'); // far over any pipe buffer
+  QElapsedTimer wt;
+  wt.start();
+  const bool wedgeOk = quickLookSendMessage(wqpipe, big);
+  const qint64 wedgeMs = wt.elapsed();
+  wedgeDone.store(true);
+  std::cout << "  [info] wedge send ok=" << wedgeOk << " ms=" << wedgeMs << "\n";
+  if (wedgeOk) { std::cerr << "wedged pipe unexpectedly accepted\n"; return 7; }
+  if (wedgeMs > 15000) { std::cerr << "wedged pipe did not fail fast\n"; return 8; }
+  if (wedgeMs < 4000) { std::cerr << "wedge send failed without waiting out the timeout\n"; return 9; }
+  std::cout << "quicklook_pipe_wedge=ok\n";
   return 0;
 }
 #else
