@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.123` (view-mode flake root fix + PDBs shipped + one-click dump setup + product acceptance recheck) - CPU CTest 124/124 - GPU CTest 125/125
+Baseline: `0.9.4.124` (false unimplemented markers corrected — CLI tracking follow-up) - CPU CTest 124/124 - GPU CTest 125/125
 Last updated: 2026-10-17
 
 ## Role of this document
