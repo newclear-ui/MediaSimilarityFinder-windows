@@ -115,6 +115,12 @@ public:
   // tests can prove a bulk rebuild issues no per-row thumbnail requests.
   void testRefreshGroupList() { refreshGroupList(); }
   qulonglong testFullRebuildCount() const { return fullRebuildCount_; }
+  // 0.9.4.121: backend thumbnail request counter (monotonic). The middle
+  // grid heals lost answers through the catch-up pump, but the file grid
+  // used to rely on the single request fired at row creation; this counter
+  // lets the layout probe prove both panes re-ask a dropped answer after a
+  // catch-up tick, independent of backend answer timing.
+  qulonglong testThumbRequestCount() const { return thumbRequestCount_; }
   // 0.9.4.105: backend metadata request counter. Pins "select a file -> one
   // metadata request" (the old code re-requested on every duration-less
   // answer, an endless rebuild/request ping-pong that blanked the detail).
@@ -402,6 +408,7 @@ private:
   // pending-request map; arrivals paint via onThumbReady.
   mutable qulonglong thumbStatMem_ = 0, thumbStatBackend_ = 0, thumbStatPlace_ = 0;
   mutable qulonglong thumbPaintedCount_ = 0;
+  mutable qulonglong thumbRequestCount_ = 0; // 0.9.4.121: see testThumbRequestCount
   // Coalesced icon-layout work (0.9.4.75): thumbnail arrivals mark the visible
   // grids dirty instead of forcing a Batched layout per arrival. The first
   // arrival in a burst schedules one zero-delay layout pass.

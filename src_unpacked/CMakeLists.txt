@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.120 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.121 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -829,6 +829,14 @@ if(MSF_BUILD_GUI)
       target_include_directories(msf_group_fill_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME group_fill_probe COMMAND msf_group_fill_probe)
       set_tests_properties(group_fill_probe PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
+      # 0.9.4.121: right-pane width discipline (unwrapped labels and hidden
+      # content-sized columns must not force the pane wide or lock the
+      # splitter) plus file-thumb retry parity with the middle grid.
+      add_executable(msf_detail_layout_probe tests/detail_layout_probe.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
+      target_link_libraries(msf_detail_layout_probe PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_detail_layout_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME detail_layout_probe COMMAND msf_detail_layout_probe)
+      set_tests_properties(detail_layout_probe PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
       # QuickLook pipe protocol probe (fake in-process server, exact-bytes check).
       add_executable(msf_quicklook_test tests/quicklook_pipe_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_quicklook_test PRIVATE msf_core Qt6::Widgets)

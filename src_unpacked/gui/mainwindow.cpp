@@ -1197,7 +1197,20 @@ void MainWindow::buildRight(QWidget* w) {
   exifLabel_ = new QLabel(detailTabs_); exifLabel_->setWordWrap(true); exifLabel_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
   detailTabs_->addTab(exifLabel_, QString());
   auto* tabS = new QWidget(detailTabs_); auto* tabSlay = new QVBoxLayout(tabS);
-  simLabel_ = new QLabel(tabS); simBar_ = new QProgressBar(tabS); simBar_->setRange(0, 100);
+  simLabel_ = new QLabel(tabS);
+  // 0.9.4.121: this label carries the full best-match path. Without wrapping,
+  // its single-line minimum forced the tab widget (hence the whole right
+  // pane, hence the locked splitter) to the path width on every file
+  // selection - the "detail pane widens by itself" report. Wrap inside the
+  // allotted width like the EXIF/hash tabs; never stretch the pane.
+  simLabel_->setWordWrap(true); simLabel_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  // Ignored horizontal: a path is a single wrappable "word" (no spaces), so
+  // wrapping alone cannot shrink the hint width - a 180-char segment would
+  // still force the tab (hence the pane, hence the splitter) to its full
+  // pixel width. Ignored keeps the layout stable; zero-width spaces (added
+  // where the text is set) give the eye the matching visual folds.
+  simLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  simBar_ = new QProgressBar(tabS); simBar_->setRange(0, 100);
   tabSlay->addWidget(simLabel_); tabSlay->addWidget(simBar_); tabSlay->addStretch(1);
   detailTabs_->addTab(tabS, QString());
   hashLabel_ = new QLabel(detailTabs_); hashLabel_->setWordWrap(true); hashLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -2387,6 +2400,55 @@ void MainWindow::thumbCatchUpVisible() {
     thumbLayoutPending_ = true;
     QTimer::singleShot(0, this, [this] { flushThumbLayout(); });
   }
+  // 0.9.4.121: the file grid used to rely on the single request fired at row
+  // creation. A lost answer (busy backend at scan start, a restart-cleared
+  // pending map, a cap refusal) then left a permanent placeholder while the
+  // middle healed through the pump above - exactly the field report where
+  // only the representative thumbnail survived (it is re-asked through the
+  // middle rows too; other members are not). Re-ask visible file rows and
+  // the selected preview with the same dedup discipline (fileThumb skips
+  // in-flight duplicates), bounded to the visible window exactly like above.
+  if (grid_ && grid_->isVisible() && currentGroup_ >= 0) {
+    const QRect fvis = grid_->viewport()->rect();
+    const QSize fsize = grid_->iconSize();
+    if (fsize.isValid() && fsize.width() > 0 && fsize.height() > 0) {
+      int ffirst = -1, flast = -1;
+      if (auto* top = grid_->itemAt(fvis.topLeft())) ffirst = grid_->row(top);
+      if (auto* bottom = grid_->itemAt(fvis.bottomRight())) flast = grid_->row(bottom);
+      if (ffirst < 0 || flast < 0) {
+        ffirst = 0;
+        flast = grid_->count() - 1;
+      } else {
+        ffirst = std::max(0, ffirst - 4);
+        flast = std::min(grid_->count() - 1, flast + 4);
+      }
+      bool fileChanged = false;
+      for (int row = ffirst; row <= flast; ++row) {
+        QListWidgetItem* item = grid_->item(row);
+        if (!item || !grid_->visualItemRect(item).intersects(fvis)) continue;
+        const QString p = item->data(Qt::UserRole).toString();
+        if (p.isEmpty()) continue;
+        const QString key = p + '|' + QString::number(fsize.width()) + 'x' + QString::number(fsize.height());
+        auto tc = thumbCache_.constFind(key);
+        if (tc != thumbCache_.cend()) {
+          if (item->icon().cacheKey() != tc.value().cacheKey()) {
+            item->setIcon(tc.value());
+            fileChanged = true;
+          }
+          ++thumbStatMem_;
+        } else {
+          fileThumb(p, fsize); // miss: async request pump (no placeholder paint)
+        }
+      }
+      // Mirror onThumbReady's direct pass for the file grid (it does not use
+      // the coalesced middle-grid layout).
+      if (fileChanged) grid_->doItemsLayout();
+    }
+  }
+  // The selected preview has the same single-shot exposure (requested once in
+  // refreshDetail). Re-ask it here; the fixed 220x190 size matches the preview
+  // label, the arrival painter, and the detail builder.
+  if (!currentFile_.isEmpty()) fileThumb(currentFile_, QSize(220, 190));
 }
 void MainWindow::updateGroupFoot() {
   // "전체 619 · 선택 116": total groups vs the 1-based selected group.
@@ -3199,6 +3261,7 @@ QIcon MainWindow::fileThumb(const QString& path, const QSize& size, bool /*bypas
     if (thumbPendingReq_.size() >= 2000) { ++thumbStatPlace_; return placeholderIcon(path); }
     const quint64 id = ++thumbRequestId_;
     thumbPendingReq_[id] = {path, size};
+    ++thumbRequestCount_;
     backend_->requestThumb(path, size, isVideoExt(path), id);
   }
   ++thumbStatPlace_;
@@ -3412,6 +3475,16 @@ void MainWindow::refreshDetail() {
   // stretching the pane (the old sudden widen/narrow jumps).
   pathLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+  // 0.9.4.121: every other value row follows the same wrap-inside discipline
+  // (name/path above already do). Short values render exactly as before;
+  // long ones can no longer force the right pane - and through it the middle
+  // group list - wider on selection.
+  auto wrapVal = [&](const QString& text) {
+    auto* lb = new QLabel(text, this);
+    lb->setWordWrap(true);
+    lb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    return lb;
+  };
   if (currentFile_.isEmpty()) {
     preview_->setText("—");
     detailForm_->addRow(trStr(lang(), "fileName"), new QLabel("-", this));
@@ -3443,13 +3516,13 @@ void MainWindow::refreshDetail() {
   pathLabel->setToolTip(QDir::toNativeSeparators(fi.absolutePath()));
   detailForm_->addRow(trStr(lang(), "fullPath"), pathLabel);
   detailForm_->addRow(trStr(lang(), "fileSize"),
-                      new QLabel(QString("%1 (%2 bytes)").arg(fmtSize(fi.size())).arg(fi.size()), this));
-  detailForm_->addRow(trStr(lang(), "format"), new QLabel(fi.suffix().toUpper(), this));
+                      wrapVal(QString("%1 (%2 bytes)").arg(fmtSize(fi.size())).arg(fi.size())));
+  detailForm_->addRow(trStr(lang(), "format"), wrapVal(fi.suffix().toUpper()));
   detailForm_->addRow(trStr(lang(), "modified"),
-                      new QLabel(fi.lastModified().toString("yyyy-MM-dd hh:mm:ss"), this));
+                      wrapVal(fi.lastModified().toString("yyyy-MM-dd hh:mm:ss")));
   detailForm_->addRow(trStr(lang(), "created"),
-                      new QLabel(fi.birthTime().isValid() ? fi.birthTime().toString("yyyy-MM-dd hh:mm:ss") : "-", this));
-  detailForm_->addRow(trStr(lang(), "resolution"), new QLabel(fileResolution(currentFile_), this));
+                      wrapVal(fi.birthTime().isValid() ? fi.birthTime().toString("yyyy-MM-dd hh:mm:ss") : "-"));
+  detailForm_->addRow(trStr(lang(), "resolution"), wrapVal(fileResolution(currentFile_)));
     double dur = fileDur_.value(currentFile_, 0.0);
   if (dur <= 0 && backend_) {
     // Live or cancelled scans never reach onResults, so fileDur_ stays empty
@@ -3463,9 +3536,9 @@ void MainWindow::refreshDetail() {
     if (dur <= 0) requestFileMeta(currentFile_);
   }
   detailForm_->addRow(trStr(lang(), "duration"),
-                      new QLabel(dur > 0 ? QString("%1:%2").arg(int(dur) / 60, 2, 10, QChar('0')).arg(int(dur) % 60, 2, 10, QChar('0')) : "-", this));
+                      wrapVal(dur > 0 ? QString("%1:%2").arg(int(dur) / 60, 2, 10, QChar('0')).arg(int(dur) % 60, 2, 10, QChar('0')) : "-"));
   detailForm_->addRow(trStr(lang(), "similarity"),
-                      new QLabel(pctText(pct, ref, lang(), contentFlag_.value(currentFile_, 0)), this));
+                      wrapVal(pctText(pct, ref, lang(), contentFlag_.value(currentFile_, 0))));
   // EXIF tab
   QImageReader rd(currentFile_);
   const auto keys = rd.textKeys();
@@ -3485,7 +3558,16 @@ void MainWindow::refreshDetail() {
     }
   if (bestPath.isEmpty()) { simLabel_->setText("-"); }
   else {
-    simLabel_->setText(QString("%1\n%2\n%3%").arg(trStr(lang(), "bestMatch")).arg(bestPath).arg(best, 0, 'f', 1));
+    // 0.9.4.121: break opportunities for the eye. The layout is already
+    // stabilized by the Ignored policy above; zero-width spaces after each
+    // separator let the wrapped label fold a separator-less path instead of
+    // painting past the pane edge. The stored path and tooltip keep the
+    // exact text.
+    QString shownPath = bestPath;
+    shownPath.replace('/', QStringLiteral("/") + QChar(0x200B));
+    shownPath.replace('\\', QStringLiteral("\\") + QChar(0x200B));
+    simLabel_->setText(QString("%1\n%2\n%3%").arg(trStr(lang(), "bestMatch")).arg(shownPath).arg(best, 0, 'f', 1));
+    simLabel_->setToolTip(bestPath);
     simBar_->setValue(int(std::clamp(best, 0.0, 100.0)));
   }
   // hash tab
