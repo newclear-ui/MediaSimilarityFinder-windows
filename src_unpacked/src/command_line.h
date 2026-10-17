@@ -6,10 +6,10 @@
 // decides whether a window is ever created.
 //
 // S1 scope was entry only. S5 adds --benchmark/--mode/--suite/--log-dir/--log,
-// which are parsed here but NOT executed here: main.cpp wiring is a later stage.
-// Options still belonging to later stages (--resource, --cpu-percent) remain
-// unparsed and are reported as unknown options, so --help can never advertise
-// something that does not exist.
+// which are parsed here and executed through gui/main.cpp runConsoleBenchmark
+// (no window is ever created on that path). Options still belonging to later
+// stages (--resource, --cpu-percent) remain unparsed and are reported as
+// unknown options, so --help can never advertise something that does not exist.
 
 #include <string>
 #include <vector>

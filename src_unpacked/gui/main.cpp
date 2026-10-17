@@ -76,9 +76,9 @@ namespace {
 constexpr const char* kVersion = MSF_BUILD_VERSION;
 }
 
-// Only implemented options are listed. --benchmark, --mode, --suite,
-// --resource, --cpu-percent, --log-dir and --log belong to later stages and are
-// intentionally absent, so help text can never advertise something unimplemented.
+// Only implemented options are listed, so help text can never advertise
+// something unimplemented. (--resource/--cpu-percent remain unparsed and
+// are intentionally absent for that reason.)
 static void printUsage() {
     std::cout
         << "MediaSimilarity Finder " << kVersion << "\n"
