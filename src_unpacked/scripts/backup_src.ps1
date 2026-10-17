@@ -1,5 +1,5 @@
 param(
-  [int]$Keep = 3
+  [int]$Keep = 5
 )
 # D9b backup rotation: keep the $Keep most recent source backups, send the
 # oldest to the recycle bin when a new one is added.

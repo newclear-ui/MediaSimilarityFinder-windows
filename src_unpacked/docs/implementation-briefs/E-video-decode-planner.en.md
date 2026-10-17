@@ -386,4 +386,4 @@ benchmark.
 - Never round-trip a UTF-8 file through `Get-Content | Set-Content`. Verify with
   `git diff --check` / `git diff --numstat` after editing.
 - Deletions only via `scripts/safe_remove.ps1` (Recycle Bin).
-- Backups: max 3 each of src and portable.
+- Backups: max 5 each of src and portable.

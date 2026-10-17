@@ -27,7 +27,7 @@
        2. tracked 파일에 미커밋 변경이 있으면 중단
        3. `.zip`은 archive 대상에서 제외 (zip 중첩 금지)
    - **포터블 zip은 빌드 산출물이다.** Git 대상이 아니며, exe/DLL/ffmpeg 를 모아 smoke 테스트를 통과시킨 뒤 만든다. `portable.json` 과 zip 파일명은 `CMakeLists.txt` 의 VERSION 을 읽어 정하므로 하드코딩되지 않는다.
-   - **회전(rotation)**: **종류별로** 최대 **3개**를 보존한다. `-src` 와 `-Portable` 는 서로 독립적으로 회전한다. 신규 zip 생성 시 초과분을 **휴지통으로 보낸다**(삭제하지 않는다).
+    - **회전(rotation)**: **종류별로** 최대 **5개**를 보존한다. `-src` 와 `-Portable` 는 서로 독립적으로 회전한다. 신규 zip 생성 시 초과분을 **휴지통으로 보낸다**(삭제하지 않는다).
    - **포터블 zip을 `src_unpacked/` 에 만들지 않는다.** 항상 `backup/` 으로 바로 쓴다(임시 파일 경유).
    - 검증 후 보고:
      - 소스 zip: `git ls-tree` + `git hash-object` 로 **파일 목록과 내용의 byte 단위 일치** (이름만 같으면 통과 아님)

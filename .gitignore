@@ -45,6 +45,9 @@ MediaSimilarityFinder-v*-Portable-*.zip
 /test_sample_img_vid/
 /src_unpacked/test_sample_img_vid/
 *.fingerprint.json
+# XMP real-file sample copies (binary, local verification only).
+# Kept out of the generated dataset root so the fingerprint stays intact.
+/test_sample_img_vid_xmp/
 
 # Per-scan scratch index dirs created by the D8 review probe
 /test_sample_img_vid_appdir*/

@@ -375,4 +375,4 @@ hardware decode 가 빠르다 / HEVC는 항상 GPU / 4K는 항상 GPU 류 결론
 - UTF-8 파일을 `Get-Content | Set-Content` 으로 round-trip 하지 않는다.
   수정 후 `git diff --check` / `git diff --numstat` 확인.
 - 삭제는 `scripts/safe_remove.ps1` (휴지통) 만.
-- 백업은 src/portable 각 최대 3개.
+- 백업은 src/portable 각 최대 5개.
