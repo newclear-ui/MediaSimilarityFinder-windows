@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.121` (detail-pane widening fixed — similarity-label wrap + value-row discipline + file-thumb retry) - CPU CTest 124/124 - GPU CTest 125/125
+Baseline: `0.9.4.122` (external I/O off the right-click path — QuickLook probe negative cache) - CPU CTest 124/124 - GPU CTest 125/125
 Last updated: 2026-10-17
 
 ## Role of this document

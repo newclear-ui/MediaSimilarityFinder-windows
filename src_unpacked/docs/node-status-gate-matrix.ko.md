@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.121` (상세 정보창 폭주 수정 — 유사도 라벨 래핑 + 값 행 규율 + 파일 썸네일 재시도) · CPU CTest 124/124 · GPU CTest 125/125
+기준: `0.9.4.122` (우클릭 경로 외부 I/O 제거 — QuickLook 탐색 negative 캐시) · CPU CTest 124/124 · GPU CTest 125/125
 최종 갱신: 2026-10-17
 
 ## 이 문서의 역할
