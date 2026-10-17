@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.120` (GUI-less configure restored + badge-cost decision + product acceptance runbook) - CPU CTest 123/123 - GPU CTest 124/124
+Baseline: `0.9.4.121` (detail-pane widening fixed — similarity-label wrap + value-row discipline + file-thumb retry) - CPU CTest 124/124 - GPU CTest 125/125
 Last updated: 2026-10-17
 
 ## Role of this document
