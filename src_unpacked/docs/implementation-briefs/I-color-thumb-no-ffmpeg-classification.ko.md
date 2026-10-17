@@ -1,6 +1,6 @@
 # Implementation Brief — I-Color Thumb no-FFmpeg Classification (Pre-register)
 
-Status: **PRE-REGISTERED** (audit 완료, fixture/production 수정 이전) — **R1 완료(0.9.4.113)**: `color_thumb_test`가 no-FFmpeg 구성에서 lane 불가 시 SKIP(exit 0), 전체 빌드는 엄격 유지. 실제 no-FFmpeg configure로 `ffmpeg_lane=skip` 검증. production correction은 결정 대기.
+Status: **PRE-REGISTERED** (audit 완료, fixture/production 수정 이전) — **R1 완료(0.9.4.113)**: `color_thumb_test`가 no-FFmpeg 구성에서 lane 불가 시 SKIP(exit 0), 전체 빌드는 엄격 유지. 실제 no-FFmpeg configure로 `ffmpeg_lane=skip` 검증. production correction: 현행 유지 확정(사용자 확인, 0.9.4.125 worklog 기록) — 테스트가 생산 디코딩 함수를 직접 가드·PASS, gray 미영속, 결함 증거 없음 + acceptance 전 후순위 사용자 지시와 일치.
 
 ```text
 Base         v0.9.4.45 / 97db24f

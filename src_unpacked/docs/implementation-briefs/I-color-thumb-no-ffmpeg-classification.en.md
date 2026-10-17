@@ -1,6 +1,6 @@
 # Implementation Brief — I-Color Thumb no-FFmpeg Classification (Pre-register)
 
-Status: **PRE-REGISTERED** (audit complete, before fixture/production correction) — **R1 done (0.9.4.113)**: `color_thumb_test` SKIPs (exit 0) when the lane is unavailable in a no-FFmpeg build, full builds stay strict; verified in an actual no-FFmpeg configure (`ffmpeg_lane=skip`). Production correction decision pending.
+Status: **PRE-REGISTERED** (audit complete, before fixture/production correction) — **R1 done (0.9.4.113)**: `color_thumb_test` SKIPs (exit 0) when the lane is unavailable in a no-FFmpeg build, full builds stay strict; verified in an actual no-FFmpeg configure (`ffmpeg_lane=skip`). Production correction: keep-as-is confirmed (user decision) - the test guards the exact production decode functions and passes, no defect evidence.
 
 ```text
 Base         v0.9.4.45 / 97db24f

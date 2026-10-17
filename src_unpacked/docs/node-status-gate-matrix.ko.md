@@ -119,7 +119,7 @@ S4 저장/종료      실결함 수정 — 부분/0바이트 기록을 성공으
 대량 적용 .117     프로브 실측(9,055그룹): 동기 결과 적용 **609.7초**(프리즈) → **applyMs 84ms + 18.1초 비동기 채우기(틱 91)**. 원인 3건: rebuildGroups 동률 정렬의 경로당 FILE_META 요청(캐시 미스; 루프백 ffprobe 폴백 — 1,000그룹 65.9초), fillPair 동기 대량 채우기, thumbCatchUpVisible 전 행 visualItemRect. 수정: `filePixels` 캐시 전용, `GroupFillJob` 지연(800행 초과/100행 턴/세대 취소/앵커 복원), catch-up 가시 창 한정, `resultsApply`/`groupFill` 계측. 회귀 프로브 `group_fill_probe`(수정 전 FAIL). 실기 확인 필요(점진 채우기·반응성).
 현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
                  Search/Index/Comparison = NOT ACCEPTED; S4 기능 acceptance 자동화 PASS(최종 CLOSED 대기); XMP = CONDITIONAL;
-                 color_thumb R1 완료(.113), production correction은 결정 대기; S5/S6는 선행 Gate 대기.
+                 color_thumb R1 완료(.113), 현행 유지 확정(사용자 확인); S5/S6는 선행 Gate 대기.
 측정            Fast(A) 사용자 데이터셋 run=1 측정은 2026-10-15 Work Log/DBV §7.3에 기록됐으나 비교 조건에 교란 요인 존재.
                  Auto(AB) 실측 2026-10-16 완료(변경 64, verify 1회) — 최종 패스 의미·반복 수는 후속. CUDA 미가용 기록은 build/runtime 조건 확인 필요.
 잔여 위험        thumbCatchUpVisible()의 매 tick 전체 목록 순회는 correctness blocker가 아닌 후순위 성능 위험.
@@ -138,7 +138,7 @@ NVDEC production adoption            PRODUCTION ADOPTION = NO — F-1 CONDITIONA
 F-2 production integration           금지 — IDR-start fixture 가 없음을 확인
 1360x808 mismatch root cause          INCONCLUSIVE — video cohort 로 재검토
 Intel/AMD/Vulkan backend              착수 조건 미충족
-color_thumb production correction    NOT PERFORMED — R1 fixture/skip 완료(.113); production correction은 결정·승인 대기
+color_thumb production correction    NOT PERFORMED — R1 fixture/skip 완료(.113); 현행 유지 확정(사용자 확인)
 XMP production acceptance            CONDITIONAL — fixture PASS, coverage/regression 없음
 vcpkg 이동                            하지 않음 (project-local 유지)
 ```
@@ -155,7 +155,7 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
 | 제품 acceptance (Search/Index/Comparison) | `NOT ACCEPTED` → **결함 수정 완료 (0.9.4.46)** | `build-history/0.9.4.46.*`, `worklog/0.9.4.*` acceptance audit 항목 |
 | GUI Stop 무응답 | **수정 완료 (0.9.4.48, 엔진 레벨)** | `build-history/0.9.4.48.*`. 실제 GUI 버튼 클릭은 NOT_VALIDATED |
-| `color_thumb` no-FFmpeg classification | R1 완료(0.9.4.113) — production correction은 결정 대기 | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
+| `color_thumb` no-FFmpeg classification | R1 완료(0.9.4.113) — 현행 유지 확정(사용자 확인) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
 | nvcc 경고 release gate 등록 | 미결정 | `worklog/0.9.4.*` |
 | 콘솔 출력 전용 회귀 테스트 | 미추가 | `worklog/0.9.4.*` |
 

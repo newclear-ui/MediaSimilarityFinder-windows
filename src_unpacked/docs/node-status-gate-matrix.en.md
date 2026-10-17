@@ -122,7 +122,7 @@ Phantom .116      Field report: group 275 (representative Keren1286444-…) — 
 Bulk fill .117    Probe (9,055 groups): a synchronous result apply took **609.7 s** (freeze) -> **applyMs 84 ms + an 18.1 s asynchronous fill (91 ticks)**. Three causes: the tie sorting's per-path FILE_META requests (cache misses; ffprobe fallback on the loopback — 1,000 groups 65.9 s), fillPair's synchronous bulk fill, thumbCatchUpVisible's per-row visualItemRect. Fix: cached-only `filePixels`, a `GroupFillJob` deferred fill (>800 rows / 100 rows per turn / generation cancels / anchor restore), a bounded catch-up window, `resultsApply`/`groupFill` logs. Regression probe `group_fill_probe` (pre-fix FAIL). Field check needed (progressive fill + responsiveness).
 current verdict   .105 file-operation/preview/index logs and .106 badge/real-process IPC await field evidence.
                   Search/Index/Comparison = NOT ACCEPTED; S4 functional acceptance automated PASS (final CLOSED pending); XMP = CONDITIONAL;
-                  color_thumb R1 done (.113), production correction decision pending; S5/S6 await prerequisites.
+                  color_thumb R1 done (.113), keep-as-is confirmed (user decision); S5/S6 await prerequisites.
 measurement       Fast(A) user-dataset run=1 is recorded in Work Log/DBV §7.3 on 2026-10-15, but confounders limit comparison.
                   Auto(AB) measurement completed 2026-10-16 (64 changed, 1 verify) — final-pass semantics/repetitions are follow-ups. Verify build/runtime conditions for CUDA-unavailable records.
 remaining risk     thumbCatchUpVisible() scans the full list each tick; lower-priority performance risk, not a correctness blocker.
@@ -159,7 +159,7 @@ stay in the origin documents.
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
 | product acceptance (Search/Index/Comparison) | `NOT ACCEPTED` -> **defects fixed (0.9.4.46)** | `build-history/0.9.4.46.*`, the acceptance audit entry in `worklog/0.9.4.*` |
 | GUI Stop unresponsiveness | **fixed (0.9.4.48, engine level)** | `build-history/0.9.4.48.*`. The actual GUI button click is NOT_VALIDATED |
-| `color_thumb` no-FFmpeg classification | R1 done (0.9.4.113) — production correction decision pending | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
+| `color_thumb` no-FFmpeg classification | R1 done (0.9.4.113) — keep-as-is confirmed (user decision) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
 | Register nvcc warnings in the release gate | undecided | `worklog/0.9.4.*` |
 | Dedicated console-output regression test | not added | `worklog/0.9.4.*` |
 
