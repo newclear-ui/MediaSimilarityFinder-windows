@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.119 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.120 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -448,16 +448,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_benchmark_integration_test tests/benchmark_integration_test.cpp)
     target_link_libraries(msf_benchmark_integration_test PRIVATE msf_core Qt6::Core)
     add_test(NAME benchmark_integration_test COMMAND msf_benchmark_integration_test)
-    # S4 GUI detailed logging: the execution-strategy controls in the real
-    # MainWindow, the single-select gate, the [Detailed Logs] toggle, and the
-    # absence of any benchmark run/stop/status workflow.
-    add_executable(msf_ui_detailed_log_test tests/ui_detailed_log_test.cpp
-                   gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
-    target_link_libraries(msf_ui_detailed_log_test PRIVATE msf_core Qt6::Widgets)
-    target_include_directories(msf_ui_detailed_log_test PRIVATE
-                               ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
-    set_target_properties(msf_ui_detailed_log_test PROPERTIES AUTOMOC ON)
-    add_test(NAME ui_detailed_log_test COMMAND msf_ui_detailed_log_test)
+    # (0.9.4.120) The S4 GUI detailed-logging test moved into the MSF_BUILD_GUI
+    # section: it links Qt6::Widgets and compiles the GUI sources, so a
+    # GUI-less configure (MSF_BUILD_GUI=OFF) must skip it instead of failing on
+    # a missing Qt6::Widgets target here (the GUI=OFF + tests=ON combo was
+    # broken). Core-only test builds stay available.
     # E-3B end-to-end. NOT a CTest entry on purpose: it needs a video dataset
     # and a scratch app dir, and it measures wall clock, so it is run manually
     # with the real dataset (see docs/build-history/0.9.4.42.*). A timing test in
@@ -751,6 +746,18 @@ if(MSF_BUILD_GUI)
       set_tests_properties(ui_settings_migrate_both_verify PROPERTIES DEPENDS ui_settings_migrate_both_plant)
       # No legacy file: nothing may be invented, and the new INI must appear.
       add_test(NAME ui_settings_migrate_none_verify COMMAND msf_ui_settings_test --migrate-none-verify "${MSF_MIGRATE_NONE_DIR}")
+      # (0.9.4.120) S4 GUI detailed logging: the execution-strategy controls in
+      # the real MainWindow, the single-select gate, the [Detailed Logs]
+      # toggle, and the absence of any benchmark run/stop/status workflow.
+      # Moved here from the core tests block so MSF_BUILD_GUI=OFF +
+      # MSF_BUILD_TESTS=ON configures and builds without Qt6::Widgets.
+      add_executable(msf_ui_detailed_log_test tests/ui_detailed_log_test.cpp
+                     gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
+      target_link_libraries(msf_ui_detailed_log_test PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_ui_detailed_log_test PRIVATE
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      set_target_properties(msf_ui_detailed_log_test PROPERTIES AUTOMOC ON)
+      add_test(NAME ui_detailed_log_test COMMAND msf_ui_detailed_log_test)
       # Worker streaming + persistence probe: real scan over identical BMPs,
       # asserts live matches stream AND survive in a fresh engine handle.
       add_executable(msf_scan_streaming_test tests/scan_streaming_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
