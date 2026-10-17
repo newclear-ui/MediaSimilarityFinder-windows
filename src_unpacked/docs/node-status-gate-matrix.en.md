@@ -141,7 +141,7 @@ NVDEC production adoption             PRODUCTION ADOPTION = NO - F-1 CONDITIONAL
 F-2 production integration            forbidden - absence of an IDR-start fixture confirmed
 1360x808 mismatch root cause          INCONCLUSIVE - revisit with a video cohort
 Intel/AMD/Vulkan backend              entry conditions not met
-color_thumb production correction     NOT PERFORMED - R1 fixture/skip done (.113); production correction decision/approval pending
+color_thumb production correction     NOT PERFORMED - R1 fixture/skip done (.113); keep-as-is confirmed (user decision)
 XMP production acceptance             CONDITIONAL - fixtures PASS, coverage/regression absent
 vcpkg migration                       do not perform (keep project-local)
 ```
