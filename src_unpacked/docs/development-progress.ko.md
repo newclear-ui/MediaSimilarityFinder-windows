@@ -21,7 +21,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.124이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
+> **2026-10-16 교차검토 기준 갱신:** 기준 버전은 0.9.4.125이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다.
 > G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**, 스캔 흐름의 동일 목록 반복 재구축(churn) 제거는 **0.9.4.118**, 처리량 표기 의미 명확화(후보 3)는 **0.9.4.119**, GUI-less 구성 복구·배지 비용 판정(LOW PRIORITY)·제품 acceptance 런북(남은 후보 전부)은 **0.9.4.120**, 상세 정보창 폭주 수정(그룹 280 실기 3건)은 **0.9.4.121**, 우클릭 경로 외부 I/O 제거는 **0.9.4.122**, 뷰모드 플레이크 근본 수정+PDB 동봉+덤프 원클릭+acceptance 재확인(판정 유지)은 **0.9.4.123**으로 완료되어 큐에서 제거됐다.
 > 과거 2026-10-07의 .62 crash-response / .63 GUI usability 분리는 당시 기록으로 유지하며, 현재 큐는 아래 표가 기준이다.
 
@@ -157,6 +157,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | 우클릭 경로 외부 I/O 제거 (QuickLook 탐색 negative 캐시) | **완료(0.9.4.122)** | 실기: 파일 목록 우클릭 시 시스템 전체 일시 정지. 메뉴 경로 전수 조사: 생성 시점 유일 외부 호출=`quickLookTarget()`(QL 미설치 시 매 클릭 레지스트리 재탐색). 전역 입력 차단 수단 전무+메뉴 경로 GPU 작업 제로 → 메뉴 코드에 OS 커서 정지 수단 없음(증상은 TDR/후크 교착 서명). 선제 조치: 레지스트리 탐색에만 120초 negative 캐시(경로 확인·파이프 즉시성·전송 경로 불변). 판정·저장·프로토콜·engine/DB/schema/cache 불변. CPU CTest 124/124, GPU CTest 125/125. 실기 재현 확인 필요(이벤트 뷰어 4101 등 확증 절차는 조사 보고서에 기록). |
 | 뷰모드 플레이크 근본 수정 + PDB 동봉 + 덤프 수집 원클릭 + 제품 acceptance 재확인 | **완료(0.9.4.123)** | ① `view_mode_probe` 부하 플레이크 4회 관측(0.9.4.118 2회·0.9.4.121 2회, 모두 빌드 직후·재실행 PASS): 기준선 단일 재스냅샷 비교가 Batched 증분/병합 패스에 깨짐 → 최대 10회 수렴 루프로 교체(진성 진동은 여전히 실패). 단독 3연속 PASS. ② PDB 미동봉 해소: `package_portable.ps1`이 두 Release PDB를 exe 옆에 복사(누락 시 패키징 실패). 포터블 약 44→90 MB. ③ `scripts/enable_localdumps.ps1` 신설(양 이미지, Count 3·Type 1, 미승격 거부 검증, 런북 연결). ④ 런북 18개 항목 재확인 결과표 — Index I-1/I-3/I-4/I-5·Search S-1/S-3/S-4/S-5/S-6·Comparison C-1/C-2(의미)/C-4/C-6 PASS, 실기 항목 잔여로 최종 **NOT ACCEPTED 유지**. 판정·저장·프로토콜·engine/DB/schema/cache 불변. CPU CTest 124/124, GPU CTest 125/125. |
 | 거짓 미구현 주석 정정 (CLI 추적 후속) | **완료(0.9.4.124)** | CLI 검증+추적에서 S5 배선 이후에도 "후속 단계"라 적힌 주석 2건 발견(`src/command_line.h:9`, `gui/main.cpp:79-81`). 파서 테스트+실실행으로 구현 확인됨 — 주석만 현실에 맞게 수정(동작 코드 변경 없음). CPU CTest 124/124, GPU CTest 125/125. |
+| QuickLook 파이프 유실 방지 + color_thumb 현행 유지 판정 | **완료(0.9.4.125)** | 우클릭 경로 후속: 액션의 파이프 전송이 동기 `WriteFile` → wedged 서버(연결·미읽기) 시 GUI 무한 대기. 수정: overlapped+5초 대기, 타임아웃 시 `CancelIo` 후 실패 처리(open은 동기 유지). 회귀 테스트에 wedged 케이스 추가(연결·미읽기·64B inbound 버퍼+4MB 페이로드, 리스닝 대기로 결정적 셋업): 구버전 60초 hang(외부 kill) → 수정 후 5.0초 실패 반환. color_thumb: 코드 변경 없음, 현행 유지 권장(확정 대기) — 테스트가 생산 디코딩 함수를 직접 가드·PASS, gray art 미영속화, 결함 증거 없음. 판정·저장·프로토콜·engine/DB/schema/cache 불변. CPU CTest 124/124, GPU CTest 125/125. |
 
 
 ## 2026-10-06 — 0.9.4.59 코드 검토 및 다음 수정 순서
@@ -246,9 +247,9 @@ CPU는 Maximum(90%) 정책에서도 실제 사용량이 약 20~70% 사이로 진
 | 기준 코드 | 0.9.4.124 (거짓 미구현 주석 정정 — CLI 추적 후속) |
 | 공식 보존 기준선 | 0.9.2.32 |
 | 개발선 | 0.9.4 |
-| 현재 노드 | **0.9.4.124 거짓 미구현 주석 정정 완료** — CLI 검증+추적에서 S5 배선 이후에도 "후속 단계"라 적힌 주석 2건 발견(`src/command_line.h:9`, `gui/main.cpp:79-81`). 파서 테스트+실실행으로 구현 확인됨 — 주석만 현실에 맞게 수정(동작 코드 변경 없음). 직전 0.9.4.123은 뷰모드 플레이크 근본 수정+PDB 동봉+덤프 원클릭+acceptance 재확인(NOT ACCEPTED 유지). engine/DB/schema/cache 불변. 다음: **실기 항목 확인**(런북 기준) → 제품 acceptance 재확인. S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU CTest 124/124, GPU CTest 125/125. 남은 것: 비디오/크롭까지 프론티어 확장, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. `color_thumb` R1 완료(.113), production correction은 결정 대기. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
+| 현재 노드 | **0.9.4.125 QuickLook 파이프 유실 방지 + color_thumb 판정 완료** — ① 우클릭 경로 후속: 액션 파이프 전송 동기 `WriteFile` → wedged 시 GUI 무한 대기 → overlapped+5초 대기+`CancelIo`로 봉합(테스트: 구버전 60초 hang → 5.0초 실패). ② color_thumb production correction: 현행 유지 권장(확정 대기) — 테스트가 생산 함수를 직접 가드·PASS, gray 미영속, 결함 증거 없음. engine/DB/schema/cache 불변. 다음: **color_thumb 확정 + 실기 항목**(런북·그룹280 육안·우클릭 정지 분리) → 제품 acceptance 재확인. S4 최종 CLOSED는 §10 조건에 따라 product acceptance 연계. — 판정·엔진·DB 버전 불변(스키마 9 가산). CPU CTest 124/124, GPU CTest 125/125. 남은 것: 비디오/크롭까지 프론티어 확장, 실제 Windows UI acceptance, 전체 dataset 재확인. XMP Orientation CONDITIONAL. S5 infrastructure REVALIDATED, 실제 product benchmark Gate 대기. F-1 CONDITIONAL/NVDEC production NO. |
 | 현재 단계 | **P4 완료 → 실제 GUI manual acceptance → 제품 acceptance 재확인** 순으로 진행한다(S4 기능 acceptance는 0.9.4.112 완료, 최종 CLOSED 판단만 제품 acceptance와 함께). 최신 실제 dataset acceptance 감사에서 Search/Index/Comparison은 일부 경로 PASS와 별개로 **최종 NOT ACCEPTED** 상태가 남아 있으므로 S4/S5를 무조건 PASS로 승격하지 않는다. 다음 crash가 발생하면 추측성 수정 대신 `crash-response-runbook` 절차로 로그/WER/Qt/dump를 먼저 수집한다. F-1은 `CONDITIONAL`, NVDEC production adoption은 `NO`, sparse production은 `ExactnessPolicy::RefuseAll`로 재개하지 않는다. |
-| 현재 버전 | 0.9.4.124 |
+| 현재 버전 | 0.9.4.125 |
 | GPU 구현 기준 | NVIDIA CUDA |
 | CPU fallback | 유지 |
 | 프로젝트-local vcpkg | 유지, 이전하지 않음 |

@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.124` (거짓 미구현 주석 정정 — CLI 추적 후속) · CPU CTest 124/124 · GPU CTest 125/125
+기준: `0.9.4.125` (QuickLook 파이프 유실 방지 + color_thumb 현행 유지 판정) · CPU CTest 124/124 · GPU CTest 125/125
 최종 갱신: 2026-10-17
 
 ## 이 문서의 역할
