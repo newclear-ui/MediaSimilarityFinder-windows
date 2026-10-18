@@ -568,6 +568,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   std::size_t done=0, scanned=0, nAdded=0, nModified=0, nUnchanged=0, nRemoved=0, nFailed=0;
   std::size_t nImgScanned=0, nVidScanned=0, nImgAnalyzed=0, nVidAnalyzed=0;
   std::size_t nImgPairs=0, nVidPairs=0;
+  // 0.9.4.129: image pairs emitted ONLY by the live pass (Hybrid's both-changed
+  // set). Kept separately because r.groups / st.groups count final-pass pairs;
+  // the report must add these back so AB and A/B modes report the same pair
+  // totals for the same dataset (the report's "groups" field is a pair count).
+  std::size_t nLiveImgPairs=0;
  std::unordered_set<std::string> seen; seen.reserve(old.size()*2+1024);
  // Video-scope admission evidence for the sampling-generation stamp. `seen`
  // above is deletion detection / walker presence (ignored and out-of-scope
@@ -582,15 +587,60 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // match set (engine-version revalidated at scan start). Unused by Sequential.
   std::unordered_set<std::string> changedPaths;
   ScanPipeline livePipe;
- auto liveEmit=[&](const MediaMatch& m){
-  if(!control || !control->onMatch) return;
-  const auto& lf=livePipe.files();
-  if(m.left>=lf.size()||m.right>=lf.size()) return;
-  SearchMatch sm{lf[m.left].path,lf[m.right].path,m.percent};
-  sm.contentIdentical=m.contentIdentical;
-  control->onMatch(sm);
- };
- const bool liveMatch = control && (bool)control->onMatch;
+  const bool liveMatch = control && (bool)control->onMatch;
+  // 0.9.4.129: live streaming runs only in the modes that own it. Sequential
+  // (B) verifies AFTER the walk (analyze_mode.h) and its final pass emits
+  // every pair, so feeding the live pipe there would double-emit each
+  // both-changed pair into takePending()/matchesBatch (walker_queue_test pins
+  // the exact pending set; the GUI's union-find tolerates duplicates but
+  // streaming consumers must not see them). Live (A) and Hybrid (AB) own the
+  // live pass; in AB the final pass skips both-changed image pairs, so the
+  // two streams are disjoint by construction.
+  const bool liveStreamActive = liveMatch && analyzeMode!=AnalyzeMode::Sequential;
+  // 0.9.4.129: telemetry linkage for live-streamed matches. Hybrid's final
+  // pass skips both-changed image pairs because the live pass owns them, so
+  // those emissions must feed the same per-kind pair/group stats here;
+  // otherwise an AB scan reports pairs/groups 0 in the detailed log while the
+  // GUI shows the live results (the exact field report this fix answers).
+  // Path-keyed union-find: live matches arrive during the walk (pre-rebuild
+  // indices) and final matches after it (rebuilt indices), so paths are the
+  // only common identity, and the GUI's own union-find merges the same two
+  // streams the same way (a live pair and a final pair can share a file).
+  // Image pairs only: the final pass never skips both-changed video pairs
+  // (temporal stays exclusive to it), so videos are counted there once in
+  // every mode and would otherwise double-count here.
+  const bool livePairsOwned = liveMatch && analyzeMode==AnalyzeMode::Hybrid;
+  std::unordered_map<std::string,std::string> tlParent;
+  std::unordered_map<std::string,char> tlKind; // 'i' image / 'v' video
+  auto tlFind=[&](const std::string& p)->std::string{
+   std::string r=p;
+   for(;;){ auto rt=tlParent.find(r); if(rt==tlParent.end()||rt->second==r) break; r=rt->second; }
+   std::string c=p; // path compression keeps chains from re-walking
+   while(c!=r){ auto ct=tlParent.find(c); if(ct==tlParent.end()||ct->second==r) break; const std::string nxt=ct->second; ct->second=r; c=nxt; }
+   return r;
+  };
+  auto tlUnion=[&](const std::string& a,const std::string& b,bool vid){
+   tlParent.emplace(a,a); tlKind.emplace(a,vid?'v':'i');
+   tlParent.emplace(b,b); tlKind.emplace(b,vid?'v':'i');
+   const std::string ra=tlFind(a), rb=tlFind(b);
+   if(ra!=rb) tlParent[ra]=rb;
+  };
+  auto liveEmit=[&](const MediaMatch& m){
+   if(!control || !control->onMatch) return;
+   const auto& lf=livePipe.files();
+   if(m.left>=lf.size()||m.right>=lf.size()) return;
+   SearchMatch sm{lf[m.left].path,lf[m.right].path,m.percent};
+   sm.contentIdentical=m.contentIdentical;
+   control->onMatch(sm);
+   if(livePairsOwned && lf[m.left].kind==MediaKind::Image){
+     // Report fields (r.*) are telemetry-independent by contract; only the
+     // recorder call is gated.
+     ++nLiveImgPairs;
+     ++nImgPairs;
+     tlUnion(lf[m.left].path,lf[m.right].path,false);
+     if(telemetryOn) telemetry_.addStreamedMatch();
+   }
+  };
  std::vector<FileState> changedVideos;
   std::vector<std::string> imageBatch; imageBatch.reserve(gpuBatch);
   std::size_t videoBase=0;
@@ -767,7 +817,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // Outcome-time classification: the file now has a real fingerprint, so
     // reporting it as added/modified is finally backed by a usable index row.
     if(oldByPath.find(x.path)==oldByPath.end()) ++nAdded; else ++nModified;
-    MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; mf.quickHash=x.quickHash; files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit);
+    MediaFile mf{x.path,MediaKind::Image,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,0.0}; mf.quickHash=x.quickHash; files_.push_back(mf); if(liveStreamActive) livePipe.addAndMatch(mf,maxDistance,liveEmit);
    } else {
     // Analysis ran and produced nothing. Record that outcome on the row so the
     // next scan sees a settled state instead of re-queuing it forever, and count
@@ -852,7 +902,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
       taken[i]=1; --remaining; progressed=true;
        auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true;
-       if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};mf.quickHash=vs.quickHash;files_.push_back(mf); if(liveMatch) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
+       if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};mf.quickHash=vs.quickHash;files_.push_back(mf); if(liveStreamActive) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
        else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed; }
        // Settlement trace (0.9.4.78) + slow-file log. rangeFileMs holds the
        // actual build time, a better elapsed metric than harvest latency.
@@ -1148,32 +1198,26 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   };
   ScanStats st;
   const auto benchAT0=std::chrono::steady_clock::now();
-  // Cluster count for telemetry: union-find over every analyzed pair, the same
-  // linkage the GUI rebuilds from streamed matches. ScanStats.groups counts
+  // Cluster count for telemetry: the path-keyed union-find declared before the
+  // walk, fed by the live pass (Hybrid's both-changed image pairs) and this
+  // final pass (every other emitted pair) -- the same two streams, merged the
+  // same way, that the GUI's own union-find consumes. ScanStats.groups counts
   // pairs (pinned by pipeline tests and the CLI journal), so telemetry's
   // matches.groups carries the cluster count shown beside "pairs" instead.
-  std::vector<std::size_t> clusterParent(files_.size());
-  for (std::size_t i = 0; i < clusterParent.size(); ++i) clusterParent[i] = i;
-  std::vector<char> clusterTouched(files_.size(), 0);
   if (!cancelRequested()) telemetry_.setPhase("analyze");
   wdPhase="analyze";
   beginWdUnit("analyze",{},files_.size());
   st=pipe.analyze(maxDistance,[&](const MediaMatch& m){
    watchdog.noteActivity(steadyMs());
    if(telemetryOn) telemetry_.addStreamedMatch();
-   if (m.left < clusterParent.size() && m.right < clusterParent.size()) {
+   if (m.left < files_.size() && m.right < files_.size()) {
      // Pairs are kind-homogeneous (image and video indexes are separate), so
      // the left side determines the pair's kind. If a mixed pair ever appears
      // it is counted for neither kind rather than misattributed.
      const bool lVid = files_[m.left].kind == MediaKind::Video;
      const bool rVid = files_[m.right].kind == MediaKind::Video;
      if (lVid == rVid) { if (lVid) ++nVidPairs; else ++nImgPairs; }
-     std::size_t a = m.left;
-     while (clusterParent[a] != a) { clusterParent[a] = clusterParent[clusterParent[a]]; a = clusterParent[a]; }
-     std::size_t b = m.right;
-     while (clusterParent[b] != b) { clusterParent[b] = clusterParent[clusterParent[b]]; b = clusterParent[b]; }
-     if (a != b) clusterParent[a] = b;
-     clusterTouched[m.left] = 1; clusterTouched[m.right] = 1;
+     tlUnion(files_[m.left].path, files_[m.right].path, lVid);
    }
    SearchMatchRef ref{m.left,m.right,m.percent};
    if(control && control->onMatchRef) control->onMatchRef(ref);
@@ -1236,22 +1280,21 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // valid, so it must not fail or roll back the search.
     if(videoScopeProcessed){ if(!db_.setSamplingGeneration(kSamplingGeneration)){ } }
    }
-  // Distinct linkage clusters among this scan's pairs. The GUI rebuilds the
-  // same union-find from streamed matches, so telemetry's matches.groups
-  // agrees with what the user sees (st.groups counts pairs instead).
-  // Per-kind split for the user-facing summary: a cluster never spans kinds
-  // because image and video candidate indexes are separate, so counting roots
-  // and members per kind partitions the totals exactly.
+  // Distinct linkage clusters among this scan's pairs (live + final streams).
+  // The GUI rebuilds the same union-find from streamed matches, so telemetry's
+  // matches.groups agrees with what the user sees (st.groups counts pairs
+  // instead). Per-kind split for the user-facing summary: a cluster never
+  // spans kinds because image and video candidate indexes are separate, so
+  // counting roots and members per kind partitions the totals exactly.
   {
-    std::unordered_set<std::size_t> roots;
-    std::unordered_set<std::size_t> imgRoots, vidRoots;
+    std::unordered_set<std::string> roots;
+    std::unordered_set<std::string> imgRoots, vidRoots;
     std::size_t nImgDup = 0, nVidDup = 0;
-    for (std::size_t i = 0; i < files_.size() && i < clusterParent.size(); ++i) {
-      if (!clusterTouched[i]) continue;
-      std::size_t rt = i;
-      while (clusterParent[rt] != rt) rt = clusterParent[rt];
+    for (const auto& kv : tlParent) {
+      const std::string rt = tlFind(kv.first);
       roots.insert(rt);
-      if (files_[i].kind == MediaKind::Video) {
+      const auto kt = tlKind.find(kv.first);
+      if (kt != tlKind.end() && kt->second == 'v') {
         vidRoots.insert(rt);
         ++nVidDup;
       } else {
@@ -1263,7 +1306,10 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     r.imgGroups = imgRoots.size(); r.vidGroups = vidRoots.size();
     r.imgDupFiles = nImgDup; r.vidDupFiles = nVidDup;
   }
-  r.candidates=st.candidates;r.groups=st.groups;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks;
+  // 0.9.4.129: st.groups counts final-pass pairs; Hybrid's live-owned image
+  // pairs are added back so AB reports the same total as A/B for the same
+  // dataset (r.groups is a pair count -- pinned by pipeline tests/CLI journal).
+  r.candidates=st.candidates;r.groups=st.groups+nLiveImgPairs;r.candidateReductionPercent=st.candidateReductionPercent; r.videoCandidatePairs=st.videoCandidates;r.videoTemporalChecks=st.videoTemporalChecks;
   r.imgScanned=nImgScanned; r.vidScanned=nVidScanned;
   r.imgAnalyzed=nImgAnalyzed; r.vidAnalyzed=nVidAnalyzed;
   r.imgPairs=nImgPairs; r.vidPairs=nVidPairs;

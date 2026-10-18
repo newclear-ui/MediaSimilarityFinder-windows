@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.128` (이미지 디코드 공유 소스 통합 — 파일당 3 open → 1 open) · CPU CTest 125/125 · GPU CTest 126/126
+기준: `0.9.4.129` (자동(AB) 라이브 매치 유실 수정 — 라이브 인덱스 off-by-one) · CPU CTest 125/125 · GPU CTest 126/126
 최종 갱신: 2026-10-18
 
 ## 이 문서의 역할

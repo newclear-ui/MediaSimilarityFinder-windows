@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.128` (Shared image-decode source — 3 file opens -> 1 per image) - CPU CTest 125/125 - GPU CTest 126/126
+Baseline: `0.9.4.129` (Hybrid (AB) live-match loss fixed — live-index off-by-one) - CPU CTest 125/125 - GPU CTest 126/126
 Last updated: 2026-10-18
 
 ## Role of this document

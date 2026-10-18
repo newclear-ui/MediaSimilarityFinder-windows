@@ -305,6 +305,12 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogImages")) return S("이미지","Images");
   if (!std::strcmp(key,"detailLogVideos")) return S("비디오","Videos");
   if (!std::strcmp(key,"detailLogCpuUse")) return S("CPU 사용률","CPU usage");
+  // 0.9.4.129: the summary CPU row now names both series instead of showing
+  // only the process-tree number. A field report read "CPU 2%" while the
+  // machine was visibly loaded (the process metric is small by design on
+  // multithreaded scans); the system-wide mean makes the difference explicit.
+  if (!std::strcmp(key,"detailLogCpuProc")) return S("프로세스","process");
+  if (!std::strcmp(key,"detailLogCpuSys")) return S("시스템","system");
   if (!std::strcmp(key,"detailLogMemMax")) return S("메모리 최대","Peak memory");
   if (!std::strcmp(key,"detailLogGpuDuty")) return S("GPU 듀티","GPU duty");
   if (!std::strcmp(key,"detailLogIo")) return S("디스크 I/O","Disk I/O");
@@ -1758,8 +1764,15 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
   lines << QString("%1: %2 (%3 min, build avg %4 ms, %5 s/play-min, %6 s/GB)").arg(trStr(lang(), "detailLogVideos"))
       .arg((qulonglong)vids["count"].toDouble()).arg(f1(vids["playSec"].toDouble() / 60.0))
       .arg(f1(vids["meanBuildMs"].toDouble())).arg(f1(vids["secPerPlayMin"].toDouble())).arg(f1(vids["secPerGB"].toDouble()));
-  lines << QString("%1: avg %2%, max %3%, std %4% · %5: %6 MB · %7: %8% (longest idle %9 s)").arg(trStr(lang(), "detailLogCpuUse"))
+  // 0.9.4.129: process-tree mean/max/std (this app + children) and the
+  // system-wide mean are both shown. The process metric is normalized by CPU
+  // count, so a fully loaded 16-thread scan can read ~6% while the machine is
+  // at 100%; the sys mean is what the task manager shows.
+  lines << QString("%1: %2 avg %3%, max %4%, std %5% · %6 avg %7% · %8: %9 MB · %10: %11% (longest idle %12 s)")
+      .arg(trStr(lang(), "detailLogCpuUse"))
+      .arg(trStr(lang(), "detailLogCpuProc"))
       .arg(f1(res["cpuProcMean"].toDouble())).arg(f1(res["cpuProcMax"].toDouble())).arg(f2(res["cpuProcStd"].toDouble()))
+      .arg(trStr(lang(), "detailLogCpuSys")).arg(f1(res["cpuSysMean"].toDouble()))
       .arg(trStr(lang(), "detailLogMemMax")).arg((qulonglong)res["memMBMax"].toDouble())
       .arg(trStr(lang(), "detailLogGpuDuty")).arg(f1(res["gpuDutyPct"].toDouble()))
       .arg(f1(res["gpuLongestIdleMs"].toDouble() / 1000.0));

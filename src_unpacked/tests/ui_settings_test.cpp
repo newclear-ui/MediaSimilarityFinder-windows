@@ -239,7 +239,8 @@ int main(int argc, char** argv) {
       "showTestButton",
       // detailed-log result dialog rows
       "detailLogWall", "detailLogFiles", "detailLogImages", "detailLogVideos",
-      "detailLogCpuUse", "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",
+      "detailLogCpuUse", "detailLogCpuProc", "detailLogCpuSys",
+      "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",
       "detailLogMatches", "detailLogSlow",
       // user-facing search summary (per-kind scanned/analyzed/throughput plus
       // the duplicate groups/files/pairs split)

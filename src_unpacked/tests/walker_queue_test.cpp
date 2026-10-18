@@ -188,6 +188,41 @@ int main(int argc, char** argv) {
     check(pairs == 12 * 11 / 2, "pause-parity");
     fs::remove_all(d2, ec);
   }
+  // F. Hybrid (AB) live parity (0.9.4.129 regression pin). With a streaming
+  // consumer the AB final pass skips both-changed image pairs because the live
+  // pass owns them, so a fresh AB scan must still surface the full pair set
+  // through onMatch. Before the fix the live emitter rejected every match
+  // (right index arrived one past the pipeline's file list), so this scan
+  // returned zero pairs while A/B modes returned the full set -- the field
+  // bug behind "similar groups 0 / duplicate files 0" in Auto mode.
+  {
+    auto d3 = fs::temp_directory_path() / "msf_walker_test3";
+    fs::remove_all(d3, ec);
+    fs::create_directories(d3 / "media", ec);
+    fs::create_directories(d3 / "appdir", ec);
+    for (int i = 0; i < 12; ++i) bmp(d3 / "media" / ("h" + std::to_string(i) + ".bmp"));
+    msf::MediaSearchEngine e3;
+    if (!e3.openIndexForRoot((d3 / "media").string(), (d3 / "appdir").string())) {
+      std::cerr << "fail: engine-open\n";
+      return 2;
+    }
+    msf::ScanControl c3;
+    c3.analyzeMode = msf::AnalyzeMode::Hybrid;
+    std::size_t pairs = 0;
+    c3.onMatch = [&](const msf::SearchMatch&) { ++pairs; };
+    const msf::SearchReport r = e3.scan((d3 / "media").string(), 8, &c3);
+    e3.close();
+    check(r.completed, "ab-completed");
+    check(pairs == 12 * 11 / 2, "ab-live-parity");
+    // The report mirrors the streamed set: st.groups counts the (empty) final
+    // pass, so the live-owned pairs must be added back or the log/panel drop
+    // to 0 even though the GUI shows the matches.
+    check(r.groups == 12 * 11 / 2, "ab-report-pairs");
+    check(r.imgPairs == 12 * 11 / 2, "ab-img-pairs");
+    check(r.imgGroups == 1, "ab-img-groups");
+    check(r.imgDupFiles == 12, "ab-img-dup-files");
+    fs::remove_all(d3, ec);
+  }
   fs::remove_all(d, ec);
   if (failures) {
     std::cerr << "walker_queue failures=" << failures << "\n";

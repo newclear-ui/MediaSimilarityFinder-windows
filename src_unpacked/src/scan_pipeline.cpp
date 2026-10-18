@@ -95,6 +95,15 @@ static void indexFile(CandidateIndex& full,CandidateIndex& c4,CandidateIndex& c1
 void ScanPipeline::addAndMatch(const MediaFile& f,unsigned maxDistance,const MatchCallback& onMatch){
  if(!onMatch){add(f);return;}
  const std::size_t idx=files_.size();
+ // 0.9.4.129: matches are collected first and emitted only AFTER f has been
+ // pushed into files_ (and indexed) below. Emitting inside the consider loop
+ // (the old order) handed the callback a right index == files_.size(), one
+ // past the end of the pipeline's own file list, so every streaming consumer
+ // that validates indices (media_search_engine.cpp liveEmit) silently dropped
+ // 100% of live matches. Hybrid (AB) trusts the live pass for both-changed
+ // image pairs and skips them in the final pass, so that drop zeroed every
+ // full/rescan AB result (reported: similar groups 0 / duplicate files 0).
+ std::vector<MediaMatch> matches;
  if(f.fingerprint){
   const double threshold=thresholdFor(maxDistance);
   std::unordered_set<std::size_t> seenPartners;
@@ -116,7 +125,7 @@ void ScanPipeline::addAndMatch(const MediaFile& f,unsigned maxDistance,const Mat
      // re-scores grey-zone pairs with SSIM; near-identical and video pairs
      // pass through untouched, decode failures fall back to Hamming.
      const double v=verifyImagePair(f.path,o.path,f.kind==MediaKind::Image,sim,threshold);
-     if(v>=threshold){ MediaMatch match{c.index,idx,v}; match.contentIdentical=sameContent(o,f); onMatch(match); }
+     if(v>=threshold){ MediaMatch match{c.index,idx,v}; match.contentIdentical=sameContent(o,f); matches.push_back(match); }
    }
   };
   if(f.kind==MediaKind::Image){
@@ -135,6 +144,9 @@ void ScanPipeline::addAndMatch(const MediaFile& f,unsigned maxDistance,const Mat
  if(!f.fingerprint) return;
  if(f.kind==MediaKind::Image){indexFile(imageIdx_,c4_,c1_,c916_,idx,f);imageMap_.push_back(idx);}
  else if(f.kind==MediaKind::Video){indexFile(videoIdx_,vc4_,vc1_,vc916_,idx,f);videoMap_.push_back(idx);}
+ // Emitted last: the callback observes a fully registered file (files_[idx]
+ // and the indexes both exist), matching the batch analyze() contract.
+ for(const auto& m:matches) onMatch(m);
 }
 ScanStats ScanPipeline::analyze(unsigned maxDistance){
  return analyze(maxDistance, {});
