@@ -161,6 +161,16 @@ public:
     // Only the caller that needs both at once should use this; single-output
     // callers keep using decode()/decodePreserveAspect().
     bool decodeBoth(const std::string& path,int width,int height,int maxDimension,GrayImage& fixedOut, GrayImage& aspectOut, DecodeTelemetry* telFixed=nullptr, DecodeTelemetry* telAspect=nullptr) const;
+    // 0.9.4.128: one shared WIC source (factory, decoder, frame, EXIF
+    // orientation) producing the fixed gray, aspect gray and aspect color
+    // outputs with three independent scaler/converter/CopyPixels chains.
+    // Per-branch validity mirrors the three separate calls: a failed fixed
+    // branch fails the whole call (as before, the file is skipped), an
+    // aspect-only failure leaves crops empty while color is still attempted,
+    // and a color-only failure only drops the thumbnail. PGM fallback covers
+    // the gray lanes exactly like decodeBoth; the color lane has no PGM
+    // fallback, exactly like the former standalone color path.
+    bool decodeTriple(const std::string& path,int width,int height,int maxDimension,GrayImage& fixedOut, GrayImage& aspectOut, ColorImage& colorOut) const;
     // Display path (previews): color via WIC BGRA. Fingerprint paths stay gray.
     bool decodeColorAspect(const std::string& path,int maxDimension,ColorImage& out) const;
     // Header-only dimensions: PNG IHDR + JPEG SOF parsed from the first bytes,

@@ -346,7 +346,8 @@ bool decodeWicBranches(const wchar_t* wpath,int fw,int fh,int maxDimension,
                        bool wantFixed,bool wantAspect,
                        GrayImage& fixed,GrayImage& aspect,
                        DecodeTelemetry* telFixed,DecodeTelemetry* telAspect,
-                       double* aspectBranchMs=nullptr){
+                       double* aspectBranchMs=nullptr,
+                       bool wantColor=false,ColorImage* colorOut=nullptr){
     DecodeTelemetry* telShared = telFixed ? telFixed : telAspect;
     // D9d: each timer wraps one WIC step and nothing else. The steps are
     // sequential and mutually exclusive, so the buckets reconstruct the WIC
@@ -450,38 +451,32 @@ bool decodeWicBranches(const wchar_t* wpath,int fw,int fh,int maxDimension,
       if(FAILED(hr))return false;
       applyOrientationPixels(aspect.pixels,aspect.width,aspect.height,1,xform);
     }
+    // ---- branch C: color, same shared source, independent scaler ----
+    // Byte-identical to the former standalone color path: same target math,
+    // same Fant scaler, same BGRA converter, same trailing orientation pass.
+    // The only difference is the shared factory/decoder/frame above instead
+    // of a second file open.
+    if(wantColor&&colorOut){
+      UINT w=ow,h=oh; if(ow>oh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)oh*maxDimension/ow));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)ow*maxDimension/oh));}
+      const UINT pw=swapDims?h:w, ph=swapDims?w:h;
+      ComPtr<IWICBitmapScaler> scaler;
+      ComPtr<IWICFormatConverter> conv;
+      hr=factory->CreateBitmapScaler(&scaler);
+      if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),pw,ph,WICBitmapInterpolationModeFant);
+      if(FAILED(hr))return false;
+      hr=factory->CreateFormatConverter(&conv);
+      if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat32bppBGRA,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom);
+      if(FAILED(hr))return false;
+      colorOut->width=(int)pw;colorOut->height=(int)ph;colorOut->bgra.resize((size_t)pw*ph*4);
+      hr=conv->CopyPixels(nullptr,pw*4,colorOut->bgra.size(),colorOut->bgra.data());
+      if(FAILED(hr))return false;
+      applyOrientationPixels(colorOut->bgra,colorOut->width,colorOut->height,4,xform);
+    }
     return true;
 }
-bool decodeWicFileAspectColor(const wchar_t* wpath,int maxDimension,msf::ColorImage& out){
-    ComPtr<IWICImagingFactory> factory;
-    HRESULT hr=CoCreateInstance(CLSID_WICImagingFactory2,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)); if(FAILED(hr)) hr=CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory));
-    if(FAILED(hr))return false; ComPtr<IWICBitmapDecoder> dec; hr=factory->CreateDecoderFromFilename(wpath,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&dec); if(FAILED(hr))return false;
-    // EXIF orientation applies to the color display lane too (same mapping as
-    // the gray fingerprint lanes above): decoded previews must match what the
-    // fingerprint describes, or rotated photos show one way and match another.
-    ComPtr<IWICBitmapSource> src;
-    WICBitmapTransformOptions xform=WICBitmapTransformRotate0;
-    UINT sw=0,sh=0;
-    {
-      ComPtr<IWICBitmapFrameDecode> frame; hr=dec->GetFrame(0,&frame); if(FAILED(hr))return false;
-      ComPtr<IWICMetadataQueryReader> meta;
-      if(SUCCEEDED(frame->GetMetadataQueryReader(&meta))&&meta)
-        xform=exifOrientationToTransform(meta.Get());
-      // 0.9.4.82: orientation is applied to the scaled BGRA output (see
-      // applyOrientationPixels), not by rotating the full-resolution source.
-      src=frame;
-      UINT fw=0,fh=0; if(FAILED(src->GetSize(&fw,&fh))||!fw||!fh)return false; sw=fw; sh=fh;
-    }
-    const bool swapDims=((unsigned)xform & 0x3u)==1u||((unsigned)xform & 0x3u)==3u;
-    const UINT ow=swapDims?sh:sw, oh=swapDims?sw:sh;
-    UINT w=ow,h=oh; if(ow>oh){w=(UINT)maxDimension;h=std::max<UINT>(1,(UINT)std::lround((double)oh*maxDimension/ow));} else {h=(UINT)maxDimension;w=std::max<UINT>(1,(UINT)std::lround((double)ow*maxDimension/oh));}
-    const UINT pw=swapDims?h:w, ph=swapDims?w:h;
-    ComPtr<IWICBitmapScaler> scaler; hr=factory->CreateBitmapScaler(&scaler); if(SUCCEEDED(hr)) hr=scaler->Initialize(src.Get(),pw,ph,WICBitmapInterpolationModeFant); if(FAILED(hr))return false;
-    // BGRA bytes land in QImage::Format_ARGB32 order on little-endian.
-    ComPtr<IWICFormatConverter> conv; hr=factory->CreateFormatConverter(&conv); if(SUCCEEDED(hr)) hr=conv->Initialize(scaler.Get(),GUID_WICPixelFormat32bppBGRA,WICBitmapDitherTypeNone,nullptr,0.0,WICBitmapPaletteTypeCustom); if(FAILED(hr))return false;
-    out.width=(int)pw;out.height=(int)ph;out.bgra.resize((size_t)pw*ph*4); hr=conv->CopyPixels(nullptr,pw*4,out.bgra.size(),out.bgra.data()); if(FAILED(hr))return false;
-    applyOrientationPixels(out.bgra,out.width,out.height,4,xform); return true;
-}
+// decodeWicFileAspectColor removed in 0.9.4.128: the color lane now runs as
+// branch C of the shared decodeWicBranches source (same scaler/converter/
+// orientation math, one file open instead of two). See build-history.
 } // namespace
 bool ImageDecoder::decode(const std::string& path,int w,int h,GrayImage& out,DecodeTelemetry* tel) const {
     if(w<=0||h<=0) return false;
@@ -570,12 +565,43 @@ bool ImageDecoder::decodeBoth(const std::string& path,int w,int h,int maxDimensi
     if(telAspect) telAspect->totalMs+=aspectBranchMs;
     return ok;
 }
+bool ImageDecoder::decodeTriple(const std::string& path,int w,int h,int maxDimension,GrayImage& fixedOut,GrayImage& aspectOut,ColorImage& colorOut) const {
+    if(w<=0||h<=0||maxDimension<=0) return false;
+    int need=MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,nullptr,0); if(!need) return false;
+    std::wstring wp(need,L'\0'); MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,wp.data(),need);
+    HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED); bool uninit=SUCCEEDED(hr);
+    // Per-branch validity mirrors the three separate calls the scan path made:
+    // fixed decides the file; aspect/color are best-effort on the same source.
+    bool okFixed=false, okAspect=false, okColor=false;
+    {
+        GrayImage fx, ax; ColorImage cx;
+        if(decodeWicBranches(wp.c_str(),w,h,maxDimension,true,true,fx,ax,nullptr,nullptr,nullptr,true,&cx)){
+            okFixed=fx.width>0; okAspect=ax.width>0;
+            okColor=cx.width>0&&cx.bgra.size()==(size_t)cx.width*cx.height*4;
+            if(okFixed) fixedOut=std::move(fx);
+            if(okAspect) aspectOut=std::move(ax);
+            if(okColor) colorOut=std::move(cx);
+        }
+    }
+    if(!okFixed){
+        // Same PGM fallback contract as decode()/decodePreserveAspect().
+        GrayImage f2, a2;
+        okFixed=decodePgm(path,w,h,f2);
+        okAspect=decodePgmAspect(path,maxDimension,a2);
+        if(okFixed) fixedOut=std::move(f2);
+        if(okAspect) aspectOut=std::move(a2);
+        // No PGM color lane: matches the former standalone color path.
+    }
+    if(uninit)CoUninitialize();
+    return okFixed;
+}
 bool ImageDecoder::decodeColorAspect(const std::string& path,int maxDimension,ColorImage& out) const {
     if(maxDimension<=0) return false;
     int need=MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,nullptr,0); if(!need) return false;
     std::wstring wp(need,L'\0'); MultiByteToWideChar(CP_UTF8,0,path.c_str(),-1,wp.data(),need);
     HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED); bool uninit=SUCCEEDED(hr);
-    bool ok=decodeWicFileAspectColor(wp.c_str(),maxDimension,out);
+    GrayImage sDummyFixed, sDummyAspect;
+    bool ok=decodeWicBranches(wp.c_str(),0,0,maxDimension,false,false,sDummyFixed,sDummyAspect,nullptr,nullptr,nullptr,true,&out);
     if(uninit)CoUninitialize(); return ok;
 }
 #else
@@ -604,6 +630,15 @@ bool ImageDecoder::decodeBoth(const std::string& path,int w,int h,int maxDimensi
   if(telFixed){ telFixed->pgmFallbackMs+=pgmMs; ++telFixed->pgmFallbacks; if(!ok) ++telFixed->failures; telFixed->totalMs+=fixedShare; }
   if(telAspect){ telAspect->pgmFallbackMs+=pgmMs; ++telAspect->pgmFallbacks; if(!ok) ++telAspect->failures; telAspect->totalMs+=pgmMs; }
   return ok;
+}
+bool ImageDecoder::decodeTriple(const std::string& path,int w,int h,int maxDimension,GrayImage& fixedOut,GrayImage& aspectOut,ColorImage& colorOut) const {
+  if(w<=0||h<=0||maxDimension<=0) return false;
+  // No WIC off Windows, so there is no shared source to build: run the three
+  // existing PGM paths. Behaviour stays identical to the three separate calls.
+  const bool okF=decodePgm(path,w,h,fixedOut);
+  if(okF) decodePgmAspect(path,maxDimension,aspectOut);
+  (void)colorOut; // no PGM color lane, matching the standalone color path
+  return okF;
 }
 bool ImageDecoder::decodeColorAspect(const std::string&,int,ColorImage&) const {
   return false; // no color WIC outside Windows; callers fall back to file icons

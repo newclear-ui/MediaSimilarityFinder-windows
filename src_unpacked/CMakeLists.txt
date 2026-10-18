@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.127 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.128 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -171,18 +171,28 @@ target_include_directories(msf_core PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated
 if(WIN32)
     target_link_libraries(msf_core PUBLIC windowscodecs ole32 shell32 psapi pdh)
 endif()
-find_package(SQLite3 QUIET)
-if(SQLite3_FOUND)
-    if(TARGET SQLite3::SQLite3)
-        target_link_libraries(msf_core PUBLIC SQLite3::SQLite3)
-    elseif(TARGET SQLite::SQLite3)
-        target_link_libraries(msf_core PUBLIC SQLite::SQLite3)
-    else()
-        target_link_libraries(msf_core PUBLIC sqlite3)
-    endif()
-else()
-    find_package(unofficial-sqlite3 CONFIG REQUIRED)
+# 0.9.4.128: prefer the vcpkg CONFIG package first. The FindSQLite3 module
+# resolves SQLite3_LIBRARY to the debug tree even for Release builds (proven
+# when the debug tree was removed: Release links failed on
+# debug/lib/sqlite3.lib), silently mixing the debug CRT into release binaries.
+# unofficial::sqlite3::sqlite3 selects the library per configuration.
+find_package(unofficial-sqlite3 CONFIG QUIET)
+if(TARGET unofficial::sqlite3::sqlite3)
     target_link_libraries(msf_core PUBLIC unofficial::sqlite3::sqlite3)
+else()
+    find_package(SQLite3 QUIET)
+    if(SQLite3_FOUND)
+        if(TARGET SQLite3::SQLite3)
+            target_link_libraries(msf_core PUBLIC SQLite3::SQLite3)
+        elseif(TARGET SQLite::SQLite3)
+            target_link_libraries(msf_core PUBLIC SQLite::SQLite3)
+        else()
+            target_link_libraries(msf_core PUBLIC sqlite3)
+        endif()
+    else()
+        find_package(unofficial-sqlite3 CONFIG REQUIRED)
+        target_link_libraries(msf_core PUBLIC unofficial::sqlite3::sqlite3)
+    endif()
 endif()
 
 if(MSF_ENABLE_GPU)
@@ -628,11 +638,16 @@ endif()
 
 option(MSF_ENABLE_FFMPEG "Enable FFmpeg video decoding when available" ON)
 if(MSF_ENABLE_FFMPEG)
-  # Prefer pkg-config on Linux/macOS, but also support Windows/vcpkg where
-  # pkg-config is commonly unavailable.
-  find_package(PkgConfig QUIET)
-  if(PkgConfig_FOUND)
-    pkg_check_modules(FFMPEG QUIET libavformat libavcodec libavutil libswscale)
+  # Prefer pkg-config on Linux/macOS. On Windows the vcpkg host pkgconf
+  # resolves to the DEBUG prefix, which would link debug import libs into
+  # Release binaries (found 0.9.4.128 when the debug tree went missing:
+  # every Release link line carried debug/lib). Use the release HINTS path
+  # on Windows instead.
+  if(NOT WIN32)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+      pkg_check_modules(FFMPEG QUIET libavformat libavcodec libavutil libswscale)
+    endif()
   endif()
   if(NOT FFMPEG_FOUND)
     find_path(MSF_FFMPEG_INCLUDE_DIR libavformat/avformat.h

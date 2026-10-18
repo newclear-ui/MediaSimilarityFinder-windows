@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.127` (Test Mode XMP 회귀 테스트 — 실파이프라인 판정 검증) · CPU CTest 125/125 · GPU CTest 126/126
+기준: `0.9.4.128` (이미지 디코드 공유 소스 통합 — 파일당 3 open → 1 open) · CPU CTest 125/125 · GPU CTest 126/126
 최종 갱신: 2026-10-18
 
 ## 이 문서의 역할

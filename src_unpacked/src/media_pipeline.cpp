@@ -42,12 +42,16 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
     struct ActivityGuard { std::atomic<bool>* p; ~ActivityGuard(){ if(p) p->store(false,std::memory_order_relaxed); } } guard{activity};
     if(activity) activity->store(false,std::memory_order_relaxed);
     std::vector<ImageFingerprintResult> out(paths.size());
-    struct Decoded { bool ok=false; GrayImage img; double decodeMs=0; unsigned long long bytes=0; };
+    // 0.9.4.128: one shared WIC source per file instead of three separate
+    // opens (fixed + aspect + color). The aspect/color outputs ride along in
+    // the batch-bounded Decoded rows, so peak memory stays proportional to
+    // the batch, exactly like the previous per-iteration temporaries.
+    struct Decoded { bool ok=false; GrayImage img; GrayImage aspect; ColorImage color; double decodeMs=0; unsigned long long bytes=0; };
     std::vector<Decoded> dec(paths.size());
     parallelFor(paths.size(), [&](std::size_t i){
         const auto t0=std::chrono::steady_clock::now();
-        ImageDecoder d; GrayImage img;
-        if(d.decode(paths[i],32,32,img)&&img.pixels.size()==1024){ dec[i].ok=true; dec[i].img=std::move(img); }
+        ImageDecoder d; GrayImage fixed, aspect; ColorImage color;
+        if(d.decodeTriple(paths[i],32,32,128,fixed,aspect,color)&&fixed.pixels.size()==1024){ dec[i].ok=true; dec[i].img=std::move(fixed); dec[i].aspect=std::move(aspect); dec[i].color=std::move(color); }
         dec[i].decodeMs=msSince(t0);
         std::error_code ec; dec[i].bytes=(unsigned long long)std::filesystem::file_size(path_from_utf8(paths[i]),ec);
     });
@@ -107,14 +111,14 @@ std::vector<ImageFingerprintResult> MediaPipeline::imageBatch(const std::vector<
             out[oi].ok=true; out[oi].usedGpu=used; out[oi].gpuFallback=preferGpu&&!used; usedF[base+k]=used?1:0; }
     }
     if(activity) activity->store(false,std::memory_order_relaxed);
-    // Crop pass decodes a second, larger frame per image; parallelize it the
-    // same way. Each task writes only its own output slot.
+    // Crop/color pass now works on the already-decoded batch rows: no second
+    // or third file open. Each task writes only its own output slot.
     parallelFor(map.size(), [&](std::size_t m){
         const auto t0=std::chrono::steady_clock::now();
-        auto oi=map[m]; ImageDecoder cd; GrayImage original;
-        if(cd.decodePreserveAspect(paths[oi],128,original)) out[oi].crops=cropFingerprints(original);
-        ColorImage color;
-        if(cd.decodeColorAspect(paths[oi],128,color) && color.width>0 && color.height>0
+        auto oi=map[m];
+        if(!dec[oi].aspect.pixels.empty()) out[oi].crops=cropFingerprints(dec[oi].aspect);
+        ColorImage& color=dec[oi].color;
+        if(color.width>0 && color.height>0
            && color.bgra.size()==(std::size_t)color.width*color.height*4){
           out[oi].colorThumb=std::move(color); out[oi].hasColorThumb=true;
         }
