@@ -45,6 +45,7 @@ if ($null -eq $recycleBin) {
 
 $moved = 0
 $bytes = 0L
+$scriptStart = Get-Date
 foreach ($item in $resolved) {
     $leaf = Split-Path -Leaf $item
     if (Test-Path -LiteralPath $item -PathType Container) {
@@ -56,13 +57,36 @@ foreach ($item in $resolved) {
     if ($null -ne $sum) { $bytes += [int64]$sum }
 
     # MoveHere is asynchronous; poll briefly so the reported count is honest.
-    $recycleBin.MoveHere($item, 0x14)  # FOF_NOCONFIRMATION | FOF_SILENT | FOF_ALLOWUNDO
+    # Flags must include FOF_ALLOWUNDO (0x40).
+    $recycleBin.MoveHere($item, 0x54)  # FOF_NOCONFIRMATION | FOF_SILENT | FOF_ALLOWUNDO
     $deadline = (Get-Date).AddSeconds(20)
     while ((Test-Path -LiteralPath $item) -and (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 200
     }
     if (Test-Path -LiteralPath $item) {
         throw "failed_to_recycle=$item (still present; nothing was hard-deleted)"
+    }
+    # Fail-closed verification: a vanished source is NOT proof of recycling.
+    # Proven 2026-10-18: in a non-interactive session the shell can remove the
+    # source without writing any $I/$R bin record. Only an $I record naming
+    # this exact path counts as "recycled"; anything else aborts loudly.
+    $sid = ((& whoami /user /FO LIST 2>$null | Select-String 'SID') -replace '.*(S-1-5-21-[\d-]+).*','$1').Trim()
+    if (-not $sid) { $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+    $binRoot = Join-Path 'C:\$Recycle.Bin' $sid
+    $found = $false
+    $verifyDeadline = (Get-Date).AddSeconds(30)
+    while (-not $found -and (Get-Date) -lt $verifyDeadline) {
+        foreach ($meta in (Get-ChildItem -LiteralPath $binRoot -Force -Filter '$I*' -ErrorAction SilentlyContinue)) {
+            if ($meta.LastWriteTime -lt $scriptStart) { continue }
+            $raw = [IO.File]::ReadAllBytes($meta.FullName)
+            if ($raw.Length -lt 28) { continue }
+            $path = [Text.Encoding]::Unicode.GetString($raw, 28, $raw.Length - 28).TrimEnd([char]0)
+            if ($path -ieq $item) { $found = $true; break }
+        }
+        if (-not $found) { Start-Sleep -Milliseconds 500 }
+    }
+    if (-not $found) {
+        throw ('not_in_recycle_bin=' + $item + ' (source is gone but no $I record names it; treat contents as lost and stop)')
     }
     $moved++
     Write-Output "recycled=$item"
