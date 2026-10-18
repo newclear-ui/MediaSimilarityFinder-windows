@@ -262,6 +262,8 @@ int main(int argc, char** argv) {
       "identicalContent", "perceptualMatch",
       // 0.9.4.108: detailed-log summary header rows (mode + scanned folder)
       "summaryMode", "summaryFolder",
+      // 0.9.4.132: Load-only completion message
+      "loadDone",
     };
     int missing = 0;
     for (const char* k : kKeys) {

@@ -458,6 +458,12 @@ private:
   // onResults must not show the finished-scan report popup.
   bool loading_ = false;
   QDialog* loadWait_ = nullptr;
+  // 0.9.4.132: load-only summary state. Load() populates the left summary from
+  // the loaded index (files/groups/pairs + load duration) instead of leaving
+  // the "-" placeholders; loadedSummary_ switches the verify row to the
+  // stored-pair reading ("- / N") and clears on the next scan answer.
+  qint64 loadStartMs_ = 0;
+  bool loadedSummary_ = false;
   // 0.9.4.94: completion-path dedup. onResults (scan branch) already performs
   // the full middle/right rebuild; scanFinished skips repeating it for the
   // same scan so the "writing report" phase cannot stall the GUI thread twice.

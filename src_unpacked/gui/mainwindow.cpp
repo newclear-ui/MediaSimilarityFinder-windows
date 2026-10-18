@@ -262,6 +262,10 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"scanning")) return S("검색 중…","Scanning…");
   if (!std::strcmp(key,"paused")) return S("일시정지됨","Paused");
   if (!std::strcmp(key,"quickLoaded")) return S("저장된 매칭 %1건을 불러왔습니다 — 누락된 파일만 검색 중…","Loaded %1 stored matches — scanning only missing files…");
+  // 0.9.4.132: Load-only completion (no scan follows). The quick-load wording
+  // above belongs to the scan path; reusing it after a load claimed a scan
+  // that never started.
+  if (!std::strcmp(key,"loadDone")) return S("인덱스 불러오기 완료 — 파일 %1 · 매치 %2","Index load complete — %1 files · %2 matches");
   if (!std::strcmp(key,"chooseTitle")) return S("미디어 폴더 선택","Select media folder");
   if (!std::strcmp(key,"chooseScanFolder")) return S("검색 폴더 선택","Select folder to scan");
   if (!std::strcmp(key,"chooseDest")) return S("이동 대상 폴더","Destination folder");
@@ -962,6 +966,11 @@ void MainWindow::buildLeft(QWidget* w) {
   sumValTotal_ = new QLabel("-", w); sumValDone_ = new QLabel("-", w); sumValIndexed_ = new QLabel("-", w); sumValGroups_ = new QLabel("-", w);
   sumValDup_ = new QLabel("-", w); sumValVerify_ = new QLabel("-", w); sumValTime_ = new QLabel("-", w); sumValGpu_ = new QLabel("-", w);
   sumValCpu_ = new QLabel("-", w); sumValRam_ = new QLabel("-", w);
+  // 0.9.4.132: automation hooks for the summary values (the load regression
+  // asserts the panel is populated, not "-").
+  sumValTotal_->setObjectName("sumValTotal"); sumValDone_->setObjectName("sumValDone");
+  sumValIndexed_->setObjectName("sumValIndexed"); sumValGroups_->setObjectName("sumValGroups");
+  sumValTime_->setObjectName("sumValTime");
   sumValDup_->setObjectName("sumValDup"); sumValVerify_->setObjectName("sumValVerify");
   form->addRow(sumTotal_, sumValTotal_); form->addRow(sumDone_, sumValDone_); form->addRow(sumIndexed_, sumValIndexed_);
   form->addRow(sumGroups_, sumValGroups_); form->addRow(sumDup_, sumValDup_); form->addRow(sumVerify_, sumValVerify_);
@@ -1883,6 +1892,7 @@ void MainWindow::scanFinished(QString msg) {
     const QStringList st = msg.split('|');
     // st[0]=text st[1]=scanned st[2]=analyzed st[3]=unchanged st[4]=groups st[5]=candidates
     lastStats_ = st.mid(1, 5);
+    loadedSummary_ = false; // 0.9.4.132: a scan answer supersedes the load reading
     repElapsedMs_ = elapsedActiveMs();
     const qulonglong analyzed = st.size() > 2 ? st[2].toULongLong() : 0;
     const qulonglong unchanged = st.size() > 3 ? st[3].toULongLong() : 0;
@@ -2002,6 +2012,25 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   // follows for a completed scan) does not repeat it. Load answers take the
   // wasLoad branch above and never reach scanFinished; leave the mark clear.
   if (!wasLoad) resultsApplied_ = true;
+  if (wasLoad) {
+    // 0.9.4.132: populate the left summary from the loaded index. Without this
+    // the panel stayed all "-" after Load (field report): the load is the only
+    // producer of this result set for the session, so file/group/duplicate
+    // rows describe it, the verify row shows the stored pair total ("- / N",
+    // nothing was verified now), and the time row shows the load duration.
+    lastStats_ = QStringList{QString::number(files.size()), QString::number(files.size()),
+                             QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0")};
+    repElapsedMs_ = loadStartMs_ > 0 ? QDateTime::currentMSecsSinceEpoch() - loadStartMs_ : 0;
+    loadedSummary_ = true;
+    lastVerifyDone_ = matchRows_.size();
+    hasReport_ = true;
+    statusProg_->setRange(0, 100);
+    statusProg_->setValue(100);
+    statusMsg_->setText(trStr(lang(), "loadDone").arg(files.size()).arg(matchRows_.size()));
+    refreshSummary();
+  } else {
+    loadedSummary_ = false;
+  }
   if (wait) { wait->close(); wait->deleteLater(); }
 }
 void MainWindow::resourceChanged(int i) {
@@ -2171,6 +2200,12 @@ void MainWindow::loadIndex() {
   matchSeq_ = 0; groupsDirty_ = false; lastFillSig_ = 0;
   resultsApplied_ = false; lastFileSig_.clear();
   lastVerifyTotal_ = 0; lastVerifyDone_ = 0;
+  // 0.9.4.132: the loaded set becomes the summary's subject. targetKnown_ is
+  // cleared so refreshSummary shows the loaded file count, not a stale scan
+  // target from earlier in the session.
+  targetKnown_ = false;
+  loadStartMs_ = QDateTime::currentMSecsSinceEpoch();
+  loadedSummary_ = false;
   if (sumValVerify_) sumValVerify_->setText(QStringLiteral("-"));
   // Load shows the stored order: sort = None, locked until the next scan.
   sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
@@ -4315,9 +4350,13 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
   sumValDup_->setText(QString::number(dupFiles));
   // 0.9.4.95: pair-verify totals (candidates / confirmed duplicate pairs,
   // result-oriented) from the finished scan's telemetry record.
-  sumValVerify_->setText(lastVerifyTotal_ > 0
-      ? QString("%1 / %2").arg(lastVerifyTotal_).arg(lastVerifyDone_)
-      : QStringLiteral("-"));
+  // 0.9.4.132: a load verified nothing this session, so its reading is the
+  // stored pair total with an unmeasured scan side ("- / N").
+  sumValVerify_->setText(loadedSummary_
+      ? (lastVerifyDone_ > 0 ? QString("- / %1").arg(lastVerifyDone_) : QStringLiteral("-"))
+      : (lastVerifyTotal_ > 0
+             ? QString("%1 / %2").arg(lastVerifyTotal_).arg(lastVerifyDone_)
+             : QStringLiteral("-")));
   sumValTime_->setText(fmtElapsed(repElapsedMs_));
   sumValGpu_->setText(gpuStateText());
 }

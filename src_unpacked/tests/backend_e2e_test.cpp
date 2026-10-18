@@ -326,6 +326,20 @@ int main(int argc, char** argv) {
                   "test1b slow load completed while the backend stayed alive");
         qunsetenv("MSF_TEST_SLOW_LOAD_MS");
         check(backendExits == exitsBefore, "test1b no backend restart during the load");
+        // 0.9.4.132: the left summary must describe the loaded set (the field
+        // report: every row stayed "-" after Load). The suite dataset holds
+        // 300 pairs (600 files, 300 groups, 600 duplicate members).
+        const auto sumText = [&](const char* name) {
+            auto* l = w.findChild<QLabel*>(QString::fromLatin1(name));
+            return l ? l->text() : QStringLiteral("<none>");
+        };
+        check(sumText("sumValTotal") == QStringLiteral("600"), "test1b summary total=600");
+        check(sumText("sumValDone") == QStringLiteral("600"), "test1b summary read=600");
+        check(sumText("sumValIndexed") == QStringLiteral("600"), "test1b summary indexed=600");
+        check(sumText("sumValGroups") == QStringLiteral("300"), "test1b summary groups=300");
+        check(sumText("sumValDup") == QStringLiteral("600"), "test1b summary dupFiles=600");
+        check(sumText("sumValVerify") == QStringLiteral("- / 300"), "test1b summary stored pairs shown");
+        check(sumText("sumValTime") != QStringLiteral("-"), "test1b summary load time shown");
     }
 
     // ---- Test 2: forced kill right after scan start -> restart -> auto-resume. ----
