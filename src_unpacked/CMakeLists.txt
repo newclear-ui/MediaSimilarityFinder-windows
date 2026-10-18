@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.126 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.127 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -886,6 +886,12 @@ if(Qt6_FOUND)
     target_link_libraries(msf_test_mode_test PRIVATE msf_core Qt6::Core)
     target_include_directories(msf_test_mode_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME test_mode_test COMMAND msf_test_mode_test)
+    # 0.9.4.127 Test Mode XMP regression: I-XMP fallback verdicts through the
+    # real pipeline, production vs Test Mode parity, production bytes unchanged.
+    add_executable(msf_test_mode_xmp_test tests/test_mode_xmp_test.cpp)
+    target_link_libraries(msf_test_mode_xmp_test PRIVATE msf_core Qt6::Core)
+    target_include_directories(msf_test_mode_xmp_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME test_mode_xmp_test COMMAND msf_test_mode_xmp_test)
     # 0.9.4.78 stall watchdog: pure decision logic under fake clocks.
     add_executable(msf_stall_watchdog_test tests/stall_watchdog_test.cpp)
     target_include_directories(msf_stall_watchdog_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

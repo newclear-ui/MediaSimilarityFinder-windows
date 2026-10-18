@@ -21,7 +21,7 @@ A separate `workprogress` document is intentionally not created; this document i
 
 ## Active Build Queue / Current Work Priority
 
-> **Refreshed 2026-10-18:** the baseline is 0.9.4.126. This queue summarizes the interim review in `docs/worklog/0.9.4.{ko,en}.md` as execution items. 0.9.4.126 adds the `--benchmark-recover` recovery entry supporting S5 measurement-evidence recovery (verdicts/gates unchanged).
+> **Refreshed 2026-10-18:** the baseline is 0.9.4.127. This queue summarizes the interim review in `docs/worklog/0.9.4.{ko,en}.md` as execution items. 0.9.4.127 adds the Test Mode XMP regression test closing the XMP verdict half at the real pipeline (verdicts/gates unchanged, CTest registrations 125->126).
 > G4/G6 **verified in 0.9.4.111**, S4 save/exit acceptance **completed in 0.9.4.112**, independent-audit items B1/B2/B3/B7 **in 0.9.4.113**, the Load/Start-Scan crash hotfixes **in 0.9.4.114/.115**, the phantom-group auto-repair **in 0.9.4.116**, the bulk result-apply stall (candidate 1) **in 0.9.4.117**, the scan-list repeat-rebuild (churn) removal **in 0.9.4.118**, the throughput display-basis clarification (candidate 3) **in 0.9.4.119**, the GUI-less configure restore + badge-cost LOW PRIORITY decision + product-acceptance runbook (all remaining candidates) **in 0.9.4.120**, the detail-pane widening fix (group-280 field report) **in 0.9.4.121**, the right-click-path external I/O removal (post-freeze-investigation hardening) **in 0.9.4.122**, and the view-flake root fix + PDBs shipped + one-click dump setup + acceptance recheck (verdict kept) **in 0.9.4.123** — all removed from the queue.
 > Preserve the 2026-10-07 .62 crash-response / .63 GUI-usability split as historical context. The table below is the current queue.
 
