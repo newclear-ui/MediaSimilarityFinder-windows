@@ -10,6 +10,8 @@
 #include "mainwindow.h"
 #include "scan_worker.h"
 #include "media_search_engine.h"
+#include "index_manager.h"
+#include <sqlite3.h>
 #include <QCoreApplication>
 #include <atomic>
 #include <chrono>
@@ -222,6 +224,84 @@ int main(int argc, char** argv) {
     check(r.imgGroups == 1, "ab-img-groups");
     check(r.imgDupFiles == 12, "ab-img-dup-files");
     fs::remove_all(d3, ec);
+  }
+  // G. Completeness-baseline self-heal (0.9.4.130). An index written by
+  // 0.9.4.81-0.9.4.129 holds no persisted live pairs while every file is
+  // already unchanged; A/AB used to compute nothing and display an empty set
+  // forever (the field "similar groups 0" after upgrading). The engine must
+  // run one full-coverage pass when the baseline marker is absent, stamp it
+  // afterwards, and not repeat the pass on the next unchanged scan.
+  {
+    auto d4 = fs::temp_directory_path() / "msf_walker_test4";
+    fs::remove_all(d4, ec);
+    fs::create_directories(d4 / "media", ec);
+    fs::create_directories(d4 / "appdir", ec);
+    for (int i = 0; i < 12; ++i) bmp(d4 / "media" / ("g" + std::to_string(i) + ".bmp"));
+    const std::string root4 = (d4 / "media").string(), ad4 = (d4 / "appdir").string();
+    msf::IndexPaths paths;
+    check(msf::IndexManager::resolve(ad4, root4, paths), "heal-resolve");
+    const std::string dbPath4 = (paths.directory / "index.sqlite").string();
+    {
+      msf::MediaSearchEngine e4;
+      check(e4.openIndexForRoot(root4, ad4), "heal-open");
+      const msf::SearchReport r1 = e4.scan(root4, 8, nullptr);
+      check(r1.groups == 12 * 11 / 2, "heal-seed-pairs");
+      e4.close();
+    }
+    // Simulate the bug-era index: stored pairs and the completeness baseline
+    // are gone while engine_version stays current and all files stay indexed,
+    // exactly like an index whose scans ran the broken live path.
+    {
+      sqlite3* db = nullptr;
+      check(sqlite3_open(dbPath4.c_str(), &db) == SQLITE_OK, "heal-db-open");
+      char* err = nullptr;
+      check(sqlite3_exec(db, "DELETE FROM matches; DELETE FROM meta WHERE key='match_baseline';",
+                         nullptr, nullptr, &err) == SQLITE_OK, "heal-db-wipe");
+      sqlite3_free(err);
+      sqlite3_close(db);
+    }
+    {
+      msf::MediaSearchEngine e5;
+      check(e5.openIndexForRoot(root4, ad4), "heal-open2");
+      msf::ScanControl c5;
+      c5.analyzeMode = msf::AnalyzeMode::Hybrid;
+      std::size_t pairs = 0;
+      c5.onMatch = [&](const msf::SearchMatch&) { ++pairs; };
+      const msf::SearchReport r2 = e5.scan(root4, 8, &c5);
+      e5.close();
+      check(r2.analyzed == 0 && r2.unchanged == 12, "heal-unchanged");
+      check(pairs == 12 * 11 / 2, "heal-fullpass-pairs");
+      check(r2.groups == 12 * 11 / 2, "heal-report-pairs");
+    }
+    {
+      sqlite3* db = nullptr;
+      check(sqlite3_open(dbPath4.c_str(), &db) == SQLITE_OK, "heal-db-open2");
+      bool stamped = false;
+      sqlite3_stmt* st = nullptr;
+      if (sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key='match_baseline'", -1, &st,
+                             nullptr) == SQLITE_OK) {
+        if (sqlite3_step(st) == SQLITE_ROW) {
+          const char* t = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+          stamped = t && std::string(t) == msf::MediaSearchEngine::kEngineVersion;
+        }
+        sqlite3_finalize(st);
+      }
+      sqlite3_close(db);
+      check(stamped, "heal-baseline-stamped");
+    }
+    {
+      msf::MediaSearchEngine e6;
+      check(e6.openIndexForRoot(root4, ad4), "heal-open3");
+      msf::ScanControl c6;
+      c6.analyzeMode = msf::AnalyzeMode::Hybrid;
+      std::size_t pairs = 0;
+      c6.onMatch = [&](const msf::SearchMatch&) { ++pairs; };
+      const msf::SearchReport r3 = e6.scan(root4, 8, &c6);
+      e6.close();
+      check(r3.analyzed == 0 && r3.unchanged == 12, "heal-second-unchanged");
+      check(pairs == 0, "heal-one-time");
+    }
+    fs::remove_all(d4, ec);
   }
   fs::remove_all(d, ec);
   if (failures) {

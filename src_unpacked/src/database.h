@@ -67,6 +67,14 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
   static constexpr const char* kDatabaseVersion = "1.0.6";
   std::string engineVersion() const; bool setEngineVersion(const std::string& v);
   std::string dbVersion() const; bool setDbVersion(const std::string& v);
+  // 0.9.4.130 match-set completeness baseline. Stores the engine version under
+  // which a full-coverage verification pass last completed for this index.
+  // Empty (absent) means the stored pair set may be incomplete -- fresh index,
+  // or one written by 0.9.4.81-0.9.4.129 whose live pass never persisted
+  // pairs -- so the next A/AB scan must run one full pass before trusting the
+  // set. Separate from engineVersion(): that stamp is also written by
+  // revalidateMatches() without a full pass and cannot prove completeness.
+  std::string matchBaseline() const; bool setMatchBaseline(const std::string& v);
   std::string samplingGeneration() const; bool setSamplingGeneration(const std::string& v);
   // 0.9.4.81 B-slice resume frontier: opaque "key#done" string written at each
   // analyze slice boundary and cleared when the Sequential analyze completes.

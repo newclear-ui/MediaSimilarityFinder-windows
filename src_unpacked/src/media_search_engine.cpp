@@ -588,6 +588,17 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   std::unordered_set<std::string> changedPaths;
   ScanPipeline livePipe;
   const bool liveMatch = control && (bool)control->onMatch;
+  // 0.9.4.130: match-set completeness baseline (one-time self-heal). A/AB
+  // trust the stored pair set for unchanged files, but 0.9.4.81-0.9.4.129
+  // could not persist live pairs, so indexes written by them hold an
+  // incomplete (often empty) set while every file is already unchanged -- A/AB
+  // then compute nothing and keep showing 0 results forever. When this index
+  // has no baseline for the current engine, this scan runs one full-coverage
+  // pass (like Sequential: changedPtr=nullptr, live streaming off) and stamps
+  // the baseline after a completed pass. Sequential always runs that pass.
+  const std::string baselineVersion = db_.matchBaseline();
+  const bool baselineFullPass =
+      analyzeMode!=AnalyzeMode::Sequential && baselineVersion!=kEngineVersion;
   // 0.9.4.129: live streaming runs only in the modes that own it. Sequential
   // (B) verifies AFTER the walk (analyze_mode.h) and its final pass emits
   // every pair, so feeding the live pipe there would double-emit each
@@ -595,8 +606,11 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // the exact pending set; the GUI's union-find tolerates duplicates but
   // streaming consumers must not see them). Live (A) and Hybrid (AB) own the
   // live pass; in AB the final pass skips both-changed image pairs, so the
-  // two streams are disjoint by construction.
-  const bool liveStreamActive = liveMatch && analyzeMode!=AnalyzeMode::Sequential;
+  // two streams are disjoint by construction. The one-time baseline pass is
+  // B-equivalent: it verifies everything in the final pass, so live feeding
+  // would only duplicate work and stream entries.
+  const bool liveStreamActive =
+      liveMatch && analyzeMode!=AnalyzeMode::Sequential && !baselineFullPass;
   // 0.9.4.129: telemetry linkage for live-streamed matches. Hybrid's final
   // pass skips both-changed image pairs because the live pass owns them, so
   // those emissions must feed the same per-kind pair/group stats here;
@@ -609,7 +623,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // Image pairs only: the final pass never skips both-changed video pairs
   // (temporal stays exclusive to it), so videos are counted there once in
   // every mode and would otherwise double-count here.
-  const bool livePairsOwned = liveMatch && analyzeMode==AnalyzeMode::Hybrid;
+  const bool livePairsOwned =
+      liveMatch && analyzeMode==AnalyzeMode::Hybrid && !baselineFullPass;
   std::unordered_map<std::string,std::string> tlParent;
   std::unordered_map<std::string,char> tlKind; // 'i' image / 'v' video
   auto tlFind=[&](const std::string& p)->std::string{
@@ -1138,6 +1153,16 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       if(changedPaths.find(files_[i].path)!=changedPaths.end()) changedFiles[i]=1;
     changedPtr=&changedFiles;
   }
+  if(baselineFullPass){
+    // 0.9.4.130: no completeness baseline for this engine -> verify every pair
+    // once regardless of changed state (see the declaration near liveEmit),
+    // then stamp it after the completed pass. This heals an index whose stored
+    // set was written by the buggy live pass, without re-fingerprinting a
+    // single file: candidates come from the existing index.
+    changedPtr=nullptr;
+    msf::backendLogLine(std::string("matchBaseline=forceFullPass engine=")+kEngineVersion+
+                        " stored="+(baselineVersion.empty()?std::string("missing"):baselineVersion));
+  }
   const bool skipBothChangedImages=(analyzeMode==AnalyzeMode::Hybrid)&&liveMatch;
   // 0.9.4.81 B-slice: Sequential processes the image pass in 1000-file windows
   // with a resume frontier. The frontier is keyed by engine version, max
@@ -1251,6 +1276,15 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // refresh the last-scan marker (a cancelled run must not claim freshness).
   if(cancelled||(control&&control->cancel.load())) r.completed=false;
   else if(managedIndexActive_) IndexManager::updateLastScan(managedIndex_);
+  // 0.9.4.130: a completed pass (Sequential always; A/AB whenever the baseline
+  // was current or this scan just ran the one-time full pass) leaves the
+  // stored match set complete for this engine, so stamp the completeness
+  // baseline. Cancelled or failed scans leave it untouched: the next scan
+  // repeats the full pass instead of trusting a partial set. A failed stamp
+  // write is meta-only and simply repeats the pass next time -- it must never
+  // fail or roll back the already-committed scan results.
+  if(!cancelled && !(control&&control->cancel.load()) && !failed)
+    db_.setMatchBaseline(kEngineVersion);
    // Sampling-generation stamp (shared completed/cancelled invariant). Video
    // rescan-reuse requires the stamp (videoRegrid forces re-analysis while
    // unstamped). The stamp is written only when this scan actually processed

@@ -19,6 +19,11 @@
 #include "benchmark_journal.h"  // replayJournal(), to confirm the recovered summary source
 #include "benchmark_store.h"  // benchmarkSuitePaths(), to build the colliding suite dir
 #include "console_benchmark_cli.h"
+#include "path_utils.h"  // path_from_utf8 for the recovery fixtures (direct include:
+                         // the TU used to rely on a transitive include that never
+                         // actually existed in the committed tree, so the target
+                         // had not compiled since 0.9.4.126 and the suite kept
+                         // passing on a stale binary)
 
 namespace {
 
