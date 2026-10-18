@@ -214,6 +214,18 @@ int main() {
     if (jB.find("\"purpose\":\"Benchmark\"") == std::string::npos) { std::cerr << "missingB: purpose\n"; return 61; }
     if (jU.find("\"schemaVersion\":9") == std::string::npos) { std::cerr << "missingU: schema9\n"; return 62; }
   }
+  // 0.9.4.133: system-wide busy formula (GetSystemTimes semantics: kernel
+  // includes idle, so the denominator is kernel+user only). The pre-fix code
+  // added idle to the denominator and pinned an idle machine near 50%; a
+  // field log read "system 66.7%" for a machine that was ~50% busy.
+  {
+    const auto near = [](double a, double b) { return std::fabs(a - b) < 1e-6; };
+    if (!near(msf::systemBusyPercent(0, 0, 0), 0.0)) { std::cerr << "sysbusy empty\n"; return 63; }
+    if (!near(msf::systemBusyPercent(500, 500, 0), 0.0)) { std::cerr << "sysbusy idle\n"; return 64; }
+    if (!near(msf::systemBusyPercent(0, 800, 200), 100.0)) { std::cerr << "sysbusy busy\n"; return 65; }
+    if (!near(msf::systemBusyPercent(650, 1000, 100), 100.0 * 450.0 / 1100.0)) { std::cerr << "sysbusy mixed\n"; return 66; }
+    if (!near(msf::systemBusyPercent(2000, 1000, 100), 0.0)) { std::cerr << "sysbusy clamp\n"; return 67; }
+  }
   rec.reset();
    if (rec.hasData()) return 29;
   std::cout << "benchmark=ok\n";

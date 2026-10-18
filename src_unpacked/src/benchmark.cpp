@@ -433,8 +433,14 @@ void TelemetryRecorder::sampleOnce(double tMs) {
         const double proc = (double)((long long)(treeK - (unsigned long long)prevProcK_) +
                                      (long long)(treeU - (unsigned long long)prevProcU_)) / 1e7;
         s.cpuProc = 100.0 * proc / (wall * cpuCount_);
-        const long long tot = (long long)(si.QuadPart - prevSysI_) + (long long)(skk.QuadPart - prevSysK_) + (long long)(suu.QuadPart - prevSysU_);
-        if (tot > 0) s.cpuSys = 100.0 * (1.0 - (double)(long long)(si.QuadPart - prevSysI_) / (double)tot);
+        // 0.9.4.133: GetSystemTimes kernel time INCLUDES idle time, so the
+        // denominator is kernel+user only; the old code added idle to the
+        // denominator too, which pinned an idle machine near 50% and inflated
+        // every reading (field: "system 66.7%" during a no-change walk whose
+        // true busy reading was ~50%, while Task Manager showed 35-50%).
+        s.cpuSys = systemBusyPercent((unsigned long long)(si.QuadPart - prevSysI_),
+                                     (unsigned long long)(skk.QuadPart - prevSysK_),
+                                     (unsigned long long)(suu.QuadPart - prevSysU_));
       }
       prevProcK_ = (long long)treeK; prevProcU_ = (long long)treeU;
       prevSysI_ = (long long)si.QuadPart; prevSysK_ = (long long)skk.QuadPart; prevSysU_ = (long long)suu.QuadPart;

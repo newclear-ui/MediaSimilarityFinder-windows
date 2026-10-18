@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.132` (Load populates the search summary) - CPU CTest 125/125 - GPU CTest 126/126
+Baseline: `0.9.4.133` (System CPU metric corrected) - CPU CTest 125/125 - GPU CTest 126/126
 Last updated: 2026-10-18
 
 ## Role of this document

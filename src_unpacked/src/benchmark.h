@@ -68,6 +68,19 @@ struct ResourceSample {
     double ioReadBps = 0;
     double ioWriteBps = 0;
     };
+// 0.9.4.133: system-wide busy percent from GetSystemTimes deltas. Windows
+// kernel time INCLUDES idle time, so the busy fraction is
+// (kernel + user - idle) / (kernel + user). Returns 0 when the interval is
+// empty and clamps an inconsistent idle delta. Header-inline so the formula
+// carries a unit test (benchmark_test) instead of living untested inside the
+// sampler, where the old idle-in-denominator bug read ~50% on an idle machine.
+inline double systemBusyPercent(unsigned long long dIdle, unsigned long long dKernel,
+                                unsigned long long dUser) {
+    const unsigned long long tot = dKernel + dUser;
+    if (tot == 0) return 0.0;
+    const unsigned long long idle = dIdle > tot ? tot : dIdle;
+    return 100.0 * (double)(tot - idle) / (double)tot;
+}
 // Node A: scheduler-decision record. Structure only ??the Node B Adaptive
 // Scheduler fills it; until then it stays NotMeasured and must not be read
 // as "zero work share".
