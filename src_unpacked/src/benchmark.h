@@ -218,6 +218,17 @@ void addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseReje
   void setKindScanned(std::size_t imgScanned, std::size_t vidScanned);
   void setMatchBreakdown(std::size_t imgPairs, std::size_t imgGroups, std::size_t imgDupFiles,
                          std::size_t vidPairs, std::size_t vidGroups, std::size_t vidDupFiles);
+  // 0.9.4.131: displayed result-set override (GUI worker path only). The GUI
+  // streams the stored match set (quick-load) plus this scan's emissions, so
+  // the record's match counters must describe that displayed set -- otherwise
+  // an all-unchanged rescan logs "pairs 0, groups 0" while the list shows
+  // thousands. Values set here replace the serialized pairs/groups and the
+  // per-kind fields; candidates and reductionPct stay scan-scoped work
+  // metrics. CLI scans never call this, so their journal keeps describing the
+  // scan's own computation.
+  void setDisplayedResultStats(std::size_t pairs, std::size_t groups,
+                               std::size_t imgPairs, std::size_t imgGroups, std::size_t imgDupFiles,
+                               std::size_t vidPairs, std::size_t vidGroups, std::size_t vidDupFiles);
   // Scan-phase API for cancellation diagnosis. Call at each phase entry;
   // the value is only surfaced as meta.cancelledDuring when cancelled.
   void setPhase(const std::string& phase) { phase_ = phase; }
@@ -342,5 +353,10 @@ private:
   std::size_t imgPairs_ = 0, imgGroups_ = 0, imgDupFiles_ = 0;
   std::size_t vidPairs_ = 0, vidGroups_ = 0, vidDupFiles_ = 0;
   bool kindBreakdownSet_ = false;
+  // 0.9.4.131: displayed result-set override (see setDisplayedResultStats).
+  bool displayedSet_ = false;
+  std::size_t dispPairs_ = 0, dispGroups_ = 0;
+  std::size_t dispImgPairs_ = 0, dispImgGroups_ = 0, dispImgDupFiles_ = 0;
+  std::size_t dispVidPairs_ = 0, dispVidGroups_ = 0, dispVidDupFiles_ = 0;
 };
 }

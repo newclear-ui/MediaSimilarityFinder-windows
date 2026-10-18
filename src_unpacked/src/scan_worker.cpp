@@ -11,6 +11,11 @@
 #include <chrono>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "backend_log.h"
 #include "gpu_backend.h"
@@ -224,6 +229,69 @@ void ScanWorker::run() {
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
     msf::backendLogLine(QString("scanPhase=engine done scanned=%1 analyzed=%2 unchanged=%3 failed=%4")
                             .arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.failed).toStdString());
+    // 0.9.4.131: the detailed log must agree with the list the user sees.
+    // allMatches_ is exactly the displayed stream -- quick-loaded stored pairs
+    // (already scope/ignore filtered) plus everything this scan emitted -- so
+    // the record's match counters are recomputed from it before the JSON is
+    // taken. Without this an all-unchanged rescan logs "pairs 0, groups 0"
+    // while the list shows the stored results. Distinct pair identity uses a
+    // 128-bit path-pair key (two seeded FNV-1a values); the counts are
+    // display/telemetry only and the verdicts never depend on them.
+    {
+      struct PairKey {
+        std::uint64_t a, b;
+        bool operator==(const PairKey& o) const { return a == o.a && b == o.b; }
+      };
+      struct PairKeyHash {
+        std::size_t operator()(const PairKey& k) const {
+          return (std::size_t)(k.a ^ (k.b * 0x9E3779B97F4A7C15ULL));
+        }
+      };
+      const auto fnv = [](const QString& s, std::uint64_t seed) {
+        std::uint64_t h = seed;
+        const QByteArray b = s.toUtf8();
+        for (char ch : b) { h ^= (unsigned char)ch; h *= 1099511628211ULL; }
+        return h;
+      };
+      std::unordered_set<PairKey, PairKeyHash> pairKeys;
+      std::unordered_map<std::string, std::string> parent;   // union-find
+      std::unordered_map<std::string, char> kind;            // 'i' image / 'v' video
+      const auto findRoot = [&](const std::string& p) {
+        std::string rt = p;
+        std::string c = p; // path compression keeps chains short
+        while (true) {
+          const auto it = parent.find(rt);
+          if (it == parent.end() || it->second == rt) break;
+          parent[c] = it->second;
+          c = rt; rt = it->second;
+        }
+        return rt;
+      };
+      std::size_t imgPairs = 0, vidPairs = 0;
+      for (const auto& m : allMatches_) {
+        QString l = m.left, r = m.right;
+        if (r < l) std::swap(l, r);
+        const bool vid = m.kind == 2;
+        if (pairKeys.insert(PairKey{fnv(l, 1469598103934665603ULL), fnv(r, 1099511628211ULL)}).second) {
+          if (vid) ++vidPairs; else ++imgPairs;
+        }
+        const std::string ls = l.toStdString(), rs = r.toStdString();
+        parent.emplace(ls, ls); parent.emplace(rs, rs);
+        kind.emplace(ls, vid ? 'v' : 'i'); kind.emplace(rs, vid ? 'v' : 'i');
+        const std::string a = findRoot(ls), b = findRoot(rs);
+        if (a != b) parent[a] = b;
+      }
+      std::unordered_set<std::string> roots, imgRoots, vidRoots;
+      std::size_t imgDup = 0, vidDup = 0;
+      for (const auto& kv : parent) {
+        const std::string rt = findRoot(kv.first);
+        roots.insert(rt);
+        const bool vid = kind[kv.first] == 'v';
+        if (vid) { vidRoots.insert(rt); ++vidDup; } else { imgRoots.insert(rt); ++imgDup; }
+      }
+      engine_.applyDisplayedResultStats(pairKeys.size(), roots.size(), imgPairs, imgRoots.size(), imgDup,
+                                        vidPairs, vidRoots.size(), vidDup);
+    }
     const QString telemetryJson = engine_.hasTelemetry() ? QString::fromStdString(engine_.telemetryJson()) : QString();
     gpuDone_.store((qulonglong)engine_.gpuImagesProcessed());
     // Flush the throttled progress display with the final counts.

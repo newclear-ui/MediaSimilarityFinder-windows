@@ -303,6 +303,28 @@ int main(int argc, char** argv) {
     }
     fs::remove_all(d4, ec);
   }
+  // H. Displayed result-set telemetry (0.9.4.131). Case D's Sequential scan
+  // left a complete stored set and the 0.9.4.130 baseline. A Hybrid rescan over
+  // unchanged files recomputes NOTHING (targeted pass, no changed files) yet
+  // the list shows the stored 1770 pairs; the record must describe that
+  // displayed set instead of "pairs 0, groups 0" (the field complaint this
+  // build answers). Quick-load delivery is pinned by takePending.
+  {
+    const std::string rootH = (d / "media").string(), adH = (d / "appdir").string();
+    ScanWorker w2(QString::fromStdString(rootH), QString::fromStdString(adH), 8, 50, 50, false, true,
+                  false);
+    w2.setAnalyzeMode(msf::AnalyzeMode::Hybrid);
+    w2.run();
+    const auto pending2 = w2.takePending();
+    check(pending2.size() == 60 * 59 / 2, "display-pending-full");
+    const std::string tj = w2.scanEngine().telemetryJson();
+    check(jsonUint(tj, "pairs") == 60 * 59 / 2, "display-telemetry-pairs");
+    check(jsonUint(tj, "groups") == 1, "display-telemetry-groups");
+    check(jsonUint(tj, "imagePairs") == 60 * 59 / 2, "display-telemetry-img-pairs");
+    check(jsonUint(tj, "imageGroups") == 1, "display-telemetry-img-groups");
+    check(jsonUint(tj, "imageDuplicateFiles") == 60, "display-telemetry-img-dup");
+    check(jsonUint(tj, "videoPairs") == 0, "display-telemetry-vid-pairs");
+  }
   fs::remove_all(d, ec);
   if (failures) {
     std::cerr << "walker_queue failures=" << failures << "\n";

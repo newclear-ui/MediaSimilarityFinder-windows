@@ -4304,7 +4304,12 @@ void MainWindow::refreshSummary(const msf::SearchReport*) {
   // fail analysis.
   sumValDone_->setText(QString::number(completed));
   sumValIndexed_->setText(QString::number(indexed));
-  sumValGroups_->setText(lastStats_[3]);
+  // 0.9.4.131: the row shows the group count of the list on screen (the same
+  // live formula updateStatusCounts already used during scans). It must not
+  // switch back to the finished-message pair count here: on rescans that
+  // recompute nothing (all-unchanged / quick-load) that number is 0 while the
+  // list shows thousands of groups.
+  sumValGroups_->setText(QString::number(groups_.size()));
   qulonglong dupFiles = 0;
   for (const auto& g : groups_) dupFiles += (qulonglong)g.paths.size();
   sumValDup_->setText(QString::number(dupFiles));

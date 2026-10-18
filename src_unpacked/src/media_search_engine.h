@@ -168,6 +168,17 @@ const std::vector<MediaFile>& files() const { return files_; }
   bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
   bool hasTelemetry() const { return telemetry_.hasData(); }
   std::string telemetryJson() const { return telemetry_.toJson(); }
+  // 0.9.4.131: GUI worker hook -- replace the record's match counters with the
+  // displayed result set (stored quick-load + this scan's emissions) before
+  // telemetryJson() is read, so the detailed log agrees with the visible list.
+  // CLI scans never call it, so their journal keeps describing the scan's own
+  // computation (scan-scoped pairs), unchanged since 0.9.4.126.
+  void applyDisplayedResultStats(std::size_t pairs, std::size_t groups,
+                                 std::size_t imgPairs, std::size_t imgGroups, std::size_t imgDupFiles,
+                                 std::size_t vidPairs, std::size_t vidGroups, std::size_t vidDupFiles) {
+    telemetry_.setDisplayedResultStats(pairs, groups, imgPairs, imgGroups, imgDupFiles,
+                                       vidPairs, vidGroups, vidDupFiles);
+  }
   // B1: last scheduler decision for this engine (valid after scan()).
   SchedulerDecision lastSchedulerDecision() const { return scheduler_.lastDecision(); }
   bool hasSchedulerDecision() const { return scheduler_.hasDecision(); }

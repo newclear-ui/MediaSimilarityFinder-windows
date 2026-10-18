@@ -151,6 +151,15 @@ void TelemetryRecorder::setMatchBreakdown(std::size_t imgPairs, std::size_t imgG
   vidPairs_ = vidPairs; vidGroups_ = vidGroups; vidDupFiles_ = vidDupFiles;
   kindBreakdownSet_ = true;
 }
+void TelemetryRecorder::setDisplayedResultStats(std::size_t pairs, std::size_t groups,
+                                                std::size_t imgPairs, std::size_t imgGroups, std::size_t imgDupFiles,
+                                                std::size_t vidPairs, std::size_t vidGroups, std::size_t vidDupFiles) {
+  displayedSet_ = true;
+  dispPairs_ = pairs; dispGroups_ = groups;
+  dispImgPairs_ = imgPairs; dispImgGroups_ = imgGroups; dispImgDupFiles_ = imgDupFiles;
+  dispVidPairs_ = vidPairs; dispVidGroups_ = vidGroups; dispVidDupFiles_ = vidDupFiles;
+  kindBreakdownSet_ = true;
+}
 void TelemetryRecorder::abortUnfinished() {
   if (started_ && !finished_) {
     setCancelled("aborted");
@@ -758,14 +767,25 @@ std::string TelemetryRecorder::toJson() const {
     }
   }
   o << "]},";
-  o << "\"matches\":{\"candidates\":" << candidates_ << ",\"pairs\":" << streamedMatches_.load(std::memory_order_relaxed)
-    << ",\"retainedPairs\":" << matches_ << ",\"groups\":" << groups_
+  // 0.9.4.131: a displayed result-set override (GUI worker) replaces pairs/
+  // groups and the per-kind fields so the record matches the list the user
+  // sees; candidates/reductionPct stay scan-scoped.
+  const std::size_t outPairs = displayedSet_ ? dispPairs_ : streamedMatches_.load(std::memory_order_relaxed);
+  const std::size_t outGroups = displayedSet_ ? dispGroups_ : groups_;
+  const std::size_t outImgPairs = displayedSet_ ? dispImgPairs_ : imgPairs_;
+  const std::size_t outImgGroups = displayedSet_ ? dispImgGroups_ : imgGroups_;
+  const std::size_t outImgDup = displayedSet_ ? dispImgDupFiles_ : imgDupFiles_;
+  const std::size_t outVidPairs = displayedSet_ ? dispVidPairs_ : vidPairs_;
+  const std::size_t outVidGroups = displayedSet_ ? dispVidGroups_ : vidGroups_;
+  const std::size_t outVidDup = displayedSet_ ? dispVidDupFiles_ : vidDupFiles_;
+  o << "\"matches\":{\"candidates\":" << candidates_ << ",\"pairs\":" << outPairs
+    << ",\"retainedPairs\":" << matches_ << ",\"groups\":" << outGroups
     << ",\"reductionPct\":" << reductionPct_     << ",\"gpuImages\":" << gpuImages_ << ",\"gpuFallback\":" << gpuFallback_
     // Per-kind user-facing summary. A cluster never spans kinds, so the
     // per-kind groups partition the total. States follow the measured/
     // not_measured rule: unset means the scan never reached matching.
-    << ",\"imagePairs\":" << imgPairs_ << ",\"imageGroups\":" << imgGroups_ << ",\"imageDuplicateFiles\":" << imgDupFiles_
-    << ",\"videoPairs\":" << vidPairs_ << ",\"videoGroups\":" << vidGroups_ << ",\"videoDuplicateFiles\":" << vidDupFiles_
+    << ",\"imagePairs\":" << outImgPairs << ",\"imageGroups\":" << outImgGroups << ",\"imageDuplicateFiles\":" << outImgDup
+    << ",\"videoPairs\":" << outVidPairs << ",\"videoGroups\":" << outVidGroups << ",\"videoDuplicateFiles\":" << outVidDup
     << ",\"breakdownState\":\"" << measureStateName(kindBreakdownSet_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\"},";
   // D9a: analyze internal split. The four stage times are non-overlapping
   // slices of the analyze total, so their sum never exceeds it. A stage that
