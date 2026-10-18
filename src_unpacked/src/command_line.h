@@ -7,9 +7,12 @@
 //
 // S1 scope was entry only. S5 adds --benchmark/--mode/--suite/--log-dir/--log,
 // which are parsed here and executed through gui/main.cpp runConsoleBenchmark
-// (no window is ever created on that path). Options still belonging to later
-// stages (--resource, --cpu-percent) remain unparsed and are reported as
-// unknown options, so --help can never advertise something that does not exist.
+// (no window is ever created on that path). 0.9.4.126 adds --benchmark-recover,
+// parsed here and executed through runConsoleBenchmarkRecover: it replays an
+// existing suite journal into summary.json without scanning anything.
+// Options still belonging to later stages (--resource, --cpu-percent) remain
+// unparsed and are reported as unknown options, so --help can never advertise
+// something that does not exist.
 
 #include <string>
 #include <vector>
@@ -27,6 +30,8 @@ enum class CommandMode {
     Smoke,     // --smoke (existing headless GUI smoke hook, unchanged behaviour)
     Scan,      // --scan <folder>: headless scan, no MainWindow
     Benchmark, // --benchmark <folder>: headless benchmark, no MainWindow (S5)
+    BenchmarkRecover, // --benchmark-recover <log-dir>: replay a suite journal
+                      // into summary.json, no scan and no MainWindow (0.9.4.126)
     Error      // invalid arguments: report to stderr and exit non-zero
 };
 
@@ -60,6 +65,13 @@ struct CommandLineOptions {
     std::string suiteId;        // --suite, empty when auto-generated later
     std::string logDir;         // --log-dir: benchmark durable storage root override
     std::string logFile;        // --log: human-readable renderer output sink
+
+    // --- 0.9.4.126 benchmark recovery --------------------------------------
+    // --benchmark-recover reuses logDir as the storage root locator and suiteId
+    // as the suite locator. recoverRun (--run, empty = every run in the
+    // journal) scopes the replay; replayJournal() already defines the empty
+    // contract, so nothing is reinterpreted here.
+    std::string recoverRun;     // --run, valid when mode == BenchmarkRecover
 
     // True when a MainWindow must be created. Only Gui and Smoke qualify; Smoke
     // builds the window offscreen, which is the pre-existing CI hook.

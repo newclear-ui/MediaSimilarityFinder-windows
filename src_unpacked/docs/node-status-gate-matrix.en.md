@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.125` (QuickLook pipe loss-proofing + color_thumb keep-as-is ruling) - CPU CTest 124/124 - GPU CTest 125/125
-Last updated: 2026-10-17
+Baseline: `0.9.4.126` (Benchmark journal recovery CLI `--benchmark-recover`) - CPU CTest 124/124 - GPU CTest 125/125
+Last updated: 2026-10-18
 
 ## Role of this document
 

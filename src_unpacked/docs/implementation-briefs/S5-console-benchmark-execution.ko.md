@@ -215,6 +215,18 @@ Git
 - **Git 문제로 build 가 실패하면 안 된다.** configure 단계에서 실패를 절대 반환하지 않는다.
 - renderer 는 이 값을 헤더 `Git` 칸에 그대로 표시한다.
 
+### E-2. `--benchmark-recover` (0.9.4.126, journal recovery CLI)
+
+```text
+--benchmark-recover <log-dir> --suite <id> [--run <id>]
+```
+
+- 스캔하지 않는다. suite journal(`runs.jsonl`)을 replay해 `summary.json`을 재생성만 한다.
+- `--suite`는 필수(추측 금지), `--run` 생략 시 저널 전체 run을 재생한다(`replayJournal` 계약 그대로).
+- `--mode`·`--media`·`--log`·`--scan`·`--benchmark`와의 조합은 거부한다(소비자 없는 옵션 무시 금지).
+- live run이 suite lock을 쥐고 있으면 거부한다(부분 view 방지). lock 없이 재생성하며 저널에는 쓰지 않는다.
+- 강제 종료 suite의 `runFinished:false`는 그대로 둔다. 복구는 terminal을 invent하지 않는다.
+
 ### E. `--suite` 생략 시 자동 Suite ID
 
 - mockup 과 호환되는 human-readable 형식: **`YYYYMMDD-HHMM-SS`**

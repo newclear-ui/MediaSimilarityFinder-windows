@@ -12,9 +12,11 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 #include "benchmark_console_renderer.h"
+#include "benchmark_journal.h"  // replayJournal(), to confirm the recovered summary source
 #include "benchmark_store.h"  // benchmarkSuitePaths(), to build the colliding suite dir
 #include "console_benchmark_cli.h"
 
@@ -132,6 +134,102 @@ int main() {
         chk(consoleModeOrderLabel({GpuBackendKind::Auto, GpuBackendKind::Cpu, GpuBackendKind::Cuda})
                 == std::string("AUTO -> CPU -> ") + consoleModeLabel(GpuBackendKind::Cuda),
             "the orchestrator and renderer agree on mode names");
+    }
+
+    std::printf("--- benchmark recovery (0.9.4.126) ---\n");
+    {
+        // A scratch storage root so recovery is exercised without touching the
+        // product's real benchmark storage. The journal below is the smallest
+        // shape replayJournal() accepts: one run_started plus its terminal
+        // record (field spellings follow benchmark_journal_test's fixtures).
+        const auto root = std::filesystem::temp_directory_path() / "msf_s5_recover_test";
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+        const std::string appdata = root.string();
+
+        msf::ConsoleBenchmarkRecoverOptions bad{};
+        chk(msf::runConsoleBenchmarkRecover(bad) != 0,
+            "an empty request is refused, not guessed");
+        bad.storageRoot = appdata;
+        chk(msf::runConsoleBenchmarkRecover(bad) != 0,
+            "  a missing suite id is refused");
+        bad.suiteId = "../evil";
+        chk(msf::runConsoleBenchmarkRecover(bad) != 0,
+            "  a traversal suite id is refused");
+
+        msf::ConsoleBenchmarkRecoverOptions missing{appdata, "NOPE", ""};
+        chk(msf::runConsoleBenchmarkRecover(missing) != 0,
+            "a suite with no journal is refused");
+
+        // A corrupt interior line is fatal by journal contract, so recovery
+        // must fail rather than publish a summary from half the evidence.
+        {
+            const auto paths = msf::benchmarkSuitePaths(appdata, "CORRUPT");
+            std::filesystem::create_directories(
+                std::filesystem::path(paths.suiteDir), ec);
+            std::ofstream out(msf::path_from_utf8(paths.runsJsonl),
+                              std::ios::binary | std::ios::trunc);
+            out << "{\"journalSchemaVersion\":1,\"eventType\":\"run_started\","
+                   "\"recordId\":\"run_started:r1\",\"suiteId\":\"CORRUPT\","
+                   "\"runId\":\"r1\",\"buildVersion\":\"0.9.4.126\","
+                   "\"startedAt\":\"2026-10-18T00:00:00\",\"filesStarted\":1}\n"
+                   "this is not json\n";
+            out.close();
+            msf::ConsoleBenchmarkRecoverOptions opt{appdata, "CORRUPT", ""};
+            chk(msf::runConsoleBenchmarkRecover(opt) != 0,
+                "a journal with a corrupt interior line is refused");
+            chk(!std::filesystem::exists(msf::path_from_utf8(paths.summaryJson), ec),
+                "  and no summary is published from it");
+        }
+
+        // The happy path: a finished run replays into summary.json without any
+        // scan and without the session ever being opened.
+        {
+            const auto paths = msf::benchmarkSuitePaths(appdata, "RECOVER");
+            std::filesystem::create_directories(
+                std::filesystem::path(paths.suiteDir), ec);
+            std::ofstream out(msf::path_from_utf8(paths.runsJsonl),
+                              std::ios::binary | std::ios::trunc);
+            out << "{\"journalSchemaVersion\":1,\"eventType\":\"run_started\","
+                   "\"recordId\":\"run_started:r1\",\"suiteId\":\"RECOVER\","
+                   "\"runId\":\"r1\",\"buildVersion\":\"0.9.4.126\","
+                   "\"startedAt\":\"2026-10-18T00:00:00\",\"filesStarted\":1}\n"
+                   "{\"journalSchemaVersion\":1,\"eventType\":\"run_finished\","
+                   "\"recordId\":\"run_finished:r1\",\"runId\":\"r1\","
+                   "\"status\":\"SUCCESS\",\"filesStarted\":1,\"filesCompleted\":1,"
+                   "\"filesRemaining\":0,\"completedAt\":\"2026-10-18T00:01:00\","
+                   "\"completionReason\":\"completed\"}\n";
+            out.close();
+            msf::ConsoleBenchmarkRecoverOptions opt{appdata, "RECOVER", ""};
+            chk(msf::runConsoleBenchmarkRecover(opt) == 0,
+                "a finished journal recovers to exit 0");
+            const std::string sum = msf::readFileIfExists(paths.summaryJson);
+            chk(!sum.empty(), "  summary.json is written");
+            chk(sum.find("\"derivedFrom\":\"runs.jsonl\"") != std::string::npos,
+                "  the summary declares the journal as its source");
+            chk(sum.find("\"runFinished\":true") != std::string::npos,
+                "  the summary carries the replayed terminal state");
+        }
+
+        // A live run owns the journal stream: recovery over a held lock would
+        // publish a view the run's own finalize immediately supersedes.
+        {
+            const auto paths = msf::benchmarkSuitePaths(appdata, "BUSY");
+            std::filesystem::create_directories(
+                std::filesystem::path(paths.suiteDir), ec);
+            {
+                std::ofstream out(msf::path_from_utf8(paths.runsJsonl),
+                                  std::ios::binary | std::ios::trunc);
+                out << "\n";
+            }
+            msf::BenchmarkSuiteLock held;
+            chk(held.acquire(paths.lockFile), "test holds the suite lock");
+            msf::ConsoleBenchmarkRecoverOptions opt{appdata, "BUSY", ""};
+            chk(msf::runConsoleBenchmarkRecover(opt) != 0,
+                "recovery under a held lock is refused");
+        }
+
+        std::filesystem::remove_all(root, ec);
     }
 
     std::printf("\nconsole_benchmark_cli_selfcheck=%s checks=%d\n", gFails ? "FAIL" : "ok", gChecks);

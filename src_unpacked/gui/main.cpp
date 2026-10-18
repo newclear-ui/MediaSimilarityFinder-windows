@@ -88,17 +88,24 @@ static void printUsage() {
         << "  MediaSimilarityFinder.exe --version\n"
         << "  MediaSimilarityFinder.exe --smoke\n"
         << "  MediaSimilarityFinder.exe --scan <folder> [--media images|videos|all]\n"
-        << "  MediaSimilarityFinder.exe --benchmark <folder> [--mode <list>]\n"
-        << "                          [--suite <id>] [--log-dir <dir>] [--log <file>]\n"
-        << "                          [--media images|videos|all]\n"
-        << "\n"
-        << "Benchmark options:\n"
-        << "  --benchmark <folder>   Source root to benchmark (not a scan target).\n"
-        << "  --mode <list>          Comma list; default: auto,cpu,gpu-max\n"
-        << "                         Execution order: AUTO -> CPU -> GPU-max\n"
-        << "  --suite <id>           Suite id. Default: generated as YYYYMMDD-HHMM-SS.\n"
-        << "  --log-dir <dir>        Benchmark durable storage root override.\n"
-        << "  --log <file>           Human-readable Console output file sink.\n";
+  << "  MediaSimilarityFinder.exe --benchmark <folder> [--mode <list>]\n"
+         << "                          [--suite <id>] [--log-dir <dir>] [--log <file>]\n"
+         << "                          [--media images|videos|all]\n"
+         << "  MediaSimilarityFinder.exe --benchmark-recover <log-dir> --suite <id>\n"
+         << "                          [--run <id>]\n"
+         << "\n"
+         << "Benchmark options:\n"
+         << "  --benchmark <folder>   Source root to benchmark (not a scan target).\n"
+         << "  --mode <list>          Comma list; default: auto,cpu,gpu-max\n"
+         << "                         Execution order: AUTO -> CPU -> GPU-max\n"
+         << "  --suite <id>           Suite id. Default: generated as YYYYMMDD-HHMM-SS.\n"
+         << "  --log-dir <dir>        Benchmark durable storage root override.\n"
+         << "  --log <file>           Human-readable Console output file sink.\n"
+         << "  --benchmark-recover <log-dir>\n"
+         << "                         Replay a suite journal into summary.json.\n"
+         << "                         No scan is performed.\n"
+         << "  --run <id>             Recover only this run (default: every run in\n"
+         << "                         the journal).\n";
 }
 
 #ifdef _WIN32
@@ -209,6 +216,25 @@ static int runConsoleBenchmark(const msf::CommandLineOptions& opt, int argc, cha
     return msf::runConsoleBenchmark(options);
 }
 
+// 0.9.4.126 benchmark recovery. Replays an existing suite journal into
+// summary.json without scanning anything. No MainWindow is constructed, and
+// the platform plugin is not required, so recovery never needs a display.
+static int runConsoleBenchmarkRecover(const msf::CommandLineOptions& opt, int argc, char** argv) {
+    attachParentConsole();
+
+    // QCoreApplication, not QApplication: recovery creates no widget.
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setApplicationVersion(kVersion);
+    initAppSettings(QCoreApplication::applicationDirPath());
+
+    msf::ConsoleBenchmarkRecoverOptions options;
+    options.storageRoot = msf::path_to_utf8(msf::path_from_utf8(opt.logDir));
+    options.suiteId = opt.suiteId;
+    options.runId = opt.recoverRun;
+
+    return msf::runConsoleBenchmarkRecover(options);
+}
+
 int main(int argc, char** argv) {
     const msf::CommandLineOptions opt = msf::parseCommandLine(argc, argv);
 
@@ -234,6 +260,9 @@ int main(int argc, char** argv) {
             // S5: the Console benchmark path. It builds no MainWindow, reaches the
             // product scan path only through S2/S3, and returns an exit code.
             return runConsoleBenchmark(opt, argc, argv);
+        case msf::CommandMode::BenchmarkRecover:
+            // 0.9.4.126: journal replay only. No scan, no MainWindow.
+            return runConsoleBenchmarkRecover(opt, argc, argv);
         case msf::CommandMode::Smoke:
         case msf::CommandMode::Gui:
             break;

@@ -225,6 +225,18 @@ default                      auto,cpu,gpu-max
   failure because of git.
 - The renderer prints this value verbatim in the header's `Git` field.
 
+### E-2. `--benchmark-recover` (0.9.4.126, journal recovery CLI)
+
+```text
+--benchmark-recover <log-dir> --suite <id> [--run <id>]
+```
+
+- Performs no scan. Replays the suite journal (`runs.jsonl`) to regenerate `summary.json` only.
+- `--suite` is mandatory (no guessing); an omitted `--run` replays every run in the journal (the `replayJournal` contract as is).
+- Combinations with `--mode` / `--media` / `--log` / `--scan` / `--benchmark` are refused (options without a consumer must not be silently ignored).
+- Refused while a live run holds the suite lock (avoids a partial view). Regenerates lock-free and never writes to the journal.
+- A force-stopped suite keeps `runFinished:false`. Recovery does not invent a terminal record.
+
 ### E. Auto suite id when `--suite` is omitted
 
 - Human-readable format compatible with the mockup: **`YYYYMMDD-HHMM-SS`**

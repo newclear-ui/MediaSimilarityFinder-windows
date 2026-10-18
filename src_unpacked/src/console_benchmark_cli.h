@@ -105,4 +105,31 @@ std::string resolveConsoleSuiteId(const std::string& requested,
 // No MainWindow is constructed on this path, ever.
 int runConsoleBenchmark(const ConsoleBenchmarkOptions& options);
 
+// ---------------------------------------------------------------------------
+// Recovery (0.9.4.126)
+// ---------------------------------------------------------------------------
+
+// Everything runConsoleBenchmarkRecover needs. The storage root and the suite
+// id locate the suite; runId scopes the replay (empty replays every run in
+// the journal, per replayJournal()'s own contract).
+struct ConsoleBenchmarkRecoverOptions {
+    std::string storageRoot;  // --benchmark-recover <log-dir>
+    std::string suiteId;      // --suite (mandatory, safety-checked)
+    std::string runId;        // --run (empty = every run in the journal)
+};
+
+// Regenerates a suite's summary.json by replaying runs.jsonl, without
+// scanning anything and without taking the suite lock.
+//
+// Returns a process exit code following the existing CLI convention:
+//   0   summary.json regenerated (journal replay clean)
+//   1   recovery refused or failed: unsafe suite id, missing journal, a live
+//       run holds the suite lock, fatal journal corruption, or the summary
+//       could not be written
+//
+// The journal is opened read-only and is never appended to: recovery is a
+// view rebuild, so an interrupted suite keeps exactly the evidence it had.
+// No MainWindow is constructed on this path, ever.
+int runConsoleBenchmarkRecover(const ConsoleBenchmarkRecoverOptions& options);
+
 }  // namespace msf

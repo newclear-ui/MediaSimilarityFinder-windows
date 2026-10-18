@@ -100,6 +100,8 @@ CommandLineOptions parseCommandLine(int argc, const char* const* argv) {
     bool sawSuiteOption = false;
     bool sawLogDirOption = false;
     bool sawLogOption = false;
+    bool sawMediaOption = false;
+    bool sawRunOption = false;
 
     for (int i = 1; i < argc; ++i) {
         const char* arg = argv[i];
@@ -117,10 +119,12 @@ CommandLineOptions parseCommandLine(int argc, const char* const* argv) {
                 return makeError("--scan requires a folder argument");
             if (o.mode == CommandMode::Scan)
                 return makeError("--scan may be given only once");
-            // Order-independent guard: --benchmark checks for a pending --scan,
-            // and this checks for a pending --benchmark.
+            // Order-independent guards: --benchmark checks for a pending --scan,
+            // and this checks for a pending --benchmark or --benchmark-recover.
             if (o.mode == CommandMode::Benchmark)
                 return makeError("--scan and --benchmark cannot be combined");
+            if (o.mode == CommandMode::BenchmarkRecover)
+                return makeError("--scan and --benchmark-recover cannot be combined");
             o.mode = CommandMode::Scan;
             o.scanRoot = argv[i + 1];
             ++i;  // consume the folder
@@ -137,6 +141,8 @@ CommandLineOptions parseCommandLine(int argc, const char* const* argv) {
             // outputs, so asking for both would leave "which one wins" undefined.
             if (o.mode == CommandMode::Scan)
                 return makeError("--scan and --benchmark cannot be combined");
+            if (o.mode == CommandMode::BenchmarkRecover)
+                return makeError("--benchmark and --benchmark-recover cannot be combined");
             if (argv[i + 1][0] == '\0')
                 return makeError("--benchmark requires a non-empty folder argument");
             o.mode = CommandMode::Benchmark;
@@ -165,6 +171,49 @@ CommandLineOptions parseCommandLine(int argc, const char* const* argv) {
             continue;
         }
 
+        // ---- 0.9.4.126 benchmark recovery ----------------------------------
+        // Takes the storage root positionally (mirroring --benchmark <folder>)
+        // and locates the suite with --suite. No scan is performed, so --mode,
+        // --media and --log have no consumer here and are rejected at the end
+        // of the parse rather than silently ignored.
+        if (a == "--benchmark-recover") {
+            if (i + 1 >= argc || looksLikeOption(argv[i + 1]))
+                return makeError("--benchmark-recover requires a log-dir argument");
+            if (o.mode == CommandMode::BenchmarkRecover)
+                return makeError("--benchmark-recover may be given only once");
+            // Order-independent guards, mirroring the --scan/--benchmark pair.
+            if (o.mode == CommandMode::Scan)
+                return makeError("--scan and --benchmark-recover cannot be combined");
+            if (o.mode == CommandMode::Benchmark)
+                return makeError("--benchmark and --benchmark-recover cannot be combined");
+            if (argv[i + 1][0] == '\0')
+                return makeError("--benchmark-recover requires a non-empty log-dir argument");
+            if (sawLogDirOption)
+                return makeError("--log-dir may be given only once");
+            o.mode = CommandMode::BenchmarkRecover;
+            o.logDir = argv[i + 1];
+            sawLogDirOption = true;
+            ++i;  // consume the log-dir
+            continue;
+        }
+
+        if (a == "--run") {
+            // A replay filter, not a path: replayJournal() already defines the
+            // empty-means-every-run contract, so this layer only carries it.
+            if (o.mode != CommandMode::BenchmarkRecover)
+                return makeError("--run requires --benchmark-recover");
+            if (sawRunOption)
+                return makeError("--run may be given only once");
+            if (i + 1 >= argc || looksLikeOption(argv[i + 1]))
+                return makeError("--run requires a value");
+            if (argv[i + 1][0] == '\0')
+                return makeError("--run requires a non-empty value");
+            sawRunOption = true;
+            o.recoverRun = argv[i + 1];
+            ++i;  // consume the value
+            continue;
+        }
+
         if (a == "--suite" || a == "--log-dir" || a == "--log") {
             // Same single-occurrence rule as --mode: each of these overrides a
             // storage or sink location, so a second one would lose the first value
@@ -188,6 +237,7 @@ CommandLineOptions parseCommandLine(int argc, const char* const* argv) {
         if (a == "--media") {
             if (i + 1 >= argc)
                 return makeError("--media requires a value: images, videos or all");
+            sawMediaOption = true;
             const std::string v(argv[i + 1]);
             if (v == "images")      o.scope = MediaScope::Images;
             else if (v == "videos") o.scope = MediaScope::Videos;
@@ -202,6 +252,21 @@ CommandLineOptions parseCommandLine(int argc, const char* const* argv) {
         // belonging to later stages (--resource, --cpu-percent, ...) land here on
         // purpose, so that help text and reality stay in agreement.
         return makeError("unknown option: " + a);
+    }
+
+    // Recovery resolves its target from --log-dir + --suite alone: it performs
+    // no scan, so --mode, --media and --log have no consumer and are rejected
+    // rather than silently ignored. --suite is mandatory because guessing a
+    // suite would let a typo regenerate the wrong directory's summary.
+    if (o.mode == CommandMode::BenchmarkRecover) {
+        if (o.suiteId.empty())
+            return makeError("--benchmark-recover requires --suite <id>");
+        if (sawModeOption)
+            return makeError("--mode cannot be combined with --benchmark-recover");
+        if (sawMediaOption)
+            return makeError("--media cannot be combined with --benchmark-recover");
+        if (sawLogOption)
+            return makeError("--log cannot be combined with --benchmark-recover");
     }
 
     // --media without --scan is accepted but has no consumer in S1, because S1

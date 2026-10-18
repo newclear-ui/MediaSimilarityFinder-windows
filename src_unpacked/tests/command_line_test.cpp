@@ -307,6 +307,82 @@ int main() {
         }
     }
 
+    // =====================================================================
+    // 0.9.4.126 benchmark recovery entry
+    // =====================================================================
+    {
+        // ---- the basic entry ------------------------------------------------
+        {
+            const auto o = parse({"--benchmark-recover", "D:\\Logs", "--suite", "S1"});
+            chk(o.mode == msf::CommandMode::BenchmarkRecover,
+                "--benchmark-recover <log-dir> --suite <id> -> BenchmarkRecover");
+            chk(o.logDir == "D:\\Logs", "  storage root captured");
+            chk(o.suiteId == "S1", "  suite id captured");
+            chk(o.recoverRun.empty(), "  --run defaults to empty (every run)");
+            chk(!o.needsMainWindow(), "  recovery must NOT create a MainWindow");
+        }
+        // ---- --run is optional ----------------------------------------------
+        {
+            const auto o = parse({"--benchmark-recover", "D:\\Logs", "--suite", "S1",
+                                  "--run", "run-20261017-2158-23"});
+            chk(o.mode == msf::CommandMode::BenchmarkRecover &&
+                    o.recoverRun == "run-20261017-2158-23",
+                "--run value carried for the replay filter");
+            chk(parse({"--benchmark-recover", "D", "--suite", "S", "--run", "a",
+                       "--run", "b"}).mode == msf::CommandMode::Error,
+                "--run given twice -> Error");
+            chk(parse({"--benchmark-recover", "D", "--suite", "S", "--run"}).mode ==
+                    msf::CommandMode::Error,
+                "--run without a value -> Error");
+            chk(parse({"--run", "r"}).mode == msf::CommandMode::Error,
+                "--run without --benchmark-recover -> Error");
+        }
+        // ---- required locators ----------------------------------------------
+        {
+            chk(parse({"--benchmark-recover"}).mode == msf::CommandMode::Error,
+                "--benchmark-recover without a log-dir -> Error");
+            chk(parse({"--benchmark-recover", "--suite", "S"}).mode == msf::CommandMode::Error,
+                "--benchmark-recover followed by a flag -> Error");
+            chk(parse({"--benchmark-recover", ""}).mode == msf::CommandMode::Error,
+                "--benchmark-recover with an empty log-dir -> Error");
+            chk(parse({"--benchmark-recover", "A", "--benchmark-recover", "B"}).mode ==
+                    msf::CommandMode::Error,
+                "duplicate --benchmark-recover -> Error");
+            chk(parse({"--benchmark-recover", "D"}).mode == msf::CommandMode::Error,
+                "--benchmark-recover without --suite -> Error");
+        }
+        // ---- incompatible entries --------------------------------------------
+        {
+            chk(parse({"--scan", "A", "--benchmark-recover", "B", "--suite", "S"}).mode ==
+                    msf::CommandMode::Error,
+                "--scan and --benchmark-recover cannot be combined");
+            chk(parse({"--benchmark-recover", "B", "--suite", "S", "--scan", "A"}).mode ==
+                    msf::CommandMode::Error,
+                "  in either order");
+            chk(parse({"--benchmark", "A", "--benchmark-recover", "B", "--suite", "S"}).mode ==
+                    msf::CommandMode::Error,
+                "--benchmark and --benchmark-recover cannot be combined");
+            chk(parse({"--benchmark-recover", "B", "--suite", "S", "--benchmark", "A"}).mode ==
+                    msf::CommandMode::Error,
+                "  in either order");
+        }
+        // ---- scan-only options have no recovery consumer ----------------------
+        {
+            chk(parse({"--benchmark-recover", "D", "--suite", "S", "--mode", "auto"}).mode ==
+                    msf::CommandMode::Error,
+                "--mode cannot be combined with --benchmark-recover");
+            chk(parse({"--benchmark-recover", "D", "--suite", "S", "--media", "images"}).mode ==
+                    msf::CommandMode::Error,
+                "--media cannot be combined with --benchmark-recover");
+            chk(parse({"--benchmark-recover", "D", "--suite", "S", "--log", "f"}).mode ==
+                    msf::CommandMode::Error,
+                "--log cannot be combined with --benchmark-recover");
+            chk(parse({"--benchmark", "D", "--log-dir", "L", "--benchmark-recover", "L2",
+                       "--suite", "S"}).mode == msf::CommandMode::Error,
+                "--log-dir given twice across entries -> Error");
+        }
+    }
+
     // ---- exit code is a single stable value --------------------------------
     chk(msf::kCommandLineErrorExitCode != 0, "argument errors use a non-zero exit code");
 

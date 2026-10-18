@@ -558,4 +558,62 @@ int runConsoleBenchmark(const ConsoleBenchmarkOptions& opt) {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Recovery (0.9.4.126)
+// ---------------------------------------------------------------------------
+int runConsoleBenchmarkRecover(const ConsoleBenchmarkRecoverOptions& options) {
+    // The suite id becomes a directory name, so the same traversal refusal as
+    // the benchmark path applies. The run id is only a replay filter string
+    // and is never interpolated into a path.
+    if (!consoleSuiteIdIsSafe(options.suiteId)) {
+        std::cerr << "Error: invalid --suite id: " << options.suiteId << "\n";
+        return 1;
+    }
+    if (options.storageRoot.empty()) {
+        std::cerr << "Error: --benchmark-recover requires a log-dir argument\n";
+        return 1;
+    }
+
+    const BenchmarkSuitePaths paths =
+        benchmarkSuitePaths(options.storageRoot, options.suiteId);
+    {
+        std::error_code ec;
+        if (!std::filesystem::exists(path_from_utf8(paths.runsJsonl), ec)) {
+            std::cerr << "Error: no journal for suite '" << options.suiteId
+                      << "' under: " << options.storageRoot << "\n";
+            return 1;
+        }
+    }
+
+    // A live run owns the journal stream. Regenerating the summary over a
+    // journal that is still being appended to would publish a partial view
+    // that the run's own finalize would immediately supersede, so a held
+    // lock refuses the recovery instead. The lock is released right away:
+    // the regeneration itself is lock-free by design (it only reads the
+    // journal and atomically replaces summary.json).
+    {
+        BenchmarkSuiteLock probe;
+        if (!probe.acquire(paths.lockFile)) {
+            std::cerr << "Error: suite '" << options.suiteId
+                      << "' is busy (another benchmark holds its lock)\n";
+            return 1;
+        }
+    }
+
+    BenchmarkSessionConfig cfg;
+    cfg.suiteId = options.suiteId;
+    cfg.runId = options.runId;
+    cfg.applicationDataRoot = options.storageRoot;
+    BenchmarkSession session(cfg);
+    // Deliberately not opened: recovery replays the journal without holding
+    // the lock and without touching the runtime tree.
+    std::string error;
+    if (!session.regenerateSummary(error)) {
+        std::cerr << "Error: could not regenerate summary.json: " << error << "\n";
+        return 1;
+    }
+    std::cout << "Summary  : " << session.summaryPath() << "\n";
+    return 0;
+}
+
 }  // namespace msf
