@@ -91,8 +91,8 @@
 | **S1** | Console entry foundation | S0 | 완료 | PASS | **CLOSED** | — | CLI 파싱 계층. production 검색 엔진과 별도 엔진 없음 | S2 | `development-progress.*` |
 | **S2** | Run / Suite benchmark core | S1 | 완료 | PASS | **CLOSED** | — | ordering/status 집계/취소/결과 보존. injected `BenchmarkExecutor` 로 production scan 경로 재사용 | S3 | `architecture/benchmark-telemetry-roadmap.*` |
 | **S3** | Benchmark storage isolation | S2 | 완료 | PASS | **CLOSED** | — | `runs.jsonl` append-only journal. `summary.json` 은 파생이며 권위 아님. `kBenchmarkSchemaVersion` 9 | S4 | `implementation-briefs/S4-*`, `S5-*` |
-| **S4** | GUI Detailed Logging | S3 | 구현 완료 | **기능 acceptance PASS (0.9.4.112)** | **IN PROGRESS** | 최종 CLOSED 미선언 | S4 semantic reset 반영. `TelemetryPurpose{UserDiagnostic,Benchmark}` 로 GUI/CLI 분리. GUI 문자열 `[Benchmark]`→`[Detailed Logs]`. 저장/종료 acceptance 자동화 PASS(.112) — 화면 렌더링 육안은 headless "하지 않음" 기록. **CLOSED 로 올리지 않음** (product acceptance 연계) | S5 | `implementation-briefs/S4-gui-diagnostic-logging.*`, `architecture/gui-diagnostic-logging.*` |
-| **S5** | Console benchmark execution | S4 계약 | infra 완료 | **product benchmark 미실행** | **NOT CLOSED** | product acceptance 의존 | `runConsoleBenchmark()` 가 S3 `BenchmarkSession` + S2 `BenchmarkRunner` 재사용. `QCoreApplication` 사용으로 platform plugin 불필요. **실측 benchmark 미실행** | S6 | `implementation-briefs/S5-console-benchmark-execution.*` |
+| **S4** | GUI Detailed Logging | S3 | 구현 완료 | **기능 acceptance PASS (0.9.4.112) + 실기 렌더링 확인 + 제품 acceptance ACCEPTED** | **CLOSED** | — (연동 조건 충족으로 2026-10-18 Work Log에서 CLOSED 선언) | S4 semantic reset 반영. `TelemetryPurpose{UserDiagnostic,Benchmark}` 로 GUI/CLI 분리. GUI 문자열 `[Benchmark]`→`[Detailed Logs]`. 저장/종료 acceptance 자동화 PASS(.112), 실기 렌더링 확인, 제품 acceptance ACCEPTED로 최종 CLOSED | S5 | `implementation-briefs/S4-gui-diagnostic-logging.*`, `architecture/gui-diagnostic-logging.*` |
+| **S5** | Console benchmark execution | S4 계약 | infra 완료 + `.126` recover CLI | **XMP-REAL-001 7 cases 21 modes SUCCESS (부분 측정)** | **NOT CLOSED** | 정상 완료 cohort와 임계값 대기 | `runConsoleBenchmark()` 가 S3 `BenchmarkSession` + S2 `BenchmarkRunner` 재사용. `QCoreApplication` 사용으로 platform plugin 불필요. `.126` `--benchmark-recover`로 강제 종료 suite의 summary 재생성 가능. GATE OPEN이나 정상 완료 cohort·임계값이 없어 CLOSED 불가 | S6 | `implementation-briefs/S5-console-benchmark-execution.*` |
 | **S6** | Data-mining automation / measurement gate | S5 | gate 준비 | **실측 미실행** | **NOT STARTED** | 실측 dataset 필요 | threshold 는 **여전히 미정**. 보고된 조건만 만족할 뿐 임계 미정의 | S7 | `implementation-briefs/S6-data-mining-automation.*`, `S6-measurement-gate.*` |
 | **S7** | Help / usability | S6 | 미착수 | — | **NOT STARTED** | — | — | S8 | — |
 | **S8** | Full verification / release gate | S7 | 미착수 | — | **NOT STARTED** | — | — | — | — |
@@ -106,20 +106,20 @@
 ## 현재 초점 / Current Focus
 
 ```text
-기준선           0.9.4.114 (CPU CTest 122/122, GPU CTest 123/123 — Work Log에 기록된 실행 결과)
-활성 상태        프로세스 분리 P1–P4 완료 + G4/G6 검증 완료(.111) + S4 저장/종료 acceptance 완료(.112) + 독립 감사 B1~B3·B7 반영(.113) + 불러오기/검색 시작 크래시 핫픽스(.114); .105/.106 이후 현장 GUI acceptance 및 Search/Index/Comparison 최종 acceptance가 미완료
-다음             .105/.106 실기 acceptance → Search/Index/Comparison 실데이터 acceptance → XMP coverage → S5 benchmark → S6 gate
+기준선           0.9.4.127 (CPU CTest 125/125, GPU CTest 126/126)
+활성 상태        프로세스 분리 P1–P4 완료 + G4/G6 검증 완료(.111) + S4 저장/종료 acceptance 완료(.112) + 독립 감사 B1~B3·B7 반영(.113) + 불러오기/검색 시작 크래시 핫픽스(.114/.115) + 유령 그룹 자동 정리(.116) + 대량 결과 적용 정지 제거(.117) + churn 제거(.118) + 처리량 표기 명확화(.119) + GUI-less 복구·런북(.120) + 상세정보 폭주 수정(.121) + 우클릭 경로 I/O 제거(.122) + 뷰모드 플레이크 수정·PDB·덤프(.123) + 주석 정정(.124) + 파이프 유실 방지·color_thumb 확정(.125) + recover CLI(.126) + Test Mode XMP 회귀(.127); 제품 acceptance ACCEPTED(18/18, 2026-10-18) → S4 최종 CLOSED → S5 GATE OPEN
+다음             현장 GUI acceptance 잔여(수동 확인) → XMP full-corpus coverage → S5 반복 측정·임계값 결정 → S6 gate
 G4/G6 검증 완료  G4: 스트레스 PASS — 3초 소비자 정지에서 무손실(갭 0·600건 전달)·무교착·RSS 유계(20/20/21 MB). 결함 미확정(설계 검토: GUI→Backend pending 상한, Backend→GUI 백로그=산출물 크기).
                  G6: 실결함 2건 수정 — 종료 3 s 고정 지연(3049→6 ms, `waitForFinished` 핸들 대기 + 재진입 차단) + Job Object Win32 반환값 검사/로그. 부모 급사 E2E: Job이 웨지 백엔드 회수, `--no-job` 대조군 생존으로 필수성 입증.
-S4 저장/종료      실결함 수정 — 부분/0바이트 기록을 성공으로 표시하던 오판 제거(`saveDetailedLogTo`, 정확한 바이트 수). 실버튼→파일 피커→기록→상태 E2E PASS(`save=ok`, 3회 반복). 화면 렌더링 육안은 headless "하지 않음" 기록 유지. 최종 CLOSED는 product acceptance 연계(§10).
+S4 저장/종료      실결함 수정 — 부분/0바이트 기록을 성공으로 표시하던 오판 제거(`saveDetailedLogTo`, 정확한 바이트 수). 실버튼→파일 피커→기록→상태 E2E PASS(`save=ok`, 3회 반복). 화면 렌더링 육안은 headless "하지 않음" 기록 유지. 제품 acceptance ACCEPTED로 연동 조건 충족 → 최종 CLOSED.
 감사 B1~B3·B7    B1(FAIL 재현): 배지가 크기+앞 64 KiB quick hash만 비교 → 뒤가 다른 파일 `identical=true`. 수정: quick hash는 후보 게이트로만, 통과 쌍은 전체 내용 SHA-256 동일성(파일당 1회 메모, 512 MiB 초과 배지 생략; 빠른 로드 동일 계약). 검증 중 데이터 레이스 1건 발견·수정(16 샤드 동시 삽입 → `std::mutex`). 비용 실측: 추가 읽기 약 1.5 GiB/전체 스캔(사용자 인덱스). B2: 설정→수신 텔레메트리 `"mode":"A"/"B"` round-trip 테스트. B3: no-FFmpeg 구성 lane SKIP(exit 0) 검증. B7: S4 행·체인 문구 정합화.
 핫픽스 .114/.115  .114: 사용자 실기 크래시(불러오기/검색 시작, exit code 62097) — `loadMatches` 메모의 맵 내부 참조 반환(UAF) 수정(값 반환) + 필드 규모 회귀 테스트(3,000쌍).
                  .115: 62097의 정체 확정(`KillProcessExitCode=0xf291` = 슈퍼바이저 kill). D1(.113 회귀): `loadIndex`가 IPC 이벤트 스레드에서 동기 실행 + 배지 확인의 후보 파일 읽기(~1.5 GiB) → health timeout → terminate(무효) → kill. D2(잠복): `spawn()`이 `escTimer_` 미중지 → 잔존 타이머가 새 백엔드를 사유 없이 kill(자기 유지 루프). 잔존: Load 행의 quick-hash-only 배지. 수정: Load QThread 비동기화 + `escTimer_.stop()` + rows `m.contentIdentical`; 테스트 Test 1b/3c(수정 전 FAIL 재현), checks 39→45. 실기 확인 완료(2026-10-17: 스캔·불러오기 킬 0건).
 유령 그룹 .116     사용자 보고: 그룹 275(대표 Keren1286444-…) — 삭제된 유사 파일이 목록에 유령 멤버로 잔존(크기 0·상세 공란), 재스캔으로도 미제거. 원인: 스캔 삭제 정리가 `Database::remove()`(files 행만)라 matches·thumbs 잔존. 수정: `forgetRows`+`forgetNoTransaction`(스캔 트랜잭션 내 정리), `removePath`→`forget`, `cleanupMissingOnDisk`(매치 엔드포인트 존재 검증→정리+로그; 오프라인 무동작)를 불러오기·스캔 quick-load에서 자동 실행. 테스트 FAIL-first(exit 29)→PASS. 실기 육안 확인 필요.
 대량 적용 .117     프로브 실측(9,055그룹): 동기 결과 적용 **609.7초**(프리즈) → **applyMs 84ms + 18.1초 비동기 채우기(틱 91)**. 원인 3건: rebuildGroups 동률 정렬의 경로당 FILE_META 요청(캐시 미스; 루프백 ffprobe 폴백 — 1,000그룹 65.9초), fillPair 동기 대량 채우기, thumbCatchUpVisible 전 행 visualItemRect. 수정: `filePixels` 캐시 전용, `GroupFillJob` 지연(800행 초과/100행 턴/세대 취소/앵커 복원), catch-up 가시 창 한정, `resultsApply`/`groupFill` 계측. 회귀 프로브 `group_fill_probe`(수정 전 FAIL). 실기 확인 필요(점진 채우기·반응성).
-현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기.
-                 Search/Index/Comparison = NOT ACCEPTED; S4 기능 acceptance 자동화 PASS(최종 CLOSED 대기); XMP = CONDITIONAL;
-                 color_thumb R1 완료(.113), 현행 유지 확정(사용자 확인); S5/S6는 선행 Gate 대기.
+현재 판정        .105의 파일 조작·미리보기·인덱스 로그와 .106 배지/실프로세스 IPC는 실기 증거 대기(현장 GUI acceptance 잔여).
+                 Search/Index/Comparison = ACCEPTED(18/18, 2026-10-18); S4 최종 CLOSED; XMP = CONDITIONAL(실파일 decode·verdict·session 증거 확보, full-corpus 잔여);
+                 color_thumb 현행 유지 확정(사용자 확인); S5 GATE OPEN(부분 측정) / S6 NOT STARTED(임계값·비교 표본 대기).
 측정            Fast(A) 사용자 데이터셋 run=1 측정은 2026-10-15 Work Log/DBV §7.3에 기록됐으나 비교 조건에 교란 요인 존재.
                  Auto(AB) 실측 2026-10-16 완료(변경 64, verify 1회) — 최종 패스 의미·반복 수는 후속. CUDA 미가용 기록은 build/runtime 조건 확인 필요.
 잔여 위험        thumbCatchUpVisible()의 매 tick 전체 목록 순회는 correctness blocker가 아닌 후순위 성능 위험.
@@ -153,7 +153,7 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 | sparse seek | `NOT ACCEPTED` — 재검토 조건 명시됨 | `build-history/0.9.4.42.*` |
 | `exactnessVerified` 필수조건 (F-1) | `CONDITIONAL` | `implementation-briefs/F-random-access-safety.*` |
 | XMP Orientation Fallback | `CONDITIONAL` | `build-history/0.9.4.45.*`, `implementation-briefs/I-xmp-orientation-fallback.*` |
-| 제품 acceptance (Search/Index/Comparison) | `NOT ACCEPTED` → **결함 수정 완료 (0.9.4.46)** | `build-history/0.9.4.46.*`, `worklog/0.9.4.*` acceptance audit 항목 |
+| 제품 acceptance (Search/Index/Comparison) | **ACCEPTED (2026-10-18 실기 보고, 18/18)** — 과거 `NOT ACCEPTED` → 0.9.4.46 결함 수정 → 실기 항목 해소 | `build-history/0.9.4.46.*`, `worklog/0.9.4.*` acceptance audit 항목 |
 | GUI Stop 무응답 | **수정 완료 (0.9.4.48, 엔진 레벨)** | `build-history/0.9.4.48.*`. 실제 GUI 버튼 클릭은 NOT_VALIDATED |
 | `color_thumb` no-FFmpeg classification | R1 완료(0.9.4.113) — 현행 유지 확정(사용자 확인) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
 | nvcc 경고 release gate 등록 | 미결정 | `worklog/0.9.4.*` |

@@ -22,16 +22,16 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 ## 현재 작업 우선순위 / Active Build Queue
 
 > **2026-10-18 기준 갱신:** 기준 버전은 0.9.4.127이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다. 0.9.4.127은 Test Mode XMP 회귀 테스트로 XMP 판정 절반을 실파이프라인에서 닫는다(판정·게이트 불변, CTest 등록 125→126).
-> G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**, 스캔 흐름의 동일 목록 반복 재구축(churn) 제거는 **0.9.4.118**, 처리량 표기 의미 명확화(후보 3)는 **0.9.4.119**, GUI-less 구성 복구·배지 비용 판정(LOW PRIORITY)·제품 acceptance 런북(남은 후보 전부)은 **0.9.4.120**, 상세 정보창 폭주 수정(그룹 280 실기 3건)은 **0.9.4.121**, 우클릭 경로 외부 I/O 제거는 **0.9.4.122**, 뷰모드 플레이크 근본 수정+PDB 동봉+덤프 원클릭+acceptance 재확인(판정 유지)은 **0.9.4.123**으로 완료되어 큐에서 제거됐다.
+> G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**, 스캔 흐름의 동일 목록 반복 재구축(churn) 제거는 **0.9.4.118**, 처리량 표기 의미 명확화(후보 3)는 **0.9.4.119**, GUI-less 구성 복구·배지 비용 판정(LOW PRIORITY)·제품 acceptance 런북(남은 후보 전부)은 **0.9.4.120**, 상세 정보창 폭주 수정(그룹 280 실기 3건)은 **0.9.4.121**, 우클릭 경로 외부 I/O 제거는 **0.9.4.122**, 뷰모드 플레이크 근본 수정+PDB 동봉+덤프 원클릭+acceptance 재확인(판정 유지)은 **0.9.4.123**, 거짓 미구현 주석 정정은 **0.9.4.124**, QuickLook 파이프 유실 방지+color_thumb 현행 유지 확정은 **0.9.4.125**, recover CLI는 **0.9.4.126**, Test Mode XMP 회귀는 **0.9.4.127**로 완료되어 큐에서 제거됐다. 제품 acceptance는 2026-10-18 실기 보고로 ACCEPTED가 확정되어 큐에서 제거됐다.
 > 과거 2026-10-07의 .62 crash-response / .63 GUI usability 분리는 당시 기록으로 유지하며, 현재 큐는 아래 표가 기준이다.
 
 | 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
 | --- | --- | --- | --- | --- |
 | 0 | **0.9.4.105/.106 + 0.9.4.64+** | **현장 GUI acceptance** | .105 대량 삭제/이동·진행창·preview/index·`delete/move/prune/forget` 로그; .106 파생본/동일 복사본 배지 + real Backend IPC `identical`; 설정/resize/filename selection/Tiles·ListMode/traversal/Test Mode scratch 격리/crash recovery | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
-| 1 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance** | 실제 데이터의 analysis-failed·unchanged·modified 의미론, 삭제/이동 정합성, cancel/restart edge-case를 명시된 기대값과 비교 | **NOT ACCEPTED** |
-| 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture 결과를 실제 데이터셋/전체 스캔으로 확장 | **CONDITIONAL** |
-| 3 | S5 | **실제 dataset product benchmark** | 제품 acceptance 이후 controlled benchmark 실행 | **GATE PENDING** |
-| 4 | S6 | **measurement / data-mining gate** | S5 실측 표본을 이용해 build/case 비교 후보와 gate 판정 | **DEFERRED / S5 선행** |
+| 1 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance** | 2026-10-18 실기 보고로 18/18 항목 증거 확보 → **ACCEPTED**. S4 최종 CLOSED와 S5 GATE OPEN 연동 완료 | **ACCEPTED** |
+| 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture + 18건/79건 실파일 decode·verdict·session 증거 확보. 전체 corpus pre/post 비교 잔여 | **CONDITIONAL** |
+| 3 | S5 | **실제 dataset product benchmark** | GATE OPEN. XMP-REAL-001 부분 측정(7 cases 21 SUCCESS) + `.126` recover CLI 확보. 정상 완료 cohort·임계값 대기 | **IN PROGRESS / GATE OPEN** |
+| 4 | S6 | **measurement / data-mining gate** | S5 실측 표본을 이용해 build/case 비교 후보와 gate 판정. 진단 기계는 실저널에서 계약대로 동작 확인 | **DEFERRED / 임계값·비교 표본 대기** |
 
 ### 측정 사이드 트랙 (제품 acceptance Gate와 별도)
 
