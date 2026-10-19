@@ -1690,7 +1690,14 @@ void MainWindow::beginScan(bool resumeLastConfig) {
   // P2: previous worker teardown lives inside BackendClient::startScan.
   if (cancelWait_) { cancelWait_->close(); cancelWait_->deleteLater(); cancelWait_ = nullptr; }
   thumbStatMem_ = thumbStatBackend_ = thumbStatPlace_ = 0;
-  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
+  bestPct_.clear(); resCache_.clear(); pathKind_.clear();
+  // 0.9.4.140: the presentation thumbnail cache is NOT cleared here. A rescan
+  // of an unchanged index re-analyzes nothing, so the rows keep their art
+  // instead of blanking for the whole walk (the backend is busy, so re-asked
+  // art arrives only after the scan). Stale art is handled at the end: when
+  // the finished message reports analyzed > 0 the cache is invalidated and the
+  // visible rows are re-asked while the backend is idle (see scanFinished).
+  scanLog(QString("thumbCache kept=%1").arg(thumbCache_.size()));
   fileMetaAsked_.clear(); // 0.9.4.105: new scan generation re-asks metadata
   contentFlag_.clear();   // 0.9.4.106: badge flags belong to one result set
   allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
@@ -2059,6 +2066,9 @@ void MainWindow::scanFinished(QString msg) {
   // The popup must never outlive this function: every exit below closes it
   // and returns the GUI to idle, even on an unexpected exception. Otherwise
   // a "writing report" popup stays open forever with no way back.
+  // 0.9.4.140: only a scan that re-analyzed files can hold stale art; the
+  // beginScan comment explains why the cache is kept during the walk.
+  bool contentChanged = false;
   try {
   scanLog(QString("finish %1").arg(msg));
   scanLog(QString("thumbStat mem=%1 backend=%2 place=%3 pending=%4")
@@ -2077,6 +2087,7 @@ void MainWindow::scanFinished(QString msg) {
   if (msg.startsWith(QStringLiteral("CANCELLED"))) {
     // Partial progress is kept by design (checkpoints): report what survived.
     const QStringList st = msg.split('|');
+    contentChanged = st.size() > 2 && st[2].toULongLong() > 0;
     const QString detail = st.size() > 2
         ? QString(" (%1 %2, %3 %4)").arg(st[1]).arg(trStr(lang(), "scanned")).arg(st[2]).arg(trStr(lang(), "analyzed"))
         : QString();
@@ -2090,6 +2101,7 @@ void MainWindow::scanFinished(QString msg) {
     const qulonglong analyzed = st.size() > 2 ? st[2].toULongLong() : 0;
     const qulonglong unchanged = st.size() > 3 ? st[3].toULongLong() : 0;
     const qulonglong completed = st.size() > 1 ? st[1].toULongLong() : 0;
+    contentChanged = analyzed > 0;
     if (targetKnown_ && completed != targetTotal_)
       scanLog(QString("targetMismatch fixed=%1 completed=%2").arg(targetTotal_).arg(completed));
     lastTotalN_ = completed;
@@ -2101,6 +2113,15 @@ void MainWindow::scanFinished(QString msg) {
   }
   refreshSummary();
   updateStatusCounts();
+  // 0.9.4.140: analyzed > 0 means at least one file was re-read and may have
+  // new content, so the kept presentation art can be stale. Drop it now (the
+  // rows keep painting their old icons until arrivals replace them - no blank)
+  // and re-ask only the visible rows/preview; the backend is idle by now.
+  if (contentChanged) {
+    thumbCache_.clear();
+    scanLog(QString("thumbCache invalidated analyzed>0 kept=0"));
+    QTimer::singleShot(0, this, [this] { thumbCatchUpVisible(); });
+  }
   } catch (const std::exception& e) {
     scanLog(QString("scanFinished exception (state preserved): %1").arg(e.what()));
   } catch (...) {
