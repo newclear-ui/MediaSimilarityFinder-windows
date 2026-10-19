@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.140` (Preview thumbnails kept across a scan — changed files refreshed after it) - CPU CTest 125/125 - GPU CTest 126/126
+Baseline: `0.9.4.141` (Loaded list/selection/preview kept during a scan — results applied on completion) - CPU CTest 125/125 - GPU CTest 126/126
 Last updated: 2026-10-20
 
 ## Role of this document

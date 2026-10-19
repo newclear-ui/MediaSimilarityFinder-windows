@@ -1689,24 +1689,18 @@ void MainWindow::beginScan(bool resumeLastConfig) {
   }
   // P2: previous worker teardown lives inside BackendClient::startScan.
   if (cancelWait_) { cancelWait_->close(); cancelWait_->deleteLater(); cancelWait_ = nullptr; }
+  // 0.9.4.141: keep the loaded list, selection and preview untouched while the
+  // update runs. 0.9.4.140 already kept the presentation thumbnail cache, but
+  // this block still reset currentGroup_/currentFile_ and refreshed both panes,
+  // so the right-side preview showed "-" for the whole scan.
+  // The match accumulators still start fresh (the quick-load stream re-emits
+  // every stored pair immediately, and changed pairs must not keep an older,
+  // higher percentage), while the file-size/path maps stay until onResults
+  // replaces them so the visible panes keep their data.
   thumbStatMem_ = thumbStatBackend_ = thumbStatPlace_ = 0;
-  bestPct_.clear(); resCache_.clear(); pathKind_.clear();
-  // 0.9.4.140: the presentation thumbnail cache is NOT cleared here. A rescan
-  // of an unchanged index re-analyzes nothing, so the rows keep their art
-  // instead of blanking for the whole walk (the backend is busy, so re-asked
-  // art arrives only after the scan). Stale art is handled at the end: when
-  // the finished message reports analyzed > 0 the cache is invalidated and the
-  // visible rows are re-asked while the backend is idle (see scanFinished).
+  bestPct_.clear(); pathKind_.clear(); contentFlag_.clear();
   scanLog(QString("thumbCache kept=%1").arg(thumbCache_.size()));
-  fileMetaAsked_.clear(); // 0.9.4.105: new scan generation re-asks metadata
-  contentFlag_.clear();   // 0.9.4.106: badge flags belong to one result set
-  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
-  currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
-  // 0.9.4.118: append-first. The groups themselves are unchanged by the scan
-  // reset, so re-filling the pane synchronously churned every row (a 9k-row
-  // rebuild at every scan start, field-measured ~20 s). The prefix guard
-  // degrades to a full (deferred) rebuild when anything actually changed.
-  refreshGroupList(/*append=*/true); refreshFileViews(); refreshDetail();
+  hasReport_ = false;
   QString appDir = QApplication::applicationDirPath();
   // P2: the scan lifecycle lives behind BackendClient. The loopback
   // implementation tears down any previous worker internally, so the
@@ -2119,8 +2113,15 @@ void MainWindow::scanFinished(QString msg) {
   // and re-ask only the visible rows/preview; the backend is idle by now.
   if (contentChanged) {
     thumbCache_.clear();
+    // Resolution/badge metadata can also belong to the pre-change content.
+    resCache_.clear();
+    fileMetaAsked_.clear();
     scanLog(QString("thumbCache invalidated analyzed>0 kept=0"));
-    QTimer::singleShot(0, this, [this] { thumbCatchUpVisible(); });
+    QTimer::singleShot(0, this, [this] {
+      thumbCatchUpVisible();
+      refreshFileViews();
+      refreshDetail();
+    });
   }
   } catch (const std::exception& e) {
     scanLog(QString("scanFinished exception (state preserved): %1").arg(e.what()));
@@ -2212,6 +2213,12 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
     fileDur_[f.path] = f.duration;
   }
   const qint64 tMaps = applyT.elapsed();
+  // 0.9.4.141: match accumulators (bestPct_/pathKind_/contentFlag_) are NOT
+  // reset here. Hybrid's live pairs are streamed only through onMatch and
+  // never appear in these final rows, so resetting them would drop their
+  // percentages and identity badges. They start fresh at beginScan instead;
+  // the metadata caches stay until a scan actually re-analyzed files (see
+  // scanFinished), so an unchanged rescan leaves every visible value intact.
   // fold final retained matches (same data as streamed, dedup by rebuild)
   for (const auto& row : matchRows_) {
     const QStringList p = row.split('\t');
