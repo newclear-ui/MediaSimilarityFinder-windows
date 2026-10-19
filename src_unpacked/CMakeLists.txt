@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.137 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.138 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -934,6 +934,7 @@ if(Qt6_FOUND)
 else()
   message(STATUS "Qt6 Core not found; Backend target skipped")
 endif()
+
 
 
 

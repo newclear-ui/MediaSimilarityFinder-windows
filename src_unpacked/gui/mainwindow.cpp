@@ -3468,6 +3468,36 @@ void MainWindow::onFileMetaReady(quint64 requestId, const FileMetaResult& meta) 
   refreshFileMetaRow(path);
   if (changed && currentFile_ == path) refreshDetail();
 }
+// 0.9.4.138: the preview grid's cell width must follow the ICON size, not the
+// widest text line. A full "393.0 KB · 2048x1798" line used to pin every cell
+// at ~150 px, so shrinking the preview below 128 px kept the 3-column layout.
+// Each line is now fitted to the icon width with priority fallbacks:
+//   name: middle-elided (extension stays readable),
+//   size · resolution: full -> resolution only -> middle-elided resolution,
+//   similarity: full ("100% · 동일 내용") -> "100%" -> middle-elided value.
+// A tooltip still carries the full path, and the list view keeps full columns.
+QString MainWindow::fileGridItemText(const QString& path, bool ref, double pct) const {
+  if (!grid_) return QString();
+  const QFileInfo fi(path);
+  const int textW = std::max(48, grid_->iconSize().width());
+  const QFontMetrics fm(grid_->font());
+  const auto fits = [&](const QString& s) { return fm.horizontalAdvance(s) <= textW; };
+  const auto elide = [&](const QString& s, Qt::TextElideMode m) {
+    return fm.elidedText(s, m, textW);
+  };
+  QString meta = fmtSize(fi.size()) + QStringLiteral(" · ") + fileResolution(path);
+  if (!fits(meta)) {
+    const QString res = fileResolution(path);
+    meta = fits(res) ? res : elide(res, Qt::ElideMiddle);
+  }
+  QString sim = pctText(pct, ref, lang(), contentFlag_.value(path, 0));
+  if (!fits(sim)) {
+    const QString pctOnly = QString("%1%").arg(pct, 0, 'f', 1);
+    sim = fits(pctOnly) ? pctOnly : elide(pctOnly, Qt::ElideMiddle);
+  }
+  const QString name = fm.elidedText(fi.fileName(), Qt::ElideMiddle, textW);
+  return name + "\n" + meta + "\n" + sim;
+}
 void MainWindow::refreshFileMetaRow(const QString& path) {
   // In-place text refresh for every surface showing this path's resolution.
   // Widget identity (and therefore selection, scroll, and check state) is
@@ -3482,9 +3512,7 @@ void MainWindow::refreshFileMetaRow(const QString& path) {
   for (int r = 0; r < grid_->count(); ++r) {
     auto* item = grid_->item(r);
     if (!item || item->data(Qt::UserRole).toString() != path) continue;
-    const QFontMetrics fm(grid_->font());
-    const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width());
-    item->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(path) + "\n" + pctText(pct, ref, lang(), contentFlag_.value(path, 0)));
+    item->setText(fileGridItemText(path, ref, pct));
   }
   for (int r = 0; r < list_->topLevelItemCount(); ++r) {
     auto* item = list_->topLevelItem(r);
@@ -3700,12 +3728,11 @@ void MainWindow::refreshFileViews() {
     gi->setData(Qt::UserRole, p);
     gi->setFlags(gi->flags() | Qt::ItemIsUserCheckable);
     gi->setCheckState(marked_.contains(p) ? Qt::Checked : Qt::Unchecked);
-    // Long names wrap into extra lines and desynchronize row heights when
-    // mixed with short names. Elide to one line within the icon width so
-    // every cell keeps the same geometry; the full path stays in the tooltip.
-    const QFontMetrics fm(grid_->font());
-    const QString shown = fm.elidedText(fi.fileName(), Qt::ElideMiddle, grid_->iconSize().width());
-    gi->setText(shown + "\n" + fmtSize(fi.size()) + " · " + fileResolution(p) + "\n" + pctText(pct, ref, lang(), contentFlag_.value(p, 0)));
+    // 0.9.4.138: every line is fitted to the icon width (see
+    // fileGridItemText), so the cell narrows with the preview size and more
+    // columns fit instead of the longest text line pinning the layout. The
+    // full path stays in the tooltip.
+    gi->setText(fileGridItemText(p, ref, pct));
     gi->setToolTip(p);
     grid_->addItem(gi);
     auto* li = new QTreeWidgetItem(list_);

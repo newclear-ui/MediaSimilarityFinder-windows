@@ -209,6 +209,8 @@ private slots:
   void groupSelected(QTreeWidgetItem*,QTreeWidgetItem*); void fileGridSelected(); void fileListSelected();
   void toggleTestMode(bool);
   void setViewMode(int); void zoomChanged(int); void groupSearchChanged(const QString&);
+  // 0.9.4.138: width-aware three-line text for the preview grid cells.
+  QString fileGridItemText(const QString& path, bool ref, double pct) const;
   void groupViewChanged(int);
   void applyExecutionMode(); void updateKindSelection();
   void applyCpuPercentVisibility(); // show/hide cpu_ from ui/showCpuPercent (default OFF)
@@ -564,6 +566,7 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
 
 
 

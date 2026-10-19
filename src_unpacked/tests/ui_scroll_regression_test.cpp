@@ -382,6 +382,21 @@ int main(int argc, char** argv) {
             const int fafter = fbar ? fbar->value() : -1;
             std::cout << "  [info] fileGrid before=" << fbefore << " after=" << fafter << "\n";
             check(fafter == fmax, "same-group refill keeps the file scroll");
+            // 0.9.4.138: the cell width follows the preview size (all text
+            // lines are fitted to the icon width), so shrinking the preview
+            // yields narrower cells and therefore more columns per row.
+            QMetaObject::invokeMethod(&w, "zoomChanged", Q_ARG(int, 256));
+            QApplication::processEvents();
+            fileGrid->doItemsLayout();
+            QApplication::processEvents();
+            const int cellWide = fileGrid->visualItemRect(fileGrid->item(0)).width();
+            QMetaObject::invokeMethod(&w, "zoomChanged", Q_ARG(int, 64));
+            QApplication::processEvents();
+            fileGrid->doItemsLayout();
+            QApplication::processEvents();
+            const int cellNarrow = fileGrid->visualItemRect(fileGrid->item(0)).width();
+            std::cout << "  [info] file cell wide=" << cellWide << " narrow=" << cellNarrow << "\n";
+            check(cellWide > cellNarrow, "file cell width follows the preview size");
         }
     }
 

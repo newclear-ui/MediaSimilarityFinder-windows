@@ -1,6 +1,6 @@
 ﻿# Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.137` (Preview gauge 0.05-step snapping + two-decimal ratio bubble) - CPU CTest 125/125 - GPU CTest 126/126
+Baseline: `0.9.4.138` (Preview cell width follows the preview size — dynamic text fitting) - CPU CTest 125/125 - GPU CTest 126/126
 Last updated: 2026-10-18
 
 ## Role of this document
@@ -167,6 +167,7 @@ stay in the origin documents.
 
 `kEngineVersion 1.5.1` - `kDatabaseVersion 1.0.6` - `kBenchmarkSchemaVersion 9` -
 `kCacheFormatVersion 9`. 0.9.4.82 bumped `kEngineVersion` 1.5.0 -> 1.5.1 because EXIF-rotated image fingerprints change by up to +/-1 LSB, so stored pairs revalidate. DB/schema/cache unchanged.
+
 
 
 
