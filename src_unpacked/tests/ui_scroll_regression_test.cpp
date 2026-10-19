@@ -188,12 +188,50 @@ int main(int argc, char** argv) {
 
     // Phase 1: group data change produced at least one full rebuild.
     std::cerr << "  [phase] scan done, phase 1" << std::endl;
-    const qulonglong f0 = w.testFullRebuildCount();
+    qulonglong f0 = w.testFullRebuildCount();
     check(f0 >= 1, "scan data change rebuilt the list at least once");
     const int n = grid->count();
     std::cout << "  [info] grid items=" << n << "\n";
     check(n >= 80, "enough groups for starvation and scrolling");
     check(tree->topLevelItemCount() == n, "tree and grid agree on group count");
+
+    // 0.9.4.142 probe (field report): pressing Search after Load must keep the
+    // loaded group thumbnails, the selected group and the right file preview.
+    {
+        grid->setCurrentRow(0);
+        QApplication::processEvents();
+        for (int i = 0; i < 100; ++i) {
+            w.testThumbCatchUp();
+            QApplication::processEvents();
+            QThread::msleep(30);
+            if (grid->count() > 0 && !grid->item(0)->icon().isNull() && w.testPreviewHasPixmap()) break;
+        }
+        auto* fgrid = w.findChild<QListWidget*>("fileGrid");
+        if (fgrid && fgrid->count() > 0) { fgrid->setCurrentRow(0); QApplication::processEvents(); }
+        const int selBefore = w.testCurrentGroupIndex();
+        const bool iconBefore = grid->count() > 0 && !grid->item(0)->icon().isNull();
+        const bool previewBefore = w.testPreviewHasPixmap();
+        std::cout << "  [info] pre-rescan sel=" << selBefore << " icon=" << iconBefore
+                  << " preview=" << previewBefore << "\n";
+        scan->click();
+        QApplication::processEvents();
+        check(w.testCurrentGroupIndex() == selBefore, "scan start keeps the selected group");
+        check((grid->count() > 0 && !grid->item(0)->icon().isNull()) == iconBefore,
+              "scan start keeps group thumbnails");
+        check(w.testPreviewHasPixmap() == previewBefore, "scan start keeps the file preview");
+        pumpUntil([&] { return scan->isEnabled(); }, 240000, "unchanged rescan finished");
+        QApplication::processEvents();
+        std::cout << "  [info] post-rescan sel=" << w.testCurrentGroupIndex()
+                  << " preview=" << w.testPreviewHasPixmap() << "\n";
+        check(w.testCurrentGroupIndex() == selBefore, "unchanged rescan keeps the selected group");
+        check(grid->count() > 0 && !grid->item(0)->icon().isNull(),
+              "unchanged rescan keeps group thumbnails");
+        check(w.testPreviewHasPixmap(), "unchanged rescan keeps the file preview");
+        // Let the post-scan stream settle, so later phases start from an idle
+        // list (the rebuild counter checks below assume no pending data).
+        for (int i = 0; i < 20; ++i) { w.testUiTick(); QApplication::processEvents(); QThread::msleep(30); }
+    }
+    f0 = w.testFullRebuildCount(); // 0.9.4.142: baseline after the unchanged rescan
 
     // Phase 1b: selecting a visible group after scrolling must not move the
     // list. User-reported defect: scroll down, click a row, the list jumps to
@@ -923,4 +961,6 @@ int main(int argc, char** argv) {
               << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+
+
 

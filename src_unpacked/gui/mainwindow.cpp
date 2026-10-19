@@ -1381,7 +1381,8 @@ void MainWindow::buildRight(QWidget* w) {
   lay->addWidget(fileBar_);
   detailTabs_ = new QTabWidget(w);
   auto* tabD = new QWidget(detailTabs_); auto* tabDlay = new QHBoxLayout(tabD);
-  preview_ = new QLabel(tabD); preview_->setFixedSize(220, 190); preview_->setAlignment(Qt::AlignCenter);
+  preview_ = new QLabel(tabD); preview_->setObjectName("preview"); // automation hook (0.9.4.142 probe)
+  preview_->setFixedSize(220, 190); preview_->setAlignment(Qt::AlignCenter);
   preview_->setStyleSheet("border:1px solid #ccc;border-radius:6px;background:#f5f5f5;");
   detailForm_ = new QFormLayout;
   auto* formW = new QWidget(tabD); formW->setLayout(detailForm_);
@@ -1701,6 +1702,12 @@ void MainWindow::beginScan(bool resumeLastConfig) {
   bestPct_.clear(); pathKind_.clear(); contentFlag_.clear();
   scanLog(QString("thumbCache kept=%1").arg(thumbCache_.size()));
   hasReport_ = false;
+  // 0.9.4.142: with a result set already on screen, freeze the view (list,
+  // selection, previews) for the whole scan and apply the answer in one pass.
+  // Otherwise the quick-load/streamed batches rebuilt the panes mid-scan and
+  // their thumbnail requests queued behind the busy backend -> placeholders.
+  holdViewDuringScan_ = !groups_.isEmpty();
+  scanLog(QString("viewHold=%1 groups=%2").arg(holdViewDuringScan_ ? 1 : 0).arg(groups_.size()));
   QString appDir = QApplication::applicationDirPath();
   // P2: the scan lifecycle lives behind BackendClient. The loopback
   // implementation tears down any previous worker internally, so the
@@ -2052,6 +2059,7 @@ void MainWindow::scanFinished(QString msg) {
   // shows "enter" without the matching "exit" in msf_scan.log, the stall is
   // inside this function; if neither appears, the worker never returned.
   scanLog(QString("scanFinished enter: %1").arg(msg.left(80)));
+  holdViewDuringScan_ = false; // 0.9.4.142: the scan is over; stop freezing
   // A stop request already shows this popup from cancelScan(): keep it for
   // the rebuild instead of flashing a second one.
   QDialog* wait = cancelWait_;
@@ -2136,6 +2144,7 @@ void MainWindow::scanFinished(QString msg) {
 }
 void MainWindow::scanFailed(QString msg) {
   scanLog(QString("failed %1").arg(msg));
+  holdViewDuringScan_ = false; // 0.9.4.142: the scan ended abnormally
   // A failed load-only or re-verify request is not a scan failure: clear that
   // state and report it without the scan-failure machinery.
   if (loading_ || reverify_) {
@@ -2265,6 +2274,8 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   } else {
     loadedSummary_ = false;
   }
+  // 0.9.4.142: the answer is applied; let the next view-changing path run again.
+  holdViewDuringScan_ = false;
   if (wait) { wait->close(); wait->deleteLater(); }
 }
 void MainWindow::resourceChanged(int i) {
@@ -2613,6 +2624,9 @@ void MainWindow::onMatchesBatch(const QVector<BackendMatch>& batch) {
   groupsDirty_ = true;
 }
 void MainWindow::testUiTick() { onUiTick(); }
+bool MainWindow::testPreviewHasPixmap() const {
+  return preview_ && !preview_->pixmap().isNull();
+}
 QString MainWindow::testDetailFileName() const {
   if (!detailForm_) return {};
   auto* w = detailForm_->itemAt(0, QFormLayout::FieldRole);
@@ -2657,6 +2671,13 @@ void MainWindow::refreshStreaming(bool force) {
   // A thumbnail burst may arrive between ticks. Flush at most one coalesced
   // layout pass here; it never recreates items or restores scroll.
   flushThumbLayout();
+  // 0.9.4.142: the loaded view stays frozen for the whole scan (see
+  // beginScan). Data still accumulates; onResults applies it in one pass.
+  if (scanning_ && holdViewDuringScan_) {
+    thumbCatchUpVisible();
+    updateStatusCounts();
+    return;
+  }
   // Full list rebuilds (widget churn for every group) are the most expensive
   // GUI work during a scan. rebuildGroups() itself walks every accumulated
   // path, so it stays inside the gate too — running it every tick on 10k+
@@ -5151,6 +5172,7 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
 
 
 

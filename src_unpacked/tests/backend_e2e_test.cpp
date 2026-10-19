@@ -359,6 +359,41 @@ int main(int argc, char** argv) {
             sortBox->setCurrentIndex(0);
             QApplication::processEvents();
         }
+        // 0.9.4.142 probe (field report): an unchanged rescan over the real
+        // IPC backend must keep the loaded group thumbnails, the selected
+        // group and the right preview. The loopback scroll probe passes; this
+        // one runs the separate backend process the user actually uses.
+        {
+            grid->setCurrentRow(0);
+            QApplication::processEvents();
+            for (int i = 0; i < 120; ++i) {
+                w.testThumbCatchUp();
+                QApplication::processEvents();
+                QThread::msleep(30);
+                if (grid->count() > 0 && !grid->item(0)->icon().isNull() && w.testPreviewHasPixmap())
+                    break;
+            }
+            auto* fg = w.findChild<QListWidget*>("fileGrid");
+            if (fg && fg->count() > 0) { fg->setCurrentRow(0); QApplication::processEvents(); }
+            const int sel = w.testCurrentGroupIndex();
+            const bool icon = grid->count() > 0 && !grid->item(0)->icon().isNull();
+            const bool ficon = fg && fg->count() > 0 && !fg->item(0)->icon().isNull();
+            const bool prev = w.testPreviewHasPixmap();
+            std::cout << "  [info] test1f pre sel=" << sel << " icon=" << icon
+                      << " fileIcon=" << ficon << " preview=" << prev << "\n";
+            scan->click();
+            QApplication::processEvents();
+            check(w.testCurrentGroupIndex() == sel, "test1f scan start keeps the selected group");
+            check(w.testPreviewHasPixmap() == prev, "test1f scan start keeps the file preview");
+            pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1f unchanged rescan finished");
+            QApplication::processEvents();
+            std::cout << "  [info] test1f post sel=" << w.testCurrentGroupIndex()
+                      << " preview=" << w.testPreviewHasPixmap() << "\n";
+            check(w.testCurrentGroupIndex() == sel, "test1f unchanged rescan keeps the selected group");
+            check(grid->count() > 0 && !grid->item(0)->icon().isNull(),
+                  "test1f unchanged rescan keeps group thumbnails");
+            check(w.testPreviewHasPixmap(), "test1f unchanged rescan keeps the file preview");
+        }
     }
 
     // ---- Test 1c (0.9.4.134): Re-verify end-to-end. The backend re-reads the

@@ -159,6 +159,10 @@ public:
   // perceptually identical (watermark/sticker/re-encode/crop variant). Shown
   // next to the percentage so "100%" no longer reads as "same file" blindly.
   int testContentFlag(const QString& path) const { return contentFlag_.value(path, 0); }
+  // 0.9.4.142 probe: scan-start view preservation (selection/preview/thumbnails).
+  int testCurrentGroupIndex() const { return currentGroup_; }
+  QString testCurrentFile() const { return currentFile_; }
+  bool testPreviewHasPixmap() const;
   // 0.9.4.112 (S4): write the last detailed-log record through the exact
   // production save routine (the dialog's Save button only adds the file
   // picker on top). Returns true when the record was written.
@@ -508,6 +512,10 @@ private:
   // stored-pair reading ("- / N") and clears on the next scan answer.
   qint64 loadStartMs_ = 0;
   bool loadedSummary_ = false;
+  // 0.9.4.142: a scan started while a result set is already on screen freezes
+  // that view until the answer arrives (field: Load -> Search blanked the
+  // group thumbnails and the right preview while the backend was busy).
+  bool holdViewDuringScan_ = false;
   // 0.9.4.134: "재검증" in-flight flag (same lifecycle as loading_; the view is
   // replaced by the refreshed stored set when results arrive).
   bool reverify_ = false;
@@ -568,6 +576,7 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
 
 
 
