@@ -1,4 +1,4 @@
-// Backend process E2E + crash injection (P3: 0.9.4.69, Windows-only).
+﻿// Backend process E2E + crash injection (P3: 0.9.4.69, Windows-only).
 //
 // Real MainWindow + real BackendSupervisor + real Backend OS process:
 //   Test 1: HELLO/READY, scan runs to FINISHED, GUI PID != Backend PID.
@@ -34,11 +34,17 @@
 #include <QThread>
 #include <QTimer>
 #include <QLabel>
+#include <QMessageBox>
 #include <QTreeWidget>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
+
+// 0.9.4.135: the Test Mode diff/apply assertions read the main index directly.
+#include <sqlite3.h>
+#include "index_manager.h"
+#include "path_utils.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -376,6 +382,191 @@ int main(int argc, char** argv) {
         check(sumText2("sumValVerify") == QStringLiteral("- / 300"), "test1c stored pairs kept");
     }
 
+    // ---- Test 1d (0.9.4.135): Test Mode difference report + Yes adoption.
+    // A size+mtime-preserving edit is invisible to the production scan but the
+    // Test Mode scan re-analyzes everything; the backend reports the diff and
+    // the GUI asks Yes/No. Yes must replace the main index with the test
+    // result: afterwards the main row of the edited file equals the scratch
+    // row (and differs from its pre-adoption state) -- read from SQLite.
+    {
+        const auto target = d / "media" / "g7_a.bmp";
+        const auto oldTime = fs::last_write_time(target, ec);
+        {
+            std::fstream f(target, std::ios::in | std::ios::out | std::ios::binary);
+            f.seekp(54); // same size, different pixels
+            for (int i = 0; i < 64; ++i) f.put((char)0x33);
+        }
+        fs::last_write_time(target, oldTime, ec);
+        msf::IndexPaths ip;
+        QString dbPath;
+        if (msf::IndexManager::resolve(
+                msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                msf::path_from_utf8((d / "media").string()), ip))
+            dbPath = QString::fromStdString(msf::path_to_utf8(ip.database));
+        check(!dbPath.isEmpty(), "test1d main index path resolved");
+        // Row identity = every fingerprint column + size (the diff's basis).
+        const auto readRow = [&](const QString& db, const char* suffix) -> QString {
+            sqlite3* h = nullptr;
+            QString out;
+            if (sqlite3_open(db.toUtf8().constData(), &h) != SQLITE_OK) {
+                if (h) sqlite3_close(h);
+                return out;
+            }
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(
+                    h,
+                    "SELECT size,fingerprint,mirror_fingerprint,crop_4x3,crop_1x1,crop_9x16,"
+                    "mirror_crop_4x3,mirror_crop_1x1,mirror_crop_9x16 FROM files WHERE path LIKE ?",
+                    -1, &st, nullptr) == SQLITE_OK) {
+                const QByteArray pat = QByteArray("%") + suffix;
+                sqlite3_bind_text(st, 1, pat.constData(), -1, SQLITE_TRANSIENT);
+                if (sqlite3_step(st) == SQLITE_ROW) {
+                    for (int col = 0; col < 9; ++col)
+                        out += QString::number((qulonglong)sqlite3_column_int64(st, col)) + ',';
+                }
+                sqlite3_finalize(st);
+            }
+            sqlite3_close(h);
+            return out;
+        };
+        const auto latestScratchDb = [&]() -> QString {
+            QString best;
+            fs::file_time_type bestT{};
+            std::error_code e2;
+            const auto base = fs::path(QApplication::applicationDirPath().toStdString()) / "TestMode";
+            if (!fs::is_directory(base, e2)) return best;
+            for (fs::recursive_directory_iterator it(base, fs::directory_options::skip_permission_denied, e2), endIt;
+                 it != endIt; it.increment(e2)) {
+                if (e2) { e2.clear(); continue; }
+                if (!it->is_regular_file(e2) || it->path().filename() != "index.sqlite") continue;
+                const auto t = fs::last_write_time(it->path(), e2);
+                if (best.isEmpty() || t > bestT) {
+                    bestT = t;
+                    best = QString::fromStdString(msf::path_to_utf8(it->path()));
+                }
+            }
+            return best;
+        };
+        const QString rowBefore = readRow(dbPath, "g7_a.bmp");
+        check(!rowBefore.isEmpty(), "test1d main row read before");
+        bool diffSeen = false;
+        qulonglong dChanged = 0, dAdded = 0, dRemoved = 0, dPairDiff = 0;
+        const auto diffConn =
+            QObject::connect(supervisor, &BackendClient::testModeDiff, supervisor,
+                             [&](qulonglong c, qulonglong a, qulonglong r, qulonglong pd,
+                                 qulonglong, qulonglong) {
+                                 diffSeen = true; dChanged = c; dAdded = a; dRemoved = r;
+                                 dPairDiff = pd;
+                             });
+        auto* testBtn = w.findChild<QPushButton*>("testBtn");
+        check(testBtn != nullptr, "test1d test toggle found");
+        testBtn->setChecked(true);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1d test scan finished");
+        pumpUntil([&] { return diffSeen; }, 30000, "test1d diff reported");
+        check(dChanged == 1 && dAdded == 0 && dRemoved == 0, "test1d diff counts (1 changed)");
+        check(dPairDiff >= 1, "test1d pair difference detected");
+        const QString scratchDb = latestScratchDb();
+        check(!scratchDb.isEmpty(), "test1d scratch index found");
+        QMessageBox* box = nullptr;
+        pumpUntil([&] { box = w.findChild<QMessageBox*>("testDiffBox"); return box != nullptr; },
+                  15000, "test1d Yes/No report shown");
+        if (box && box->button(QMessageBox::Yes)) box->button(QMessageBox::Yes)->click();
+        const auto adopted = [&]() {
+            const QString after = readRow(dbPath, "g7_a.bmp");
+            return !after.isEmpty() && after == readRow(scratchDb, "g7_a.bmp");
+        };
+        pumpUntil(adopted, 60000, "test1d main index adopted the test result");
+        check(adopted(), "test1d main row equals the scratch row");
+        check(readRow(dbPath, "g7_a.bmp") != rowBefore, "test1d row actually changed");
+        testBtn->setChecked(false);
+        QObject::disconnect(diffConn);
+    }
+    // ---- Test 1e (0.9.4.135): No keeps the main index untouched. ----
+    {
+        const auto target = d / "media" / "g8_a.bmp";
+        const auto oldTime = fs::last_write_time(target, ec);
+        {
+            std::fstream f(target, std::ios::in | std::ios::out | std::ios::binary);
+            f.seekp(54);
+            for (int i = 0; i < 64; ++i) f.put((char)0x44);
+        }
+        fs::last_write_time(target, oldTime, ec);
+        const auto latestScratchDb = [&]() -> QString {
+            QString best;
+            fs::file_time_type bestT{};
+            std::error_code e2;
+            const auto base = fs::path(QApplication::applicationDirPath().toStdString()) / "TestMode";
+            if (!fs::is_directory(base, e2)) return best;
+            for (fs::recursive_directory_iterator it(base, fs::directory_options::skip_permission_denied, e2), endIt;
+                 it != endIt; it.increment(e2)) {
+                if (e2) { e2.clear(); continue; }
+                if (!it->is_regular_file(e2) || it->path().filename() != "index.sqlite") continue;
+                const auto t = fs::last_write_time(it->path(), e2);
+                if (best.isEmpty() || t > bestT) {
+                    bestT = t;
+                    best = QString::fromStdString(msf::path_to_utf8(it->path()));
+                }
+            }
+            return best;
+        };
+        const auto readRow = [&](const QString& db, const char* suffix) -> QString {
+            sqlite3* h = nullptr;
+            QString out;
+            if (sqlite3_open(db.toUtf8().constData(), &h) != SQLITE_OK) {
+                if (h) sqlite3_close(h);
+                return out;
+            }
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(
+                    h,
+                    "SELECT size,fingerprint,mirror_fingerprint,crop_4x3,crop_1x1,crop_9x16,"
+                    "mirror_crop_4x3,mirror_crop_1x1,mirror_crop_9x16 FROM files WHERE path LIKE ?",
+                    -1, &st, nullptr) == SQLITE_OK) {
+                const QByteArray pat = QByteArray("%") + suffix;
+                sqlite3_bind_text(st, 1, pat.constData(), -1, SQLITE_TRANSIENT);
+                if (sqlite3_step(st) == SQLITE_ROW) {
+                    for (int col = 0; col < 9; ++col)
+                        out += QString::number((qulonglong)sqlite3_column_int64(st, col)) + ',';
+                }
+                sqlite3_finalize(st);
+            }
+            sqlite3_close(h);
+            return out;
+        };
+        msf::IndexPaths ip;
+        QString dbPath;
+        if (msf::IndexManager::resolve(
+                msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                msf::path_from_utf8((d / "media").string()), ip))
+            dbPath = QString::fromStdString(msf::path_to_utf8(ip.database));
+        const QString rowBefore = readRow(dbPath, "g8_a.bmp");
+        bool diffSeen = false;
+        const auto diffConn =
+            QObject::connect(supervisor, &BackendClient::testModeDiff, supervisor,
+                             [&](qulonglong, qulonglong, qulonglong, qulonglong,
+                                 qulonglong, qulonglong) { diffSeen = true; });
+        auto* testBtn = w.findChild<QPushButton*>("testBtn");
+        testBtn->setChecked(true);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1e test scan finished");
+        pumpUntil([&] { return diffSeen; }, 30000, "test1e diff reported");
+        const QString scratchDb = latestScratchDb();
+        check(!scratchDb.isEmpty(), "test1e scratch index found");
+        QMessageBox* box = nullptr;
+        pumpUntil([&] { box = w.findChild<QMessageBox*>("testDiffBox"); return box != nullptr; },
+                  15000, "test1e Yes/No report shown");
+        if (box && box->button(QMessageBox::No)) box->button(QMessageBox::No)->click();
+        QApplication::processEvents();
+        QThread::msleep(800);
+        check(readRow(dbPath, "g8_a.bmp") == rowBefore, "test1e main row untouched after No");
+        check(readRow(dbPath, "g8_a.bmp") != readRow(scratchDb, "g8_a.bmp"),
+              "test1e main still differs from the un-adopted scratch");
+        testBtn->setChecked(false);
+        QObject::disconnect(diffConn);
+    }
     // ---- Test 2: forced kill right after scan start -> restart -> auto-resume. ----
     // The kill lands deterministically with no wait at all: supervisor.scanning_
     // is set synchronously when START_SCAN is sent, while even a quick-load
@@ -597,3 +788,11 @@ int main(int argc, char** argv) {
               << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+
+
+
+
+
+
+
+

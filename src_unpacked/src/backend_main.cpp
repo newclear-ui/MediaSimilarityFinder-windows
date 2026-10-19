@@ -73,6 +73,8 @@ public:
         connect(session_, &BackendSession::matchesBatch, this, &BackendServer::onMatchesBatch);
         connect(session_, &BackendSession::quickLoaded, this, &BackendServer::onQuickLoaded);
         connect(session_, &BackendSession::reverifyFinished, this, &BackendServer::onReverifyFinished);
+        connect(session_, &BackendSession::testModeDiff, this, &BackendServer::onTestModeDiff);
+        connect(session_, &BackendSession::testApplied, this, &BackendServer::onTestApplied);
         connect(session_, &BackendSession::revalidated, this, &BackendServer::onRevalidated);
         connect(session_, &BackendSession::revalidateProgress, this, &BackendServer::onRevalidateProgress);
         connect(session_, &BackendSession::results, this, &BackendServer::onResults);
@@ -169,6 +171,8 @@ private:
         } else if (t == QLatin1String(msf_ipc::kReverifyIndex)) {
             session_->reverifyIndex(m.payload.value(QStringLiteral("root")).toString(),
                                     m.payload.value(QStringLiteral("appDir")).toString());
+        } else if (t == QLatin1String(msf_ipc::kApplyTestResult)) {
+            session_->applyTestResult();
         } else if (t == QLatin1String(msf_ipc::kPause)) {
             session_->pause();
         } else if (t == QLatin1String(msf_ipc::kResume)) {
@@ -427,6 +431,29 @@ private:
         m.payload[QStringLiteral("n")] = n;
         send(m);
     }
+    // 0.9.4.135: Test Mode difference report (counts; the GUI decides Yes/No).
+    void onTestModeDiff(qulonglong changed, qulonglong added, qulonglong removed,
+                        qulonglong pairDiff, qulonglong pairsMain, qulonglong pairsScratch) {
+        Message m;
+        m.type = QString::fromLatin1(msf_ipc::kState);
+        m.payload[QStringLiteral("state")] = QStringLiteral("TEST_DIFF");
+        m.payload[QStringLiteral("changed")] = QString::number(changed);
+        m.payload[QStringLiteral("added")] = QString::number(added);
+        m.payload[QStringLiteral("removed")] = QString::number(removed);
+        m.payload[QStringLiteral("pairDiff")] = QString::number(pairDiff);
+        m.payload[QStringLiteral("pairsMain")] = QString::number(pairsMain);
+        m.payload[QStringLiteral("pairsScratch")] = QString::number(pairsScratch);
+        send(m);
+    }
+    // 0.9.4.135: adoption outcome.
+    void onTestApplied(bool ok, QString detail) {
+        Message m;
+        m.type = QString::fromLatin1(msf_ipc::kState);
+        m.payload[QStringLiteral("state")] = QStringLiteral("TEST_APPLIED");
+        m.payload[QStringLiteral("ok")] = ok;
+        m.payload[QStringLiteral("detail")] = detail;
+        send(m);
+    }
     // 0.9.4.134: forced duplicate re-verification counters (0.9.4.134).
     void onReverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
                             qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter) {
@@ -650,4 +677,5 @@ int main(int argc, char** argv) {
     }
     return app.exec();
 }
+
 

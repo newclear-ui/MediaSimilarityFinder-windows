@@ -57,6 +57,7 @@ public:
     void startScan(const BackendScanConfig& cfg) override;
     void loadIndex(const QString& root, const QString& appDir) override;
     void reverifyIndex(const QString& root, const QString& appDir) override;
+    void applyTestResult() override;
     void pause() override;
     void resume() override;
     void cancel() override;
@@ -160,4 +161,5 @@ private:
     void* job_ = nullptr; // HANDLE, void* to keep windows.h out of the header
 #endif
 };
+
 

@@ -25,6 +25,8 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
     connect(session_.get(), &BackendSession::listingProgress, this, &BackendClient::listingProgress);
     connect(session_.get(), &BackendSession::quickLoaded, this, &BackendClient::quickLoaded);
     connect(session_.get(), &BackendSession::reverifyFinished, this, &BackendClient::reverifyFinished);
+    connect(session_.get(), &BackendSession::testModeDiff, this, &BackendClient::testModeDiff);
+    connect(session_.get(), &BackendSession::testApplied, this, &BackendClient::testApplied);
     connect(session_.get(), &BackendSession::revalidateProgress, this, &BackendClient::revalidateProgress);
     connect(session_.get(), &BackendSession::revalidated, this, &BackendClient::revalidated);
     connect(session_.get(), &BackendSession::telemetryReady, this, &BackendClient::telemetryReady);
@@ -108,6 +110,8 @@ void LoopbackBackendClient::loadIndex(const QString& root, const QString& appDir
 void LoopbackBackendClient::reverifyIndex(const QString& root, const QString& appDir) {
     session_->reverifyIndex(root, appDir);
 }
+
+void LoopbackBackendClient::applyTestResult() { session_->applyTestResult(); }
 
 void LoopbackBackendClient::startMonitor(const QStringList& watchRoots, const QStringList& compareRoots,
                                         const QString& appDir, double thresholdPercent,
@@ -197,5 +201,6 @@ BackendMonitorStatus LoopbackBackendClient::lastMonitorStatus() const {
 std::string LoopbackBackendClient::telemetryJsonForTest() const {
     return session_->telemetryJsonForTest();
 }
+
 
 

@@ -141,6 +141,10 @@ void BackendSupervisor::reverifyIndex(const QString& root, const QString& appDir
     sendCommand(msf_ipc::kReverifyIndex, p);
 }
 
+void BackendSupervisor::applyTestResult() {
+    if (processAlive()) sendCommand(msf_ipc::kApplyTestResult, {});
+}
+
 void BackendSupervisor::pause() {
     if (processAlive()) sendCommand(msf_ipc::kPause, {});
 }
@@ -485,6 +489,17 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
                                   payload.value("reanalyzed").toString().toULongLong(),
                                   payload.value("pairsBefore").toString().toULongLong(),
                                   payload.value("pairsAfter").toString().toULongLong());
+        } else if (st == QStringLiteral("TEST_DIFF")) {
+            // 0.9.4.135: Test Mode difference report (zeros = identical).
+            emit testModeDiff(payload.value("changed").toString().toULongLong(),
+                              payload.value("added").toString().toULongLong(),
+                              payload.value("removed").toString().toULongLong(),
+                              payload.value("pairDiff").toString().toULongLong(),
+                              payload.value("pairsMain").toString().toULongLong(),
+                              payload.value("pairsScratch").toString().toULongLong());
+        } else if (st == QStringLiteral("TEST_APPLIED")) {
+            emit testApplied(payload.value("ok").toBool(false),
+                             S(payload.value("detail")));
         } else if (st == QStringLiteral("REVALIDATED")) {
             emit revalidated(payload.value("kept").toInt(0), payload.value("dropped").toInt(0));
         } else if (st == QStringLiteral("REVALIDATE_PROGRESS")) {

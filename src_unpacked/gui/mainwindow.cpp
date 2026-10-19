@@ -128,6 +128,14 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"reverifyWait")) return S("저장된 중복 파일을 확인하고 필요하면 다시 분석합니다.","Checking stored duplicate files and re-analyzing changed ones.");
   if (!std::strcmp(key,"reverifyWaitTitle")) return S("재검증","Re-verification");
   if (!std::strcmp(key,"reverifyDone")) return S("재검증 완료 — 확인 %1 · 변경 %2 · 재분석 %3 · 매치 %4 → %5","Re-verification complete — checked %1, changed %2, re-analyzed %3, pairs %4 -> %5");
+  // 0.9.4.135: Test Mode difference report (Yes/No adoption of the test result).
+  if (!std::strcmp(key,"testDiffTitle")) return S("테스트 결과 반영","Apply test result");
+  if (!std::strcmp(key,"testDiffBody")) return S("테스트 스캔이 본 인덱스와 다릅니다.\n\n내용 변경: %1\n신규: %2\n삭제(스캔 범위): %3\n매치: %4 → %5\n\n테스트 결과를 본 인덱스에 반영할까요?","The test scan differs from the main index.\n\nContent changed: %1\nNew: %2\nRemoved (in scan scope): %3\nPairs: %4 -> %5\n\nApply the test result to the main index?");
+  if (!std::strcmp(key,"testNoDiff")) return S("테스트 스캔 결과가 본 인덱스와 일치합니다.","The test scan matches the main index.");
+  if (!std::strcmp(key,"testNotApplied")) return S("테스트 결과를 반영하지 않았습니다.","Test result not applied.");
+  if (!std::strcmp(key,"testApplying")) return S("테스트 결과를 반영하는 중…","Applying the test result…");
+  if (!std::strcmp(key,"testApplied")) return S("테스트 결과를 본 인덱스에 반영했습니다.","Applied the test result to the main index.");
+  if (!std::strcmp(key,"testApplyFailed")) return S("테스트 결과 반영 실패: %1","Applying the test result failed: %1");
   if (!std::strcmp(key,"start")) return S("검색/업데이트 시작","Start scan/update");
   if (!std::strcmp(key,"pause")) return S("일시정지","Pause");
   if (!std::strcmp(key,"resume")) return S("계속","Resume");
@@ -642,6 +650,8 @@ MainWindow::MainWindow(QWidget* p, BackendClient* backend) : QMainWindow(p) {
   connect(backend_, &BackendClient::matchesBatch, this, &MainWindow::onMatchesBatch);
   connect(backend_, &BackendClient::quickLoaded, this, &MainWindow::onQuickLoaded);
   connect(backend_, &BackendClient::reverifyFinished, this, &MainWindow::onReverifyFinished);
+  connect(backend_, &BackendClient::testModeDiff, this, &MainWindow::onTestModeDiff);
+  connect(backend_, &BackendClient::testApplied, this, &MainWindow::onTestApplied);
   connect(backend_, &BackendClient::revalidated, this, &MainWindow::onRevalidated);
   connect(backend_, &BackendClient::revalidateProgress, this, &MainWindow::onRevalidateProgress);
   connect(backend_, &BackendClient::results, this, &MainWindow::onResults);
@@ -2308,6 +2318,45 @@ void MainWindow::onReverifyFinished(qulonglong members, qulonglong checked, qulo
   scanLog(QString("reverify members=%1 checked=%2 changed=%3 reanalyzed=%4 pairs=%5->%6")
               .arg(members).arg(checked).arg(changed).arg(reanalyzed)
               .arg(pairsBefore).arg(pairsAfter));
+}
+void MainWindow::onTestModeDiff(qulonglong changed, qulonglong added, qulonglong removed,
+                                qulonglong pairDiff, qulonglong pairsMain, qulonglong pairsScratch) {
+  // 0.9.4.135: the completed Test Mode scan compared itself with the main
+  // index. Identical -> a status line; differences -> the user decides whether
+  // to adopt (Yes) or keep the main index untouched (No). Non-modal so the
+  // window stays responsive and the e2e can click the buttons.
+  scanLog(QString("testDiff changed=%1 added=%2 removed=%3 pairDiff=%4 pairs=%5->%6")
+              .arg(changed).arg(added).arg(removed).arg(pairDiff)
+              .arg(pairsMain).arg(pairsScratch));
+  if (changed + added + removed + pairDiff == 0) {
+    statusMsg_->setText(trStr(lang(), "testNoDiff"));
+    return;
+  }
+  if (auto* old = findChild<QMessageBox*>("testDiffBox")) old->close();
+  auto* box = new QMessageBox(QMessageBox::Question, trStr(lang(), "testDiffTitle"),
+                              trStr(lang(), "testDiffBody")
+                                  .arg(changed).arg(added).arg(removed)
+                                  .arg(pairsMain).arg(pairsScratch),
+                              QMessageBox::Yes | QMessageBox::No, this);
+  box->setObjectName("testDiffBox"); // automation hook (backend e2e)
+  box->setAttribute(Qt::WA_DeleteOnClose);
+  box->setWindowModality(Qt::NonModal);
+  connect(box, &QMessageBox::finished, this, [this](int result) {
+    if (result == QMessageBox::Yes) {
+      statusMsg_->setText(trStr(lang(), "testApplying"));
+      if (backend_) backend_->applyTestResult();
+    } else {
+      statusMsg_->setText(trStr(lang(), "testNotApplied"));
+    }
+  });
+  // show(), not open(): QDialog::open() forces the window-modal state, which
+  // the e2e modal-closer timer would close before the buttons can be clicked.
+  box->show();
+}
+void MainWindow::onTestApplied(bool ok, QString detail) {
+  statusMsg_->setText(ok ? trStr(lang(), "testApplied")
+                         : trStr(lang(), "testApplyFailed").arg(detail));
+  scanLog(QString("testApplied ok=%1 %2").arg(ok ? 1 : 0).arg(detail));
 }
 void MainWindow::populateFolderChildren(QTreeWidgetItem* it) {
   if (!it) return;
@@ -4864,6 +4913,7 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
 
 
 

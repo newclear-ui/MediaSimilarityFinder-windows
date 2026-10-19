@@ -187,6 +187,9 @@ public:
     // 0.9.4.134: forced re-verification of stored-duplicate members. Answers
     // through results() (like loadIndex) plus a reverifyFinished counter event.
     virtual void reverifyIndex(const QString& root, const QString& appDir) = 0;
+    // 0.9.4.135: adopt the completed Test Mode result into the main index
+    // (sent only after the user answers Yes to the testModeDiff report).
+    virtual void applyTestResult() = 0;
     virtual void pause() = 0;
     virtual void resume() = 0;
     virtual void cancel() = 0;
@@ -257,6 +260,11 @@ signals:
     // 0.9.4.134: forced duplicate re-verification counters.
     void reverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
                           qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter);
+    // 0.9.4.135: Test Mode difference report (zeros = matches the main index)
+    // and the adoption outcome.
+    void testModeDiff(qulonglong changed, qulonglong added, qulonglong removed,
+                      qulonglong pairDiff, qulonglong pairsMain, qulonglong pairsScratch);
+    void testApplied(bool ok, QString detail);
     void revalidated(int kept, int dropped);
     // 0.9.4.85: engine-version revalidation progress (pairs checked, total).
     void revalidateProgress(qulonglong done, qulonglong total);
@@ -277,5 +285,6 @@ signals:
     // msf_scan.log; the backend never writes that file itself).
     void backendLogLine(const QString& line);
 };
+
 
 

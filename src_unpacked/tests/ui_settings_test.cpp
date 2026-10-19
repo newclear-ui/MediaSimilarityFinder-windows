@@ -268,6 +268,9 @@ int main(int argc, char** argv) {
       "fastRescan", "fastRescanTip",
       "reverify", "reverifyTip", "reverifyRunning", "reverifyWait",
       "reverifyWaitTitle", "reverifyDone",
+      // 0.9.4.135: Test Mode difference report (Yes/No adoption)
+      "testDiffTitle", "testDiffBody", "testNoDiff", "testNotApplied",
+      "testApplying", "testApplied", "testApplyFailed",
     };
     int missing = 0;
     for (const char* k : kKeys) {

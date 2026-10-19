@@ -203,6 +203,10 @@ private slots:
   // 0.9.4.134: completion counters (checked/changed/re-analyzed/pairs before-after).
   void onReverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
                           qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter);
+  // 0.9.4.135: Test Mode difference report (Yes/No adoption) + outcome.
+  void onTestModeDiff(qulonglong changed, qulonglong added, qulonglong removed,
+                      qulonglong pairDiff, qulonglong pairsMain, qulonglong pairsScratch);
+  void onTestApplied(bool ok, QString detail);
   void populateFolderChildren(QTreeWidgetItem*);
   QStringList selectedFiles() const;
   // 0.9.4.103: copy/cut/move/recycle operand (checked files first).
@@ -531,5 +535,6 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
 
 

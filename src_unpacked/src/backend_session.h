@@ -81,6 +81,13 @@ public:
     // the index; then answers through results() exactly like a Load. Reports
     // the counters through reverifyFinished().
     void reverifyIndex(const QString& root, const QString& appDir);
+    // 0.9.134/0.9.4.135: adopt the completed Test Mode result into the main
+    // index (the GUI asks Yes/No after testModeDiff). Copies files, matches,
+    // thumbs, content hashes and meta from the scratch database inside ONE
+    // SQLite transaction via ATTACH -- the main index is either fully replaced
+    // or untouched (cancel/crash rolls back). Refused while busy or when no
+    // completed Test Mode result is pending.
+    void applyTestResult();
     // 0.9.4.105 (F): immediate index reflection for user delete/move. Drops
     // the files/matches/thumbs rows for the given paths in one transaction on
     // the last scan/load root. Refused while a scan owns the index (the same
@@ -126,6 +133,14 @@ signals:
     // 0.9.4.134: forced duplicate re-verification counters (see reverifyIndex).
     void reverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
                           qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter);
+    // 0.9.4.135: a completed Test Mode scan compared itself with the main index.
+    // Non-zero change counts (or a non-empty pair-set difference) mean the user
+    // should be asked whether to adopt the test result. Emitted with zeros when
+    // the scan matches the main index.
+    void testModeDiff(qulonglong changed, qulonglong added, qulonglong removed,
+                      qulonglong pairDiff, qulonglong pairsMain, qulonglong pairsScratch);
+    // 0.9.4.135: applyTestResult outcome (ok=false carries the reason).
+    void testApplied(bool ok, QString detail);
     void revalidated(int kept, int dropped);
     void revalidateProgress(qulonglong done, qulonglong total);
     void results(QVector<GuiFile> files, QStringList matchRows);
@@ -161,6 +176,10 @@ private:
     // 0.9.4.134: same worker-thread rule as runLoadIndex (re-verification reads
     // every duplicate member and can re-analyze a few files).
     void runReverifyIndex(const QString& root, const QString& appDir);
+    // 0.9.4.135: Test Mode diff + adoption worker (comparison reads two
+    // databases and the adoption copies ~dataset-sized tables).
+    void publishTestDiff();
+    void runApplyTestResult();
     // Shared finishing step: publish the engine's stored files+matches through
     // results() (used by Load and Re-verify). Returns the pair count (the
     // loadMatches call inside it does the badge confirmation once).
@@ -181,8 +200,17 @@ private:
     msf::ThumbnailStore thumbs_;
     QString lastAppDir_;
     QString lastRoot_;
+    // 0.9.4.135: Test Mode diff/apply context captured at startScan.
+    QString testScratchDir_;   // per-run scratch appDir (empty for production scans)
+    QString testMainAppDir_;   // the production appDir of the same root
+    QSet<QString> testIgnored_; // ignore list used by that scan (removed-detection)
+    bool testScanImages_ = true;
+    bool testScanVideos_ = true;
+    bool testModePending_ = false; // completed Test Mode result awaiting Yes/No
+    QThread* applyThread_ = nullptr;
     SessionStatus lastStatus_;
     SessionMonitorStatus lastMonStatus_;
 };
+
 
 

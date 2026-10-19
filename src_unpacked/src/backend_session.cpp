@@ -1,6 +1,7 @@
 ﻿// BackendSession implementation (P3a: 0.9.4.69). See backend_session.h.
 #include "backend_session.h"
 
+#include <sqlite3.h>
 #include <QDateTime>
 #include <QDir>
 #include <QHash>
@@ -8,7 +9,11 @@
 #include <QUuid>
 #include <functional>
 #include <sstream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
+#include "backend_log.h"
 #include "file_meta.h"
 #include "gpu_backend.h"
 #include "image_decoder.h"
@@ -77,6 +82,70 @@ static QString testScratchAppDir(const QString& appDir, const QString& root) {
                                   QLatin1Char('-') + stamp + QLatin1Char('-') + nonce);
 }
 
+
+// 0.9.4.135: run one SQL statement, collecting the SQLite error text.
+static bool execSqlQuiet(sqlite3* db, const char* sql, std::string* err) {
+    char* e = nullptr;
+    if (sqlite3_exec(db, sql, nullptr, nullptr, &e) != SQLITE_OK) {
+        if (err && e) *err = e;
+        sqlite3_free(e);
+        return false;
+    }
+    return true;
+}
+
+// 0.9.4.135: Test Mode result adoption. Copies files, matches, thumbs,
+// content hashes, traces and meta from the scratch scan database into the main
+// index database inside ONE transaction (ATTACH + DELETE/INSERT .. SELECT).
+// The main index is either fully replaced by the completed test-scan state or
+// left untouched (SQLite rolls back on any failure). No file swapping, so the
+// WAL sidecars of either database are handled by SQLite itself.
+static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPaths& scratch,
+                               QString* detail) {
+    sqlite3* db = nullptr;
+    const std::string mainPath = msf::path_to_utf8(main.database);
+    if (sqlite3_open(mainPath.c_str(), &db) != SQLITE_OK) {
+        if (db) sqlite3_close(db);
+        *detail = QStringLiteral("main index open failed");
+        return false;
+    }
+    sqlite3_busy_timeout(db, 5000);
+    std::string err;
+    std::string srcPath = msf::path_to_utf8(scratch.database);
+    std::string attach = "ATTACH DATABASE '";
+    for (char ch : srcPath) {
+        if (ch == '\'') attach += "''''";
+        else attach += ch;
+    }
+    attach += "' AS src;";
+    bool ok = execSqlQuiet(db, attach.c_str(), &err);
+    if (ok) ok = execSqlQuiet(db, "BEGIN IMMEDIATE;", &err);
+    // Wholesale adoption: every table the completed test scan produced replaces
+    // the main index content (pairs and thumbs included, so the adopted state
+    // is self-consistent). file_trace is diagnostics but still belongs to the
+    // rows being replaced.
+    for (const char* sql : {
+             "DELETE FROM files; INSERT INTO files SELECT * FROM src.files;",
+             "DELETE FROM matches; INSERT INTO matches SELECT * FROM src.matches;",
+             "DELETE FROM thumbs; INSERT INTO thumbs SELECT * FROM src.thumbs;",
+             "DELETE FROM content_hash; INSERT INTO content_hash SELECT * FROM src.content_hash;",
+             "DELETE FROM file_trace; INSERT INTO file_trace SELECT * FROM src.file_trace;",
+             "DELETE FROM meta; INSERT INTO meta SELECT * FROM src.meta;"}) {
+        if (!ok) break;
+        ok = execSqlQuiet(db, sql, &err);
+    }
+    if (!ok) {
+        execSqlQuiet(db, "ROLLBACK;", nullptr);
+        *detail = QString::fromStdString(err.empty() ? std::string("adopt failed") : err);
+    } else if (!execSqlQuiet(db, "COMMIT;", &err)) {
+        execSqlQuiet(db, "ROLLBACK;", nullptr);
+        *detail = QString::fromStdString(err);
+        ok = false;
+    }
+    execSqlQuiet(db, "DETACH DATABASE src;", nullptr);
+    sqlite3_close(db);
+    return ok;
+}
 void BackendSession::startScan(const QString& root, const QString& appDir, int distance,
                               int cpu, int gpuPercent, bool gpuEnabled,
                               bool scanImages, bool scanVideos,
@@ -87,6 +156,14 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
     const QString effectiveAppDir = testMode ? testScratchAppDir(appDir, root) : appDir;
     lastAppDir_ = effectiveAppDir;
     lastRoot_ = root;
+    // 0.9.4.135: Test Mode diff/adopt context for this scan (empty scratch
+    // dir = production scan, no diff is reported).
+    testModePending_ = false;
+    testScratchDir_ = testMode ? effectiveAppDir : QString();
+    testMainAppDir_ = appDir;
+    testScanImages_ = scanImages;
+    testScanVideos_ = scanVideos;
+    testIgnored_ = ignored;
     thread_ = new QThread(this);
     // P4: the two-axis policy crosses with identical meaning (no Backend
     // reinterpretation). CPU_ONLY forces the GPU lane off here, backend-side;
@@ -183,6 +260,10 @@ void BackendSession::onFinished(QString msg) {
     drainToGui();
     thumbs_.prune(); // drop disk thumbs whose files left the index
     emit finished(msg);
+    // 0.9.4.135: a completed Test Mode scan compares itself with the main index
+    // and offers adoption (the main index is untouched until the user says Yes).
+    if (!testScratchDir_.isEmpty() && !msg.startsWith(QStringLiteral("CANCELLED")))
+        publishTestDiff();
     emit stateChanged(QStringLiteral("READY"));
 }
 
@@ -510,4 +591,134 @@ SessionMonitorStatus BackendSession::convertStatus(const msf::MonitorStatus& s) 
     out.pending = (qulonglong)s.pending;
     return out;
 }
+
+
+
+
+// 0.9.4.135: compare the completed Test Mode scan's index with the main index.
+// Counts only -- the UI asks Yes/No and adoption replaces the whole state.
+void BackendSession::publishTestDiff() {
+    msf::IndexPaths mainPaths, scratchPaths;
+    const auto rootPath = msf::path_from_utf8(lastRoot_.toStdString());
+    if (!msf::IndexManager::resolve(msf::path_from_utf8(testMainAppDir_.toStdString()), rootPath, mainPaths) ||
+        !msf::IndexManager::resolve(msf::path_from_utf8(testScratchDir_.toStdString()), rootPath, scratchPaths)) {
+        return;
+    }
+    msf::Database mainDb, scratchDb;
+    if (!mainDb.open(msf::path_to_utf8(mainPaths.database)) || !mainDb.initialize()) return;
+    if (!scratchDb.open(msf::path_to_utf8(scratchPaths.database)) || !scratchDb.initialize()) return;
+    const auto mainRows = mainDb.all();
+    const auto scratchRows = scratchDb.all();
+    const auto mainPairs = mainDb.loadMatches();
+    const auto scratchPairs = scratchDb.loadMatches();
+    mainDb.close();
+    scratchDb.close();
+    std::unordered_map<std::string, const msf::FileState*> mainByPath;
+    mainByPath.reserve(mainRows.size() * 2 + 1);
+    for (const auto& x : mainRows) mainByPath.emplace(x.path, &x);
+    std::unordered_set<std::string> scratchSeen;
+    scratchSeen.reserve(scratchRows.size() * 2 + 1);
+    qulonglong changed = 0, added = 0, removed = 0;
+    for (const auto& x : scratchRows) {
+        scratchSeen.insert(x.path);
+        const auto it = mainByPath.find(x.path);
+        if (it == mainByPath.end()) { ++added; continue; }
+        const auto& m = *it->second;
+        if (m.fingerprint != x.fingerprint || m.mirrorFingerprint != x.mirrorFingerprint ||
+            m.crop4x3 != x.crop4x3 || m.crop1x1 != x.crop1x1 || m.crop9x16 != x.crop9x16 ||
+            m.mirrorCrop4x3 != x.mirrorCrop4x3 || m.mirrorCrop1x1 != x.mirrorCrop1x1 ||
+            m.mirrorCrop9x16 != x.mirrorCrop9x16 || m.size != x.size)
+            ++changed;
+    }
+    for (const auto& m : mainRows) {
+        if (scratchSeen.find(m.path) != scratchSeen.end()) continue;
+        // The scratch scan only produced rows inside its scope and outside the
+        // ignore list; anything else in the main index is not "removed".
+        const bool vid = m.kind == (int)msf::MediaKind::Video;
+        if (vid ? !testScanVideos_ : !testScanImages_) continue;
+        if (testIgnored_.contains(QString::fromStdString(m.path))) continue;
+        ++removed;
+    }
+    const auto pairKeyOf = [](const msf::StoredMatch& m) {
+        return m.left <= m.right ? m.left + '\x1f' + m.right : m.right + '\x1f' + m.left;
+    };
+    std::unordered_set<std::string> mainPairKeys, scratchPairKeys;
+    mainPairKeys.reserve(mainPairs.size() * 2 + 1);
+    scratchPairKeys.reserve(scratchPairs.size() * 2 + 1);
+    for (const auto& p : mainPairs) mainPairKeys.insert(pairKeyOf(p));
+    qulonglong pairDiff = 0;
+    for (const auto& p : scratchPairs) {
+        const std::string k = pairKeyOf(p);
+        scratchPairKeys.insert(k);
+        if (mainPairKeys.find(k) == mainPairKeys.end()) ++pairDiff;
+    }
+    for (const auto& k : mainPairKeys)
+        if (scratchPairKeys.find(k) == scratchPairKeys.end()) ++pairDiff;
+    const bool differs = changed + added + removed + pairDiff > 0;
+    testModePending_ = differs;
+    emit testModeDiff(changed, added, removed, pairDiff,
+                      (qulonglong)mainPairs.size(), (qulonglong)scratchPairs.size());
+}
+
+// 0.9.4.135: user said Yes -- adopt the completed Test Mode result.
+void BackendSession::applyTestResult() {
+    if (scanning_ || loadThread_ || applyThread_ || !testModePending_) {
+        // 0.9.4.135: the refusal reason rides the backend log ([sv]) so a rare
+        // timing refusal in automation is diagnosable without a debugger.
+        const QString why = QStringLiteral("busy scanning=%1 load=%2 apply=%3 pending=%4")
+                                .arg(scanning_ ? 1 : 0).arg(loadThread_ ? 1 : 0)
+                                .arg(applyThread_ ? 1 : 0).arg(testModePending_ ? 1 : 0);
+        msf::backendLogLine(("testApply refused " + why).toStdString());
+        emit testApplied(false, why);
+        return;
+    }
+    if (monitorRunning()) {
+        emit testApplied(false, QStringLiteral("monitor running"));
+        return;
+    }
+    // Release the finished test worker's scratch database handles first.
+    teardownWorker();
+    applyThread_ = QThread::create([this] { runApplyTestResult(); });
+    connect(applyThread_, &QThread::finished, this, [this] {
+        if (applyThread_) { applyThread_->deleteLater(); applyThread_ = nullptr; }
+    });
+    applyThread_->start();
+}
+
+void BackendSession::runApplyTestResult() {
+    if (testScratchDir_.isEmpty() || testMainAppDir_.isEmpty()) {
+        emit testApplied(false, QStringLiteral("no test context"));
+        return;
+    }
+    msf::IndexPaths mainPaths, scratchPaths;
+    const auto rootPath = msf::path_from_utf8(lastRoot_.toStdString());
+    if (!msf::IndexManager::resolve(msf::path_from_utf8(testMainAppDir_.toStdString()), rootPath, mainPaths) ||
+        !msf::IndexManager::resolve(msf::path_from_utf8(testScratchDir_.toStdString()), rootPath, scratchPaths)) {
+        emit testApplied(false, QStringLiteral("index resolve failed"));
+        return;
+    }
+    // Create/initialize the main index tables when this root has never been
+    // scanned in production, so the adopt transaction always has targets.
+    {
+        msf::Database mainDb;
+        if (!mainDb.open(msf::path_to_utf8(mainPaths.database)) || !mainDb.initialize()) {
+            emit testApplied(false, QStringLiteral("main index open failed"));
+            return;
+        }
+        mainDb.close();
+    }
+    QString detail;
+    const bool ok = adoptIndexDatabase(mainPaths, scratchPaths, &detail);
+    msf::backendLogLine(QString("testApply ok=%1 detail=%2").arg(ok ? 1 : 0).arg(detail).toStdString());
+    if (ok) {
+        // Future thumbnails/forget calls belong to the production index again.
+        lastAppDir_ = testMainAppDir_;
+        testModePending_ = false;
+        thumbs_.close();
+        thumbs_.ensureOpen(lastAppDir_.toStdString(), lastRoot_.toStdString());
+        thumbs_.prune();
+    }
+    emit testApplied(ok, detail);
+}
+
 

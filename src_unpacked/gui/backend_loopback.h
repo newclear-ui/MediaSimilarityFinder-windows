@@ -21,6 +21,7 @@ public:
     void startScan(const BackendScanConfig& cfg) override;
     void loadIndex(const QString& root, const QString& appDir) override;
     void reverifyIndex(const QString& root, const QString& appDir) override;
+    void applyTestResult() override;
     void ensureRunning() override {} // loopback needs no process
     void pause() override { session_->pause(); }
     void resume() override { session_->resume(); }
@@ -46,4 +47,5 @@ public:
 private:
     std::unique_ptr<BackendSession> session_;
 };
+
 

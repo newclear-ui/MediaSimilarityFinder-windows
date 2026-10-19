@@ -1,4 +1,4 @@
-// Backend IPC codec (P3b: 0.9.4.69). Line-oriented JSON over stdio:
+﻿// Backend IPC codec (P3b: 0.9.4.69). Line-oriented JSON over stdio:
 // GUI writes commands to the Backend stdin, the Backend writes events to
 // stdout (flushed per message) and diagnostics to stderr. Shared by the
 // Backend server and the GUI supervisor so both ends speak one framing.
@@ -39,6 +39,9 @@ inline const char* kLoadIndex = "LOAD_INDEX";
 // the index in place, then answer through results() like LOAD_INDEX. Additive
 // command; no protocol bump (both ends ship together).
 inline const char* kReverifyIndex = "REVERIFY_INDEX";
+// 0.9.4.135: adopt the completed Test Mode result into the main index (the GUI
+// sends this only after the user answers Yes to the difference report).
+inline const char* kApplyTestResult = "APPLY_TEST_RESULT";
 inline const char* kPause = "PAUSE";
 inline const char* kResume = "RESUME";
 inline const char* kCancel = "CANCEL";
@@ -70,3 +73,4 @@ inline const char* kFileMeta = "FILE_META";
 inline const char* kError = "ERROR";
 
 } // namespace msf_ipc
+

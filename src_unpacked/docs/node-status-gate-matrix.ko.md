@@ -1,6 +1,6 @@
 ﻿# Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
-기준: `0.9.4.134` (빠른 재스캔 모드 설정 + 중복 파일 강제 재검증) · CPU CTest 125/125 · GPU CTest 126/126
+기준: `0.9.4.135` (Test Mode 차이 리포트 + Yes/No 인덱스 채택) · CPU CTest 125/125 · GPU CTest 126/126
 최종 갱신: 2026-10-18
 
 ## 이 문서의 역할
@@ -163,4 +163,5 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 
 `kEngineVersion 1.5.1` · `kDatabaseVersion 1.0.6` · `kBenchmarkSchemaVersion 9` ·
 `kCacheFormatVersion 9`. 0.9.4.82에서 `kEngineVersion`을 1.5.0→1.5.1로 상향(EXIF 회전 이미지 fingerprint가 최대 ±1 LSB 바뀌어 저장 쌍 재검증). DB/schema/cache 불변.
+
 
