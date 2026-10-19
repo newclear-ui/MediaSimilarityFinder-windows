@@ -32,9 +32,28 @@ enum class ExecutionResourceStrategy { Auto, CpuOnly, GpuMax };
 class QLineEdit; class QSystemTrayIcon; class QTreeWidget; class QTreeWidgetItem;
 class QListWidget; class QListWidgetItem; class QPushButton; class QProgressBar;
 class QLabel; class QSpinBox; class QStackedWidget; class QSlider;
+class QMouseEvent;
 class QToolButton; class QSplitter; class QCheckBox; class QTimer; class QStatusBar;
 class QTabWidget; class QFormLayout; class QToolBar; class QMenu; class QAction;
 class QStyledItemDelegate; class QCloseEvent; class QDialog;
+
+// 0.9.4.136: preview-size slider with a visible 1.0x reference marker and a
+// ratio bubble while dragging. The reference value is the product's standard
+// preview size (zoomChanged's default 128); values map to ratios of it.
+class ZoomSlider : public QSlider {
+public:
+    explicit ZoomSlider(QWidget* parent = nullptr);
+    // Draw the reference line/tick at this slider value; <= minimum disables it.
+    void setReferenceValue(int v) { reference_ = v; update(); }
+protected:
+    void paintEvent(QPaintEvent* ev) override;
+    void mousePressEvent(QMouseEvent* ev) override;
+    void mouseReleaseEvent(QMouseEvent* ev) override;
+private:
+    int handleCenterX() const;
+    int reference_ = 0;
+    bool dragging_ = false;
+};
 
 // ---------------------------------------------------------------- language
 enum class UiLang { Ko, En };
@@ -519,7 +538,7 @@ private:
   void gridCheckChanged(QListWidgetItem*);
   // right
   QLabel* detailTitle_=nullptr; QLabel* detailSim_=nullptr; QLabel* detailCount_=nullptr;
-  QToolButton *viewGrid_=nullptr,*viewList_=nullptr; QSlider* zoom_=nullptr;
+  QToolButton *viewGrid_=nullptr,*viewList_=nullptr; ZoomSlider* zoom_=nullptr;
   QStackedWidget* viewStack_=nullptr; QListWidget* grid_=nullptr; QTreeWidget* list_=nullptr;
   QTabWidget* detailTabs_=nullptr; QLabel* preview_=nullptr; QFormLayout* detailForm_=nullptr;
   QLabel *exifLabel_=nullptr,*simLabel_=nullptr,*hashLabel_=nullptr; QProgressBar* simBar_=nullptr;
@@ -535,6 +554,7 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
 
 
 

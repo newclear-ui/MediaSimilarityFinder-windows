@@ -1,4 +1,4 @@
-// GUI similar-group scroll regression test (0.9.4.61).
+﻿// GUI similar-group scroll regression test (0.9.4.61).
 //
 // Root cause: thumbnail starvation drove a FULL widget-list rebuild
 // (tree->clear()/grid->clear() + recreate + scroll restore) on nearly every
@@ -26,6 +26,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QSlider>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -342,6 +343,10 @@ int main(int argc, char** argv) {
         check(fileGrid != nullptr, "right file grid found");
         if (fileGrid) {
             QMetaObject::invokeMethod(&w, "setViewMode", Q_ARG(int, 0)); // right grid mode
+            QApplication::processEvents();
+            // 0.9.4.136: the preview-size gauge is active only in icon-grid view.
+            auto* zoomSlider = w.findChild<QSlider*>("zoomSlider");
+            check(zoomSlider != nullptr && zoomSlider->isEnabled(), "zoom slider enabled in grid view");
             if (auto* first = grid->item(0)) grid->setCurrentItem(first);
             QApplication::processEvents();
             std::cout << "  [info] fileGrid items=" << fileGrid->count() << "\n";
@@ -602,6 +607,10 @@ int main(int argc, char** argv) {
             QApplication::processEvents();
             QMetaObject::invokeMethod(&w, "setViewMode", Q_ARG(int, 1)); // right list
             QApplication::processEvents();
+            // 0.9.4.136: list view disables (and grays) the preview-size gauge.
+            auto* zoomSliderList = w.findChild<QSlider*>("zoomSlider");
+            check(zoomSliderList != nullptr && !zoomSliderList->isEnabled(),
+                  "zoom slider disabled in list view");
             if (rlist->topLevelItemCount() > 0) {
                 if (auto* f = rlist->topLevelItem(0)) rlist->setCurrentItem(f);
                 QApplication::processEvents();
@@ -886,3 +895,4 @@ int main(int argc, char** argv) {
               << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+

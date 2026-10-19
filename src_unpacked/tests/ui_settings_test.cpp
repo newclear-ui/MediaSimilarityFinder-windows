@@ -1,4 +1,4 @@
-// Cross-process QSettings round-trip probe for the main window UI state.
+﻿// Cross-process QSettings round-trip probe for the main window UI state.
 //
 // --probe-write <dir> <W> <H>: build the window, resize it, destroy it
 //    (the destructor persists geometry/splitter/headers), then confirm the
@@ -271,6 +271,8 @@ int main(int argc, char** argv) {
       // 0.9.4.135: Test Mode difference report (Yes/No adoption)
       "testDiffTitle", "testDiffBody", "testNoDiff", "testNotApplied",
       "testApplying", "testApplied", "testApplyFailed",
+      // 0.9.4.136: preview-size gauge (1.0x marker/drag ratio)
+      "zoomTip",
     };
     int missing = 0;
     for (const char* k : kKeys) {
@@ -454,3 +456,4 @@ int main(int argc, char** argv) {
   }
   std::cerr << "unknown mode\n"; return 2;
 }
+

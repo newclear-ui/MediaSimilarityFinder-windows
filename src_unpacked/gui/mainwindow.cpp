@@ -66,6 +66,9 @@
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QPainter>
+#include <QMouseEvent>
+#include <QFontMetrics>
+#include <QStyleOptionSlider>
 #include <QPointer>
 #include <QSystemTrayIcon>
 #include <QTabWidget>
@@ -334,6 +337,8 @@ QString trStr(UiLang lang, const char* key) {
   // multithreaded scans); the system-wide mean makes the difference explicit.
   if (!std::strcmp(key,"detailLogCpuProc")) return S("프로세스","process");
   if (!std::strcmp(key,"detailLogCpuSys")) return S("시스템","system");
+  // 0.9.4.136: preview-size gauge (1.0x marker + drag ratio bubble).
+  if (!std::strcmp(key,"zoomTip")) return S("미리보기 크기 (1.0 = 기본)","Preview size (1.0 = default)");
   if (!std::strcmp(key,"detailLogMemMax")) return S("메모리 최대","Peak memory");
   if (!std::strcmp(key,"detailLogGpuDuty")) return S("GPU 듀티","GPU duty");
   if (!std::strcmp(key,"detailLogIo")) return S("디스크 I/O","Disk I/O");
@@ -627,6 +632,88 @@ void installQtMessageLog(const QString& path) {
   g_qtMsgPath = p;
   qInstallMessageHandler(qtMessageLogHandler);
 }
+// 0.9.4.136: preview-size slider. Requirements from the field request:
+//  - a visible marker at the 1.0x standard preview size (reference_ <= minimum
+//    means "no marker"),
+//  - the current ratio (0.5, 1.1, 1.5, ...) shown while the handle is dragged,
+//  - the whole control grays out via Qt's disabled style in list view
+//    (setViewMode disables it; this class only dims its own marker there).
+ZoomSlider::ZoomSlider(QWidget* parent) : QSlider(Qt::Horizontal, parent) {
+    // Room above the groove for the ratio bubble; the row otherwise sizes the
+    // slider from the default style height.
+    setMinimumHeight(30);
+    // Repaint the bubble as the value changes while dragging (mouseMove on the
+    // groove also emits valueChanged).
+    connect(this, &QSlider::valueChanged, this, [this](int) { update(); });
+}
+
+int ZoomSlider::handleCenterX() const {
+    QStyleOptionSlider opt;
+    initStyleOption(&opt);
+    const QRect groove =
+        style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, this);
+    const int hw = style()->pixelMetric(QStyle::PM_SliderLength, &opt, this);
+    const int span = std::max(0, groove.width() - hw);
+    return groove.left() + hw / 2 +
+           QStyle::sliderPositionFromValue(minimum(), maximum(), value(), span, opt.upsideDown);
+}
+
+void ZoomSlider::paintEvent(QPaintEvent* ev) {
+    QSlider::paintEvent(ev);
+    QStyleOptionSlider opt;
+    initStyleOption(&opt);
+    const QRect groove =
+        style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, this);
+    const int hw = style()->pixelMetric(QStyle::PM_SliderLength, &opt, this);
+    const int span = std::max(0, groove.width() - hw);
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    // 1.0 reference: light gray vertical line + small tick above the groove.
+    if (reference_ > minimum() && reference_ < maximum()) {
+        const int x = groove.left() + hw / 2 +
+                      QStyle::sliderPositionFromValue(minimum(), maximum(), reference_, span,
+                                                      opt.upsideDown);
+        const int alpha = isEnabled() ? 150 : 70;
+        p.setPen(QPen(QColor(120, 120, 120, alpha), 1));
+        p.drawLine(x, groove.top(), x, groove.bottom());
+        const int tickTop = std::max(0, groove.top() - 6);
+        QPolygon tri;
+        tri << QPoint(x - 3, tickTop) << QPoint(x + 3, tickTop) << QPoint(x, tickTop + 4);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(120, 120, 120, alpha));
+        p.drawPolygon(tri);
+    }
+    // Ratio bubble above the handle while dragging (e.g. 0.5, 1.1, 1.5).
+    if (dragging_ && isEnabled() && reference_ > 0) {
+        const double ratio = (double)value() / (double)reference_;
+        const QString text = QString::number(ratio, 'f', 1);
+        QFont f = font();
+        if (f.pointSizeF() > 8.5) f.setPointSizeF(f.pointSizeF() - 1.0);
+        p.setFont(f);
+        const QFontMetrics fm(f);
+        const int bw = fm.horizontalAdvance(text) + 12;
+        const int bh = fm.height() + 4;
+        int x = handleCenterX() - bw / 2;
+        x = std::clamp(x, 0, std::max(0, width() - bw));
+        const QRect bubble(x, 0, bw, bh);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(45, 45, 45, 215));
+        p.drawRoundedRect(bubble, 4, 4);
+        p.setPen(Qt::white);
+        p.drawText(bubble, Qt::AlignCenter, text);
+    }
+}
+
+void ZoomSlider::mousePressEvent(QMouseEvent* ev) {
+    if (ev->button() == Qt::LeftButton) { dragging_ = true; update(); }
+    QSlider::mousePressEvent(ev);
+}
+
+void ZoomSlider::mouseReleaseEvent(QMouseEvent* ev) {
+    if (ev->button() == Qt::LeftButton) { dragging_ = false; update(); }
+    QSlider::mouseReleaseEvent(ev);
+}
+
 MainWindow::MainWindow(QWidget* p, BackendClient* backend) : QMainWindow(p) {
   const QStringList ig0 = QSettings().value("ui/ignored").toStringList();
   ignored_ = QSet<QString>(ig0.begin(), ig0.end());
@@ -1169,7 +1256,13 @@ void MainWindow::buildRight(QWidget* w) {
   viewGrid_->setChecked(true);
   connect(viewGrid_, &QToolButton::clicked, this, [this] { setViewMode(0); });
   connect(viewList_, &QToolButton::clicked, this, [this] { setViewMode(1); });
-  zoom_ = new QSlider(Qt::Horizontal, w); zoom_->setRange(48, 256); zoom_->setValue(128); zoom_->setFixedWidth(130);
+  // 0.9.4.136: preview-size gauge with a 1.0x reference marker at the standard
+  // preview size (128) and a ratio bubble during drag; setViewMode() disables
+  // it (gray) in list view.
+  zoom_ = new ZoomSlider(w); zoom_->setObjectName("zoomSlider"); // automation hook
+  zoom_->setRange(48, 256); zoom_->setValue(128); zoom_->setFixedWidth(130);
+  zoom_->setReferenceValue(128);
+  zoom_->setToolTip(trStr(lang(), "zoomTip"));
   connect(zoom_, &QSlider::valueChanged, this, &MainWindow::zoomChanged);
   head->addStretch(1); head->addWidget(detailCount_);
   head->addWidget(viewGrid_); head->addWidget(viewList_); head->addWidget(zoom_);
@@ -1350,6 +1443,7 @@ void MainWindow::applyStaticTexts() {
   unignoreBtn_->setText(trStr(l, "unignore"));
   clearIgnoreBtn_->setText(trStr(l, "clearIgnored"));
   viewGrid_->setToolTip(trStr(l, "viewGrid")); viewList_->setToolTip(trStr(l, "viewList"));
+  if (zoom_) zoom_->setToolTip(trStr(l, "zoomTip"));
   list_->setHeaderLabels({"", trStr(l, "colFile"), trStr(l, "similarity"), trStr(l, "resolution"),
                           trStr(l, "format"), trStr(l, "fileSize"), trStr(l, "colDate")});
   detailTabs_->setTabText(0, trStr(l, "tabDetail")); detailTabs_->setTabText(1, trStr(l, "tabExif"));
@@ -3528,6 +3622,9 @@ void MainWindow::onThumbReady(quint64 requestId, const ThumbResult& thumb) {
 void MainWindow::setViewMode(int i) {
   viewGrid_->setChecked(i == 0); viewList_->setChecked(i == 1);
   viewStack_->setCurrentIndex(i == 1 ? 1 : 0);
+  // 0.9.4.136: the preview-size gauge only applies to the icon grid; in list
+  // view it is disabled and renders gray (Qt's disabled style).
+  zoom_->setEnabled(i == 0);
 }
 void MainWindow::zoomChanged(int v) { grid_->setIconSize(QSize(v, v)); refreshFileViews(); }
 static QString pctText(double v, bool ref, UiLang l, int identity) {
@@ -4913,6 +5010,10 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
+
+
+
 
 
 
