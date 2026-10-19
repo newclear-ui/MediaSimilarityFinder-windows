@@ -1,4 +1,4 @@
-// BackendSession implementation (P3a: 0.9.4.69). See backend_session.h.
+﻿// BackendSession implementation (P3a: 0.9.4.69). See backend_session.h.
 #include "backend_session.h"
 
 #include <QDateTime>
@@ -81,7 +81,8 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
                               int cpu, int gpuPercent, bool gpuEnabled,
                               bool scanImages, bool scanVideos,
                               const QSet<QString>& ignored, bool detailedLog,
-                              int cpuMode, int strategy, bool testMode, int analyzeMode) {
+                              int cpuMode, int strategy, bool testMode, int analyzeMode,
+                              bool fastRescan) {
     teardownWorker();
     const QString effectiveAppDir = testMode ? testScratchAppDir(appDir, root) : appDir;
     lastAppDir_ = effectiveAppDir;
@@ -98,6 +99,7 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
                           : msf::ResourceMode::Custom;
     worker_->setResourceMode(mode);
     worker_->setAnalyzeMode(msf::analyzeModeFromInt(analyzeMode));
+    worker_->setFastRescan(fastRescan);
     worker_->setIgnored(ignored);
     worker_->setDetailedLog(detailedLog);
     worker_->moveToThread(thread_);
@@ -373,9 +375,17 @@ void BackendSession::runLoadIndex(const QString& root, const QString& appDir) {
     // 0.9.4.116: drop stale rows first so the Load list never shows deleted
     // files as phantom members (auto-repair; an offline root is a no-op).
     engine.cleanupMissingOnDisk(root.toStdString());
+    const int loaded = publishIndexContent(engine);
+    engine.close();
+    emit quickLoaded(loaded);
+}
+
+// 0.9.4.134: shared finish for Load and Re-verify. The engine's loadMatches
+// already carries the content-identity flag (quick-hash candidate gate +
+// full-content confirmation); results() owns the file list and pair rows.
+int BackendSession::publishIndexContent(msf::MediaSearchEngine& engine) {
     const auto states = engine.storedFiles();
     const auto matches = engine.loadMatches();
-    engine.close();
     QVector<GuiFile> files;
     files.reserve((int)states.size());
     for (const auto& f : states) {
@@ -388,18 +398,48 @@ void BackendSession::runLoadIndex(const QString& root, const QString& appDir) {
     }
     QStringList rows;
     rows.reserve((int)matches.size());
-    // 0.9.4.106/0.9.4.113/0.9.4.115: the engine's loadMatches already carries
-    // the content-identity flag (quick-hash candidate gate + full-content
-    // confirmation). The earlier local recompute here still used the quick
-    // hash only, so the Load badge kept the pre-0.9.4.113 mislabel rule.
     for (const auto& m : matches) {
         const QString lp = QString::fromStdString(m.leftPath);
         const QString rp = QString::fromStdString(m.rightPath);
         rows << (lp + "\t" + rp + "\t" + QString::number(m.percent, 'f', 1)
                  + "\t" + (m.contentIdentical ? "1" : "0"));
     }
-    emit quickLoaded((int)matches.size());
     emit results(files, rows);
+    return (int)matches.size();
+}
+
+void BackendSession::reverifyIndex(const QString& root, const QString& appDir) {
+    stopLoad();
+    loadThread_ = QThread::create([this, root, appDir] { runReverifyIndex(root, appDir); });
+    connect(loadThread_, &QThread::finished, this, [this] {
+        if (loadThread_) { loadThread_->deleteLater(); loadThread_ = nullptr; }
+    });
+    loadThread_->start();
+}
+
+void BackendSession::runReverifyIndex(const QString& root, const QString& appDir) {
+    msf::MediaSearchEngine engine;
+    if (!engine.openIndexForRoot(root.toStdString(), appDir.toStdString())) {
+        emit failed(QStringLiteral("reverify index failed: %1").arg(root));
+        return;
+    }
+    lastRoot_ = root;
+    lastAppDir_ = appDir;
+    engine.cleanupMissingOnDisk(root.toStdString());
+    msf::MediaSearchEngine::ReverifyStats st;
+    msf::ScanControl ctl;
+    if (!engine.reverifyStoredDuplicates(&ctl, &st)) {
+        engine.close();
+        emit failed(QStringLiteral("reverify cancelled or failed"));
+        return;
+    }
+    // 0.9.4.134: results first, counters after, so the completion status text
+    // (rendered by the GUI from reverifyFinished) is the final message.
+    publishIndexContent(engine);
+    engine.close();
+    emit reverifyFinished((qulonglong)st.members, (qulonglong)st.checked,
+                          (qulonglong)st.changed, (qulonglong)st.reanalyzed,
+                          (qulonglong)st.pairsBefore, (qulonglong)st.pairsAfter);
 }
 
 bool BackendSession::forgetPaths(const QStringList& paths) {
@@ -470,3 +510,4 @@ SessionMonitorStatus BackendSession::convertStatus(const msf::MonitorStatus& s) 
     out.pending = (qulonglong)s.pending;
     return out;
 }
+

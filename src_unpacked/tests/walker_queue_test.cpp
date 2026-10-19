@@ -303,6 +303,90 @@ int main(int argc, char** argv) {
     }
     fs::remove_all(d4, ec);
   }
+  // I. Fast-rescan integrity mode (0.9.4.134): a content change that preserves
+  // (size, mtime) is trusted (not analyzed) in fast mode and caught by the
+  // quick hash in strict mode -- the exact trade the setting exposes.
+  {
+    auto d5 = fs::temp_directory_path() / "msf_walker_test5";
+    fs::remove_all(d5, ec);
+    fs::create_directories(d5 / "media", ec);
+    fs::create_directories(d5 / "appdir", ec);
+    for (int i = 0; i < 4; ++i) bmp(d5 / "media" / ("f" + std::to_string(i) + ".bmp"));
+    const std::string root5 = (d5 / "media").string(), ad5 = (d5 / "appdir").string();
+    {
+      msf::MediaSearchEngine e;
+      check(e.openIndexForRoot(root5, ad5), "fast-open");
+      const msf::SearchReport r = e.scan(root5, 8, nullptr);
+      check(r.analyzed == 4 && r.groups == 6, "fast-seed");
+      e.close();
+    }
+    const auto target = d5 / "media" / "f0.bmp";
+    const auto oldTime = fs::last_write_time(target, ec);
+    {
+      std::fstream f(target, std::ios::in | std::ios::out | std::ios::binary);
+      f.seekp(54); // first pixel byte (same size, different content)
+      for (int i = 0; i < 64; ++i) f.put((char)0x5A);
+    }
+    fs::last_write_time(target, oldTime, ec); // preserve mtime exactly
+    {
+      msf::MediaSearchEngine e;
+      check(e.openIndexForRoot(root5, ad5), "fast-open2");
+      msf::ScanControl c;
+      c.fastRescan = true;
+      const msf::SearchReport r = e.scan(root5, 8, &c);
+      check(r.analyzed == 0 && r.unchanged == 4, "fast-trusts-size-mtime");
+      e.close();
+    }
+    {
+      msf::MediaSearchEngine e;
+      check(e.openIndexForRoot(root5, ad5), "fast-open3");
+      msf::ScanControl c;
+      c.fastRescan = false;
+      const msf::SearchReport r = e.scan(root5, 8, &c);
+      check(r.analyzed == 1 && r.unchanged == 3, "strict-detects-hash-change");
+      e.close();
+    }
+    fs::remove_all(d5, ec);
+  }
+  // J. Forced duplicate re-verification (0.9.4.134): the same preserved
+  // (size, mtime) edit that fast mode misses is caught by re-reading the
+  // member hashes; the changed file is re-analyzed and its pairs drop.
+  {
+    auto d6 = fs::temp_directory_path() / "msf_walker_test6";
+    fs::remove_all(d6, ec);
+    fs::create_directories(d6 / "media", ec);
+    fs::create_directories(d6 / "appdir", ec);
+    for (int i = 0; i < 6; ++i) bmp(d6 / "media" / ("r" + std::to_string(i) + ".bmp"));
+    const std::string root6 = (d6 / "media").string(), ad6 = (d6 / "appdir").string();
+    {
+      msf::MediaSearchEngine e;
+      check(e.openIndexForRoot(root6, ad6), "reverify-open");
+      const msf::SearchReport r = e.scan(root6, 8, nullptr);
+      check(r.groups == 15, "reverify-seed");
+      // The GUI worker persists the accumulated set; an engine-only caller
+      // must do it explicitly (re-verification reads the STORED pair set).
+      check(e.saveMatches(r.matches), "reverify-store");
+      e.close();
+    }
+    const auto target = d6 / "media" / "r0.bmp";
+    const auto oldTime = fs::last_write_time(target, ec);
+    {
+      std::fstream f(target, std::ios::in | std::ios::out | std::ios::binary);
+      f.seekp(54); // overwrite the whole pixel area: uniform image, same size
+      for (int i = 0; i < 8 * 8 * 3; ++i) f.put((char)0x55);
+    }
+    fs::last_write_time(target, oldTime, ec);
+    msf::MediaSearchEngine e;
+    check(e.openIndexForRoot(root6, ad6), "reverify-open2");
+    msf::MediaSearchEngine::ReverifyStats st;
+    check(e.reverifyStoredDuplicates(nullptr, &st), "reverify-ok");
+    check(st.members == 6 && st.checked == 6, "reverify-members");
+    check(st.changed == 1 && st.reanalyzed == 1, "reverify-detected-and-reanalyzed");
+    check(st.pairsBefore == 15 && st.pairsAfter == 10, "reverify-pairs-updated");
+    check(e.loadMatches().size() == 10, "reverify-persisted");
+    e.close();
+    fs::remove_all(d6, ec);
+  }
   // H. Displayed result-set telemetry (0.9.4.131). Case D's Sequential scan
   // left a complete stored set and the 0.9.4.130 baseline. A Hybrid rescan over
   // unchanged files recomputes NOTHING (targeted pass, no changed files) yet

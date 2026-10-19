@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -40,7 +40,12 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
  // walk reconciliation used plain remove() (files row only), so deleted files
  // survived as match pairs and kept showing as phantom group members.
  bool forgetNoTransaction(const std::vector<std::string>& paths);
-  bool saveMatches(const std::vector<StoredMatch>& matches); std::vector<StoredMatch> loadMatches() const;
+  bool saveMatches(const std::vector<StoredMatch>& matches);
+  // 0.9.4.134: same wholesale replace without its own BEGIN/COMMIT, for callers
+  // that must update rows and pairs in ONE transaction (forced re-verification:
+  // a cancel rolls both back). Never call outside an open transaction.
+  bool saveMatchesNoTransaction(const std::vector<StoredMatch>& matches);
+  std::vector<StoredMatch> loadMatches() const;
   // Scan-trace writers (same-transaction, called from the scan worker thread
   // only). traceAdmit inserts/resets the row at admission; traceStart stamps
   // heavy-work start for one unit; traceFinish stamps settlement + outcome.
@@ -98,8 +103,10 @@ private:
     void* removeStmt_=nullptr;
     void* containsStmt_=nullptr;
     bool exec(const char* sql) const;
+    bool saveMatchesCore(const std::vector<StoredMatch>& matches);
     bool prepareStatements();
     void finalizeStatements();
     bool forgetRows(const std::vector<std::string>& paths);
 };
 }
+

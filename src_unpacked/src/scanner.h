@@ -24,9 +24,19 @@ public:
     // Internal producer/consumer failure can stop the walk without rewriting
     // the user's cancel flag (which has distinct UI/terminal semantics).
     std::function<bool()> shouldStop;
+    // 0.9.4.134 fast-rescan: when this predicate returns true for a file the
+    // 64 KiB quick hash is NOT read (the engine only asks for unchanged rows
+    // whose size+mtime match). quickHash stays empty for those entries; the
+    // caller must treat "empty" as "skipped", never as a mismatch. The
+    // predicate runs on hash-worker threads and must be read-only/thread-safe.
+    std::function<bool(const FileState&)> skipQuickHash;
   };
   static bool isMediaPath(const std::filesystem::path& path);
   static bool isVideoPath(const std::filesystem::path& path);
+  // 0.9.4.134: the 64 KiB content quick hash (same function the walk uses).
+  // Exposed so the forced duplicate re-verification re-reads a file's hash
+  // with exactly the walk's algorithm/unit -- one implementation, no drift.
+  static std::string quickHash64k(const std::filesystem::path& path);
   std::size_t count(const std::string& root, const std::string& excludedDirectory,
                      bool scanImages, bool scanVideos,
                      const std::unordered_set<std::string>& ignoredPaths = {},

@@ -1,4 +1,4 @@
-// MediaSimilarityFinderBackend entry point.
+﻿// MediaSimilarityFinderBackend entry point.
 //
 // P1: --help/--version only. P3 (0.9.4.69): --backend serves the GUI-spawned
 // IPC endpoint: line-oriented JSON over stdin (commands) / stdout (events,
@@ -72,6 +72,7 @@ public:
         connect(session_, &BackendSession::listingProgress, this, &BackendServer::onListingProgress);
         connect(session_, &BackendSession::matchesBatch, this, &BackendServer::onMatchesBatch);
         connect(session_, &BackendSession::quickLoaded, this, &BackendServer::onQuickLoaded);
+        connect(session_, &BackendSession::reverifyFinished, this, &BackendServer::onReverifyFinished);
         connect(session_, &BackendSession::revalidated, this, &BackendServer::onRevalidated);
         connect(session_, &BackendSession::revalidateProgress, this, &BackendServer::onRevalidateProgress);
         connect(session_, &BackendSession::results, this, &BackendServer::onResults);
@@ -165,6 +166,9 @@ private:
         } else if (t == QLatin1String(msf_ipc::kLoadIndex)) {
             session_->loadIndex(m.payload.value(QStringLiteral("root")).toString(),
                                 m.payload.value(QStringLiteral("appDir")).toString());
+        } else if (t == QLatin1String(msf_ipc::kReverifyIndex)) {
+            session_->reverifyIndex(m.payload.value(QStringLiteral("root")).toString(),
+                                    m.payload.value(QStringLiteral("appDir")).toString());
         } else if (t == QLatin1String(msf_ipc::kPause)) {
             session_->pause();
         } else if (t == QLatin1String(msf_ipc::kResume)) {
@@ -236,7 +240,8 @@ private:
                             exec.value(QStringLiteral("cpuMode")).toInt(0),
                             exec.value(QStringLiteral("strategy")).toInt(0),
                             p.value(QStringLiteral("testMode")).toBool(false),
-                            p.value(QStringLiteral("analyzeMode")).toInt(0));
+                            p.value(QStringLiteral("analyzeMode")).toInt(0),
+                            p.value(QStringLiteral("fastRescan")).toBool(false));
     }
 
     void updatePolicyFrom(const Message& m) {
@@ -420,6 +425,20 @@ private:
         m.type = QString::fromLatin1(msf_ipc::kState);
         m.payload[QStringLiteral("state")] = QStringLiteral("QUICK_LOADED");
         m.payload[QStringLiteral("n")] = n;
+        send(m);
+    }
+    // 0.9.4.134: forced duplicate re-verification counters (0.9.4.134).
+    void onReverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
+                            qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter) {
+        Message m;
+        m.type = QString::fromLatin1(msf_ipc::kState);
+        m.payload[QStringLiteral("state")] = QStringLiteral("REVERIFY_FINISHED");
+        m.payload[QStringLiteral("members")] = QString::number(members);
+        m.payload[QStringLiteral("checked")] = QString::number(checked);
+        m.payload[QStringLiteral("changed")] = QString::number(changed);
+        m.payload[QStringLiteral("reanalyzed")] = QString::number(reanalyzed);
+        m.payload[QStringLiteral("pairsBefore")] = QString::number(pairsBefore);
+        m.payload[QStringLiteral("pairsAfter")] = QString::number(pairsAfter);
         send(m);
     }
     void onRevalidated(int kept, int dropped) {
@@ -631,3 +650,4 @@ int main(int argc, char** argv) {
     }
     return app.exec();
 }
+

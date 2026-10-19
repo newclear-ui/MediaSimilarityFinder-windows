@@ -1,4 +1,4 @@
-// LoopbackBackendClient (P2: 0.9.4.68, rehomed P3a: 0.9.4.69).
+﻿// LoopbackBackendClient (P2: 0.9.4.68, rehomed P3a: 0.9.4.69).
 //
 // BackendClient implemented in-process on top of the real BackendCore. Since
 // P3a this is a thin forwarder over BackendSession (src/backend_session.*):
@@ -20,6 +20,7 @@ public:
 
     void startScan(const BackendScanConfig& cfg) override;
     void loadIndex(const QString& root, const QString& appDir) override;
+    void reverifyIndex(const QString& root, const QString& appDir) override;
     void ensureRunning() override {} // loopback needs no process
     void pause() override { session_->pause(); }
     void resume() override { session_->resume(); }
@@ -45,3 +46,4 @@ public:
 private:
     std::unique_ptr<BackendSession> session_;
 };
+

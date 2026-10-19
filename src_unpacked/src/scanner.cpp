@@ -59,6 +59,7 @@ std::size_t Scanner::count(const std::string& root, const std::string& excludedD
 }
 static std::int64_t stamp(const fs::path&p){std::error_code ec;auto t=fs::last_write_time(p,ec);if(ec)return 0;return std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch()).count();}
 static std::string quick(const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)return{};std::vector<unsigned char>b(65536);f.read((char*)b.data(),b.size());auto n=(size_t)f.gcount();std::uint64_t h=1469598103934665603ULL;for(size_t i=0;i<n;i++){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
+std::string Scanner::quickHash64k(const std::filesystem::path& path){ return quick(path); }
 std::vector<FileState> Scanner::scan(const std::string& root, const std::string& excludedDirectory, const std::function<void(std::size_t)>& onProgress) const{
  ScanCallbacks cb; cb.onProgress = onProgress;
  return scan_stream(root, excludedDirectory, cb);
@@ -87,6 +88,15 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
   // pressure) escape: on any failure fall back to a serial pass so the walk
   // always makes progress and no exception can terminate the walker thread.
   bool parallelDone=false;
+  // 0.9.4.134 fast-rescan: decide per file BEFORE hashing. The predicate is a
+  // read-only DB consult run once on this thread; skipped slots keep an empty
+  // quick hash and the engine treats empty as "skipped, not compared".
+  std::vector<char> need(batch.size(),1);
+  if(cb.skipQuickHash){
+   for(std::size_t i=0;i<batch.size();++i){
+    try{ if(cb.skipQuickHash(batch[i])) need[i]=0; }catch(...){}
+   }
+  }
   try{
    const unsigned jobs=std::min<unsigned>(walkHw,(unsigned)batch.size());
    const std::size_t chunk=(batch.size()+jobs-1)/jobs;
@@ -97,14 +107,14 @@ std::vector<FileState> Scanner::scan_stream(const std::string& root, const std::
     futs.emplace_back(std::async(std::launch::async,[&,b,e]{
      // A worker must never terminate the walk: a failed read becomes an empty
      // quick hash for that slot, exactly as the serial quick() did.
-     try{ for(std::size_t i=b;i<e;++i) batch[i].quickHash=quick(bpaths[i]); }catch(...){}
+     try{ for(std::size_t i=b;i<e;++i) if(need[i]) batch[i].quickHash=quick(bpaths[i]); }catch(...){}
     }));
    }
    for(auto& f:futs) f.get();
    parallelDone=true;
   }catch(...){ parallelDone=false; }
   if(!parallelDone){
-   for(std::size_t i=0;i<batch.size();++i){ try{ batch[i].quickHash=quick(bpaths[i]); }catch(...){} }
+   for(std::size_t i=0;i<batch.size();++i){ if(need[i]){ try{ batch[i].quickHash=quick(bpaths[i]); }catch(...){} } }
   }
    for(auto& s:batch){
     ++n;

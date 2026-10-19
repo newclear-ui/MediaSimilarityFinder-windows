@@ -1,4 +1,4 @@
-// BackendSession (P3a: 0.9.4.69). The reusable backend engine-room: owns the
+﻿// BackendSession (P3a: 0.9.4.69). The reusable backend engine-room: owns the
 // scan QThread, ScanWorker, and MediaMonitor, and speaks the same signal set
 // the GUI consumes. LoopbackBackendClient is a thin forwarder over it (same
 // process); the P3 backend process drives it behind the IPC codec. One
@@ -65,7 +65,7 @@ public:
                    bool scanImages, bool scanVideos,
                    const QSet<QString>& ignored, bool detailedLog,
                    int cpuMode, int strategy, bool testMode = false,
-                   int analyzeMode = 0);
+                   int analyzeMode = 0, bool fastRescan = false);
     // Live policy refresh (P4): monitor applies immediately; the stored
     // engine policy applies to the next scan (worker pool sizing is only
     // safe at scan start). Reports through onPolicyApplied().
@@ -75,6 +75,12 @@ public:
     // and pairs, and reports them through results()/quickLoaded() without any
     // walk or analysis. Replaces the current view with the index content.
     void loadIndex(const QString& root, const QString& appDir);
+    // 0.9.4.134: forced re-verification of stored-duplicate members. Re-reads
+    // the 64 KiB quick hash of every member of the stored pair set, re-analyzes
+    // the ones that changed (size/mtime-identical edits included) and updates
+    // the index; then answers through results() exactly like a Load. Reports
+    // the counters through reverifyFinished().
+    void reverifyIndex(const QString& root, const QString& appDir);
     // 0.9.4.105 (F): immediate index reflection for user delete/move. Drops
     // the files/matches/thumbs rows for the given paths in one transaction on
     // the last scan/load root. Refused while a scan owns the index (the same
@@ -117,6 +123,9 @@ signals:
     void listingProgress(std::size_t n);
     void matchesBatch(QVector<LiveMatch> batch);
     void quickLoaded(int n);
+    // 0.9.4.134: forced duplicate re-verification counters (see reverifyIndex).
+    void reverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
+                          qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter);
     void revalidated(int kept, int dropped);
     void revalidateProgress(qulonglong done, qulonglong total);
     void results(QVector<GuiFile> files, QStringList matchRows);
@@ -149,6 +158,13 @@ private:
     // IPC event thread. A >healthTimeout silence made the supervisor kill the
     // backend (exit code 0xf291) and loop on real datasets.
     void runLoadIndex(const QString& root, const QString& appDir);
+    // 0.9.4.134: same worker-thread rule as runLoadIndex (re-verification reads
+    // every duplicate member and can re-analyze a few files).
+    void runReverifyIndex(const QString& root, const QString& appDir);
+    // Shared finishing step: publish the engine's stored files+matches through
+    // results() (used by Load and Re-verify). Returns the pair count (the
+    // loadMatches call inside it does the badge confirmation once).
+    int publishIndexContent(msf::MediaSearchEngine& engine);
     void stopLoad();
     static SessionMonitorStatus convertStatus(const msf::MonitorStatus& s);
 
@@ -168,3 +184,5 @@ private:
     SessionStatus lastStatus_;
     SessionMonitorStatus lastMonStatus_;
 };
+
+

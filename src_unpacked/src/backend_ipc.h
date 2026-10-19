@@ -35,6 +35,10 @@ bool decodeLine(const QByteArray& line, Message& out, QString& rejectReason);
 inline const char* kHello = "HELLO";
 inline const char* kStartScan = "START_SCAN";
 inline const char* kLoadIndex = "LOAD_INDEX";
+// 0.9.4.134: re-verify stored-duplicate members (quick-hash re-read) and update
+// the index in place, then answer through results() like LOAD_INDEX. Additive
+// command; no protocol bump (both ends ship together).
+inline const char* kReverifyIndex = "REVERIFY_INDEX";
 inline const char* kPause = "PAUSE";
 inline const char* kResume = "RESUME";
 inline const char* kCancel = "CANCEL";

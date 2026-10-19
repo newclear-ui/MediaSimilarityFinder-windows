@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+﻿#include "mainwindow.h"
 #include "backend_loopback.h"
 #include "backend_sysinfo.h" // 0.9.4.88: GUI's own process CPU for the combined display
 #include "video_decoder.h"
@@ -121,6 +121,13 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"loadRunning")) return S("인덱스에서 불러오는 중…","Loading from index…");
   if (!std::strcmp(key,"loadWait")) return S("인덱스 목록 로딩중…","Loading index list…");
   if (!std::strcmp(key,"loadWaitTitle")) return S("인덱스 불러오기","Loading index");
+  // 0.9.4.134: forced duplicate re-verification ("재검증").
+  if (!std::strcmp(key,"reverify")) return S("재검증","Re-verify");
+  if (!std::strcmp(key,"reverifyTip")) return S("저장된 중복 파일들의 해시를 다시 확인해 내용이 바뀐 파일만 재분석합니다.","Re-reads the stored duplicate files' hashes and re-analyzes only the files whose content changed.");
+  if (!std::strcmp(key,"reverifyRunning")) return S("중복 파일 재검증 중…","Re-verifying duplicate files…");
+  if (!std::strcmp(key,"reverifyWait")) return S("저장된 중복 파일을 확인하고 필요하면 다시 분석합니다.","Checking stored duplicate files and re-analyzing changed ones.");
+  if (!std::strcmp(key,"reverifyWaitTitle")) return S("재검증","Re-verification");
+  if (!std::strcmp(key,"reverifyDone")) return S("재검증 완료 — 확인 %1 · 변경 %2 · 재분석 %3 · 매치 %4 → %5","Re-verification complete — checked %1, changed %2, re-analyzed %3, pairs %4 -> %5");
   if (!std::strcmp(key,"start")) return S("검색/업데이트 시작","Start scan/update");
   if (!std::strcmp(key,"pause")) return S("일시정지","Pause");
   if (!std::strcmp(key,"resume")) return S("계속","Resume");
@@ -129,6 +136,10 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"showDetailLog")) return S("상세 로그 표시","Show Detailed Logs");
   if (!std::strcmp(key,"showCpuPercent")) return S("CPU 사용량 % 표기","Show CPU usage %");
   if (!std::strcmp(key,"showTestButton")) return S("테스트 버튼 표시","Show Test button");
+  // 0.9.4.134: fast-rescan integrity mode. Default OFF (strict) keeps the
+  // current 3-way (size,mtime,quick-hash) change detection.
+  if (!std::strcmp(key,"fastRescan")) return S("빠른 재스캔 (크기·수정시각만 비교)","Fast rescan (compare size/mtime only)");
+  if (!std::strcmp(key,"fastRescanTip")) return S("켜면 변경되지 않은 파일의 64KiB 해시 읽기를 생략해 재스캔이 빨라집니다. 크기와 수정시각이 같은 내용 변경은 감지하지 못하므로, 중요하면 중복 파일 재검증을 주기적으로 실행하세요.","When on, unchanged files skip the 64 KiB hash read, making rescans much faster. A content change that preserves both size and mtime is then not detected; run the duplicate re-verification periodically if that matters.");
   if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
   if (!std::strcmp(key,"explorer")) return S("탐색기","Explorer");
@@ -630,6 +641,7 @@ MainWindow::MainWindow(QWidget* p, BackendClient* backend) : QMainWindow(p) {
   connect(backend_, &BackendClient::listingProgress, this, &MainWindow::onListingProgress);
   connect(backend_, &BackendClient::matchesBatch, this, &MainWindow::onMatchesBatch);
   connect(backend_, &BackendClient::quickLoaded, this, &MainWindow::onQuickLoaded);
+  connect(backend_, &BackendClient::reverifyFinished, this, &MainWindow::onReverifyFinished);
   connect(backend_, &BackendClient::revalidated, this, &MainWindow::onRevalidated);
   connect(backend_, &BackendClient::revalidateProgress, this, &MainWindow::onRevalidateProgress);
   connect(backend_, &BackendClient::results, this, &MainWindow::onResults);
@@ -788,6 +800,12 @@ void MainWindow::buildToolbar() {
   refresh_->setObjectName("loadBtn"); // automation hook (backend e2e load test)
   refresh_->setToolTip(trStr(lang(), "load"));
   connect(refresh_, &QPushButton::clicked, this, &MainWindow::loadIndex);
+  // 0.9.4.134: forced duplicate re-verification (quick-hash re-read of the
+  // stored pair members; heals content changes that preserved size+mtime).
+  reverifyBtn_ = new QPushButton(trStr(lang(), "reverify"), toolBar_);
+  reverifyBtn_->setObjectName("reverifyBtn"); // automation hook
+  reverifyBtn_->setToolTip(trStr(lang(), "reverifyTip"));
+  connect(reverifyBtn_, &QPushButton::clicked, this, &MainWindow::reverifyIndex);
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
   scan_->setDefault(true);
   pause_ = new QPushButton(toolBar_); pause_->setCheckable(true); cancel_ = new QPushButton(toolBar_);
@@ -1446,7 +1464,7 @@ void MainWindow::setRunning(bool v) {
   scanning_ = v;
   // P3 backend guard (§21): the Start button stays disabled while the backend
   // is unavailable, so a dead backend can never be mistaken for idle.
-  scan_->setEnabled(!v && backendAvailable_); refresh_->setEnabled(!v);
+  scan_->setEnabled(!v && backendAvailable_); refresh_->setEnabled(!v); reverifyBtn_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   if (!v) scan_->setFocus(); // return the highlight to Start, as at launch
@@ -1530,6 +1548,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
     cfg.detailedLog = logTgl_->isChecked();
     cfg.testMode = testBtn_ && testBtn_->isChecked();
     cfg.analyzeMode = msf::analyzeModeFromInt(QSettings().value("ui/analyzeMode", 0).toInt());
+    cfg.fastRescan = QSettings().value("ui/fastRescan", false).toBool();
     cfg.exec = currentExecPolicy();
     lastScanCfg_ = cfg;
     haveLastScanCfg_ = true;
@@ -1921,13 +1940,16 @@ void MainWindow::scanFinished(QString msg) {
 }
 void MainWindow::scanFailed(QString msg) {
   scanLog(QString("failed %1").arg(msg));
-  // A failed load-only request is not a scan failure: clear the load state and
-  // report it without the scan-failure machinery.
-  if (loading_) {
+  // A failed load-only or re-verify request is not a scan failure: clear that
+  // state and report it without the scan-failure machinery.
+  if (loading_ || reverify_) {
     loading_ = false;
+    reverify_ = false;
     if (loadWait_) { loadWait_->close(); loadWait_->deleteLater(); loadWait_ = nullptr; }
+    if (reverifyWait_) { reverifyWait_->close(); reverifyWait_->deleteLater(); reverifyWait_ = nullptr; }
     scan_->setEnabled(backendAvailable_);
     refresh_->setEnabled(true);
+    reverifyBtn_->setEnabled(true);
     QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
     statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
     return;
@@ -1956,17 +1978,27 @@ std::string MainWindow::telemetryJsonForTest() const {
   return backend_->telemetryJsonForTest();
 }
 void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
-  // Load-only ("불러오기") answers through this same path but must NOT show the
-  // finished-scan report popup; it closes its own loading notice and re-enables
-  // the buttons. A scan answer keeps the existing behavior.
+  // Load-only ("불러오기") and Re-verify ("재검증") answers come through this
+  // same path but must NOT show the finished-scan report popup; each closes
+  // its own notice and re-enables the buttons. A scan answer keeps the
+  // existing behavior.
   QDialog* wait = nullptr;
-  const bool wasLoad = loading_;
-  if (loading_) {
-    loading_ = false;
-    wait = loadWait_;
-    loadWait_ = nullptr;
+  const bool wasReverify = reverify_;
+  const bool wasLoad = loading_ || wasReverify;
+  if (wasLoad) {
+    if (loading_) {
+      loading_ = false;
+      wait = loadWait_;
+      loadWait_ = nullptr;
+    }
+    if (wasReverify) {
+      reverify_ = false;
+      wait = reverifyWait_;
+      reverifyWait_ = nullptr;
+    }
     scan_->setEnabled(backendAvailable_);
     refresh_->setEnabled(true);
+    reverifyBtn_->setEnabled(true);
   } else {
     wait = cancelWait_;
     cancelWait_ = nullptr;
@@ -2184,7 +2216,7 @@ void MainWindow::loadIndex() {
   // stored index content (files + pairs) without walking or analyzing. The
   // Backend answers through the normal results()/quickLoaded() path, so the
   // list and previews populate exactly like a scan finish.
-  if (scanning_ || loading_ || !backend_) return;
+  if (scanning_ || loading_ || reverify_ || !backend_) return;
   const QString root = folder_->text();
   if (root.isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
   // The view is replaced: drop the previous accumulation so old groups cannot
@@ -2217,12 +2249,65 @@ void MainWindow::loadIndex() {
   // window stays movable while the index is read. onResults clears both.
   loading_ = true;
   refresh_->setEnabled(false);
+  reverifyBtn_->setEnabled(false);
   scan_->setEnabled(false);
   // The load notice is a SEPARATE popup from the finished-scan report popup:
   // its own title ("인덱스 불러오기") and body ("인덱스 목록 로딩중…"), so a load
   // never shows the "검색 리포트 작성중" wording.
   loadWait_ = showReportWaitPopup(this, lang(), "loadWait", "loadWaitTitle");
   backend_->loadIndex(root, QApplication::applicationDirPath());
+}
+void MainWindow::reverifyIndex() {
+  // 0.9.4.134: forced duplicate re-verification, then the refreshed view.
+  // The backend re-reads the 64 KiB quick hash of every stored-duplicate
+  // member (no walk), re-analyzes only the members that changed -- including
+  // edits that preserved size+mtime, the fast-rescan blind spot -- updates the
+  // index in one transaction, and answers through the normal results() path.
+  if (scanning_ || loading_ || reverify_ || !backend_) return;
+  const QString root = folder_->text();
+  if (root.isEmpty()) { chooseFolder(); if (folder_->text().isEmpty()) return; }
+  // Same view replacement as Load: the refreshed stored set becomes the list.
+  bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
+  fileMetaAsked_.clear();
+  contentFlag_.clear();
+  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
+  pathParent_.clear(); groups_.clear(); pathGroup_.clear();
+  noneOrder_.clear(); imgShown_.clear(); vidShown_.clear();
+  marked_.clear();
+  currentGroup_ = -1; currentFile_.clear(); hasReport_ = false;
+  matchSeq_ = 0; groupsDirty_ = false; lastFillSig_ = 0;
+  resultsApplied_ = false; lastFileSig_.clear();
+  lastVerifyTotal_ = 0; lastVerifyDone_ = 0;
+  targetKnown_ = false;
+  loadStartMs_ = QDateTime::currentMSecsSinceEpoch();
+  loadedSummary_ = false;
+  sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
+  loadLockSort_ = true;
+  updateSortEnabled();
+  refreshGroupList(); refreshFileViews(); refreshDetail();
+  statusMsg_->setText(trStr(lang(), "reverifyRunning"));
+  reverify_ = true;
+  refresh_->setEnabled(false);
+  reverifyBtn_->setEnabled(false);
+  scan_->setEnabled(false);
+  reverifyWait_ = showReportWaitPopup(this, lang(), "reverifyWait", "reverifyWaitTitle");
+  backend_->reverifyIndex(root, QApplication::applicationDirPath());
+}
+void MainWindow::onReverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
+                                    qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter) {
+  // 0.9.4.134: completion text (results already repopulated the view and the
+  // load-style summary). The last pair count is the displayed set's, so the
+  // verify row stays consistent with the list.
+  Q_UNUSED(members);
+  loadedSummary_ = true;
+  lastVerifyDone_ = pairsAfter;
+  if (hasReport_) refreshSummary();
+  statusMsg_->setText(trStr(lang(), "reverifyDone")
+                          .arg(checked).arg(changed).arg(reanalyzed)
+                          .arg(pairsBefore).arg(pairsAfter));
+  scanLog(QString("reverify members=%1 checked=%2 changed=%3 reanalyzed=%4 pairs=%5->%6")
+              .arg(members).arg(checked).arg(changed).arg(reanalyzed)
+              .arg(pairsBefore).arg(pairsAfter));
 }
 void MainWindow::populateFolderChildren(QTreeWidgetItem* it) {
   if (!it) return;
@@ -4494,6 +4579,13 @@ void MainWindow::configureMonitor() {
   }
   analyzeRow->addWidget(analyzeLabel); analyzeRow->addWidget(analyzeModeBox); analyzeRow->addStretch(1);
   generalLay->addLayout(analyzeRow);
+  // 0.9.4.134 fast-rescan (integrity mode). Strict default: the walk keeps
+  // reading the 64 KiB quick hash of unchanged files.
+  auto* fastRescan = new QCheckBox(trStr(lang(), "fastRescan"), generalTab);
+  fastRescan->setObjectName("fastRescanBox"); // automation hook
+  fastRescan->setChecked(QSettings().value("ui/fastRescan", false).toBool());
+  fastRescan->setToolTip(trStr(lang(), "fastRescanTip"));
+  generalLay->addWidget(fastRescan);
   generalLay->addStretch(1);
   tabs->addTab(generalTab, trStr(lang(), "general"));
   auto* monTab = new QWidget(tabs);
@@ -4582,6 +4674,7 @@ void MainWindow::configureMonitor() {
   // Push the GPU decision so monitor/scan pick it up without a restart.
   if (backend_) backend_->updateResourcePolicy(currentExecPolicy());
   st.setValue("ui/analyzeMode", analyzeModeBox->currentIndex());
+  st.setValue("ui/fastRescan", fastRescan->isChecked());
   applyDetailLogVisibility();
   st.setValue("ui/language", langSel->currentData().toString());
   setLanguage(langSel->currentIndex());
@@ -4771,3 +4864,6 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
+
+

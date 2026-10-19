@@ -90,6 +90,13 @@ struct ScanControl {
   // Paths excluded from analysis and results (e.g. GUI ignore list).
   // Compared against the canonical UTF-8 paths produced by the scanner.
   std::unordered_set<std::string> ignoredPaths;
+  // 0.9.4.134 fast-rescan ("빠른 재스캔"): when true, a file whose stored row
+  // matches on (size, mtime) is trusted as unchanged WITHOUT reading its
+  // 64 KiB quick hash. The walk stops opening every unchanged file (the main
+  // I/O and antivirus cost of a no-change rescan). Trade-off, accepted by the
+  // setting: a content change that preserves both size and mtime is not
+  // detected; "강제 재검증" (duplicate members) and strict mode cover that.
+  bool fastRescan = false;
   // Kind selection: set false to skip images or videos entirely (GUI option).
   bool scanImages=true, scanVideos=true;
   // 0.9.4.81: how/when candidate-pair verification runs. Default Sequential (B).
@@ -143,7 +150,25 @@ public:
  // only pairs both files verify against at the scan-time line. Stamps the
  // current engine version unless cancelled (returns false, nothing stamped).
  // Pair-bounded and one-time per engine bump; cancel-aware. Counters may be null.
- bool revalidateMatches(ScanControl* control=nullptr, int* kept=nullptr, int* dropped=nullptr);
+  bool revalidateMatches(ScanControl* control=nullptr, int* kept=nullptr, int* dropped=nullptr);
+  // 0.9.4.134: forced re-verification of stored-duplicate members ("재검증").
+  // No walk: reads the 64 KiB quick hash of every distinct path in the stored
+  // pair set and compares it with the stored value -- this catches content
+  // changes that preserved size+mtime (the fast-rescan blind spot). Changed
+  // members are re-analyzed (images batched, videos single-file) and their
+  // pairs are re-verified by the same targeted pipeline pass A/AB uses;
+  // untouched stored pairs keep their verdict. Rows, pairs and the match set
+  // are written in ONE transaction, so a cancel rolls everything back.
+  // Images are verified at the product default distance 8 (GUI scans).
+  struct ReverifyStats {
+    std::size_t members = 0;     // distinct paths in the stored pair set
+    std::size_t checked = 0;     // members whose stats + hash were read
+    std::size_t changed = 0;     // members that no longer match their stored row
+    std::size_t reanalyzed = 0;  // changed members re-fingerprinted
+    std::size_t pairsBefore = 0;
+    std::size_t pairsAfter = 0;
+  };
+  bool reverifyStoredDuplicates(ScanControl* control=nullptr, ReverifyStats* stats=nullptr);
   // Releases the index database so its files can be moved or removed.
   // Required on Windows, where open files cannot be deleted.
   void close();

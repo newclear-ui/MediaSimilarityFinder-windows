@@ -206,7 +206,11 @@ std::vector<FileState> Database::all() const{
  sqlite3_finalize(s); return out;
 }
 
-bool Database::saveMatches(const std::vector<StoredMatch>& matches){
+// 0.9.4.134: shared implementation. saveMatches() owns its transaction (normal
+// callers); saveMatchesNoTransaction() runs inside the caller's transaction
+// (forced duplicate re-verification updates rows and pairs atomically so a
+// cancel rolls both back). SQLite has no nested BEGIN, hence the split.
+bool Database::saveMatchesCore(const std::vector<StoredMatch>& matches){
   if(!db_) return false;
   const char* upsert="INSERT INTO matches(left_path,right_path,percent) VALUES(?,?,?) ON CONFLICT(left_path,right_path) DO UPDATE SET percent=excluded.percent";
   const char* allKey="SELECT left_path,right_path FROM matches";
@@ -214,7 +218,6 @@ bool Database::saveMatches(const std::vector<StoredMatch>& matches){
   if(sqlite3_prepare_v2(D(db_),upsert,-1,&u,nullptr)!=SQLITE_OK) return false;
   if(sqlite3_prepare_v2(D(db_),allKey,-1,&s,nullptr)!=SQLITE_OK){sqlite3_finalize(u);return false;}
   bool ok=true;
-  if(!exec("BEGIN IMMEDIATE TRANSACTION;")){sqlite3_finalize(u);sqlite3_finalize(s);return false;}
   std::vector<std::string> removeKeys;
   while(sqlite3_step(s)==SQLITE_ROW)
     removeKeys.push_back(std::string(reinterpret_cast<const char*>(sqlite3_column_text(s,0)))+"\x1f"+std::string(reinterpret_cast<const char*>(sqlite3_column_text(s,1))));
@@ -235,7 +238,7 @@ bool Database::saveMatches(const std::vector<StoredMatch>& matches){
   sqlite3_finalize(u);
   // Drop rows whose files have been deleted or whose pair no longer matches.
   sqlite3_stmt* d=nullptr;
-  if(sqlite3_prepare_v2(D(db_),"DELETE FROM matches WHERE left_path=? AND right_path=?",-1,&d,nullptr)==SQLITE_OK){
+  if(ok && sqlite3_prepare_v2(D(db_),"DELETE FROM matches WHERE left_path=? AND right_path=?",-1,&d,nullptr)==SQLITE_OK){
     for(const auto& k:removeKeys){
       if(keep.find(k)!=keep.end()) continue;
       const std::size_t sep=k.find('\x1f');
@@ -246,8 +249,19 @@ bool Database::saveMatches(const std::vector<StoredMatch>& matches){
     }
     sqlite3_finalize(d);
   }
-  if(!ok){exec("ROLLBACK;");return false;}
+  return ok;
+}
+
+bool Database::saveMatches(const std::vector<StoredMatch>& matches){
+  if(!db_) return false;
+  if(!exec("BEGIN IMMEDIATE TRANSACTION;")) return false;
+  if(!saveMatchesCore(matches)){ exec("ROLLBACK;"); return false; }
   return exec("COMMIT;");
+}
+
+bool Database::saveMatchesNoTransaction(const std::vector<StoredMatch>& matches){
+  if(!db_) return false;
+  return saveMatchesCore(matches);
 }
 
 std::vector<StoredMatch> Database::loadMatches() const{

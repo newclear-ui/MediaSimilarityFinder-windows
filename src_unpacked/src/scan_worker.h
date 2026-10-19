@@ -1,4 +1,4 @@
-// ScanWorker (P3a: 0.9.4.69). Moved verbatim from gui/mainwindow.h/.cpp:
+﻿// ScanWorker (P3a: 0.9.4.69). Moved verbatim from gui/mainwindow.h/.cpp:
 // the worker is Backend-owned (process-isolation brief §3.3), so it lives in
 // BackendCore (msf_core) instead of the GUI translation unit. Behavior is
 // unchanged, including the 0.9.4.62 catch-all and the 0.9.4.65 no-throw
@@ -47,6 +47,9 @@ public slots:
   // 0.9.4.81: analyze-mode delivery (default Sequential/B). Stored before
   // run(); run() copies it into control_.analyzeMode.
   void setAnalyzeMode(msf::AnalyzeMode m) { analyzeMode_ = m; }
+  // 0.9.4.134 fast-rescan: trust (size,mtime) for unchanged rows (no 64 KiB
+  // quick-hash read in the walk). Default false = strict (current behavior).
+  void setFastRescan(bool b) { fastRescan_ = b; }
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
   const msf::MediaSearchEngine& scanEngine() const { return engine_; }
   qulonglong gpuDone() const { return gpuDone_.load(); }
@@ -95,4 +98,6 @@ private:
   std::size_t walkerCapOverride_=0; // see setWalkerQueueCapacity
   msf::ResourceMode resourceMode_=msf::ResourceMode::Custom; // see setResourceMode
   msf::AnalyzeMode analyzeMode_=msf::AnalyzeMode::Sequential; // see setAnalyzeMode
+  bool fastRescan_ = false; // see setFastRescan
 };
+

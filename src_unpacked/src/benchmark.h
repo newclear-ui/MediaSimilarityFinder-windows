@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "analyze_telemetry.h"
 #include "dataset_fingerprint.h"
 #include <atomic>
@@ -46,6 +46,10 @@ struct TelemetryConfig {
   bool scanImages = true;
   bool scanVideos = true;
   bool cudaAvailable = false;
+  // 0.9.4.134: fast-rescan provenance ("빠른 재스캔" setting). Recorded so a
+  // detailed log states whether the walk trusted (size,mtime) or compared the
+  // 64 KiB quick hash. Additive config key; old readers ignore it.
+  bool fastRescan = false;
   TelemetryPurpose purpose = TelemetryPurpose::UserDiagnostic;
 };
 struct SlowFile {
@@ -373,3 +377,4 @@ private:
   std::size_t dispVidPairs_ = 0, dispVidGroups_ = 0, dispVidDupFiles_ = 0;
 };
 }
+

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // New Explorer-style UI (mockups in C:\project\uimock):
 //  top path/scan bar, left folder tree + summary, middle group list,
 //  right detail (grid/list switchable), KO/EN language, mark + context menu,
@@ -199,6 +199,10 @@ private slots:
   void copySelected(); void cutSelected(); void pasteFiles(); void moveSelected();
   void refreshFolders(); void folderActivated(QTreeWidgetItem*,int);
   void loadIndex(); // 0.9.4.93: load the selected folder's index (no scan)
+  void reverifyIndex(); // 0.9.4.134: re-verify stored duplicate members, then reload the view
+  // 0.9.4.134: completion counters (checked/changed/re-analyzed/pairs before-after).
+  void onReverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
+                          qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter);
   void populateFolderChildren(QTreeWidgetItem*);
   QStringList selectedFiles() const;
   // 0.9.4.103: copy/cut/move/recycle operand (checked files first).
@@ -418,7 +422,7 @@ private:
   // toolbar
   QToolBar* toolBar_=nullptr;
   QLineEdit* folder_=nullptr;   QPushButton *scan_=nullptr,*pause_=nullptr,
-    *cancel_=nullptr,*refresh_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr,*testBtn_=nullptr;
+    *cancel_=nullptr,*refresh_=nullptr,*reverifyBtn_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr,*testBtn_=nullptr;
   QAction *monSettingsAct_=nullptr, *helpAct_=nullptr; // retexted on language change
   QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;
@@ -458,12 +462,18 @@ private:
   // onResults must not show the finished-scan report popup.
   bool loading_ = false;
   QDialog* loadWait_ = nullptr;
+  // 0.9.4.134: Re-verify notice (separate from Load's notice so the wording is
+  // accurate while the duplicate members are being checked).
+  QDialog* reverifyWait_ = nullptr;
   // 0.9.4.132: load-only summary state. Load() populates the left summary from
   // the loaded index (files/groups/pairs + load duration) instead of leaving
   // the "-" placeholders; loadedSummary_ switches the verify row to the
   // stored-pair reading ("- / N") and clears on the next scan answer.
   qint64 loadStartMs_ = 0;
   bool loadedSummary_ = false;
+  // 0.9.4.134: "재검증" in-flight flag (same lifecycle as loading_; the view is
+  // replaced by the refreshed stored set when results arrive).
+  bool reverify_ = false;
   // 0.9.4.94: completion-path dedup. onResults (scan branch) already performs
   // the full middle/right rebuild; scanFinished skips repeating it for the
   // same scan so the "writing report" phase cannot stall the GUI thread twice.
@@ -521,3 +531,5 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
+

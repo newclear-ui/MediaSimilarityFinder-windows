@@ -177,6 +177,165 @@ bool MediaSearchEngine::revalidateMatches(ScanControl* control, int* kept, int* 
   db_.setEngineVersion(kEngineVersion);
   return true;
 }
+bool MediaSearchEngine::reverifyStoredDuplicates(ScanControl* control, ReverifyStats* stats){
+  ReverifyStats st{};
+  const auto stored=db_.loadMatches();
+  st.pairsBefore=stored.size();
+  if(stored.empty()){ if(stats)*stats=st; return true; }
+  std::vector<std::string> members; members.reserve(stored.size()*2);
+  {
+    std::unordered_set<std::string> seen; seen.reserve(stored.size()*2+1);
+    for(const auto& m:stored){
+      if(seen.insert(m.left).second) members.push_back(m.left);
+      if(seen.insert(m.right).second) members.push_back(m.right);
+    }
+  }
+  st.members=members.size();
+  const auto states=db_.all();
+  std::unordered_map<std::string,FileState> byPath; byPath.reserve(states.size()*2+1);
+  for(const auto& x:states) byPath.emplace(x.path,x);
+  // 1) verify phase: stat + 64 KiB quick hash of every member (no walk, no
+  //    analysis). A stat mismatch is already "changed"; the hash read is what
+  //    catches size+mtime-preserving edits.
+  std::unordered_map<std::string,FileState> freshRows;
+  std::unordered_set<std::string> changedPaths;
+  std::size_t i=0;
+  for(const auto& p:members){
+    if(control && ((++i & 31)==0) && control->cancel.load()) return false;
+    if(control && control->revalidateProgress && ((i & 31)==0))
+      control->revalidateProgress(i, members.size());
+    const auto it=byPath.find(p);
+    if(it==byPath.end()) continue;
+    const fs::path fp=path_from_utf8(p);
+    std::error_code ec;
+    const auto sz=std::filesystem::file_size(fp,ec);
+    if(ec) continue; // vanished after cleanupMissingOnDisk: next scan reconciles
+    const auto mt=std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::filesystem::last_write_time(fp,ec).time_since_epoch()).count();
+    if(ec) continue;
+    const FileState& row=it->second;
+    bool ch=false;
+    std::string qh;
+    if((std::uint64_t)sz!=row.size || (std::int64_t)mt!=(std::int64_t)row.modified){
+      ch=true;
+    } else {
+      qh=Scanner::quickHash64k(fp);
+      if(qh.empty() || qh!=row.quickHash) ch=true;
+    }
+    ++st.checked;
+    if(ch){
+      changedPaths.insert(p);
+      FileState nf=row;
+      nf.size=(std::uint64_t)sz; nf.modified=(std::int64_t)mt;
+      nf.quickHash=qh.empty()?Scanner::quickHash64k(fp):qh;
+      freshRows.emplace(p,std::move(nf));
+    }
+  }
+  if(control && control->revalidateProgress) control->revalidateProgress(members.size(), members.size());
+  st.changed=changedPaths.size();
+  st.pairsAfter=st.pairsBefore;
+  if(changedPaths.empty()){ if(stats)*stats=st; return true; }
+  if(control && control->cancel.load()) return false;
+  // 2) re-analysis + targeted re-verification + persistence in ONE transaction:
+  //    a cancel or failure rolls rows and pairs back together (no partial set).
+  if(!db_.beginTransaction()) return false;
+  bool ok=true;
+  {
+    std::vector<std::string> imgPaths;
+    imgPaths.reserve(changedPaths.size());
+    for(const auto& p:changedPaths) if(kindOf(p)==MediaKind::Image) imgPaths.push_back(p);
+    if(!imgPaths.empty()){
+      MediaPipeline pipeline;
+      const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
+      auto results=pipeline.imageBatch(imgPaths, policy_.gpuEnabled, gpuBatch, &gpuActive_, nullptr);
+      for(auto& ir:results){
+        if(control && control->cancel.load()){ ok=false; break; }
+        const auto fit=freshRows.find(ir.path); if(fit==freshRows.end()) continue;
+        FileState x=fit->second; x.kind=(int)MediaKind::Image;
+        if(ir.ok){
+          x.fingerprint=ir.fingerprint; x.mirrorFingerprint=ir.mirrorFingerprint;
+          x.crop4x3=ir.crops.a4x3; x.crop1x1=ir.crops.a1x1; x.crop9x16=ir.crops.a9x16;
+          x.mirrorCrop4x3=ir.crops.mirrorA4x3; x.mirrorCrop1x1=ir.crops.mirrorA1x1; x.mirrorCrop9x16=ir.crops.mirrorA9x16;
+          x.analysisFailed=false;
+          if(ir.hasColorThumb)
+            putColorThumb(ir.path, ir.colorThumb.width, ir.colorThumb.height, std::move(ir.colorThumb.bgra));
+        } else {
+          x.fingerprint=0; x.analysisFailed=true;
+          x.mirrorFingerprint=0; x.crop4x3=x.crop1x1=x.crop9x16=0; x.mirrorCrop4x3=x.mirrorCrop1x1=x.mirrorCrop9x16=0;
+        }
+        if(!db_.upsert(x)){ ok=false; break; }
+        ++st.reanalyzed;
+      }
+    }
+  }
+  if(ok){
+    for(const auto& p:changedPaths){
+      if(control && control->cancel.load()){ ok=false; break; }
+      if(kindOf(p)!=MediaKind::Video) continue;
+      const auto fit=freshRows.find(p); if(fit==freshRows.end()) continue;
+      FileState x=fit->second; x.kind=(int)MediaKind::Video;
+      VideoFingerprint vf; VideoBuildStats vstats;
+      const std::atomic<bool>* cancelPtr = control ? &control->cancel : nullptr;
+      if(videoEngine_.build(x.path,vf,policy_.gpuEnabled?&videoGpu_:nullptr,&gpuActive_,&vstats,cancelPtr)
+         && !vf.hashes.empty()){
+        x.duration=vf.duration;
+        x.fingerprint=foldVideoHashes(vf.hashes); x.mirrorFingerprint=foldVideoHashes(vf.mirrorHashes);
+        x.crop4x3=vf.crop4x3; x.crop1x1=vf.crop1x1; x.crop9x16=vf.crop9x16;
+        x.mirrorCrop4x3=vf.mirrorCrop4x3; x.mirrorCrop1x1=vf.mirrorCrop1x1; x.mirrorCrop9x16=vf.mirrorCrop9x16;
+        x.analysisFailed=false;
+      } else {
+        x.fingerprint=0; x.analysisFailed=true;
+        x.mirrorFingerprint=0; x.crop4x3=x.crop1x1=x.crop9x16=0; x.mirrorCrop4x3=x.mirrorCrop1x1=x.mirrorCrop9x16=0;
+      }
+      if(!db_.upsert(x)){ ok=false; break; }
+      ++st.reanalyzed;
+    }
+  }
+  std::vector<StoredMatch> survivors;
+  if(ok){
+    const auto nowStates=db_.all();
+    files_.clear(); files_.reserve(nowStates.size());
+    for(const auto& x:nowStates){
+      files_.push_back({x.path,(MediaKind)x.kind,x.size,(std::uint64_t)x.modified,x.fingerprint,x.mirrorFingerprint,x.crop4x3,x.crop1x1,x.crop9x16,x.mirrorCrop4x3,x.mirrorCrop1x1,x.mirrorCrop9x16,x.duration});
+      files_.back().quickHash=x.quickHash;
+    }
+    std::vector<char> changedFlags(files_.size(),0);
+    for(std::size_t k=0;k<files_.size();++k)
+      if(changedPaths.find(files_[k].path)!=changedPaths.end()) changedFlags[k]=1;
+    ScanPipeline pipe; pipe.setSharedTemporalEngine(&videoEngine_);
+    pipe.setVideoGpuBackend(&videoGpu_); pipe.setVideoGpuActivity(&gpuActive_);
+    for(const auto& f:files_) pipe.add(f);
+    const auto stopCheck=[&]()->bool{ return control && control->cancel.load(); };
+    std::vector<StoredMatch> emitted;
+    pipe.analyze(8,[&](const MediaMatch& m){
+      const auto& lf=pipe.files();
+      if(m.left<lf.size() && m.right<lf.size())
+        emitted.push_back({lf[m.left].path, lf[m.right].path, m.percent});
+    }, stopCheck, &changedFlags, /*skipBothChangedImages=*/false);
+    if(control && control->cancel.load()) ok=false;
+    if(ok){
+      // Untouched stored pairs keep their verdict; pairs touching a changed
+      // file are replaced by this pass (dropped when no longer valid, newly
+      // discovered matches included).
+      survivors.reserve(stored.size()+emitted.size());
+      for(const auto& m:stored)
+        if(changedPaths.find(m.left)==changedPaths.end() &&
+           changedPaths.find(m.right)==changedPaths.end()) survivors.push_back(m);
+      for(auto& m:emitted) survivors.push_back(std::move(m));
+      if(!db_.saveMatchesNoTransaction(survivors)) ok=false;
+    }
+  }
+  if(!ok){ db_.rollbackTransaction(); return false; }
+  if(!db_.commitTransaction()){ db_.rollbackTransaction(); return false; }
+  // Refresh the cached DB view: loadMatches' identity badge joins against it,
+  // so the updated rows/hashes must be visible immediately.
+  candidateStates_=db_.all();
+  rebuildCandidateIndexes();
+  st.pairsAfter=survivors.size();
+  if(stats)*stats=st;
+  return true;
+}
+
 bool MediaSearchEngine::upsertFingerprint(const std::string& path, std::uint64_t fingerprint, int kind, std::uint64_t size, std::int64_t modified, std::uint64_t mirrorFingerprint, std::uint64_t crop4x3, std::uint64_t crop1x1, std::uint64_t crop9x16, std::uint64_t mirrorCrop4x3, std::uint64_t mirrorCrop1x1, std::uint64_t mirrorCrop9x16) {
  FileState x; x.path=path; x.fingerprint=fingerprint; x.mirrorFingerprint=mirrorFingerprint; x.crop4x3=crop4x3; x.crop1x1=crop1x1; x.crop9x16=crop9x16; x.mirrorCrop4x3=mirrorCrop4x3; x.mirrorCrop1x1=mirrorCrop1x1; x.mirrorCrop9x16=mirrorCrop9x16; x.kind=kind; x.size=size; x.modified=modified; if(!db_.upsert(x)) return false; candidateStates_=db_.all(); rebuildCandidateIndexes(); return true;
 }
@@ -438,7 +597,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // bool here would silently pin the scan-start verdict (review finding).
   auto schedUseGpuNow = [&]() { return scheduler_.lastDecision().gpuUsed; };
   const bool telemetryOn = !control || control->telemetryEnabled;
+  // 0.9.4.134: fast-rescan snapshot (ScanControl::fastRescan). Row comparison
+  // below drops the quick-hash term when set; the walk then never opened the
+  // file (skipQuickHash), so the hash field is empty and must not be compared.
+  const bool fastRescan = control && control->fastRescan;
   bcfg.detail = telemetryOn;
+  bcfg.fastRescan = fastRescan;
   telemetry_.start(bcfg);
   // 0.9.4.81: carry the analyze mode into the detailed-log JSON (analyze.mode),
   // alongside the msf_scan.log scanAnalyzeMode= line.
@@ -961,7 +1125,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    // NOT be retried or it reports `modified` forever). The explicit
    // analysisFailed flag separates them, so the report converges.
    const bool pendingAnalysis=(it!=oldByPath.end() && it->second.fingerprint==0 && !it->second.analysisFailed);
-   const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified||it->second.quickHash!=x.quickHash||pendingAnalysis||(isVid&&videoRegrid));
+   // 0.9.4.134 fast-rescan: with fastRescan the walk deliberately skipped the
+   // 64 KiB read for (size,mtime)-matching rows, so the quick-hash term is not
+   // compared (empty would otherwise read as "changed" for every file). Strict
+   // mode keeps the 3-way comparison unchanged.
+   const bool changed=(it==oldByPath.end()||it->second.size!=x.size||it->second.modified!=x.modified
+     ||(!fastRescan && it->second.quickHash!=x.quickHash)||pendingAnalysis||(isVid&&videoRegrid));
   if(!changed){
    // A known analysis failure on identical content is not "changed": there is
    // nothing to redo. It stays out of added/modified and out of the search set.
@@ -1018,6 +1187,21 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
    cb.cancel=&control->cancel; cb.pause=&control->pause;
   }
    cb.shouldStop=[&]{ return walkAbort.load(std::memory_order_relaxed); };
+   // 0.9.4.134 fast-rescan: skip the 64 KiB read only when the stored row is
+   // trusted as-is. Files that will be (re)analyzed anyway -- new rows, pending
+   // analysis, stat mismatch, video regrid -- must still hash: their fresh row
+   // needs the hash for the identity badge and the fingerprint-cache key.
+   if(control && control->fastRescan){
+    cb.skipQuickHash=[&](const FileState& f)->bool{
+     const auto it=oldByPath.find(f.path);
+     if(it==oldByPath.end()) return false;
+     const FileState& r=it->second;
+     if((std::uint64_t)r.size!=f.size || (std::int64_t)r.modified!=(std::int64_t)f.modified) return false;
+     if(r.fingerprint==0 && !r.analysisFailed) return false; // pendingAnalysis retries
+     if(kindOf(f.path)==MediaKind::Video && videoRegrid) return false;
+     return true;
+    };
+   }
    cb.onFile=[&](FileState&& f){
     // D3-Minimal: bounded push with cancel-aware backpressure. A dropped
     // file (cancel/shutdown) was never analyzed, so the next scan sees it

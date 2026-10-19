@@ -1,4 +1,4 @@
-#include "benchmark.h"
+﻿#include "benchmark.h"
 #include "backend_sysinfo.h" // 0.9.4.88: process-tree CPU for cpuProc
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -631,7 +631,8 @@ std::string TelemetryRecorder::toJson() const {
     << ",\"gpuEnabled\":" << (cfg_.gpuEnabled ? "true" : "false") << ",\"gpuBatch\":" << cfg_.gpuBatch
     << ",\"gpuBackend\":\"" << escapeJson(cfg_.gpuBackend) << "\""
     << ",\"scanImages\":" << (cfg_.scanImages ? "true" : "false") << ",\"scanVideos\":" << (cfg_.scanVideos ? "true" : "false")
-    << ",\"cudaAvailable\":" << (cfg_.cudaAvailable ? "true" : "false") << "},";
+    << ",\"cudaAvailable\":" << (cfg_.cudaAvailable ? "true" : "false")
+    << ",\"fastRescan\":" << (cfg_.fastRescan ? "true" : "false") << "},";
   o << "\"summary\":{\"wallMs\":" << wallMs_ << ",\"walkMs\":" << walkMs_ << ",\"revalidateMs\":" << revalidateMs_
     << ",\"imageStageMs\":" << imageStageMs_ << ",\"videoStageMs\":" << videoStageMs_ << ",\"analyzeMs\":" << analyzeMs_
     << ",\"scanned\":" << scanned_ << ",\"analyzed\":" << analyzed_ << ",\"unchanged\":" << unchanged_
@@ -977,3 +978,4 @@ std::string TelemetryRecorder::toJson() const {
   return o.str();
 }
 }
+

@@ -1,4 +1,4 @@
-// LoopbackBackendClient implementation (P3a: 0.9.4.69). Thin forwarder over
+﻿// LoopbackBackendClient implementation (P3a: 0.9.4.69). Thin forwarder over
 // BackendSession: converts core/session types to the BackendClient contract
 // types. No engine logic lives here.
 #include "backend_loopback.h"
@@ -24,6 +24,7 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
     connect(session_.get(), &BackendSession::targetCount, this, &BackendClient::targetCount);
     connect(session_.get(), &BackendSession::listingProgress, this, &BackendClient::listingProgress);
     connect(session_.get(), &BackendSession::quickLoaded, this, &BackendClient::quickLoaded);
+    connect(session_.get(), &BackendSession::reverifyFinished, this, &BackendClient::reverifyFinished);
     connect(session_.get(), &BackendSession::revalidateProgress, this, &BackendClient::revalidateProgress);
     connect(session_.get(), &BackendSession::revalidated, this, &BackendClient::revalidated);
     connect(session_.get(), &BackendSession::telemetryReady, this, &BackendClient::telemetryReady);
@@ -97,11 +98,15 @@ void LoopbackBackendClient::startScan(const BackendScanConfig& cfg) {
                         cfg.gpuEnabled, cfg.scanImages, cfg.scanVideos,
                         cfg.ignored, cfg.detailedLog,
                         cfg.exec.cpuMode, cfg.exec.strategy, cfg.testMode,
-                        static_cast<int>(cfg.analyzeMode));
+                        static_cast<int>(cfg.analyzeMode), cfg.fastRescan);
 }
 
 void LoopbackBackendClient::loadIndex(const QString& root, const QString& appDir) {
     session_->loadIndex(root, appDir);
+}
+
+void LoopbackBackendClient::reverifyIndex(const QString& root, const QString& appDir) {
+    session_->reverifyIndex(root, appDir);
 }
 
 void LoopbackBackendClient::startMonitor(const QStringList& watchRoots, const QStringList& compareRoots,
@@ -192,3 +197,5 @@ BackendMonitorStatus LoopbackBackendClient::lastMonitorStatus() const {
 std::string LoopbackBackendClient::telemetryJsonForTest() const {
     return session_->telemetryJsonForTest();
 }
+
+

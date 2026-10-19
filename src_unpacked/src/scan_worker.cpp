@@ -1,4 +1,4 @@
-// ScanWorker implementation (P3a: 0.9.4.69). Moved verbatim from
+﻿// ScanWorker implementation (P3a: 0.9.4.69). Moved verbatim from
 // gui/mainwindow.cpp; see scan_worker.h. Two substitutions versus the
 // original: the videoStats line goes through msf::backendLogLine (same file,
 // same shape), and isVideoExt is a file-local copy (the GUI keeps its own).
@@ -60,6 +60,7 @@ void ScanWorker::run() {
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     control_.analyzeMode = analyzeMode_;
+    control_.fastRescan = fastRescan_;
     control_.telemetryEnabled = detailedLogEnabled_;
     control_.walkerQueueCapacity = walkerCapOverride_;
     control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
@@ -411,3 +412,4 @@ QVector<LiveMatch> ScanWorker::takePending() {
   QMutexLocker g(&pendingMutex_);
   QVector<LiveMatch> out = pending_; pending_.clear(); return out;
 }
+

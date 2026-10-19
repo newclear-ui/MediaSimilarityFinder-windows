@@ -1,4 +1,4 @@
-// BackendSupervisor implementation (P3: 0.9.4.69). See backend_supervisor.h.
+﻿// BackendSupervisor implementation (P3: 0.9.4.69). See backend_supervisor.h.
 #include "backend_supervisor.h"
 
 #include <QCoreApplication>
@@ -107,6 +107,7 @@ void BackendSupervisor::startScan(const BackendScanConfig& cfg) {
     p[QStringLiteral("detailedLog")] = cfg.detailedLog;
     p[QStringLiteral("testMode")] = cfg.testMode;
     p[QStringLiteral("analyzeMode")] = static_cast<int>(cfg.analyzeMode);
+    p[QStringLiteral("fastRescan")] = cfg.fastRescan;
     QJsonObject exec;
     exec[QStringLiteral("cpuMode")] = cfg.exec.cpuMode;
     exec[QStringLiteral("cpuPercent")] = cfg.exec.cpuPercent;
@@ -127,6 +128,17 @@ void BackendSupervisor::loadIndex(const QString& root, const QString& appDir) {
     p[QStringLiteral("root")] = root;
     p[QStringLiteral("appDir")] = appDir;
     sendCommand(msf_ipc::kLoadIndex, p);
+}
+
+void BackendSupervisor::reverifyIndex(const QString& root, const QString& appDir) {
+    if (!backendReady_ || !processAlive()) {
+        emit failed(QStringLiteral("backend unavailable - re-verify not started"));
+        return;
+    }
+    QJsonObject p;
+    p[QStringLiteral("root")] = root;
+    p[QStringLiteral("appDir")] = appDir;
+    sendCommand(msf_ipc::kReverifyIndex, p);
 }
 
 void BackendSupervisor::pause() {
@@ -465,6 +477,14 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
         const QString st = S(payload.value("state"));
         if (st == QStringLiteral("QUICK_LOADED")) {
             emit quickLoaded(payload.value("n").toInt(0));
+        } else if (st == QStringLiteral("REVERIFY_FINISHED")) {
+            // 0.9.4.134: counters as strings (same convention as progress).
+            emit reverifyFinished(payload.value("members").toString().toULongLong(),
+                                  payload.value("checked").toString().toULongLong(),
+                                  payload.value("changed").toString().toULongLong(),
+                                  payload.value("reanalyzed").toString().toULongLong(),
+                                  payload.value("pairsBefore").toString().toULongLong(),
+                                  payload.value("pairsAfter").toString().toULongLong());
         } else if (st == QStringLiteral("REVALIDATED")) {
             emit revalidated(payload.value("kept").toInt(0), payload.value("dropped").toInt(0));
         } else if (st == QStringLiteral("REVALIDATE_PROGRESS")) {
@@ -785,3 +805,5 @@ void BackendSupervisor::onHealthTick() {
         terminateAndRespawn(QStringLiteral("backend health timeout"));
     }
 }
+
+

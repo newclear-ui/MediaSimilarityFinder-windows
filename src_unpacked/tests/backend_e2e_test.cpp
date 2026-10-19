@@ -342,6 +342,40 @@ int main(int argc, char** argv) {
         check(sumText("sumValTime") != QStringLiteral("-"), "test1b summary load time shown");
     }
 
+    // ---- Test 1c (0.9.4.134): Re-verify end-to-end. The backend re-reads the
+    // duplicate members' hashes (no changes expected here), updates nothing,
+    // and answers through results() plus the counter event; the backend must
+    // stay alive and the view/summary must be repopulated. ----
+    {
+        auto* reverifyBtn = w.findChild<QPushButton*>("reverifyBtn");
+        check(reverifyBtn != nullptr, "test1c reverify button found");
+        bool reverifyResults = false;
+        bool reverifyCounters = false;
+        const auto resultsConn =
+            QObject::connect(supervisor, &BackendClient::results, supervisor,
+                             [&](const QVector<BackendFile>&, const QStringList&) {
+                                 reverifyResults = true;
+                             });
+        const auto countersConn =
+            QObject::connect(supervisor, &BackendClient::reverifyFinished, supervisor,
+                             [&](qulonglong, qulonglong, qulonglong, qulonglong,
+                                 qulonglong, qulonglong) { reverifyCounters = true; });
+        const int exitsBefore2 = backendExits;
+        reverifyBtn->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return reverifyResults; }, 60000, "test1c reverify completed");
+        pumpUntil([&] { return reverifyCounters; }, 5000, "test1c reverify counters delivered");
+        QObject::disconnect(resultsConn);
+        QObject::disconnect(countersConn);
+        check(backendExits == exitsBefore2, "test1c no backend restart during re-verify");
+        const auto sumText2 = [&](const char* name) {
+            auto* l = w.findChild<QLabel*>(QString::fromLatin1(name));
+            return l ? l->text() : QStringLiteral("<none>");
+        };
+        check(sumText2("sumValGroups") == QStringLiteral("300"), "test1c summary groups kept");
+        check(sumText2("sumValVerify") == QStringLiteral("- / 300"), "test1c stored pairs kept");
+    }
+
     // ---- Test 2: forced kill right after scan start -> restart -> auto-resume. ----
     // The kill lands deterministically with no wait at all: supervisor.scanning_
     // is set synchronously when START_SCAN is sent, while even a quick-load

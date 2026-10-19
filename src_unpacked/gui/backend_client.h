@@ -1,4 +1,4 @@
-// BackendClient interface (P2: 0.9.4.68).
+﻿// BackendClient interface (P2: 0.9.4.68).
 //
 // The GUI talks to the search backend through this interface only: commands
 // go down, events come up. LoopbackBackendClient implements it in-process on
@@ -64,6 +64,9 @@ struct BackendScanConfig {
     // Default Sequential (B). Chosen in Settings; the verdict is identical
     // across modes. Logged as scanAnalyzeMode=<B|A|AB>.
     msf::AnalyzeMode analyzeMode = msf::AnalyzeMode::Sequential;
+    // 0.9.4.134 fast-rescan: trust (size,mtime) for unchanged rows instead of
+    // re-reading their 64 KiB quick hash. Default false = strict.
+    bool fastRescan = false;
     ExecutionPolicy exec;
 };
 
@@ -181,6 +184,9 @@ public:
     // reports files+pairs through the normal results()/quickLoaded() signals,
     // with no walk or analysis. root+appDir mirror startScan's index identity.
     virtual void loadIndex(const QString& root, const QString& appDir) = 0;
+    // 0.9.4.134: forced re-verification of stored-duplicate members. Answers
+    // through results() (like loadIndex) plus a reverifyFinished counter event.
+    virtual void reverifyIndex(const QString& root, const QString& appDir) = 0;
     virtual void pause() = 0;
     virtual void resume() = 0;
     virtual void cancel() = 0;
@@ -248,6 +254,9 @@ signals:
     void listingProgress(std::size_t n);
     void matchesBatch(QVector<BackendMatch> batch);
     void quickLoaded(int n);
+    // 0.9.4.134: forced duplicate re-verification counters.
+    void reverifyFinished(qulonglong members, qulonglong checked, qulonglong changed,
+                          qulonglong reanalyzed, qulonglong pairsBefore, qulonglong pairsAfter);
     void revalidated(int kept, int dropped);
     // 0.9.4.85: engine-version revalidation progress (pairs checked, total).
     void revalidateProgress(qulonglong done, qulonglong total);
@@ -268,3 +277,5 @@ signals:
     // msf_scan.log; the backend never writes that file itself).
     void backendLogLine(const QString& line);
 };
+
+

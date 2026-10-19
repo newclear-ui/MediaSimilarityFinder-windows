@@ -264,6 +264,10 @@ int main(int argc, char** argv) {
       "summaryMode", "summaryFolder",
       // 0.9.4.132: Load-only completion message
       "loadDone",
+      // 0.9.4.134: fast-rescan setting + forced duplicate re-verification
+      "fastRescan", "fastRescanTip",
+      "reverify", "reverifyTip", "reverifyRunning", "reverifyWait",
+      "reverifyWaitTitle", "reverifyDone",
     };
     int missing = 0;
     for (const char* k : kKeys) {

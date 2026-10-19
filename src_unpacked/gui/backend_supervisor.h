@@ -1,4 +1,4 @@
-// BackendSupervisor (P3: 0.9.4.69). BackendClient implemented over a real
+﻿// BackendSupervisor (P3: 0.9.4.69). BackendClient implemented over a real
 // OS process: spawns MediaSimilarityFinderBackend --backend, speaks the
 // line-oriented JSON protocol (src/backend_ipc.*), and enforces the
 // supplemental-directive hard rules:
@@ -56,6 +56,7 @@ public:
     void ensureRunning() override;
     void startScan(const BackendScanConfig& cfg) override;
     void loadIndex(const QString& root, const QString& appDir) override;
+    void reverifyIndex(const QString& root, const QString& appDir) override;
     void pause() override;
     void resume() override;
     void cancel() override;
@@ -159,3 +160,4 @@ private:
     void* job_ = nullptr; // HANDLE, void* to keep windows.h out of the header
 #endif
 };
+
