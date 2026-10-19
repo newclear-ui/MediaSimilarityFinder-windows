@@ -1,0 +1,3 @@
+// 0.9.4.139: Explorer / Task Manager icon for MediaSimilarityFinderBackend.exe.
+// Distinct art from the GUI so the backend is recognizable in Task Manager.
+IDI_BACKENDICON ICON "backend.ico"

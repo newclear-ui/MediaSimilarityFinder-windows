@@ -1,0 +1,3 @@
+// 0.9.4.139: Explorer / Task Manager icon for MediaSimilarityFinder.exe.
+// The bitmap is a multi-size .ico (16/24/32/48/64/128/256, PNG-compressed).
+IDI_APPICON ICON "app.ico"

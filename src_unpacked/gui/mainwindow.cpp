@@ -213,9 +213,14 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"kindImages")) return S("사진","Photos");
   if (!std::strcmp(key,"kindVideos")) return S("영상","Videos");
   if (!std::strcmp(key,"kindAll")) return S("모두","All");
-  if (!std::strcmp(key,"sortSim")) return S("유사도 내림차순","Similarity");
-  if (!std::strcmp(key,"sortName")) return S("이름 오름차순","Name");
+  // 0.9.4.139: the sort is a type + a direction (the old labels baked the
+  // descending/ascending order into the type text).
+  if (!std::strcmp(key,"sortSim")) return S("유사도","Similarity");
+  if (!std::strcmp(key,"sortName")) return S("이름","Name");
+  if (!std::strcmp(key,"sortSize")) return S("그룹 크기","Group size");
   if (!std::strcmp(key,"sortNone")) return S("없음","None");
+  if (!std::strcmp(key,"sortDesc")) return S("내림차순","Descending");
+  if (!std::strcmp(key,"sortAsc")) return S("오름차순","Ascending");
   if (!std::strcmp(key,"searchGroups")) return S("그룹 검색","Search groups");
   if (!std::strcmp(key,"exportCsv")) return S("그룹 내보내기 (CSV)","Export groups (CSV)");
   if (!std::strcmp(key,"group")) return S("그룹","Group");
@@ -1190,9 +1195,15 @@ void MainWindow::buildMiddle(QWidget* w) {
   groupTitle_->setObjectName("groupTitle"); // automation hook, see folder_
   lay->addWidget(groupTitle_);
   auto* bar = new QHBoxLayout;
+  // 0.9.4.139: group sort split into type + direction (the old single list had
+  // no ascending/descending choice). Items are (re)filled in setLanguage in
+  // the order None / Group size / Similarity / Name.
   sortBox_ = new QComboBox(w);
+  sortBox_->setObjectName("sortBox"); // automation hook
+  sortDirBox_ = new QComboBox(w);
+  sortDirBox_->setObjectName("sortDirBox"); // automation hook
   // View-mode dropdown in the same QComboBox style as the preset combo: one
-  // arrow only (the old QToolButton drew its own arrow next to the "▾" text).
+  // arrow only (the old QToolButton drew its own arrow next to the "?" text).
   viewBox_ = new QComboBox(w);
   viewBox_->setObjectName("viewBox"); // automation hook, see folder_
   viewBox_->setMinimumHeight(30);
@@ -1203,9 +1214,23 @@ void MainWindow::buildMiddle(QWidget* w) {
   connect(viewBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int i) { groupViewChanged(i); });
   groupSearch_ = new QLineEdit(w); groupSearch_->setClearButtonEnabled(true);
   connect(groupSearch_, &QLineEdit::textChanged, this, &MainWindow::groupSearchChanged);
-  connect(sortBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { rebuildGroups(); refreshGroupList(); });
+  connect(sortBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int idx) {
+    // Default direction per type: names ascending, group size/similarity
+    // descending (bigger groups and closer matches first). The user can flip.
+    if (sortDirBox_) {
+      sortDirBox_->blockSignals(true);
+      sortDirBox_->setCurrentIndex(idx == kSortName ? 1 : 0);
+      sortDirBox_->blockSignals(false);
+    }
+    updateSortEnabled();
+    if (!scanning_) { rebuildGroups(); refreshGroupList(); }
+  });
+  connect(sortDirBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
+    if (sortBox_->currentIndex() == kSortNone) return;
+    if (!scanning_) { rebuildGroups(); refreshGroupList(); }
+  });
   groupSearch_->setMaximumWidth(280); // balanced against the view button
-  bar->addWidget(sortBox_); bar->addWidget(viewBox_); bar->addWidget(groupSearch_);
+  bar->addWidget(sortBox_); bar->addWidget(sortDirBox_); bar->addWidget(viewBox_); bar->addWidget(groupSearch_);
   lay->addLayout(bar);
   midTabs_ = new QTabWidget(w);
   lay->addWidget(midTabs_, 1);
@@ -1444,9 +1469,25 @@ void MainWindow::applyStaticTexts() {
   groupTitle_->setText(trStr(l, "groups") + QString(" (%1)").arg(groups_.size()));
   sortBox_->blockSignals(true);
   const int ssort = sortBox_->currentIndex();
-  sortBox_->clear(); sortBox_->addItem(trStr(l, "sortNone")); sortBox_->addItem(trStr(l, "sortSim")); sortBox_->addItem(trStr(l, "sortName"));
+  // 0.9.4.139: menu order None / Group size / Similarity / Name (the user
+  // asked for the new group-size order right below None).
+  sortBox_->clear();
+  sortBox_->addItem(trStr(l, "sortNone"));
+  sortBox_->addItem(trStr(l, "sortSize"));
+  sortBox_->addItem(trStr(l, "sortSim"));
+  sortBox_->addItem(trStr(l, "sortName"));
   sortBox_->setCurrentIndex(ssort < 0 ? 0 : ssort);
   sortBox_->blockSignals(false);
+  if (sortDirBox_) {
+    sortDirBox_->blockSignals(true);
+    const int sdir = sortDirBox_->currentIndex();
+    sortDirBox_->clear();
+    sortDirBox_->addItem(trStr(l, "sortDesc"));
+    sortDirBox_->addItem(trStr(l, "sortAsc"));
+    sortDirBox_->setCurrentIndex(sdir < 0 ? 0 : sdir);
+    sortDirBox_->blockSignals(false);
+    updateSortEnabled();
+  }
   groupSearch_->setPlaceholderText(trStr(l, "searchGroups"));
   {
     const char* vkeys[7] = {"viewXL", "viewL", "viewM", "viewS", "viewList", "viewDetails", "viewTiles"};
@@ -1575,12 +1616,9 @@ void MainWindow::setRunning(bool v) {
     // 0.9.4.95: pair-verify counts belong to the finished scan, not the new one.
     lastVerifyTotal_ = 0; lastVerifyDone_ = 0;
     if (sumValVerify_) sumValVerify_->setText(QStringLiteral("-"));
-    // Lock the group sort to None for the whole scan. A similarity/name order
-    // must re-place every streamed match, which churned the pane (new groups
-    // inserted into a sorted list). None keeps the union-find build order, so
-    // streamed matches only append. The user's choice is restored at scan end.
-    // A scan takes over the sort lock from a previous load.
-    loadLockSort_ = false;
+    // 0.9.4.139: a scan still locks the sort to None so streamed matches only
+    // append (a sorted list would re-place every row); the user's choice is
+    // restored at scan end. Load no longer locks the sort (see loadIndex).
     preScanSort_ = sortBox_->currentIndex();
     if (sortBox_->currentIndex() != kSortNone) {
       sortBox_->blockSignals(true);
@@ -2375,9 +2413,9 @@ void MainWindow::loadIndex() {
   loadStartMs_ = QDateTime::currentMSecsSinceEpoch();
   loadedSummary_ = false;
   if (sumValVerify_) sumValVerify_->setText(QStringLiteral("-"));
-  // Load shows the stored order: sort = None, locked until the next scan.
+  // 0.9.4.139: Load starts from the stored order but the sort is no longer
+  // locked -- the user may re-sort the loaded list immediately.
   sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
-  loadLockSort_ = true;
   updateSortEnabled();
   refreshGroupList(); refreshFileViews(); refreshDetail();
   statusMsg_->setText(trStr(lang(), "loadRunning"));
@@ -2418,7 +2456,6 @@ void MainWindow::reverifyIndex() {
   loadStartMs_ = QDateTime::currentMSecsSinceEpoch();
   loadedSummary_ = false;
   sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
-  loadLockSort_ = true;
   updateSortEnabled();
   refreshGroupList(); refreshFileViews(); refreshDetail();
   statusMsg_->setText(trStr(lang(), "reverifyRunning"));
@@ -2795,15 +2832,28 @@ void MainWindow::rebuildGroups() {
     groups_.push_back(g);
   }
   const int sortMode = sortBox_->currentIndex();
-  if (sortMode == kSortName) {
-    std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) { return a.paths[0] < b.paths[0]; });
+  // 0.9.4.139: direction combo index 0 = descending, 1 = ascending. The path
+  // stays the ascending tie-break so equal metrics keep a stable order.
+  const bool sortDesc = !sortDirBox_ || sortDirBox_->currentIndex() == 0;
+  const auto groupPath = [](const DupGroup& g) {
+    return g.paths.isEmpty() ? QString() : g.paths.front();
+  };
+  if (sortMode == kSortSize) {
+    // Group size = number of files in the duplicate group (largest first by
+    // default), the order added in this build.
+    std::sort(groups_.begin(), groups_.end(), [&](const DupGroup& a, const DupGroup& b) {
+      if (a.paths.size() != b.paths.size())
+        return sortDesc ? a.paths.size() > b.paths.size() : a.paths.size() < b.paths.size();
+      return groupPath(a) < groupPath(b);
+    });
+  } else if (sortMode == kSortName) {
+    std::sort(groups_.begin(), groups_.end(), [&](const DupGroup& a, const DupGroup& b) {
+      return sortDesc ? groupPath(b) < groupPath(a) : groupPath(a) < groupPath(b);
+    });
   } else if (sortMode == kSortSim) {
-    // Similarity: best match first, path as the tie-break.
-    std::sort(groups_.begin(), groups_.end(), [](const DupGroup& a, const DupGroup& b) {
-      if (a.best != b.best) return a.best > b.best;
-      const QString ap = a.paths.isEmpty() ? QString() : a.paths.front();
-      const QString bp = b.paths.isEmpty() ? QString() : b.paths.front();
-      return ap < bp;
+    std::sort(groups_.begin(), groups_.end(), [&](const DupGroup& a, const DupGroup& b) {
+      if (a.best != b.best) return sortDesc ? a.best > b.best : a.best < b.best;
+      return groupPath(a) < groupPath(b);
     });
   } else {
     // kSortNone: stable append order. Groups already listed keep their position;
@@ -3361,10 +3411,14 @@ void MainWindow::refreshGroupList(bool append) {
   updateIgnoreTab();
 }
 void MainWindow::updateSortEnabled() {
-  // The group-sort combo is usable only on a group tab and only when no scan is
-  // running (a scan locks it to None; see setRunning()).
+  // 0.9.4.139: type + direction are usable on a group tab whenever no scan is
+  // running (Load no longer locks them; a scan restores None at its end). The
+  // direction combo is meaningless for the "None" (stored order) type.
   const int t = midTabs_ ? midTabs_->currentIndex() : 0;
-  sortBox_->setEnabled((t == 0 || t == 1) && !scanning_ && !loadLockSort_);
+  const bool on = (t == 0 || t == 1) && !scanning_;
+  if (sortBox_) sortBox_->setEnabled(on);
+  if (sortDirBox_)
+    sortDirBox_->setEnabled(on && sortBox_ && sortBox_->currentIndex() != kSortNone);
 }
 void MainWindow::activateTab(int idx) {
   const bool res = (idx == 0 || idx == 1);
@@ -5069,6 +5123,7 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
 
 
 

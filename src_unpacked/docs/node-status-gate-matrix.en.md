@@ -1,7 +1,7 @@
 ﻿# Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.138` (Preview cell width follows the preview size — dynamic text fitting) - CPU CTest 125/125 - GPU CTest 126/126
-Last updated: 2026-10-18
+Baseline: `0.9.4.139` (Embedded EXE icons + group sort overhaul — group size, direction, unlocked after Load) - CPU CTest 125/125 - GPU CTest 126/126
+Last updated: 2026-10-20
 
 ## Role of this document
 

@@ -346,6 +346,19 @@ int main(int argc, char** argv) {
         check(sumText("sumValDup") == QStringLiteral("600"), "test1b summary dupFiles=600");
         check(sumText("sumValVerify") == QStringLiteral("- / 300"), "test1b summary stored pairs shown");
         check(sumText("sumValTime") != QStringLiteral("-"), "test1b summary load time shown");
+        // 0.9.4.139: the sort is type + direction and is NOT locked after Load.
+        auto* sortBox = w.findChild<QComboBox*>("sortBox");
+        auto* sortDir = w.findChild<QComboBox*>("sortDirBox");
+        check(sortBox != nullptr && sortBox->isEnabled(), "test1b sort available after Load");
+        check(sortBox && sortBox->count() == 4, "test1b sort menu None/Group size/Similarity/Name");
+        check(sortDir && sortDir->count() == 2, "test1b sort direction has ascending/descending");
+        if (sortBox) {
+            sortBox->setCurrentIndex(1); // Group size
+            QApplication::processEvents();
+            check(sortBox->currentIndex() == 1, "test1b sort can change after Load");
+            sortBox->setCurrentIndex(0);
+            QApplication::processEvents();
+        }
     }
 
     // ---- Test 1c (0.9.4.134): Re-verify end-to-end. The backend re-reads the
@@ -788,6 +801,7 @@ int main(int argc, char** argv) {
               << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+
 
 
 

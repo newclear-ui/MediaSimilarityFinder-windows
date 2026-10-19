@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.138 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.139 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -687,15 +687,18 @@ if(MSF_BUILD_GUI)
   find_package(Qt6 QUIET COMPONENTS Widgets)
   if(Qt6_FOUND)
     qt_standard_project_setup()
+    # 0.9.4.139: Explorer/Task Manager icon (app_icon.rc) + the same art as a
+    # Qt resource so the window/taskbar icon is set from the embedded copy.
     qt_add_executable(MediaSimilarityFinder
       gui/main.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h
       gui/backend_supervisor.cpp gui/backend_supervisor.h
+      resources/app_icon.rc resources/icons.qrc
       # S4 benchmark worker. Listed for AUTOMOC; MainWindow does not use it yet,
       # which is why no layout or control was touched in this stage.
      )
     # GUI subsystem: no console window on double-click. The --version/--help/
     # --smoke flags attach to the parent console explicitly (see main.cpp).
-    set_target_properties(MediaSimilarityFinder PROPERTIES WIN32_EXECUTABLE TRUE)
+    set_target_properties(MediaSimilarityFinder PROPERTIES WIN32_EXECUTABLE TRUE AUTORCC ON)
     target_link_libraries(MediaSimilarityFinder PRIVATE msf_core Qt6::Widgets)
     target_include_directories(MediaSimilarityFinder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     get_target_property(MSF_QT_CORE_LOC Qt6::Core LOCATION_Release)
@@ -887,7 +890,8 @@ if(Qt6_FOUND)
   # (ThumbnailStore serves JPEG end to end; no QtGui per G13).
   find_package(libjpeg-turbo CONFIG REQUIRED)
   target_link_libraries(msf_core PUBLIC libjpeg-turbo::turbojpeg)
-  add_executable(MediaSimilarityFinderBackend src/backend_main.cpp)
+  # 0.9.4.139: Explorer/Task Manager icon for the backend process (distinct art).
+  add_executable(MediaSimilarityFinderBackend src/backend_main.cpp resources/backend_icon.rc)
   target_link_libraries(MediaSimilarityFinderBackend PRIVATE msf_core Qt6::Core)
   target_include_directories(MediaSimilarityFinderBackend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   if(MSF_BUILD_TESTS)
@@ -934,6 +938,8 @@ if(Qt6_FOUND)
 else()
   message(STATUS "Qt6 Core not found; Backend target skipped")
 endif()
+
+
 
 
 

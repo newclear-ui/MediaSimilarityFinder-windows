@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+﻿#include "mainwindow.h"
 #include "backend_supervisor.h"
 #include "command_line.h"
 #include "console_benchmark_cli.h"
@@ -9,6 +9,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QIcon>
 #include <QString>
 #include <QTimer>
 #include <iostream>
@@ -283,6 +284,9 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    // 0.9.4.139: window/taskbar icon from the embedded copy of resources/app.ico
+    // (the exe carries the same art through resources/app_icon.rc).
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/app.ico")));
     QCoreApplication::setApplicationVersion(kVersion);
     initAppSettings(QCoreApplication::applicationDirPath());
     installQtMessageLog(); // crash diagnostics: Qt warnings/fatals to %TEMP%/msf_qt.log
@@ -308,3 +312,4 @@ int main(int argc, char** argv) {
     w.show();
     return app.exec();
 }
+

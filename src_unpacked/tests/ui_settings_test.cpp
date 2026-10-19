@@ -273,6 +273,8 @@ int main(int argc, char** argv) {
       "testApplying", "testApplied", "testApplyFailed",
       // 0.9.4.136: preview-size gauge (1.0x marker/drag ratio)
       "zoomTip",
+      // 0.9.4.139: split sort (type + direction) with the new group-size order
+      "sortSize", "sortDesc", "sortAsc",
     };
     int missing = 0;
     for (const char* k : kKeys) {
@@ -456,4 +458,5 @@ int main(int argc, char** argv) {
   }
   std::cerr << "unknown mode\n"; return 2;
 }
+
 

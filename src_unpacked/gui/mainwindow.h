@@ -486,12 +486,14 @@ private:
   // appended) so the middle pane extends without recreating rows during a scan;
   // a running scan locks the combo to None and restores the user's choice when
   // the scan ends.
-  static constexpr int kSortNone = 0, kSortSim = 1, kSortName = 2;
-  QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QLineEdit* groupSearch_=nullptr;
+  // 0.9.4.139: group sort types. Size = number of files in the group (the
+  // user asked for "bigger groups first" as a first-class order).
+  static constexpr int kSortNone = 0, kSortSize = 1, kSortSim = 2, kSortName = 3;
+  QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QComboBox* sortDirBox_=nullptr;
+  QLineEdit* groupSearch_=nullptr;
   int preScanSort_ = kSortNone; // sort restored when the running scan ends
   // 0.9.4.93: "불러오기" (Load) shows the stored index in None order and locks
   // the sort combo until the next scan (load-only view is never re-sorted).
-  bool loadLockSort_ = false;
   // 0.9.4.93: load-only ("불러오기") in-flight state. While true the Load button
   // is disabled (one press per load), a non-modal "loading" notice is up, and
   // onResults must not show the finished-scan report popup.
@@ -566,6 +568,7 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
 
 
 
