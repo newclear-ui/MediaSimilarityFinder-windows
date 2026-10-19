@@ -347,6 +347,19 @@ int main(int argc, char** argv) {
             // 0.9.4.136: the preview-size gauge is active only in icon-grid view.
             auto* zoomSlider = w.findChild<QSlider*>("zoomSlider");
             check(zoomSlider != nullptr && zoomSlider->isEnabled(), "zoom slider enabled in grid view");
+            // 0.9.4.137: the gauge snaps to 0.05 x 128 (6.4 px) steps, so
+            // 116 -> 115 px and 129 -> 128 px (the 1.0 reference), and the
+            // file grid follows the snapped size.
+            if (zoomSlider) {
+                zoomSlider->setValue(116);
+                QApplication::processEvents();
+                check(zoomSlider->value() == 115 && fileGrid->iconSize().width() == 115,
+                      "zoom slider snaps 116 -> 115 px");
+                zoomSlider->setValue(129);
+                QApplication::processEvents();
+                check(zoomSlider->value() == 128 && fileGrid->iconSize().width() == 128,
+                      "zoom slider snaps 129 -> 128 px (1.0)");
+            }
             if (auto* first = grid->item(0)) grid->setCurrentItem(first);
             QApplication::processEvents();
             std::cout << "  [info] fileGrid items=" << fileGrid->count() << "\n";

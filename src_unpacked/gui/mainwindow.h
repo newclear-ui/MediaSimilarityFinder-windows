@@ -41,10 +41,19 @@ class QStyledItemDelegate; class QCloseEvent; class QDialog;
 // ratio bubble while dragging. The reference value is the product's standard
 // preview size (zoomChanged's default 128); values map to ratios of it.
 class ZoomSlider : public QSlider {
+    Q_OBJECT
 public:
     explicit ZoomSlider(QWidget* parent = nullptr);
     // Draw the reference line/tick at this slider value; <= minimum disables it.
     void setReferenceValue(int v) { reference_ = v; update(); }
+    // 0.9.4.137: the slider snaps to 0.05 ratio steps (6.4 px at the 128 px
+    // reference), so a 0.9 -> 1.0 move is two visible sizes instead of
+    // thirteen and the two-decimal ratio bubble stays meaningful.
+    static int snapValueFor(int v, int reference);
+signals:
+    void previewSizeChanged(int px);
+private slots:
+    void onValueChanged(int v);
 protected:
     void paintEvent(QPaintEvent* ev) override;
     void mousePressEvent(QMouseEvent* ev) override;
@@ -53,6 +62,7 @@ private:
     int handleCenterX() const;
     int reference_ = 0;
     bool dragging_ = false;
+    int lastEmitted_ = -1;
 };
 
 // ---------------------------------------------------------------- language
@@ -554,6 +564,7 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
 
 
 

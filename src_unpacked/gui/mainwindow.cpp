@@ -642,9 +642,37 @@ ZoomSlider::ZoomSlider(QWidget* parent) : QSlider(Qt::Horizontal, parent) {
     // Room above the groove for the ratio bubble; the row otherwise sizes the
     // slider from the default style height.
     setMinimumHeight(30);
-    // Repaint the bubble as the value changes while dragging (mouseMove on the
-    // groove also emits valueChanged).
-    connect(this, &QSlider::valueChanged, this, [this](int) { update(); });
+    // 0.9.4.137: 0.05 ratio steps (6 px at the 128 px reference) for the
+    // keyboard/wheel; drag and clicks are snapped in onValueChanged.
+    setSingleStep(6);
+    setPageStep(26);
+    connect(this, &QSlider::valueChanged, this, &ZoomSlider::onValueChanged);
+}
+
+// Snap a raw slider value (pixels) to the nearest 0.05 x reference stop.
+// 0.9.4.137: without this, 0.9 -> 1.0 was thirteen 1-px size changes; the
+// user asked for coarser, predictable stops and a two-decimal readout.
+int ZoomSlider::snapValueFor(int v, int reference) {
+    if (reference <= 0) return v;
+    constexpr double kStepRatio = 0.05;
+    const double ratio = (double)v / (double)reference;
+    const long long k = std::llround(ratio / kStepRatio);
+    return (int)std::llround((double)k * kStepRatio * (double)reference);
+}
+
+void ZoomSlider::onValueChanged(int v) {
+    const int snapped = snapValueFor(v, reference_);
+    if (snapped != v && snapped >= minimum() && snapped <= maximum()) {
+        QSignalBlocker blocker(this);
+        setValue(snapped);
+    }
+    update();
+    if (snapped != lastEmitted_ && snapped >= minimum() && snapped <= maximum()) {
+        lastEmitted_ = snapped;
+        // Consumers see only snapped sizes (the raw valueChanged stream is
+        // intentionally not used by MainWindow any more).
+        emit previewSizeChanged(snapped);
+    }
 }
 
 int ZoomSlider::handleCenterX() const {
@@ -685,8 +713,11 @@ void ZoomSlider::paintEvent(QPaintEvent* ev) {
     }
     // Ratio bubble above the handle while dragging (e.g. 0.5, 1.1, 1.5).
     if (dragging_ && isEnabled() && reference_ > 0) {
+        // 0.9.4.137: two decimals (0.50 / 0.95 / 1.00); with 0.05 steps the
+        // second decimal carries real information.
         const double ratio = (double)value() / (double)reference_;
-        const QString text = QString::number(ratio, 'f', 1);
+        const QString text =
+            QString::number(std::round(ratio * 100.0) / 100.0, 'f', 2);
         QFont f = font();
         if (f.pointSizeF() > 8.5) f.setPointSizeF(f.pointSizeF() - 1.0);
         p.setFont(f);
@@ -1263,7 +1294,8 @@ void MainWindow::buildRight(QWidget* w) {
   zoom_->setRange(48, 256); zoom_->setValue(128); zoom_->setFixedWidth(130);
   zoom_->setReferenceValue(128);
   zoom_->setToolTip(trStr(lang(), "zoomTip"));
-  connect(zoom_, &QSlider::valueChanged, this, &MainWindow::zoomChanged);
+  // 0.9.4.137: snapped sizes only (ZoomSlider emits the 0.05-step value).
+  connect(zoom_, &ZoomSlider::previewSizeChanged, this, &MainWindow::zoomChanged);
   head->addStretch(1); head->addWidget(detailCount_);
   head->addWidget(viewGrid_); head->addWidget(viewList_); head->addWidget(zoom_);
   lay->addLayout(head);
@@ -5010,6 +5042,7 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
 
 
 
