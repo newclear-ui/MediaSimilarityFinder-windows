@@ -352,6 +352,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogIo")) return S("디스크 I/O","Disk I/O");
   if (!std::strcmp(key,"detailLogMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"detailLogSlow")) return S("느린 파일","Slowest files");
+  if (!std::strcmp(key,"detailLogFailed")) return S("실패한 파일","Failed files");
   if (!std::strcmp(key,"detailLogSummary")) return S("검색 요약","Search Summary");
   if (!std::strcmp(key,"detailLogDuration")) return S("검색 시간","Search Duration");
   if (!std::strcmp(key,"detailLogDupGroups")) return S("중복 그룹","duplicate groups");
@@ -2022,6 +2023,21 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
     if (shown++ >= 5) break;
     const QJsonObject o = v.toObject();
     lines << QString("  %1 ms  %2").arg(f1(o["ms"].toDouble())).arg(o["path"].toString());
+  }
+  // 0.9.4.144: files whose analysis failed, with the reason.
+  lines << QString("%1 (img):").arg(trStr(lang(), "detailLogFailed"));
+  shown = 0;
+  for (const auto& v : imgs["failedFiles"].toArray()) {
+    if (shown++ >= 10) break;
+    const QJsonObject o = v.toObject();
+    lines << QString("  %1 — %2").arg(o["reason"].toString(), o["path"].toString());
+  }
+  lines << QString("%1 (vid):").arg(trStr(lang(), "detailLogFailed"));
+  shown = 0;
+  for (const auto& v : vids["failedFiles"].toArray()) {
+    if (shown++ >= 10) break;
+    const QJsonObject o = v.toObject();
+    lines << QString("  %1 — %2").arg(o["reason"].toString(), o["path"].toString());
   }
   lines << QString("build %1 · engine %2 · db %3 · d=%4 %5GPU")
       .arg(meta["build"].toString()).arg(meta["engine"].toString()).arg(meta["db"].toString())
@@ -5248,6 +5264,7 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
 
 
 

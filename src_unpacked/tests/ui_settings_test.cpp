@@ -241,7 +241,7 @@ int main(int argc, char** argv) {
       "detailLogWall", "detailLogFiles", "detailLogImages", "detailLogVideos",
       "detailLogCpuUse", "detailLogCpuProc", "detailLogCpuSys",
       "detailLogMemMax", "detailLogGpuDuty", "detailLogIo",
-      "detailLogMatches", "detailLogSlow",
+      "detailLogMatches", "detailLogSlow", "detailLogFailed",
       // user-facing search summary (per-kind scanned/analyzed/throughput plus
       // the duplicate groups/files/pairs split)
       "detailLogSummary", "detailLogDuration", "detailLogDupGroups",
@@ -460,6 +460,7 @@ int main(int argc, char** argv) {
   }
   std::cerr << "unknown mode\n"; return 2;
 }
+
 
 
 

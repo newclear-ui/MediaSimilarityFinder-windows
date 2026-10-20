@@ -127,7 +127,27 @@ int main() {
     }
 
     // ---- scan 1: first encounter. The failure must not look like a success. ----
+    // 0.9.4.144: the detailed log must name the failed file and its reason.
+    msf::TelemetryConfig tcfg;
+    tcfg.root = root.string();
+    tcfg.build = "test";
+    tcfg.engine = msf::MediaSearchEngine::kEngineVersion;
+    tcfg.db = msf::Database::kDatabaseVersion;
+    tcfg.scanImages = true;
+    tcfg.scanVideos = false;
+    tcfg.detail = true;
+    engine.beginTelemetry(tcfg, true);
     const auto r1 = engine.scan(root.string());
+    if (engine.hasTelemetry()) {
+        const std::string js = engine.telemetryJson();
+        check(js.find("\"failedFiles\"") != std::string::npos, "telemetry has a failedFiles list");
+        check(js.find("broken.bmp") != std::string::npos, "telemetry names the failed file");
+        check(js.find("decode/analysis failed") != std::string::npos,
+              "telemetry records the failure reason");
+    } else {
+        check(false, "scan telemetry was recorded");
+    }
+    engine.abortTelemetry();
     check(r1.scanned == 2, "scan1 scanned=2");
     check(r1.analyzed == 1, "scan1 analyzed counts only the successful file");
     check(r1.added == 1, "scan1 added counts only the analyzed file");

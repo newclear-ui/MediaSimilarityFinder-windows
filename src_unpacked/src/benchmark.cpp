@@ -131,6 +131,12 @@ void TelemetryRecorder::setCancelled(const std::string& reason) {
   if (!reason.empty()) completionReason_ = reason;
 }
 void TelemetryRecorder::setPaused(bool paused) { paused_ = paused; }
+void TelemetryRecorder::addFailedFile(bool video, const std::string& path, std::string reason, double ms) {
+  std::lock_guard<std::mutex> g(slowMutex_);
+  auto& v = video ? failedVideos_ : failedImages_;
+  if (v.size() >= kFailedTop) return;
+  v.push_back({path, std::move(reason), ms});
+}
 void TelemetryRecorder::setFailed(const std::string& stage, const std::string& reason) {
   failed_ = true;
   failedStage_ = stage;
@@ -228,6 +234,7 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   {
     std::lock_guard<std::mutex> g(slowMutex_);
     slowImages_.clear(); slowVideos_.clear();
+    failedImages_.clear(); failedVideos_.clear();
   }
   {
     std::lock_guard<std::mutex> g(sampleMutex_);
@@ -685,6 +692,17 @@ std::string TelemetryRecorder::toJson() const {
       o << "{\"path\":\"" << escapeJson(s.path) << "\",\"ms\":" << s.ms << ",\"bytes\":" << s.bytes << "}";
     }
   }
+  o << "],\"failedFiles\":[";
+  {
+    std::lock_guard<std::mutex> g(slowMutex_);
+    bool first = true;
+    for (const auto& f : failedImages_) {
+      if (!first) o << ",";
+      first = false;
+      o << "{\"path\":\"" << escapeJson(f.path) << "\",\"reason\":\"" << escapeJson(f.reason)
+        << "\",\"ms\":" << f.ms << "}";
+    }
+  }
   o << "]},";
   o << "\"videos\":{\"count\":" << vidN << ",\"scanned\":" << vidScanned_
     << ",\"scannedState\":\"" << measureStateName(kindBreakdownSet_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
@@ -732,6 +750,17 @@ std::string TelemetryRecorder::toJson() const {
       first = false;
       o << "{\"path\":\"" << escapeJson(s.path) << "\",\"ms\":" << s.ms << ",\"bytes\":" << s.bytes
         << ",\"durationSec\":" << s.durationSec << ",\"frames\":" << s.frames << "}";
+    }
+  }
+  o << "],\"failedFiles\":[";
+  {
+    std::lock_guard<std::mutex> g(slowMutex_);
+    bool first = true;
+    for (const auto& f : failedVideos_) {
+      if (!first) o << ",";
+      first = false;
+      o << "{\"path\":\"" << escapeJson(f.path) << "\",\"reason\":\"" << escapeJson(f.reason)
+        << "\",\"ms\":" << f.ms << "}";
     }
   }
   o << "]},";
@@ -978,4 +1007,7 @@ std::string TelemetryRecorder::toJson() const {
   return o.str();
 }
 }
+
+
+
 

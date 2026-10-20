@@ -1004,6 +1004,13 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     x.fingerprint=0; x.analysisFailed=true;
     if(!db_.upsert(x)){ return false; }
     ++nFailed;
+    if(telemetryOn){
+      std::error_code fec;
+      const auto fsz=std::filesystem::file_size(path_from_utf8(x.path),fec);
+      telemetry_.addFailedFile(false, x.path,
+        fec ? std::string("read failed")
+            : (fsz==0 ? std::string("empty file") : std::string("decode/analysis failed")), 0.0);
+    }
    }
    // Settlement trace (0.9.4.78): finished timestamp + outcome ride the same
    // transaction as the upsert above. Slow files log their full timing triple.
@@ -1082,7 +1089,9 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       taken[i]=1; --remaining; progressed=true;
        auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true;
        if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};mf.quickHash=vs.quickHash;files_.push_back(mf); if(liveStreamActive) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
-       else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed; }
+       else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed;
+        if(telemetryOn){ const double fms=(i<rangeFileMs.size())?rangeFileMs[i]:0.0;
+          telemetry_.addFailedFile(true, j.state.path, "decode/analysis failed", fms); } }
        // Settlement trace (0.9.4.78) + slow-file log. rangeFileMs holds the
        // actual build time, a better elapsed metric than harvest latency.
        { const std::int64_t fms=wallMs();
@@ -1626,4 +1635,5 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   return finishScan(r.completed ? ScanTerminal::Completed : ScanTerminal::Cancelled);
 }
 }
+
 

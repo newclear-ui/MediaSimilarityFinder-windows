@@ -59,6 +59,13 @@ struct SlowFile {
   double durationSec = 0;
   std::size_t frames = 0;
 };
+// 0.9.4.144: files whose analysis failed, with the reason, for the detailed
+// log (same presentation slot as the slowest lists).
+struct FailedFile {
+  std::string path;
+  std::string reason;
+  double ms = 0;
+};
 struct ResourceSample {
     double tMs = 0;
     // Absolute wall-clock anchor in the same localTimeStr() convention as
@@ -125,6 +132,7 @@ class TelemetryRecorder {
 public:
   ~TelemetryRecorder();
   static constexpr std::size_t kSlowTop = 20;
+  static constexpr std::size_t kFailedTop = 50;
   static constexpr int kSampleMs = 250;
   static constexpr std::size_t kMaxSamples = 50000;
   // Independent of app/engine/db versions; bump only on telemetry JSON
@@ -220,6 +228,8 @@ public:
 void addVideoPlan(int decision, int reason, bool sparseAccepted, bool sparseRejected,
                   long long sparseSeeks, long long sparseDecoded, long long landingViolations);
   void addStreamedMatch() { streamedMatches_.fetch_add(1, std::memory_order_relaxed); }
+  // 0.9.4.144: record an analysis failure (reason + path) for the detailed log.
+  void addFailedFile(bool video, const std::string& path, std::string reason, double ms);
   void startSampler(std::function<bool()> gpuActive);
   void stopSampler();
   void abortUnfinished();
@@ -326,6 +336,8 @@ private:
   std::atomic<double> vidPlaySec_{0};
   mutable std::mutex slowMutex_;
   std::vector<SlowFile> slowImages_, slowVideos_;
+  // 0.9.4.144: analysis failures (reason + path), capped at kFailedTop.
+  std::vector<FailedFile> failedImages_, failedVideos_;
   std::atomic<bool> sampling_{false};
   std::function<bool()> gpuActiveFn_;
   std::thread sampler_;
@@ -377,4 +389,6 @@ private:
   std::size_t dispVidPairs_ = 0, dispVidGroups_ = 0, dispVidDupFiles_ = 0;
 };
 }
+
+
 
