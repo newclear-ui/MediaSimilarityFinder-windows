@@ -338,6 +338,8 @@ private:
   std::vector<SlowFile> slowImages_, slowVideos_;
   // 0.9.4.144: analysis failures (reason + path), capped at kFailedTop.
   std::vector<FailedFile> failedImages_, failedVideos_;
+  // 0.9.4.145: total failure count (the list above is capped).
+  std::atomic<std::size_t> failedCount_{0};
   std::atomic<bool> sampling_{false};
   std::function<bool()> gpuActiveFn_;
   std::thread sampler_;
@@ -389,6 +391,7 @@ private:
   std::size_t dispVidPairs_ = 0, dispVidGroups_ = 0, dispVidDupFiles_ = 0;
 };
 }
+
 
 
 

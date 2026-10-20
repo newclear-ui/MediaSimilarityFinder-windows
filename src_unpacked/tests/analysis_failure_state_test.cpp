@@ -1,4 +1,4 @@
-// Analysis-failure state regression (0.9.4.46 DEFECT-A / DEFECT-B).
+﻿// Analysis-failure state regression (0.9.4.46 DEFECT-A / DEFECT-B).
 //
 // Before this test, a file whose decode/analysis produced no fingerprint was
 // still reported as a successful `added`/`modified` index entry and then
@@ -144,6 +144,8 @@ int main() {
         check(js.find("broken.bmp") != std::string::npos, "telemetry names the failed file");
         check(js.find("decode/analysis failed") != std::string::npos,
               "telemetry records the failure reason");
+        check(js.find("\"failedFiles\":1") != std::string::npos,
+              "summary counts the failed file");
     } else {
         check(false, "scan telemetry was recorded");
     }
@@ -216,3 +218,4 @@ int main() {
               << (gOk ? "ok" : "FAILED") << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+

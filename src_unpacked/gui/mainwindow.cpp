@@ -353,6 +353,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"detailLogMatches")) return S("매치","Matches");
   if (!std::strcmp(key,"detailLogSlow")) return S("느린 파일","Slowest files");
   if (!std::strcmp(key,"detailLogFailed")) return S("실패한 파일","Failed files");
+  if (!std::strcmp(key,"detailLogFailedShort")) return S("실패 파일","failed files");
   if (!std::strcmp(key,"detailLogSummary")) return S("검색 요약","Search Summary");
   if (!std::strcmp(key,"detailLogDuration")) return S("검색 시간","Search Duration");
   if (!std::strcmp(key,"detailLogDupGroups")) return S("중복 그룹","duplicate groups");
@@ -1949,11 +1950,12 @@ void MainWindow::showDetailedLogDialog(const QString& json) {
     lines << QString("  %1: %2  %3: %4  %5: %6").arg(trStr(lang(), "detailLogDupGroups")).arg(vGr)
         .arg(trStr(lang(), "detailLogDupFiles")).arg(vDf)
         .arg(trStr(lang(), "detailLogDupPairs")).arg(vPr);
-    lines << QString("%1  scanned: %2  analyzed: %3  %4: %5  %6: %7")
+    lines << QString("%1  scanned: %2  analyzed: %3  %4: %5  %6: %7  %8: %9")
         .arg(trStr(lang(), "detailLogTotal"))
         .arg((qulonglong)sum["scanned"].toDouble()).arg((qulonglong)sum["analyzed"].toDouble())
         .arg(trStr(lang(), "detailLogDupGroups")).arg(iGr + vGr)
-        .arg(trStr(lang(), "detailLogDupFiles")).arg(iDf + vDf);
+        .arg(trStr(lang(), "detailLogDupFiles")).arg(iDf + vDf)
+        .arg(trStr(lang(), "detailLogFailedShort")).arg((qulonglong)sum["failedFiles"].toDouble());
     lines << QString("%1: Total %2 · Image %3 · Video %4 · %5 %6").arg(trStr(lang(), "detailLogTimeSplit"))
         .arg(fmtDur(sum["wallMs"].toDouble())).arg(fmtDur(iMs)).arg(fmtDur(vMs))
         .arg(trStr(lang(), "detailLogMatching")).arg(fmtDur(sum["analyzeMs"].toDouble()));
@@ -5264,6 +5266,7 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
 
 
 

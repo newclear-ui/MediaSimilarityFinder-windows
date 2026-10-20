@@ -132,6 +132,7 @@ void TelemetryRecorder::setCancelled(const std::string& reason) {
 }
 void TelemetryRecorder::setPaused(bool paused) { paused_ = paused; }
 void TelemetryRecorder::addFailedFile(bool video, const std::string& path, std::string reason, double ms) {
+  failedCount_.fetch_add(1, std::memory_order_relaxed);
   std::lock_guard<std::mutex> g(slowMutex_);
   auto& v = video ? failedVideos_ : failedImages_;
   if (v.size() >= kFailedTop) return;
@@ -235,6 +236,7 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
     std::lock_guard<std::mutex> g(slowMutex_);
     slowImages_.clear(); slowVideos_.clear();
     failedImages_.clear(); failedVideos_.clear();
+    failedCount_.store(0, std::memory_order_relaxed);
   }
   {
     std::lock_guard<std::mutex> g(sampleMutex_);
@@ -643,6 +645,7 @@ std::string TelemetryRecorder::toJson() const {
   o << "\"summary\":{\"wallMs\":" << wallMs_ << ",\"walkMs\":" << walkMs_ << ",\"revalidateMs\":" << revalidateMs_
     << ",\"imageStageMs\":" << imageStageMs_ << ",\"videoStageMs\":" << videoStageMs_ << ",\"analyzeMs\":" << analyzeMs_
     << ",\"scanned\":" << scanned_ << ",\"analyzed\":" << analyzed_ << ",\"unchanged\":" << unchanged_
+    << ",\"failedFiles\":" << failedCount_.load(std::memory_order_relaxed)
     // Total scanned bytes, exactly images.bytes + videos.bytes. Distinct from
     // dataset.totalBytes, which sizes the fingerprint input, not the analysis.
     << ",\"totalScannedBytes\":" << (imgBytes_.load() + vidBytes_.load())
@@ -1007,6 +1010,7 @@ std::string TelemetryRecorder::toJson() const {
   return o.str();
 }
 }
+
 
 
 
