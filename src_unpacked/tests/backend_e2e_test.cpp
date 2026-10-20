@@ -29,6 +29,8 @@
 #include <QComboBox>
 #include <QElapsedTimer>
 #include <QListWidget>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QSettings>
 #include <QThread>
@@ -239,6 +241,20 @@ int main(int argc, char** argv) {
         bmp(d / "media" / ("g" + std::to_string(i) + "_a.bmp"), (unsigned)(i + 1));
         bmp(d / "media" / ("g" + std::to_string(i) + "_b.bmp"), (unsigned)(i + 1));
     }
+    // 0.9.4.146: a standalone backend launch must refuse to start (no GUI).
+    {
+        QProcess solo;
+        QProcessEnvironment soloEnv = QProcessEnvironment::systemEnvironment();
+        soloEnv.remove(QStringLiteral("MSF_BACKEND_LAUNCHED_BY_GUI"));
+        soloEnv.remove(QStringLiteral("MSF_BACKEND_PARENT_PID"));
+        solo.setProcessEnvironment(soloEnv);
+        solo.start(QCoreApplication::applicationDirPath() + QStringLiteral("/MediaSimilarityFinderBackend.exe"),
+                   QStringList{QStringLiteral("--backend"), QStringLiteral("--nonce"),
+                               QStringLiteral("standalone-probe")});
+        const bool finished = solo.waitForFinished(5000);
+        check(finished && solo.exitStatus() == QProcess::NormalExit && solo.exitCode() == 3,
+              "backend refuses a standalone launch");
+    }
     initAppSettings(QString::fromStdString((d / "settings").string()));
     QSettings().setValue("ui/lastFolder", QString::fromStdString((d / "media").string()));
     QSettings().sync();
@@ -317,6 +333,22 @@ int main(int argc, char** argv) {
               15000, "test1 telemetry records Fast(A) from the settings value");
     check(grid->count() >= 2, "test1 groups displayed");
     check(finishedCount == 1, "test1 finished event observed");
+    // 0.9.4.146: a second backend for the same user session is refused.
+    {
+        QProcess dup;
+        QProcessEnvironment dupEnv = QProcessEnvironment::systemEnvironment();
+        dupEnv.insert(QStringLiteral("MSF_BACKEND_LAUNCHED_BY_GUI"), QStringLiteral("1"));
+        dupEnv.insert(QStringLiteral("MSF_BACKEND_PARENT_PID"),
+                      QString::number(QCoreApplication::applicationPid()));
+        dup.setProcessEnvironment(dupEnv);
+        dup.start(QCoreApplication::applicationDirPath() + QStringLiteral("/MediaSimilarityFinderBackend.exe"),
+                  QStringList{QStringLiteral("--backend"), QStringLiteral("--nonce"),
+                              QStringLiteral("dup-probe"), QStringLiteral("--parent-pid"),
+                              QString::number(QCoreApplication::applicationPid())});
+        const bool dupFinished = dup.waitForFinished(5000);
+        check(dupFinished && dup.exitStatus() == QProcess::NormalExit && dup.exitCode() == 4,
+              "backend refuses a duplicate instance");
+    }
     std::cout << "  [info] guiPid=" << guiPid << " backendPid=" << pid1 << "\n";
     // FileMeta over IPC: select the first group/file and expect the detail
     // pane to resolve "8x8" through GET_FILE_META/FILE_META (no GUI decode).
@@ -884,13 +916,13 @@ int main(int argc, char** argv) {
         const qint64 helperBackend = waitPidFile(pidFile, 30000);
         check(helperBackend > 0, "test6b no-job helper reported its backend PID");
         killPid(helper.processId());
-        QThread::msleep(2000);
-        QApplication::processEvents();
-        check(pidAlive(helperBackend),
-              "test6b control: no-job backend survives parent death (job is load-bearing)");
-        check(killPid(helperBackend), "test6b orphan cleaned up explicitly");
+        // 0.9.4.146: the backend's parent watchdog exits it when the GUI dies,
+        // even without the Job Object; the old "survives parent death" control
+        // no longer applies.
         pumpUntil([&] { return !pidAlive(helperBackend); }, 10000,
-                  "test6b orphan gone after explicit kill");
+                  "test6b no-job backend exits when the parent dies (watchdog)");
+        check(!pidAlive(helperBackend),
+              "test6b no-job orphan exits by itself after parent death");
     }
 
     fs::remove_all(d, ec);
@@ -898,6 +930,9 @@ int main(int argc, char** argv) {
               << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+
+
+
 
 
 

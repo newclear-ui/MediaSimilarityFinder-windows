@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QIcon>
+#include <QMessageBox>
 #include <QString>
 #include <QTimer>
 #include <iostream>
@@ -308,8 +309,21 @@ int main(int argc, char** argv) {
     // P3: production runs behind a real supervisor (separate Backend OS
     // process). The smoke path above keeps the loopback default (no spawn).
     auto* supervisor = new BackendSupervisor(&app);
+    // 0.9.4.146: single GUI instance per user session. A second launch would
+    // also spawn a second backend and both would fight over the same index.
+#ifdef _WIN32
+    HANDLE guiMutex = CreateMutexW(nullptr, TRUE, L"Local\\MediaSimilarityFinder.Gui.SingleInstance");
+    if (guiMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
+        QMessageBox::information(nullptr, QStringLiteral("Media Similarity Finder"),
+            QStringLiteral("Media Similarity Finder is already running.\n"
+                           "미디어 유사도 탐색기가 이미 실행 중입니다."));
+        CloseHandle(guiMutex);
+        return 0;
+    }
+#endif
     MainWindow w(nullptr, supervisor);
     w.show();
     return app.exec();
 }
+
 

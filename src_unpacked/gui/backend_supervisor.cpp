@@ -323,7 +323,15 @@ void BackendSupervisor::spawn() {
         QCoreApplication::applicationDirPath() + QStringLiteral("/MediaSimilarityFinderBackend.exe");
     QStringList args;
     args << QStringLiteral("--backend") << QStringLiteral("--nonce") << nonce_
-         << QStringLiteral("--appdir") << QCoreApplication::applicationDirPath();
+         << QStringLiteral("--appdir") << QCoreApplication::applicationDirPath()
+         << QStringLiteral("--parent-pid") << QString::number(QCoreApplication::applicationPid());
+    // 0.9.4.146: prove this backend was started by the supervisor, and let it
+    // watch the GUI process so an orphan exits by itself.
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("MSF_BACKEND_LAUNCHED_BY_GUI"), QStringLiteral("1"));
+    env.insert(QStringLiteral("MSF_BACKEND_PARENT_PID"),
+               QString::number(QCoreApplication::applicationPid()));
+    proc_->setProcessEnvironment(env);
     proc_->setProgram(program);
     proc_->setArguments(args);
     procState_ = ProcState::Starting;
@@ -820,5 +828,6 @@ void BackendSupervisor::onHealthTick() {
         terminateAndRespawn(QStringLiteral("backend health timeout"));
     }
 }
+
 
 

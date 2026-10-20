@@ -195,6 +195,23 @@ int main(int argc, char** argv) {
     check(n >= 80, "enough groups for starvation and scrolling");
     check(tree->topLevelItemCount() == n, "tree and grid agree on group count");
 
+    // 0.9.4.146 probe: the visible order must follow the sort combo across a
+    // scan (field: the combo showed None but the previous order stayed).
+    auto* sortBox = w.findChild<QComboBox*>("sortBox");
+    auto* sortDir = w.findChild<QComboBox*>("sortDirBox");
+    QString nameFirst, noneFirst;
+    if (sortBox && sortDir && grid->count() > 0) {
+        sortBox->setCurrentIndex(3); // Name
+        sortDir->setCurrentIndex(1); // Ascending
+        QApplication::processEvents();
+        nameFirst = grid->item(0)->toolTip();
+        sortBox->setCurrentIndex(0); // None
+        QApplication::processEvents();
+        noneFirst = grid->item(0)->toolTip();
+        sortBox->setCurrentIndex(3);
+        sortDir->setCurrentIndex(1);
+        QApplication::processEvents();
+    }
     // 0.9.4.142 probe (field report): pressing Search after Load must keep the
     // loaded group thumbnails, the selected group and the right file preview.
     {
@@ -215,12 +232,19 @@ int main(int argc, char** argv) {
                   << " preview=" << previewBefore << "\n";
         scan->click();
         QApplication::processEvents();
+        check(sortBox && sortBox->currentIndex() == 0, "scan start locks the sort to None");
+        check(!noneFirst.isEmpty() && grid->count() > 0 && grid->item(0)->toolTip() == noneFirst,
+              "scan start applies the None order");
         check(w.testCurrentGroupIndex() == selBefore, "scan start keeps the selected group");
         check((grid->count() > 0 && !grid->item(0)->icon().isNull()) == iconBefore,
               "scan start keeps group thumbnails");
         check(w.testPreviewHasPixmap() == previewBefore, "scan start keeps the file preview");
         pumpUntil([&] { return scan->isEnabled(); }, 240000, "unchanged rescan finished");
         QApplication::processEvents();
+        check(sortBox && sortBox->currentIndex() == 3, "scan end restores the pre-scan sort");
+        check(!nameFirst.isEmpty() && grid->count() > 0 && grid->item(0)->toolTip() == nameFirst,
+              "scan end applies the restored sort order");
+        if (sortBox) { sortBox->setCurrentIndex(0); QApplication::processEvents(); }
         std::cout << "  [info] post-rescan sel=" << w.testCurrentGroupIndex()
                   << " preview=" << w.testPreviewHasPixmap() << "\n";
         check(w.testCurrentGroupIndex() == selBefore, "unchanged rescan keeps the selected group");
@@ -961,6 +985,7 @@ int main(int argc, char** argv) {
               << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+
 
 
 

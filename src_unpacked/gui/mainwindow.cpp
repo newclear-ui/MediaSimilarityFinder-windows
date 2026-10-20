@@ -1606,6 +1606,7 @@ void MainWindow::chooseFolder() {
   if (!d.isEmpty()) { folder_->setText(d); QSettings().setValue("ui/lastFolder", d); }
 }
 void MainWindow::setRunning(bool v) {
+  const bool wasScanning = scanning_;
   if (v) {
     scanPaused_ = false;
     maxPctShown_ = 0;
@@ -1630,15 +1631,26 @@ void MainWindow::setRunning(bool v) {
       sortBox_->blockSignals(true);
       sortBox_->setCurrentIndex(kSortNone);
       sortBox_->blockSignals(false);
+      // 0.9.4.146: the visible list must follow the combo. The old blocked
+      // assignment left the previous sort order on screen while the combo
+      // showed None. Rebuild once now; the 0.9.4.142 hold prevents further
+      // mid-scan churn.
+      if (!groups_.isEmpty()) {
+        rebuildGroups(); refreshGroupList(); updateStatusCounts();
+      }
     }
   } else {
     scanPaused_ = false;
     // Scan over (indexing + post-processing done): let the user sort by
-    // similarity or name again by restoring their pre-scan choice.
-    if (preScanSort_ >= 0 && sortBox_->currentIndex() != preScanSort_) {
+    // similarity or name again by restoring their pre-scan choice (and apply
+    // it to the visible order, 0.9.4.146).
+    if (wasScanning && preScanSort_ >= 0 && sortBox_->currentIndex() != preScanSort_) {
       sortBox_->blockSignals(true);
       sortBox_->setCurrentIndex(preScanSort_);
       sortBox_->blockSignals(false);
+      if (!groups_.isEmpty()) {
+        rebuildGroups(); refreshGroupList(); updateStatusCounts();
+      }
     }
   }
   scanning_ = v;

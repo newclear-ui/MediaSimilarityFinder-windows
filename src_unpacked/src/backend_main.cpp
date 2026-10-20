@@ -19,6 +19,13 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+#include <QTimer>
 #include <chrono>
 #include <thread>
 
@@ -651,14 +658,47 @@ int main(int argc, char** argv) {
     }
     QString nonce;
     QString appDir = QCoreApplication::applicationDirPath();
+    qint64 parentPid = 0;
     for (int i = 1; i + 1 < args.size(); ++i) {
         if (args[i] == QStringLiteral("--nonce")) nonce = args[i + 1];
         if (args[i] == QStringLiteral("--appdir")) appDir = args[i + 1];
+        if (args[i] == QStringLiteral("--parent-pid")) parentPid = args[i + 1].toLongLong();
     }
     if (nonce.isEmpty()) {
         err << "MediaSimilarityFinderBackend: --backend requires --nonce <token>\n";
         return 2;
     }
+    // 0.9.4.146: server mode is only valid when the GUI supervisor started us.
+    // A standalone launch (double-click / manual --backend) exits immediately.
+    const QString launchedByGui = qEnvironmentVariable("MSF_BACKEND_LAUNCHED_BY_GUI");
+    const QString envParent = qEnvironmentVariable("MSF_BACKEND_PARENT_PID");
+    if (parentPid <= 0 || launchedByGui != QStringLiteral("1") ||
+        envParent != QString::number(parentPid)) {
+        err << "MediaSimilarityFinderBackend: this executable is managed by MediaSimilarityFinder. "
+               "Start the application instead.\n";
+        return 3;
+    }
+#ifdef _WIN32
+    {
+        HANDLE ph = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                (DWORD)parentPid);
+        DWORD pcode = 0;
+        const bool parentAlive = ph && GetExitCodeProcess(ph, &pcode) && pcode == STILL_ACTIVE;
+        if (ph) CloseHandle(ph);
+        if (!parentAlive) {
+            err << "MediaSimilarityFinderBackend: the GUI process is not running.\n";
+            return 3;
+        }
+        // 0.9.4.146: only one backend per user session.
+        HANDLE backendMutex = CreateMutexW(nullptr, TRUE,
+                                           L"Local\\MediaSimilarityFinder.Backend.SingleInstance");
+        if (backendMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
+            err << "MediaSimilarityFinderBackend: another backend is already running.\n";
+            CloseHandle(backendMutex);
+            return 4;
+        }
+    }
+#endif
     // Test-only fault injection (P3): deterministic startup failures for the
     // supervisor budget tests. Production never sets these variables.
     // FAIL_FAST exits before the handshake (unexpected-exit budget path);
@@ -675,7 +715,23 @@ int main(int argc, char** argv) {
     if (wedged) {
         for (;;) std::this_thread::sleep_for(std::chrono::seconds(10));
     }
+#ifdef _WIN32
+    // 0.9.4.146: if the GUI dies without a graceful shutdown, exit by itself.
+    QTimer parentWatch;
+    QObject::connect(&parentWatch, &QTimer::timeout, &app, [parentPid] {
+        HANDLE h = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               (DWORD)parentPid);
+        if (!h) { QCoreApplication::quit(); return; }
+        DWORD code = 0;
+        const bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+        CloseHandle(h);
+        if (!alive) QCoreApplication::quit();
+    });
+    parentWatch.start(1000);
+#endif
     return app.exec();
 }
+
+
 
 
