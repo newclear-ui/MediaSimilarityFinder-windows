@@ -81,6 +81,13 @@ private:
   msf::ScanControl control_; msf::MediaSearchEngine engine_;
   QMutex pendingMutex_; QVector<LiveMatch> pending_;
   QVector<LiveMatch> allMatches_;   // worker-thread only; checkpointed incrementally + at the end
+  // 0.9.4.143: quick-loaded stored pairs (prefix of allMatches_) and the paths
+  // re-analyzed this scan. A stored pair touching a re-analyzed path is stale
+  // until this scan re-emits it, so it is dropped before persistence.
+  QVector<LiveMatch> storedPairs_;
+  int storedCount_ = 0;
+  QSet<QString> changedFiles_;
+  QVector<LiveMatch> currentMatchSet() const; // worker thread: stored minus changed + emitted
   void persistMatchesSnapshot();    // save the full accumulated set (worker thread only)
   int matchesSinceSave_=0; qint64 lastSaveMs_=0; // incremental-checkpoint throttle
   qint64 lastEmitMs_=0;

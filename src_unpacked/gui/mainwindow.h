@@ -163,6 +163,10 @@ public:
   int testCurrentGroupIndex() const { return currentGroup_; }
   QString testCurrentFile() const { return currentFile_; }
   bool testPreviewHasPixmap() const;
+  QStringList testGroupPathsFor(const QString& path) const {
+    const int gi = pathGroup_.value(path, -1);
+    return (gi >= 0 && gi < groups_.size()) ? groups_[gi].paths : QStringList{};
+  }
   // 0.9.4.112 (S4): write the last detailed-log record through the exact
   // production save routine (the dialog's Save button only adds the file
   // picker on top). Returns true when the record was written.
@@ -516,6 +520,14 @@ private:
   // that view until the answer arrives (field: Load -> Search blanked the
   // group thumbnails and the right preview while the backend was busy).
   bool holdViewDuringScan_ = false;
+  // 0.9.4.143: after a scan that re-analyzed files, silently reload the stored
+  // set so the view reflects the corrected pairs (stale pairs dropped).
+  bool reloadAfterScan_ = false;
+  bool startedWithView_ = false; // 0.9.4.143: scan began with a result set on screen
+  bool silentReload_ = false;
+  QString reloadSelRep_, reloadSelFile_;
+  int reloadSort_ = 0;
+  int reloadVerifyTotal_ = 0, reloadVerifyDone_ = 0;
   // 0.9.4.134: "재검증" in-flight flag (same lifecycle as loading_; the view is
   // replaced by the refreshed stored set when results arrive).
   bool reverify_ = false;
@@ -576,6 +588,9 @@ private:
   QTimer* cpuTimer_=nullptr; // 0.9.4.88: samples the GUI process's own CPU (1 s)
   double guiCpu_=0.0;        // last GUI-process CPU% (0-100 of all cores)
 };
+
+
+
 
 
 

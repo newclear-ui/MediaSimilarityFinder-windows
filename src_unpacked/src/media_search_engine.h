@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "scanner.h"
 #include "database.h"
 #include "scan_pipeline.h"
@@ -76,6 +76,11 @@ struct ScanControl {
   // Optional streaming delivery for large result sets. When retainMatches is false,
   // SearchReport does not materialize the full match list in memory.
   std::function<void(const SearchMatch&)> onMatch;
+  // 0.9.4.143: a file whose stat/content identity changed (or that is new) and
+  // was re-analyzed. The worker prunes the stored pairs touching these paths
+  // before persisting, so a pair whose content no longer matches cannot
+  // survive a scan (field: replaced same-name image kept the old group).
+  std::function<void(const std::string&)> onChangedFile;
   // 0.9.4.81 B-slice: invoked on the worker thread at each analyze slice
   // boundary, before the engine advances the resume frontier. Lets the worker
   // persist the accumulated match set so a crash loses at most one slice.
@@ -247,3 +252,4 @@ const std::vector<MediaFile>& files() const { return files_; }
  CandidateIndex imageCrop4x3_, imageCrop1x1_, imageCrop9x16_;
 };
 }
+

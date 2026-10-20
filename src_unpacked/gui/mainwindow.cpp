@@ -195,6 +195,9 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"unignore")) return S("무시 해제","Unignore");
   if (!std::strcmp(key,"clearIgnored")) return S("모두 비우기","Clear all");
   if (!std::strcmp(key,"recentFolders")) return S("최근 검색 폴더","Recent folders");
+  // 0.9.4.143: Favorites recent-folder count setting.
+  if (!std::strcmp(key,"recentLimitLabel")) return S("최근 폴더 표시 개수","Recent folder count");
+  if (!std::strcmp(key,"recentLimitTip")) return S("왼쪽 즐겨찾기에 표시할 최근 검색 폴더 수입니다 (1~20, 기본 3).","How many recent scan folders to show in Favorites (1-20, default 3).");
   if (!std::strcmp(key,"scanHere")) return S("이 폴더로 검색","Scan this folder");
   if (!std::strcmp(key,"browse")) return S("찾아보기…","Browse…");
   if (!std::strcmp(key,"ignoredHint")) return S("무시된 파일은 검색 결과에서 제외됩니다 (다음 검색부터 적용).","Ignored files are excluded from results (applies from next scan).");
@@ -1662,6 +1665,11 @@ void MainWindow::startScan() {
   backendRestarting_ = false;
   beginScan(false);
 }
+// 0.9.4.143: user-configurable recent-folder count shown in Favorites.
+static int recentFolderLimit() {
+  int n = QSettings().value("ui/recentFolderLimit", 3).toInt();
+  return std::clamp(n, 1, 20);
+}
 void MainWindow::beginScan(bool resumeLastConfig) {
   if (scanning_) return;
   if (!backendAvailable_) {
@@ -1682,7 +1690,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
     for (int i = recent.size() - 1; i >= 0; --i)
       if (QDir::cleanPath(recent[i]).compare(cur, Qt::CaseInsensitive) == 0) recent.removeAt(i);
     recent.prepend(cur);
-    while (recent.size() > 2) recent.removeLast();
+    while (recent.size() > recentFolderLimit()) recent.removeLast();
     if (recent != QSettings().value("ui/recentFolders").toStringList()) {
       QSettings().setValue("ui/recentFolders", recent);
       refreshFolders();
@@ -1707,6 +1715,7 @@ void MainWindow::beginScan(bool resumeLastConfig) {
   // Otherwise the quick-load/streamed batches rebuilt the panes mid-scan and
   // their thumbnail requests queued behind the busy backend -> placeholders.
   holdViewDuringScan_ = !groups_.isEmpty();
+  startedWithView_ = holdViewDuringScan_;
   scanLog(QString("viewHold=%1 groups=%2").arg(holdViewDuringScan_ ? 1 : 0).arg(groups_.size()));
   QString appDir = QApplication::applicationDirPath();
   // P2: the scan lifecycle lives behind BackendClient. The loopback
@@ -2071,6 +2080,7 @@ void MainWindow::scanFinished(QString msg) {
   // 0.9.4.140: only a scan that re-analyzed files can hold stale art; the
   // beginScan comment explains why the cache is kept during the walk.
   bool contentChanged = false;
+  bool reloadIntent = false; // 0.9.4.143: changed scan -> silent stored-set reload
   try {
   scanLog(QString("finish %1").arg(msg));
   scanLog(QString("thumbStat mem=%1 backend=%2 place=%3 pending=%4")
@@ -2104,6 +2114,7 @@ void MainWindow::scanFinished(QString msg) {
     const qulonglong unchanged = st.size() > 3 ? st[3].toULongLong() : 0;
     const qulonglong completed = st.size() > 1 ? st[1].toULongLong() : 0;
     contentChanged = analyzed > 0;
+    reloadIntent = analyzed > 0 && startedWithView_ && !(testBtn_ && testBtn_->isChecked());
     if (targetKnown_ && completed != targetTotal_)
       scanLog(QString("targetMismatch fixed=%1 completed=%2").arg(targetTotal_).arg(completed));
     lastTotalN_ = completed;
@@ -2140,6 +2151,24 @@ void MainWindow::scanFinished(QString msg) {
   wait->deleteLater();
   setRunning(false);
   statusProg_->setValue(100);
+  // 0.9.4.143: a scan that re-analyzed files may have dropped stored pairs.
+  // Reload the stored set once (silently) so the view reflects the corrected
+  // index; the scan summary/status and the selection/sort are preserved.
+  if (reloadIntent) {
+    reloadAfterScan_ = true;
+    silentReload_ = true;
+    reloadSort_ = sortBox_->currentIndex();
+    if (currentGroup_ >= 0 && currentGroup_ < groups_.size() && !groups_[currentGroup_].paths.isEmpty())
+      reloadSelRep_ = groups_[currentGroup_].paths.front();
+    reloadSelFile_ = currentFile_;
+    reloadVerifyTotal_ = lastVerifyTotal_;
+    reloadVerifyDone_ = lastVerifyDone_;
+    scanLog(QString("reloadAfterScan scheduled sel=%1 file=%2 sort=%3")
+                .arg(reloadSelRep_).arg(reloadSelFile_).arg(reloadSort_));
+    QTimer::singleShot(0, this, [this] {
+      if (!scanning_ && !loading_ && !reverify_) loadIndex();
+    });
+  }
   scanLog(QString("scanFinished exit"));
 }
 void MainWindow::scanFailed(QString msg) {
@@ -2256,21 +2285,49 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
   // wasLoad branch above and never reach scanFinished; leave the mark clear.
   if (!wasLoad) resultsApplied_ = true;
   if (wasLoad) {
-    // 0.9.4.132: populate the left summary from the loaded index. Without this
-    // the panel stayed all "-" after Load (field report): the load is the only
-    // producer of this result set for the session, so file/group/duplicate
-    // rows describe it, the verify row shows the stored pair total ("- / N",
-    // nothing was verified now), and the time row shows the load duration.
-    lastStats_ = QStringList{QString::number(files.size()), QString::number(files.size()),
-                             QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0")};
-    repElapsedMs_ = loadStartMs_ > 0 ? QDateTime::currentMSecsSinceEpoch() - loadStartMs_ : 0;
-    loadedSummary_ = true;
-    lastVerifyDone_ = matchRows_.size();
-    hasReport_ = true;
-    statusProg_->setRange(0, 100);
-    statusProg_->setValue(100);
-    statusMsg_->setText(trStr(lang(), "loadDone").arg(files.size()).arg(matchRows_.size()));
-    refreshSummary();
+    if (reloadAfterScan_) {
+      // 0.9.4.143: the post-scan refresh. The refreshed stored set is the
+      // authority (stale pairs are gone), but the scan's summary/status stays
+      // on screen and the pre-scan sort/selection are restored by identity.
+      sortBox_->blockSignals(true);
+      sortBox_->setCurrentIndex(reloadSort_ >= 0 && reloadSort_ < sortBox_->count() ? reloadSort_ : 0);
+      sortBox_->blockSignals(false);
+      rebuildGroups();
+      refreshGroupList();
+      const int gi = pathGroup_.value(reloadSelRep_, -1);
+      currentGroup_ = gi;
+      if (gi >= 0 && !reloadSelFile_.isEmpty() && groups_[gi].paths.contains(reloadSelFile_))
+        currentFile_ = reloadSelFile_;
+      else
+        currentFile_.clear();
+      lastVerifyTotal_ = reloadVerifyTotal_;
+      lastVerifyDone_ = reloadVerifyDone_;
+      hasReport_ = true;
+      refreshFileViews(); refreshDetail(); updateStatusCounts(); refreshSummary();
+      scanLog(QString("reloadAfterScan applied files=%1 groups=%2 sel=%3")
+                  .arg(files.size()).arg(groups_.size()).arg(currentGroup_));
+      reloadAfterScan_ = false;
+      silentReload_ = false;
+      reloadSelRep_.clear();
+      reloadSelFile_.clear();
+      loadedSummary_ = false;
+    } else {
+      // 0.9.4.132: populate the left summary from the loaded index. Without this
+      // the panel stayed all "-" after Load (field report): the load is the only
+      // producer of this result set for the session, so file/group/duplicate
+      // rows describe it, the verify row shows the stored pair total ("- / N",
+      // nothing was verified now), and the time row shows the load duration.
+      lastStats_ = QStringList{QString::number(files.size()), QString::number(files.size()),
+                               QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0")};
+      repElapsedMs_ = loadStartMs_ > 0 ? QDateTime::currentMSecsSinceEpoch() - loadStartMs_ : 0;
+      loadedSummary_ = true;
+      lastVerifyDone_ = matchRows_.size();
+      hasReport_ = true;
+      statusProg_->setRange(0, 100);
+      statusProg_->setValue(100);
+      statusMsg_->setText(trStr(lang(), "loadDone").arg(files.size()).arg(matchRows_.size()));
+      refreshSummary();
+    }
   } else {
     loadedSummary_ = false;
   }
@@ -2467,7 +2524,8 @@ void MainWindow::loadIndex() {
   // The load notice is a SEPARATE popup from the finished-scan report popup:
   // its own title ("인덱스 불러오기") and body ("인덱스 목록 로딩중…"), so a load
   // never shows the "검색 리포트 작성중" wording.
-  loadWait_ = showReportWaitPopup(this, lang(), "loadWait", "loadWaitTitle");
+  // 0.9.4.143: the post-scan refresh is silent (no second notice popup).
+  if (!silentReload_) loadWait_ = showReportWaitPopup(this, lang(), "loadWait", "loadWaitTitle");
   backend_->loadIndex(root, QApplication::applicationDirPath());
 }
 void MainWindow::reverifyIndex() {
@@ -4887,6 +4945,16 @@ void MainWindow::configureMonitor() {
   }
   analyzeRow->addWidget(analyzeLabel); analyzeRow->addWidget(analyzeModeBox); analyzeRow->addStretch(1);
   generalLay->addLayout(analyzeRow);
+  // 0.9.4.143: recent-folder count in Favorites (1..20, default 3).
+  auto* recentRow = new QHBoxLayout;
+  auto* recentLabel = new QLabel(trStr(lang(), "recentLimitLabel"), generalTab);
+  auto* recentSpin = new QSpinBox(generalTab);
+  recentSpin->setObjectName("recentFolderLimitSpin"); // automation hook
+  recentSpin->setRange(1, 20);
+  recentSpin->setValue(recentFolderLimit());
+  recentSpin->setToolTip(trStr(lang(), "recentLimitTip"));
+  recentRow->addWidget(recentLabel); recentRow->addWidget(recentSpin); recentRow->addStretch(1);
+  generalLay->addLayout(recentRow);
   // 0.9.4.134 fast-rescan (integrity mode). Strict default: the walk keeps
   // reading the 64 KiB quick hash of unchanged files.
   auto* fastRescan = new QCheckBox(trStr(lang(), "fastRescan"), generalTab);
@@ -4975,6 +5043,14 @@ void MainWindow::configureMonitor() {
   st.setValue("ui/showCpuPercent", showCpu->isChecked());
   st.setValue("ui/gpuEnabled", gpuAccel->isChecked());
   st.setValue("ui/showTestButton", showTest->isChecked());
+  // 0.9.4.143: persist the recent-folder limit and trim the stored list now.
+  st.setValue("ui/recentFolderLimit", recentSpin->value());
+  {
+    QStringList rf = st.value("ui/recentFolders").toStringList();
+    while (rf.size() > recentSpin->value()) rf.removeLast();
+    st.setValue("ui/recentFolders", rf);
+  }
+  refreshFolders();
   gpuOn_ = gpuAccel->isChecked();
   applyDetailLogVisibility();
   applyCpuPercentVisibility();
@@ -5172,6 +5248,11 @@ void MainWindow::showMonitorMatch(const BackendMonitorEvent& e) {
     st.setValue("monitor/skipped/" + key, true);
   }
 }
+
+
+
+
+
 
 
 

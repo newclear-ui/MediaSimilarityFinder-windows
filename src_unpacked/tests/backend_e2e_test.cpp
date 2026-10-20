@@ -64,6 +64,33 @@ namespace {
 int gChecks = 0;
 bool gOk = true;
 
+// 0.9.4.143: stored-pair probe for the changed-member regression.
+int countPairInDb(const QString& dbPath, const char* a, const char* b) {
+    sqlite3* h = nullptr;
+    int n = -1;
+    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
+        if (h) sqlite3_close(h);
+        return -1;
+    }
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(
+            h,
+            "SELECT COUNT(*) FROM matches WHERE "
+            "(left_path LIKE ? AND right_path LIKE ?) OR "
+            "(left_path LIKE ? AND right_path LIKE ?)",
+            -1, &st, nullptr) == SQLITE_OK) {
+        const QByteArray pa = QByteArray("%") + a, pb = QByteArray("%") + b;
+        sqlite3_bind_text(st, 1, pa.constData(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 2, pb.constData(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 3, pb.constData(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 4, pa.constData(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW) n = sqlite3_column_int(st, 0);
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(h);
+    return n;
+}
+
 void check(bool cond, const char* what) {
     ++gChecks;
     if (!cond) { gOk = false; std::cerr << "  [FAIL] " << what << std::endl; }
@@ -615,6 +642,41 @@ int main(int argc, char** argv) {
         testBtn->setChecked(false);
         QObject::disconnect(diffConn);
     }
+    // ---- Test 1g (0.9.4.143): a re-analyzed member must drop its old pair.
+    // Field: replacing one file of a pair with a different image of nearly the
+    // same size kept the group after a Fast search; Test Mode (fresh index)
+    // reported the difference. The old pair must not survive the scan. ----
+    {
+        // Copy a different fixture's pixels over g1_b: definitely outside the
+        // match threshold, unlike a partial in-place edit of the same noise.
+        const auto target = d / "media" / "g1_b.bmp";
+        fs::copy_file(d / "media" / "g2_a.bmp", target,
+                      fs::copy_options::overwrite_existing, ec);
+        fs::last_write_time(target, fs::file_time_type::clock::now(), ec);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1g changed rescan finished");
+        QApplication::processEvents();
+        msf::IndexPaths ip;
+        QString dbPath;
+        if (msf::IndexManager::resolve(
+                msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                msf::path_from_utf8((d / "media").string()), ip))
+            dbPath = QString::fromStdString(msf::path_to_utf8(ip.database));
+        const int pair = countPairInDb(dbPath, "g1_a.bmp", "g1_b.bmp");
+        check(pair == 0, "test1g re-analyzed member drops the stale pair");
+        // The post-scan silent reload must also drop it from the visible set.
+        const QString ga = QString::fromStdString(msf::path_to_utf8((d / "media" / "g1_a.bmp")));
+        const QString gb = QString::fromStdString(msf::path_to_utf8((d / "media" / "g1_b.bmp")));
+        pumpUntil([&] { return !w.testGroupPathsFor(ga).contains(gb); }, 30000,
+                  "test1g GUI drops the stale pair");
+        check(!w.testGroupPathsFor(ga).contains(gb), "test1g GUI group no longer pairs the files");
+        // The silent reload clears the view and disables the buttons briefly;
+        // wait for it to finish so the following kill test starts from idle.
+        auto* reloadBtn = w.findChild<QPushButton*>("loadBtn");
+        pumpUntil([&] { return reloadBtn && reloadBtn->isEnabled() && grid->count() > 0; }, 30000,
+                  "test1g silent reload finished");
+    }
     // ---- Test 2: forced kill right after scan start -> restart -> auto-resume. ----
     // The kill lands deterministically with no wait at all: supervisor.scanning_
     // is set synchronously when START_SCAN is sent, while even a quick-load
@@ -836,6 +898,7 @@ int main(int argc, char** argv) {
               << " checks=" << gChecks << "\n";
     return gOk ? 0 : 1;
 }
+
 
 
 

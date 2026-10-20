@@ -275,6 +275,8 @@ int main(int argc, char** argv) {
       "zoomTip",
       // 0.9.4.139: split sort (type + direction) with the new group-size order
       "sortSize", "sortDesc", "sortAsc",
+      // 0.9.4.143: configurable recent-folder count (Favorites)
+      "recentLimitLabel", "recentLimitTip",
     };
     int missing = 0;
     for (const char* k : kKeys) {
@@ -458,5 +460,6 @@ int main(int argc, char** argv) {
   }
   std::cerr << "unknown mode\n"; return 2;
 }
+
 
 

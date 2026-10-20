@@ -1,4 +1,4 @@
-#include <cmath>
+﻿#include <cmath>
 #include "media_search_engine.h"
 #include "backend_log.h"
 #include "dataset_fingerprint.h"
@@ -1153,6 +1153,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     if(!db_.traceAdmit(x.path,wallMs())){ failed=true; return; } }
   seen.insert(x.path);
   changedPaths.insert(x.path);
+  if(control&&control->onChangedFile) control->onChangedFile(x.path); // 0.9.4.143
   currentByPath.emplace(x.path,x);
   if(kindOf(x.path)==MediaKind::Image){
    imageBatch.push_back(x.path);
@@ -1625,3 +1626,4 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   return finishScan(r.completed ? ScanTerminal::Completed : ScanTerminal::Cancelled);
 }
 }
+

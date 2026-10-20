@@ -142,18 +142,25 @@ void ScanWorker::run() {
       // to linger as phantom group members; an offline root is a no-op).
       engine_.cleanupMissingOnDisk(root_.toStdString());
       const auto stored = engine_.loadMatches();
+      // 0.9.4.143: remember the stored prefix and clear this scan's change set.
+      storedPairs_.clear();
+      changedFiles_.clear();
       int loaded = 0;
       for (const auto& m : stored) {
         const QString l = QString::fromStdString(m.leftPath), r = QString::fromStdString(m.rightPath);
         const bool video = isVideoExt(l) || isVideoExt(r);
         const LiveMatch lm{l, r, m.percent, video ? 2 : 1, m.contentIdentical};
         allMatches_.push_back(lm);
+        storedPairs_.push_back(lm);
         if ((video && !scanVideos_) || (!video && !scanImages_)) continue;
         if (control_.ignoredPaths.find(m.leftPath) != control_.ignoredPaths.end() ||
             control_.ignoredPaths.find(m.rightPath) != control_.ignoredPaths.end()) continue;
         { QMutexLocker g(&pendingMutex_); pending_.push_back(lm); }
         ++loaded;
       }
+      // 0.9.4.143: the stored prefix ends after this loop; everything appended
+      // later is a pair emitted by this scan (live or final pass).
+      storedCount_ = allMatches_.size();
       if (loaded > 0) { emit quickLoaded(loaded); emit matchesArrived(); }
     }
     // Progress signals arrive once per analyzed file; a fast Maximum scan would
@@ -226,6 +233,11 @@ void ScanWorker::run() {
     // analyze(), so it may call persistMatchesSnapshot() directly. The engine
     // advances its resume frontier only after this returns.
     control_.analyzeCheckpoint = [this]() { persistMatchesSnapshot(); };
+    // 0.9.4.143: collect re-analyzed paths so their stale stored pairs are
+    // pruned from every checkpoint and from the final saved set.
+    control_.onChangedFile = [this](const std::string& p) {
+      changedFiles_.insert(QString::fromStdString(p));
+    };
     msf::backendLogLine("scanPhase=engine begin");
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
     msf::backendLogLine(QString("scanPhase=engine done scanned=%1 analyzed=%2 unchanged=%3 failed=%4")
@@ -269,7 +281,10 @@ void ScanWorker::run() {
         return rt;
       };
       std::size_t imgPairs = 0, vidPairs = 0;
-      for (const auto& m : allMatches_) {
+      // 0.9.4.143: count the same set that will be persisted, so a stale pair
+      // of a re-analyzed file is not reported in the telemetry either.
+      const QVector<LiveMatch> displayedMatches = currentMatchSet();
+      for (const auto& m : displayedMatches) {
         QString l = m.left, r = m.right;
         if (r < l) std::swap(l, r);
         const bool vid = m.kind == 2;
@@ -384,14 +399,52 @@ void ScanWorker::run() {
     try { allMatches_.shrink_to_fit(); } catch (...) {}
   }
 }
+QVector<LiveMatch> ScanWorker::currentMatchSet() const {
+  // 0.9.4.143: the stored prefix minus pairs touching a path re-analyzed by
+  // this scan, plus everything this scan emitted. Emitted pairs win on a
+  // duplicate key (a re-verified pair carries its current percentage).
+  QVector<LiveMatch> out;
+  const int prefix = std::clamp(storedCount_, 0, (int)allMatches_.size());
+  out.reserve(storedPairs_.size() + (allMatches_.size() - prefix));
+  QSet<QString> seen;
+  const auto keyOf = [](const QString& l, const QString& r) {
+    QString a = l, b = r;
+    if (b < a) std::swap(a, b);
+    return a + QLatin1Char('\n') + b;
+  };
+  for (const auto& m : storedPairs_) {
+    if (changedFiles_.contains(m.left) || changedFiles_.contains(m.right)) continue;
+    const QString k = keyOf(m.left, m.right);
+    if (seen.contains(k)) continue;
+    seen.insert(k);
+    out.push_back(m);
+  }
+  for (int i = prefix; i < allMatches_.size(); ++i) {
+    const auto& m = allMatches_[i];
+    const QString k = keyOf(m.left, m.right);
+    if (seen.contains(k)) continue;
+    seen.insert(k);
+    out.push_back(m);
+  }
+  return out;
+}
 void ScanWorker::persistMatchesSnapshot() {
   // Test-only fault injection (0.9.4.65): makes the failure-handler path
   // throw deterministically, proving the handler itself never lets an
   // exception escape the worker slot (terminate -> abort). Production code
   // never sets this variable, so the branch is dead otherwise.
   if (qEnvironmentVariableIsSet("MSF_TEST_THROW_PERSIST")) throw std::runtime_error("MSF_TEST_THROW_PERSIST");
-  std::vector<msf::SearchMatch> all; all.reserve((std::size_t)allMatches_.size());
-  for (const auto& m : allMatches_) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
+  int dropped = 0;
+  for (const auto& m : storedPairs_)
+    if (changedFiles_.contains(m.left) || changedFiles_.contains(m.right)) ++dropped;
+  const QVector<LiveMatch> cur = currentMatchSet();
+  if (!changedFiles_.isEmpty()) {
+    msf::backendLogLine(QString("matchPersist stored=%1 changed=%2 droppedStored=%3 kept=%4")
+                            .arg(storedPairs_.size()).arg(changedFiles_.size()).arg(dropped).arg(cur.size())
+                            .toStdString());
+  }
+  std::vector<msf::SearchMatch> all; all.reserve((std::size_t)cur.size());
+  for (const auto& m : cur) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
   engine_.saveMatches(all);
 }
 void ScanWorker::pause() { control_.pause.store(true); }
@@ -412,4 +465,7 @@ QVector<LiveMatch> ScanWorker::takePending() {
   QMutexLocker g(&pendingMutex_);
   QVector<LiveMatch> out = pending_; pending_.clear(); return out;
 }
+
+
+
 
