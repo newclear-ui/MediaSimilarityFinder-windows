@@ -18,7 +18,7 @@
 //   Test 6 (0.9.4.111, G6): parent (GUI) death must not orphan the backend
 //           (Job Object KILL_ON_JOB_CLOSE), proven against a WEDGED backend
 //           whose stdin-EOF self-exit cannot run; a --no-job control proves
-//           the job is load-bearing.
+//           the parent watchdog (0.9.4.146) terminates the orphan instead.
 //
 // A modal-closing timer runs throughout: failure popups and the end-of-scan
 // benchmark summary are modal and would hang an offscreen run. Failures are
@@ -179,18 +179,23 @@ qint64 waitPidFile(const std::filesystem::path& f, int timeoutMs) {
     return -1;
 }
 
-// 0.9.4.111 (G6): helper process for the parent-death E2E. It spawns a WEDGED
-// backend (never enters its event loop, so SHUTDOWN and the stdin-EOF
-// self-exit are both blocked), reports the backend PID, and then spins until
-// the parent kills it with TerminateProcess — no destructors, no shutdown:
-// a GUI crash. MSF_TEST_BACKEND_WEDGE is inherited by the spawned backend.
+// 0.9.4.111 (G6): helper process for the parent-death E2E. Unless --no-job is
+// given it spawns a WEDGED backend (never enters its event loop, so SHUTDOWN
+// and the stdin-EOF self-exit are both blocked), reports the backend PID, and
+// then spins until the parent kills it with TerminateProcess ? no destructors,
+// no shutdown: a GUI crash. MSF_TEST_BACKEND_WEDGE is inherited by the spawned
+// backend. With --no-job the backend runs the real event loop so the parent
+// watchdog (0.9.4.146), not the job object, is what terminates the orphan.
 int runGuiHelper(int argc, char** argv, const QStringList& raw) {
     QCoreApplication app(argc, argv);
     const int i = raw.indexOf(QStringLiteral("--gui-helper"));
     const QString pidFile = (i >= 0 && i + 1 < raw.size()) ? raw[i + 1] : QString();
     if (pidFile.isEmpty()) return 2;
     const bool noJob = raw.contains(QStringLiteral("--no-job"));
-    qputenv("MSF_TEST_BACKEND_WEDGE", "1");
+    // 0.9.4.146: wedge only the job-object control. The no-job case must run
+    // the real event loop so the parent-death watchdog (not the job) is what
+    // terminates the orphan.
+    if (!noJob) qputenv("MSF_TEST_BACKEND_WEDGE", "1");
     SupervisorOptions opt;
     opt.readyTimeoutMs = 60000; // the parent kills us long before escalation
     opt.jobObjectEnabled = !noJob;
@@ -888,8 +893,8 @@ int main(int argc, char** argv) {
     // The helper spawns a WEDGED backend (stdin-EOF self-exit blocked), then
     // the parent kills the helper with TerminateProcess — a GUI crash with no
     // shutdown path. The Job Object KILL_ON_JOB_CLOSE must reap the backend.
-    // The --no-job control must show the orphan surviving, proving the job
-    // (not some other path) is what kills it.
+    // The --no-job control must show the orphan exiting by itself, proving the
+    // parent watchdog (0.9.4.146, not the job) is what kills it.
     {
         const auto pidFile = d / "helper_job.pid";
         QProcess helper;

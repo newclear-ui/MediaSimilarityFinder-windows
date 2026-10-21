@@ -3014,10 +3014,13 @@ void MainWindow::rebuildGroups() {
     for (const QString& r : order) reordered.push_back(groups_[idx.value(r)]);
     groups_ = std::move(reordered);
   }
-  // Record the resulting order as the None-mode baseline (also after a sorted
-  // fill) so switching to None later preserves the visible order.
-  noneOrder_.clear();
-  for (const auto& g : groups_) noneOrder_ << g.root;
+  // 0.9.4.147: "None" means the loaded/scan order. Refresh the baseline only
+  // while actually in None mode; a sorted fill (Name/Similarity/...) must not
+  // overwrite it, so switching back to None restores the original list order.
+  if (sortMode == kSortNone) {
+    noneOrder_.clear();
+    for (const auto& g : groups_) noneOrder_ << g.root;
+  }
   for (int i = 0; i < groups_.size(); ++i)
     for (const auto& p : groups_[i].paths) pathGroup_[p] = i;
   if (!selectedPath.isEmpty()) {

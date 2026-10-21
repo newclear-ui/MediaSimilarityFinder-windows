@@ -208,6 +208,14 @@ int main(int argc, char** argv) {
         sortBox->setCurrentIndex(0); // None
         QApplication::processEvents();
         noneFirst = grid->item(0)->toolTip();
+        // 0.9.4.147: returning to None after a sorted view must restore the
+        // loaded/scan order, not the last sorted order.
+        sortBox->setCurrentIndex(3);
+        QApplication::processEvents();
+        sortBox->setCurrentIndex(0);
+        QApplication::processEvents();
+        check(!noneFirst.isEmpty() && grid->count() > 0 && grid->item(0)->toolTip() == noneFirst,
+              "None returns to the loaded order after a sorted view");
         sortBox->setCurrentIndex(3);
         sortDir->setCurrentIndex(1);
         QApplication::processEvents();
