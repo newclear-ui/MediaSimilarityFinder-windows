@@ -465,7 +465,17 @@ private:
   // toolbar
   QToolBar* toolBar_=nullptr;
   QLineEdit* folder_=nullptr;   QPushButton *scan_=nullptr,*pause_=nullptr,
-    *cancel_=nullptr,*refresh_=nullptr,*reverifyBtn_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr,*testBtn_=nullptr;
+    *cancel_=nullptr,*monBtn_=nullptr,*logBtn_=nullptr,*testBtn_=nullptr;
+  // 0.9.4.149: merged Load/Re-verify slot (QToolButton + dropdown menu).
+  // The menu shows Load on top and Re-verify below; the main button part
+  // executes the currently selected action.
+  QToolButton* loadSplitBtn_=nullptr; QMenu* loadSplitMenu_=nullptr;
+  QAction *loadSplitLoadAct_=nullptr, *loadSplitReverifyAct_=nullptr;
+  enum class LoadSplitMode { Load, Reverify };
+  LoadSplitMode loadSplitMode_ = LoadSplitMode::Load;
+  void setLoadSplitMode(LoadSplitMode m);
+  void executeLoadSplit();
+  void retextLoadSplit(UiLang l);
   QAction *monSettingsAct_=nullptr, *helpAct_=nullptr; // retexted on language change
   QToolButton* utilBtn_=nullptr;
   QString lastTelemetryJson_;

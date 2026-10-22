@@ -16,6 +16,8 @@
 #include <QComboBox>
 #include <QMetaObject>
 #include <QPushButton>
+#include <QToolButton> // 0.9.4.149: merged Load/Re-verify slot
+#include <QMenu>       // 0.9.4.149: merged Load/Re-verify slot
 #include <QSpinBox>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -192,20 +194,27 @@ int main(int argc, char** argv) {
       else st.remove("ui/showTestButton");
       QMetaObject::invokeMethod(&w, "applyTestButtonVisibility");
       QApplication::processEvents();
-      // 0.9.4.148: reverifyBtn existed since 0.9.4.134 but was never added to
-      // the toolbar layout, so it painted at (0,0) underneath the folder field.
-      // Pin layout membership and order: Load > Re-verify > Scan.
-      QPushButton* loadBtn = w.findChild<QPushButton*>("loadBtn");
-      QPushButton* reverifyBtn = w.findChild<QPushButton*>("reverifyBtn");
+      // 0.9.4.149: merged Load/Re-verify slot (QToolButton + dropdown).
+      // Pin layout membership and order: merged slot > Scan. The dropdown
+      // must list Load on top and Re-verify below.
+      QToolButton* loadSplit = w.findChild<QToolButton*>("loadSplitBtn");
       QPushButton* scanBtn = w.findChild<QPushButton*>("scan");
-      if (!loadBtn || !reverifyBtn || !scanBtn) { std::cerr << "toolbar buttons not found\n"; return 1; }
-      QLayout* barLayout = reverifyBtn->parentWidget() ? reverifyBtn->parentWidget()->layout() : nullptr;
+      if (!loadSplit || !scanBtn) { std::cerr << "toolbar buttons not found\n"; return 1; }
+      QLayout* barLayout = loadSplit->parentWidget() ? loadSplit->parentWidget()->layout() : nullptr;
       if (!barLayout) { std::cerr << "toolbar has no layout\n"; return 1; }
-      const int iLoad = barLayout->indexOf(loadBtn);
-      const int iReverify = barLayout->indexOf(reverifyBtn);
+      const int iLoad = barLayout->indexOf(loadSplit);
       const int iScan = barLayout->indexOf(scanBtn);
-      if (iLoad < 0 || iReverify < 0 || iScan < 0 || !(iLoad < iReverify && iReverify < iScan)) {
-        std::cerr << "reverify button not laid out between Load and Scan\n"; return 1;
+      if (iLoad < 0 || iScan < 0 || !(iLoad < iScan)) {
+        std::cerr << "merged load slot not laid out before Scan\n"; return 1;
+      }
+      QMenu* splitMenu = loadSplit->menu();
+      QAction* loadAct = w.findChild<QAction*>("loadSplitLoadAct");
+      QAction* reverifyAct = w.findChild<QAction*>("loadSplitReverifyAct");
+      if (!splitMenu || !loadAct || !reverifyAct ||
+          splitMenu->actions().size() != 2 ||
+          splitMenu->actions().at(0) != loadAct ||
+          splitMenu->actions().at(1) != reverifyAct) {
+        std::cerr << "load split menu must be [Load, Re-verify]\n"; return 1;
       }
       std::cout << "resource_ui=ok\n";
     }

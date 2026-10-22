@@ -934,16 +934,27 @@ void MainWindow::buildToolbar() {
   folder_->setPlaceholderText(QStringLiteral("D:\\MediaLibrary"));
   folder_->setMinimumWidth(200);
   QSettings st; folder_->setText(st.value("ui/lastFolder", "").toString());
-  refresh_ = new QPushButton(QStringLiteral("📂 ") + trStr(lang(), "load"), toolBar_);
-  refresh_->setObjectName("loadBtn"); // automation hook (backend e2e load test)
-  refresh_->setToolTip(trStr(lang(), "load"));
-  connect(refresh_, &QPushButton::clicked, this, &MainWindow::loadIndex);
-  // 0.9.4.134: forced duplicate re-verification (quick-hash re-read of the
-  // stored pair members; heals content changes that preserved size+mtime).
-  reverifyBtn_ = new QPushButton(trStr(lang(), "reverify"), toolBar_);
-  reverifyBtn_->setObjectName("reverifyBtn"); // automation hook
-  reverifyBtn_->setToolTip(trStr(lang(), "reverifyTip"));
-  connect(reverifyBtn_, &QPushButton::clicked, this, &MainWindow::reverifyIndex);
+  // 0.9.4.149: merged Load/Re-verify slot. One QToolButton occupies the toolbar
+  // slot; its dropdown menu lists Load on top and Re-verify below. Picking an
+  // entry switches the main button (no execution); pressing the main button
+  // part runs the currently selected action.
+  loadSplitBtn_ = new QToolButton(toolBar_);
+  loadSplitBtn_->setObjectName("loadSplitBtn"); // automation hook
+  loadSplitBtn_->setPopupMode(QToolButton::MenuButtonPopup);
+  loadSplitBtn_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+  loadSplitMenu_ = new QMenu(loadSplitBtn_);
+  loadSplitLoadAct_ = loadSplitMenu_->addAction(QString());
+  loadSplitLoadAct_->setObjectName("loadSplitLoadAct"); // automation hook
+  loadSplitLoadAct_->setCheckable(true);
+  loadSplitReverifyAct_ = loadSplitMenu_->addAction(QString());
+  loadSplitReverifyAct_->setObjectName("loadSplitReverifyAct"); // automation hook
+  loadSplitReverifyAct_->setCheckable(true);
+  loadSplitBtn_->setMenu(loadSplitMenu_);
+  connect(loadSplitLoadAct_, &QAction::triggered, this, [this] { setLoadSplitMode(LoadSplitMode::Load); });
+  connect(loadSplitReverifyAct_, &QAction::triggered, this, [this] { setLoadSplitMode(LoadSplitMode::Reverify); });
+  connect(loadSplitBtn_, &QToolButton::clicked, this, &MainWindow::executeLoadSplit);
+  setLoadSplitMode(QSettings().value("ui/loadSplitAction", QStringLiteral("load")).toString() == QStringLiteral("reverify")
+                    ? LoadSplitMode::Reverify : LoadSplitMode::Load);
   scan_ = new QPushButton(toolBar_); scan_->setObjectName("scan");
   scan_->setDefault(true);
   pause_ = new QPushButton(toolBar_); pause_->setCheckable(true); cancel_ = new QPushButton(toolBar_);
@@ -1069,11 +1080,9 @@ void MainWindow::buildToolbar() {
   helpAct_ = utilMenu_->addAction(trStr(lang(), "help"), this, &MainWindow::showHelp);
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_);
-  toolBar_->addWidget(refresh_); toolBar_->addSeparator();
-  // 0.9.4.148: the button existed (0.9.4.134) but was never added to the
-  // layout, so it painted at (0,0) underneath the folder field. Load >
-  // Re-verify > Scan, left to right.
-  toolBar_->addWidget(reverifyBtn_); toolBar_->addSeparator();
+  // 0.9.4.149: merged Load/Re-verify slot (was refresh_ + reverifyBtn_).
+  // One slot: Load on top, Re-verify below in the dropdown.
+  toolBar_->addWidget(loadSplitBtn_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); logTglAct_ = toolBar_->addWidget(logTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator();
   // Execution resource strategy + preset CPU budget as one compact area.
@@ -1426,7 +1435,7 @@ void MainWindow::applyStaticTexts() {
   const UiLang l = lang();
   setWindowTitle(trStr(l, "app") + QStringLiteral(" ") + QString::fromLatin1(MSF_BUILD_VERSION));
   scan_->setText(QStringLiteral("▶ ") + trStr(l, "start"));
-  refresh_->setText(QStringLiteral("📂 ") + trStr(l, "load"));
+  retextLoadSplit(l); // 0.9.4.149 merged Load/Re-verify slot
   pause_->setText(scanPaused_ ? trStr(l, "resume") : QStringLiteral("❚❚ ") + trStr(l, "pause"));
   pause_->setChecked(scanPaused_);
   cancel_->setText(QStringLiteral("■ ") + trStr(l, "stop"));
@@ -1660,7 +1669,7 @@ void MainWindow::setRunning(bool v) {
   scanning_ = v;
   // P3 backend guard (§21): the Start button stays disabled while the backend
   // is unavailable, so a dead backend can never be mistaken for idle.
-  scan_->setEnabled(!v && backendAvailable_); refresh_->setEnabled(!v); reverifyBtn_->setEnabled(!v);
+  scan_->setEnabled(!v && backendAvailable_); loadSplitBtn_->setEnabled(!v);
   pause_->setEnabled(v); pause_->setChecked(false); cancel_->setEnabled(v);
   pause_->setText(QStringLiteral("❚❚ ") + trStr(lang(), "pause"));
   if (!v) scan_->setFocus(); // return the highlight to Start, as at launch
@@ -2216,8 +2225,7 @@ void MainWindow::scanFailed(QString msg) {
     if (loadWait_) { loadWait_->close(); loadWait_->deleteLater(); loadWait_ = nullptr; }
     if (reverifyWait_) { reverifyWait_->close(); reverifyWait_->deleteLater(); reverifyWait_ = nullptr; }
     scan_->setEnabled(backendAvailable_);
-    refresh_->setEnabled(true);
-    reverifyBtn_->setEnabled(true);
+loadSplitBtn_->setEnabled(true);
     QMessageBox::critical(this, trStr(lang(), "scanErr"), msg);
     statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
     return;
@@ -2265,8 +2273,7 @@ void MainWindow::onResults(QVector<BackendFile> files, QStringList matchRows) {
       reverifyWait_ = nullptr;
     }
     scan_->setEnabled(backendAvailable_);
-    refresh_->setEnabled(true);
-    reverifyBtn_->setEnabled(true);
+loadSplitBtn_->setEnabled(true);
   } else {
     wait = cancelWait_;
     cancelWait_ = nullptr;
@@ -2515,6 +2522,38 @@ void MainWindow::refreshFolders() {
   auto* net = new QTreeWidgetItem(folders_, QStringList(trStr(lang(), "network")));
   net->setIcon(0, icons.icon(QFileIconProvider::Network));
 }
+// 0.9.4.149: merged Load/Re-verify slot. Picking a menu entry only switches
+// the main button (persisted in QSettings); pressing the main button part
+// runs the currently selected action.
+// 0.9.4.149: only the merged-slot widgets are retexted here. This runs from
+// buildToolbar (before the other toolbar widgets exist) and from
+// applyStaticTexts, so it must not touch anything outside the slot.
+void MainWindow::retextLoadSplit(UiLang l) {
+  // Re-verify gets the 🔄 (U+1F504) icon, matching Load's 📂 style.
+  loadSplitLoadAct_->setText(QStringLiteral("📂 ") + trStr(l, "load"));
+  loadSplitLoadAct_->setToolTip(trStr(l, "load"));
+  loadSplitReverifyAct_->setText(QStringLiteral("🔄 ") + trStr(l, "reverify"));
+  loadSplitReverifyAct_->setToolTip(trStr(l, "reverifyTip"));
+  loadSplitBtn_->setText(loadSplitMode_ == LoadSplitMode::Reverify
+                         ? loadSplitReverifyAct_->text() : loadSplitLoadAct_->text());
+  loadSplitBtn_->setToolTip(loadSplitMode_ == LoadSplitMode::Reverify
+                            ? trStr(l, "reverifyTip") : trStr(l, "load"));
+}
+
+void MainWindow::setLoadSplitMode(LoadSplitMode m) {
+  loadSplitMode_ = m;
+  QSettings().setValue("ui/loadSplitAction", m == LoadSplitMode::Reverify
+                       ? QStringLiteral("reverify") : QStringLiteral("load"));
+  loadSplitLoadAct_->setChecked(m == LoadSplitMode::Load);
+  loadSplitReverifyAct_->setChecked(m == LoadSplitMode::Reverify);
+  retextLoadSplit(lang()); // re-pick the button label/icon for the current language
+}
+
+void MainWindow::executeLoadSplit() {
+  if (loadSplitMode_ == LoadSplitMode::Reverify) reverifyIndex();
+  else loadIndex();
+}
+
 void MainWindow::loadIndex() {
   // 0.9.4.93: load-only. Replace the current view with the selected folder's
   // stored index content (files + pairs) without walking or analyzing. The
@@ -2552,8 +2591,7 @@ void MainWindow::loadIndex() {
   // One press per load: disable the button and show a NON-modal notice, so the
   // window stays movable while the index is read. onResults clears both.
   loading_ = true;
-  refresh_->setEnabled(false);
-  reverifyBtn_->setEnabled(false);
+  loadSplitBtn_->setEnabled(false);
   scan_->setEnabled(false);
   // The load notice is a SEPARATE popup from the finished-scan report popup:
   // its own title ("인덱스 불러오기") and body ("인덱스 목록 로딩중…"), so a load
@@ -2591,8 +2629,7 @@ void MainWindow::reverifyIndex() {
   refreshGroupList(); refreshFileViews(); refreshDetail();
   statusMsg_->setText(trStr(lang(), "reverifyRunning"));
   reverify_ = true;
-  refresh_->setEnabled(false);
-  reverifyBtn_->setEnabled(false);
+  loadSplitBtn_->setEnabled(false);
   scan_->setEnabled(false);
   reverifyWait_ = showReportWaitPopup(this, lang(), "reverifyWait", "reverifyWaitTitle");
   backend_->reverifyIndex(root, QApplication::applicationDirPath());

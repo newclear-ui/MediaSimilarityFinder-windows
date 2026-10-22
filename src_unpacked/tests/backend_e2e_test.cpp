@@ -32,6 +32,8 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QPushButton>
+#include <QToolButton> // 0.9.4.149: merged Load/Re-verify slot
+#include <QAction>     // 0.9.4.149: merged Load/Re-verify slot
 #include <QSettings>
 #include <QThread>
 #include <QTimer>
@@ -381,8 +383,12 @@ int main(int argc, char** argv) {
     // timeout, and the backend was killed mid-load (field: exit code 0xf291 =
     // 62097) on real datasets. ----
     {
-        auto* loadBtn = w.findChild<QPushButton*>("loadBtn");
-        check(loadBtn != nullptr, "test1b load button found");
+        // 0.9.4.149: merged Load/Re-verify slot. Select Load from the
+        // dropdown, then press the main button part (same as a user click).
+        auto* loadSplit = w.findChild<QToolButton*>("loadSplitBtn");
+        check(loadSplit != nullptr, "test1b load split button found");
+        auto* loadAct = w.findChild<QAction*>("loadSplitLoadAct");
+        check(loadAct != nullptr, "test1b load menu action found");
         bool loadedSeen = false;
         // Wait for the RESULTS answer (not quickLoaded): the GUI keeps
         // loading_ set until results arrives, and a scan click while loading_
@@ -390,7 +396,8 @@ int main(int argc, char** argv) {
         QObject::connect(supervisor, &BackendClient::results, supervisor,
                          [&](const QVector<BackendFile>&, const QStringList&) { loadedSeen = true; });
         const int exitsBefore = backendExits;
-        loadBtn->click();
+        loadAct->trigger(); // switch the slot to Load (no execution)
+        loadSplit->click(); // press the main button part
         QApplication::processEvents();
         pumpUntil([&] { return loadedSeen; }, 60000,
                   "test1b slow load completed while the backend stayed alive");
@@ -465,8 +472,12 @@ int main(int argc, char** argv) {
     // and answers through results() plus the counter event; the backend must
     // stay alive and the view/summary must be repopulated. ----
     {
-        auto* reverifyBtn = w.findChild<QPushButton*>("reverifyBtn");
-        check(reverifyBtn != nullptr, "test1c reverify button found");
+        // 0.9.4.149: merged Load/Re-verify slot. Select Re-verify from
+        // the dropdown, then press the main button part.
+        auto* reverifySplit = w.findChild<QToolButton*>("loadSplitBtn");
+        check(reverifySplit != nullptr, "test1c load split button found");
+        auto* reverifyAct = w.findChild<QAction*>("loadSplitReverifyAct");
+        check(reverifyAct != nullptr, "test1c reverify menu action found");
         bool reverifyResults = false;
         bool reverifyCounters = false;
         const auto resultsConn =
@@ -479,7 +490,8 @@ int main(int argc, char** argv) {
                              [&](qulonglong, qulonglong, qulonglong, qulonglong,
                                  qulonglong, qulonglong) { reverifyCounters = true; });
         const int exitsBefore2 = backendExits;
-        reverifyBtn->click();
+        reverifyAct->trigger(); // switch the slot to Re-verify (no execution)
+        reverifySplit->click(); // press the main button part
         QApplication::processEvents();
         pumpUntil([&] { return reverifyResults; }, 60000, "test1c reverify completed");
         pumpUntil([&] { return reverifyCounters; }, 5000, "test1c reverify counters delivered");
@@ -710,7 +722,7 @@ int main(int argc, char** argv) {
         check(!w.testGroupPathsFor(ga).contains(gb), "test1g GUI group no longer pairs the files");
         // The silent reload clears the view and disables the buttons briefly;
         // wait for it to finish so the following kill test starts from idle.
-        auto* reloadBtn = w.findChild<QPushButton*>("loadBtn");
+        auto* reloadBtn = w.findChild<QToolButton*>("loadSplitBtn"); // 0.9.4.149 merged slot
         pumpUntil([&] { return reloadBtn && reloadBtn->isEnabled() && grid->count() > 0; }, 30000,
                   "test1g silent reload finished");
     }

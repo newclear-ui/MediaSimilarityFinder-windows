@@ -1,6 +1,6 @@
 # Build Status
 
-- Current development version: **0.9.4.148** — Re-verify button added to the toolbar layout
+- Current development version: **0.9.4.149** — Load/Re-verify merged into one split-button slot (drop-down: Load on top, Re-verify below with 🔄 icon)
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS
