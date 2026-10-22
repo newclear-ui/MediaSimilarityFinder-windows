@@ -222,6 +222,8 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"sortName")) return S("이름","Name");
   if (!std::strcmp(key,"sortSize")) return S("그룹 크기","Group size");
   if (!std::strcmp(key,"sortNone")) return S("없음","None");
+  // 0.9.4.150: date sort (creation date; birthTime fallback lastModified).
+  if (!std::strcmp(key,"sortDate")) return S("날짜","Date");
   if (!std::strcmp(key,"sortDesc")) return S("내림차순","Descending");
   if (!std::strcmp(key,"sortAsc")) return S("오름차순","Ascending");
   if (!std::strcmp(key,"searchGroups")) return S("그룹 검색","Search groups");
@@ -1495,6 +1497,7 @@ void MainWindow::applyStaticTexts() {
   sortBox_->addItem(trStr(l, "sortSize"));
   sortBox_->addItem(trStr(l, "sortSim"));
   sortBox_->addItem(trStr(l, "sortName"));
+  sortBox_->addItem(trStr(l, "sortDate")); // 0.9.4.150: newest files first
   sortBox_->setCurrentIndex(ssort < 0 ? 0 : ssort);
   sortBox_->blockSignals(false);
   if (sortDirBox_) {
@@ -2280,7 +2283,7 @@ loadSplitBtn_->setEnabled(true);
     if (!wait) wait = showReportWaitPopup(this, lang());
   }
   allPaths_.clear(); matchRows_ = matchRows;
-  fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
+  fileSize_.clear(); fileFp_.clear(); fileDur_.clear(); fileDate_.clear();
   // 0.9.4.117: stage timing for the field-diagnosed result-apply stall (a
   // 9,055-group apply froze the GUI for minutes; see group_fill_probe).
   QElapsedTimer applyT;
@@ -2567,7 +2570,7 @@ void MainWindow::loadIndex() {
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
   fileMetaAsked_.clear(); // 0.9.4.105: new load generation re-asks metadata
   contentFlag_.clear();   // 0.9.4.106: badge flags belong to one result set
-  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
+  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear(); fileDate_.clear();
   pathParent_.clear(); groups_.clear(); pathGroup_.clear();
   noneOrder_.clear(); imgShown_.clear(); vidShown_.clear();
   marked_.clear();
@@ -2613,7 +2616,7 @@ void MainWindow::reverifyIndex() {
   bestPct_.clear(); resCache_.clear(); pathKind_.clear(); thumbCache_.clear();
   fileMetaAsked_.clear();
   contentFlag_.clear();
-  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear();
+  allPaths_.clear(); matchRows_.clear(); fileSize_.clear(); fileFp_.clear(); fileDur_.clear(); fileDate_.clear();
   pathParent_.clear(); groups_.clear(); pathGroup_.clear();
   noneOrder_.clear(); imgShown_.clear(); vidShown_.clear();
   marked_.clear();
@@ -3033,6 +3036,17 @@ void MainWindow::rebuildGroups() {
       if (a.best != b.best) return sortDesc ? a.best > b.best : a.best < b.best;
       return groupPath(a) < groupPath(b);
     });
+  } else if (sortMode == kSortDate) {
+    // 0.9.4.150: date sort. Group key = newest member creation date
+    // (birthTime; lastModified when birthTime is unavailable). Descending
+    // (the default) puts the most recently added files first.
+    std::sort(groups_.begin(), groups_.end(), [&](const DupGroup& a, const DupGroup& b) {
+      qint64 da = 0, db = 0;
+      for (const auto& p : a.paths) da = std::max(da, fileDateCached(p));
+      for (const auto& p : b.paths) db = std::max(db, fileDateCached(p));
+      if (da != db) return sortDesc ? da > db : da < db;
+      return groupPath(a) < groupPath(b);
+    });
   } else {
     // kSortNone: stable append order. Groups already listed keep their position;
     // new groups (or ones whose union-find root changed by a merge) are appended
@@ -3114,6 +3128,19 @@ qulonglong MainWindow::fileSizeCached(const QString& p) {
   const qulonglong s = (qulonglong)QFileInfo(p).size();
   fileSize_[p] = QString::number(s);
   return s;
+}
+qint64 MainWindow::fileDateCached(const QString& p) {
+  // 0.9.4.150: creation date for the Date sort (matches "recently added files
+  // first"). birthTime is invalid on some filesystems; fall back to
+  // lastModified then. Missing files sort as 0 (oldest). Cached like
+  // fileSizeCached; cleared whenever a new result set replaces the view.
+  auto it = fileDate_.find(p);
+  if (it != fileDate_.cend()) return it.value();
+  const QFileInfo fi(p);
+  const QDateTime dt = fi.birthTime().isValid() ? fi.birthTime() : fi.lastModified();
+  const qint64 ms = dt.isValid() ? dt.toMSecsSinceEpoch() : 0;
+  fileDate_[p] = ms;
+  return ms;
 }
 void MainWindow::connectResView(QTreeWidget* tree, QListWidget* grid) {
   connect(tree, &QTreeWidget::currentItemChanged, this, &MainWindow::groupSelected);

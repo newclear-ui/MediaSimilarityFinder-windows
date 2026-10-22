@@ -421,12 +421,17 @@ int main(int argc, char** argv) {
         auto* sortBox = w.findChild<QComboBox*>("sortBox");
         auto* sortDir = w.findChild<QComboBox*>("sortDirBox");
         check(sortBox != nullptr && sortBox->isEnabled(), "test1b sort available after Load");
-        check(sortBox && sortBox->count() == 4, "test1b sort menu None/Group size/Similarity/Name");
+        check(sortBox && sortBox->count() == 5, "test1b sort menu None/Group size/Similarity/Name/Date");
         check(sortDir && sortDir->count() == 2, "test1b sort direction has ascending/descending");
         if (sortBox) {
             sortBox->setCurrentIndex(1); // Group size
             QApplication::processEvents();
             check(sortBox->currentIndex() == 1, "test1b sort can change after Load");
+            // 0.9.4.150: Date sort (creation date) executes over the loaded
+            // groups without crashing; the mode sticks like the other modes.
+            sortBox->setCurrentIndex(4); // Date
+            QApplication::processEvents();
+            check(sortBox->currentIndex() == 4, "test1b date sort selectable");
             sortBox->setCurrentIndex(0);
             QApplication::processEvents();
         }

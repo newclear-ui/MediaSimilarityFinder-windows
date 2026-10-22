@@ -382,6 +382,8 @@ private:
   QStringList allPaths_; QStringList matchRows_;
   QHash<QString,QString> fileSize_; QHash<QString,QString> fileFp_;
   qulonglong fileSizeCached(const QString&); // index value, else live stat
+  QHash<QString,qint64> fileDate_; // 0.9.4.150: per-path creation date cache
+  qint64 fileDateCached(const QString&); // birthTime (fallback: lastModified)
   // P3: thumbnail persistence lives in the Backend (G1.3). The GUI keeps
   // the memory presentation cache above plus file metadata maps.
   mutable QHash<QString,QString> resCache_;
@@ -506,7 +508,7 @@ private:
   // the scan ends.
   // 0.9.4.139: group sort types. Size = number of files in the group (the
   // user asked for "bigger groups first" as a first-class order).
-  static constexpr int kSortNone = 0, kSortSize = 1, kSortSim = 2, kSortName = 3;
+  static constexpr int kSortNone = 0, kSortSize = 1, kSortSim = 2, kSortName = 3, kSortDate = 4;
   QLabel* groupTitle_=nullptr; QComboBox* sortBox_=nullptr; QComboBox* sortDirBox_=nullptr;
   QLineEdit* groupSearch_=nullptr;
   int preScanSort_ = kSortNone; // sort restored when the running scan ends
