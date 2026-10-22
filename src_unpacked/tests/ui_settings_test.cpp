@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLayout>
 #include <QSettings>
 #include <QDir>
 #include <iostream>
@@ -191,6 +192,21 @@ int main(int argc, char** argv) {
       else st.remove("ui/showTestButton");
       QMetaObject::invokeMethod(&w, "applyTestButtonVisibility");
       QApplication::processEvents();
+      // 0.9.4.148: reverifyBtn existed since 0.9.4.134 but was never added to
+      // the toolbar layout, so it painted at (0,0) underneath the folder field.
+      // Pin layout membership and order: Load > Re-verify > Scan.
+      QPushButton* loadBtn = w.findChild<QPushButton*>("loadBtn");
+      QPushButton* reverifyBtn = w.findChild<QPushButton*>("reverifyBtn");
+      QPushButton* scanBtn = w.findChild<QPushButton*>("scan");
+      if (!loadBtn || !reverifyBtn || !scanBtn) { std::cerr << "toolbar buttons not found\n"; return 1; }
+      QLayout* barLayout = reverifyBtn->parentWidget() ? reverifyBtn->parentWidget()->layout() : nullptr;
+      if (!barLayout) { std::cerr << "toolbar has no layout\n"; return 1; }
+      const int iLoad = barLayout->indexOf(loadBtn);
+      const int iReverify = barLayout->indexOf(reverifyBtn);
+      const int iScan = barLayout->indexOf(scanBtn);
+      if (iLoad < 0 || iReverify < 0 || iScan < 0 || !(iLoad < iReverify && iReverify < iScan)) {
+        std::cerr << "reverify button not laid out between Load and Scan\n"; return 1;
+      }
       std::cout << "resource_ui=ok\n";
     }
     return 0;

@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.147` (None baseline remembers the loaded order) - CPU CTest 125/125 - GPU CTest 126/126
-Last updated: 2026-10-20
+Baseline: `0.9.4.148` (Re-verify button added to the toolbar layout) - CPU CTest 125/125 - GPU CTest 126/126
+Last updated: 2026-10-22
 
 ## Role of this document
 

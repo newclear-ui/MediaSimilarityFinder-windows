@@ -1070,6 +1070,10 @@ void MainWindow::buildToolbar() {
   utilBtn_->setMenu(utilMenu_);
   toolBar_->addWidget(folder_);
   toolBar_->addWidget(refresh_); toolBar_->addSeparator();
+  // 0.9.4.148: the button existed (0.9.4.134) but was never added to the
+  // layout, so it painted at (0,0) underneath the folder field. Load >
+  // Re-verify > Scan, left to right.
+  toolBar_->addWidget(reverifyBtn_); toolBar_->addSeparator();
   toolBar_->addWidget(scan_); logTglAct_ = toolBar_->addWidget(logTgl_); toolBar_->addWidget(pause_); toolBar_->addWidget(cancel_);
   toolBar_->addSeparator();
   // Execution resource strategy + preset CPU budget as one compact area.
