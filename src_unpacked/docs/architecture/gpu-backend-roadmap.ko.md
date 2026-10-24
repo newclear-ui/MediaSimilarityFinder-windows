@@ -63,7 +63,7 @@ GPU ON 시:
 - 현재 CUDA backend의 동작 보존
 - Vulkan을 다음 구현 후보로 연결할 수 있는 interface 확보
 
-이후 Vulkan compute pilot을 별도 단계로 진행한다.
+이후 Vulkan compute pilot을 1.0 라인에서 별도 단계로 진행한다(2026-10-25 확정: 0.9.4.x는 CPU+CUDA 안정화 우선, 0.9.4.154 검증 완료).
 
 처음부터 Vulkan을 CUDA의 완전한 대체재로 만들려 하지 않는다. 정확성 parity와 실제 end-to-end throughput을 먼저 검증한다.
 
@@ -173,8 +173,8 @@ A Foundation
    -> C Calibration
    -> D Pipeline / Queue
    -> E Adaptive Video Decode Planner
-   -> F Hardware Decode Backend (NVDEC first)
-   -> G Vulkan / HIP-ROCm / Level Zero
+   -> F Hardware Decode Backend (NVDEC first; F-1 계약만, F-2 본통합은 Vulkan 이후(1.0 이후)로 연기)
+   -> G Vulkan / HIP-ROCm / Level Zero (1.0 이후; 0.9.4.154 CPU+CUDA 안정화 후 Vulkan 우선)
    -> H Regression / Validation
 
 Backend별 구현은 해당 node의 완료조건을 만족한 뒤 다음 node로 넘어갑니다.

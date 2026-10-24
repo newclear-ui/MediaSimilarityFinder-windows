@@ -337,6 +337,8 @@ backend 의 실제 조사와 검증은 이번 F 범위에 포함하지 않습니
 향후 Intel/AMD 등 hardware decode backend 를 추가할 수 있는 방향을 고려합니다.
 그 구현·검증은 **이번 F 의 범위가 아닙니다.**
 
+**2026-10-25 순서 확정:** F-2 본통합(NVDEC production 포함 모든 HW 디코드 본통합)은 Vulkan 지원 완료 이후(1.0 이후)로 이동한다. F-1 계약(CONDITIONAL)과 F-2 금지는 그대로 유지된다.
+
 ### F 진행 상태 (0.9.4.44 기준, F-1 결과는 0.9.4.43에서 확정)
 
 - **F-1 Random-Access Safety Contract: `CONDITIONAL` / `PRODUCTION ADOPTION = NO`**
@@ -364,6 +366,8 @@ abstraction이 안정화된 뒤 독립적으로 검토합니다.
 
 실제 장비 검증 전에는 지원 완료로 표시하지 않습니다.
 
+**2026-10-25 순서 확정:** 0.9.4.x는 CPU+CUDA 안정화에 집중한다(0.9.4.154에서 CPU 128/128·GPU 129/129 검증 완료). Node G(Vulkan 우선, HIP/ROCm·Level Zero 포함)는 1.0 라인에서 roadmap으로 진행한다. 하드웨어 디코드 본통합(F-2 포함)과 필요 라이브러리/SDK는 Vulkan 지원 완료 이후로 둔다. F-2 선행조건은 해제한다(F-2 자체 금지는 정확성 미확보로 유지).
+
 ## Node H — Regression / Stability / Performance Validation
 
 CPU-only, GPU OFF, GPU ON/AUTO, low-end simulation, acceleration-not-beneficial, external CPU/GPU load, hardware decode success/fallback, mixed workload, cancellation/partial, accuracy parity, stability, cache compatibility를 함께 검증합니다.
@@ -375,6 +379,7 @@ CPU-only, GPU OFF, GPU ON/AUTO, low-end simulation, acceleration-not-beneficial,
 Roadmap Node와 버전 번호는 같은 개념이 아닙니다.
 
 Roadmap: A → B → C → D → I → E → F → G → H
+순서(2026-10-25 확정): 0.9.4.x = CPU+CUDA 안정화 → H(CPU+CUDA 범위); 1.0 이후 = G(Vulkan 우선) → HW 본통합+라이브러리 → H HW 항목.
 Version: 0.9.4.0 → 0.9.4.1 → 0.9.4.2 → 0.9.4.3 → ...
 
 예를 들어 B 내부에서 B1/B2/B3 문제 해결을 거쳐 하나의 검증 상태가 만들어질 때 다음 버전으로 증가할 수 있습니다.

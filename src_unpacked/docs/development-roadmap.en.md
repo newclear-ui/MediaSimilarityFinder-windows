@@ -334,6 +334,8 @@ The **architecture is not fixed to NVIDIA**, however. The backend abstraction is
 expected to accommodate additional hardware decode backends such as Intel/AMD in
 future. Their implementation and verification are **out of scope for this F**.
 
+**Order fixed 2026-10-25:** F-2 production integration (all HW decode production, incl. NVDEC) moves to after Vulkan support (post-1.0). The F-1 contract (CONDITIONAL) and the F-2 prohibition stay in force.
+
 ### F progress (0.9.4.43)
 
 - **F-1 Random-Access Safety Contract: `CONDITIONAL` / `PRODUCTION ADOPTION = NO`**
@@ -368,6 +370,8 @@ Review independently after the GPU abstraction is stable:
 
 Do not claim support completion without real hardware validation.
 
+**Order fixed 2026-10-25:** 0.9.4.x concentrates on CPU+CUDA stabilization (verified in 0.9.4.154: CPU 128/128, GPU 129/129). Node G (Vulkan first, incl. HIP/ROCm and Level Zero) proceeds as a roadmap item on the 1.0 line. Hardware-decode production integration (incl. F-2) and required libraries/SDKs come after Vulkan support. The F-2 precondition is lifted (the F-2 prohibition itself stays for unestablished correctness).
+
 ## Node H — Regression / Stability / Performance Validation
 
 Validate:
@@ -395,6 +399,7 @@ Acceptance is based on correctness + end-to-end throughput + fallback correctnes
 Version numbers are not roadmap node numbers.
 
 Roadmap: A -> B -> C -> D -> I -> E -> F -> G -> H
+Order (fixed 2026-10-25): 0.9.4.x = CPU+CUDA stabilization -> H (CPU+CUDA scope); post-1.0 = G (Vulkan first) -> HW production integration + libraries -> H HW items.
 Version: 0.9.4.0 -> 0.9.4.1 -> 0.9.4.2 -> 0.9.4.3 -> ...
 
 Example:

@@ -60,7 +60,7 @@ The first goals are:
 - preserve the current CUDA backend behavior
 - make Vulkan connectable as a future backend without changing the search engine
 
-A Vulkan compute pilot follows separately.
+A Vulkan compute pilot follows separately on the 1.0 line (fixed 2026-10-25: 0.9.4.x prioritizes CPU+CUDA stabilization, verified in 0.9.4.154).
 
 Do not treat Vulkan as a complete CUDA replacement until correctness parity and end-to-end throughput have been verified.
 
@@ -168,8 +168,8 @@ A Foundation
    -> C Calibration
    -> D Pipeline / Queue
    -> E Adaptive Video Decode Planner
-   -> F Hardware Decode Backend (NVDEC first)
-   -> G Vulkan / HIP-ROCm / Level Zero
+   -> F Hardware Decode Backend (NVDEC first; F-1 contract only, F-2 production integration deferred until after Vulkan, post-1.0)
+   -> G Vulkan / HIP-ROCm / Level Zero (post-1.0; Vulkan first after CPU+CUDA stabilization in 0.9.4.154)
    -> H Regression / Validation
 
 Each backend proceeds only after the current node exit criteria are satisfied.
