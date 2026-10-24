@@ -626,6 +626,9 @@ int main(int argc, char** argv) {
                 if (h) sqlite3_close(h);
                 return out;
             }
+            // Same 10 s hardening as openTestDb: a fresh reader can transiently
+            // fail while the backend checkpoints a just-committed adopt write.
+            sqlite3_busy_timeout(h, 10000);
             sqlite3_stmt* st = nullptr;
             if (sqlite3_prepare_v2(
                     h,
@@ -637,6 +640,9 @@ int main(int argc, char** argv) {
                 if (sqlite3_step(st) == SQLITE_ROW) {
                     for (int col = 0; col < 9; ++col)
                         out += QString::number((qulonglong)sqlite3_column_int64(st, col)) + ',';
+                } else {
+                    std::cerr << "  [DBG] row read empty suffix=" << suffix
+                              << " err=" << sqlite3_errcode(h) << std::endl;
                 }
                 sqlite3_finalize(st);
             }
@@ -732,6 +738,9 @@ int main(int argc, char** argv) {
                 if (h) sqlite3_close(h);
                 return out;
             }
+            // Same 10 s hardening as openTestDb: a fresh reader can transiently
+            // fail while the backend checkpoints a just-committed adopt write.
+            sqlite3_busy_timeout(h, 10000);
             sqlite3_stmt* st = nullptr;
             if (sqlite3_prepare_v2(
                     h,
@@ -743,6 +752,9 @@ int main(int argc, char** argv) {
                 if (sqlite3_step(st) == SQLITE_ROW) {
                     for (int col = 0; col < 9; ++col)
                         out += QString::number((qulonglong)sqlite3_column_int64(st, col)) + ',';
+                } else {
+                    std::cerr << "  [DBG] row read empty suffix=" << suffix
+                              << " err=" << sqlite3_errcode(h) << std::endl;
                 }
                 sqlite3_finalize(st);
             }
@@ -785,6 +797,7 @@ int main(int argc, char** argv) {
             // read itself failing (empty DB handle, lock, missing table)?
             sqlite3* dh = nullptr;
             if (sqlite3_open(dbPath.toUtf8().constData(), &dh) == SQLITE_OK) {
+                sqlite3_busy_timeout(dh, 10000);
                 sqlite3_stmt* st = nullptr;
                 if (sqlite3_prepare_v2(dh, "SELECT COUNT(*) FROM files", -1, &st, nullptr) == SQLITE_OK) {
                     if (sqlite3_step(st) == SQLITE_ROW)
@@ -1009,6 +1022,9 @@ int main(int argc, char** argv) {
                 if (sqlite3_step(st) == SQLITE_ROW) {
                     for (int col = 0; col < 9; ++col)
                         out += QString::number((qulonglong)sqlite3_column_int64(st, col)) + ',';
+                } else {
+                    std::cerr << "  [DBG] row read empty suffix=" << suffix
+                              << " err=" << sqlite3_errcode(h) << std::endl;
                 }
                 sqlite3_finalize(st);
             }
