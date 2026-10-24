@@ -52,6 +52,11 @@ public slots:
   void setFastRescan(bool b) { fastRescan_ = b; }
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
   const msf::MediaSearchEngine& scanEngine() const { return engine_; }
+  // 0.9.4.153: test hook for the cancel-after-change regression test. Lets a
+  // test cancel deterministically after the first re-analysis approval
+  // instead of racing a wall-clock sleep against scan completion. Never read
+  // by production code.
+  int testChangedCount() const { return changedFiles_.size(); }
   qulonglong gpuDone() const { return gpuDone_.load(); }
   bool gpuAvailable() const { return gpuAvail_; }
   bool gpuActive() const { return engine_.gpuActive(); }

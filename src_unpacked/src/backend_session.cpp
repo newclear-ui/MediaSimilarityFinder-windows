@@ -242,9 +242,17 @@ static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPath
         ok = execSqlQuiet(db, sql, &err);
     }
     // Meta has no per-path rows: full-scope adoption upserts every scratch
-    // key; partial scope keeps the main index's global stamps (see above).
+    // key; partial scope keeps the main index's global stamps (see above) —
+    // except the completeness baseline, which is always invalidated on a
+    // partial adopt (0.9.4.153 P1-A). A preserved VALID baseline would let the
+    // next A/AB scan skip the full verification even though the out-of-scope
+    // subgraph was never verified in the scratch. Deleting the key schedules
+    // one full pass; the re-verified stamp is written on completion. Same
+    // transaction, so a failure still rolls everything back.
     if (ok && scope.full()) {
         ok = execSqlQuiet(db, "INSERT OR REPLACE INTO meta SELECT * FROM src.meta;", &err);
+    } else if (ok) {
+        ok = execSqlQuiet(db, "DELETE FROM meta WHERE key='match_baseline';", &err);
     }
     if (!ok) {
         execSqlQuiet(db, "ROLLBACK;", nullptr);

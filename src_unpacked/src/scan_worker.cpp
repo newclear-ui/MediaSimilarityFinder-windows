@@ -240,6 +240,12 @@ void ScanWorker::run() {
     };
     msf::backendLogLine("scanPhase=engine begin");
     auto r = engine_.scan(root_.toStdString(), unsigned(distance_), &control_);
+    // Test-only fault injection (0.9.4.153): simulates an engine-internal
+    // failure report (the DB-error path that rolls file rows back and returns
+    // completed=false) without throwing, to pin the worker's failed-report
+    // contract. Production never sets this variable, so the branch is dead
+    // otherwise.
+    if (qEnvironmentVariableIsSet("MSF_TEST_ENGINE_FAIL")) r.completed = false;
     msf::backendLogLine(QString("scanPhase=engine done scanned=%1 analyzed=%2 unchanged=%3 failed=%4")
                             .arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.failed).toStdString());
     // 0.9.4.131: the detailed log must agree with the list the user sees.
@@ -358,7 +364,34 @@ void ScanWorker::run() {
                 .arg(r.videoTemporalChecks).arg(r.videoMatches).toStdString());
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
     const int changedCount = changedFiles_.size();
-    if (control_.cancel.load()) { if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson); emit finished(QString("CANCELLED|%1|%2|%3").arg(r.scanned).arg(r.analyzed).arg(changedCount)); return; }
+    if (control_.cancel.load()) {
+      // 0.9.4.153 P1-B: a cancelled scan already pruned stale pairs from the
+      // stored set (checkpoints + the final persist above committed), while
+      // the engine committed re-analyzed file rows. The pre-scan baseline
+      // would wrongly vouch for the pruned set, so invalidate it whenever
+      // files were re-analyzed: the next A/AB scan full-verifies.
+      if (changedCount > 0) {
+        try { engine_.invalidateMatchBaseline(); } catch (...) {}
+        try { msf::backendLogLine("scanWorker cancel invalidated baseline"); } catch (...) {}
+      }
+      if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson); emit finished(QString("CANCELLED|%1|%2|%3").arg(r.scanned).arg(r.analyzed).arg(changedCount)); return;
+    }
+    // 0.9.4.153 P1-B: the engine can report failure without throwing (its
+    // internal DB error path rolls file rows back). Falling through to
+    // results + "Scan complete" would present a real DB failure as success,
+    // so fail loudly instead. Cancel is checked first: a user Stop is never
+    // a failure, even when the engine also reports incomplete.
+    if (!r.completed) {
+      if (changedCount > 0) {
+        try { engine_.invalidateMatchBaseline(); } catch (...) {}
+        try { msf::backendLogLine("scanWorker engine-failure invalidated baseline"); } catch (...) {}
+      }
+      allMatches_.clear();
+      try { allMatches_.shrink_to_fit(); } catch (...) {}
+      try { emit failed(QString("scan engine reported failure|msfChanged=%1").arg(changedCount)); } catch (...) {}
+      try { msf::backendLogLine("scanWorker engine-reported failure"); } catch (...) {}
+      return;
+    }
     const auto& fs = engine_.files();
     QVector<GuiFile> files; files.reserve((int)fs.size());
     for (const auto& f : fs) {
@@ -395,6 +428,15 @@ void ScanWorker::run() {
     // abort() (the 0xC0000409 signature, proven by the 2026-10-07 dump whose
     // fault stack sits in this handler's persist path). Persist and report
     // are attempted independently; each swallows its own failure.
+    // 0.9.4.153 P1-B: when files were re-analyzed before the unwind, the
+    // persisted set is pruned while the engine may have committed new file
+    // rows (post-commit failure). Invalidate the baseline so the next A/AB
+    // scan cannot trust the pruned set as complete. Pre-commit failures roll
+    // file rows back (change detection refires), where this is harmless.
+    if (!changedFiles_.isEmpty()) {
+      try { engine_.invalidateMatchBaseline(); } catch (...) {}
+      try { msf::backendLogLine("scanWorker exception invalidated baseline"); } catch (...) {}
+    }
     try { persistMatchesSnapshot(); } catch (...) {}
     // 0.9.4.151: carry the re-analyzed-file count so the GUI can re-apply the
     // stored index when a failed scan already pruned stale pairs (same suffix
@@ -416,6 +458,11 @@ void ScanWorker::run() {
     // memory corruption keeps failing fast instead of being masked.
     // (0.9.4.65) Same no-throw rule as above: the handler itself throwing
     // re-enters terminate() -> abort() with no record.
+    // 0.9.4.153 P1-B: same baseline rule as the std::exception path above.
+    if (!changedFiles_.isEmpty()) {
+      try { engine_.invalidateMatchBaseline(); } catch (...) {}
+      try { msf::backendLogLine("scanWorker nonstd invalidated baseline"); } catch (...) {}
+    }
     try { persistMatchesSnapshot(); } catch (...) {}
     try { emit failed(QStringLiteral("unhandled non-standard exception in scan worker") + QString("|msfChanged=%1").arg(changedFiles_.size())); } catch (...) {}
     try { msf::backendLogLine("scanWorker non-standard failure reported"); } catch (...) {}

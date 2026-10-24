@@ -777,7 +777,13 @@ int main(int argc, char** argv) {
         if (box && box->button(QMessageBox::No)) box->button(QMessageBox::No)->click();
         QApplication::processEvents();
         QThread::msleep(800);
-        check(readRow(dbPath, "g8_a.bmp") == rowBefore, "test1e main row untouched after No");
+        const QString rowAfterDbg = readRow(dbPath, "g8_a.bmp");
+        if (rowAfterDbg != rowBefore) {
+            std::cerr << "  [DBG 1e] rowBefore=" << rowBefore.toStdString()
+                      << " rowAfter=" << rowAfterDbg.toStdString()
+                      << " testChecked=" << (testBtn->isChecked() ? 1 : 0) << std::endl;
+        }
+        check(rowAfterDbg == rowBefore, "test1e main row untouched after No");
         check(readRow(dbPath, "g8_a.bmp") != readRow(scratchDb, "g8_a.bmp"),
               "test1e main still differs from the un-adopted scratch");
         testBtn->setChecked(false);
@@ -915,8 +921,10 @@ int main(int argc, char** argv) {
         // content_hash rel row) and adoption still succeeded.
         check(countPairInDb(dbPath, "g6_a.bmp", "g6_b.bmp") == 0, "test1h deleted pair pruned");
         check(countContentHash(dbPath, "g6_a.bmp") == 0, "test1h deleted content_hash rel pruned");
-        // 0.9.4.152 P1 meta: the stale baseline survived the partial adoption.
-        check(readMeta(dbPath, "match_baseline") == QStringLiteral("0.0.0"), "test1h baseline preserved on partial adopt");
+        // 0.9.4.153 P1-A: partial adoption invalidates the baseline (it no
+        // longer preserves the stale value), so the next scan is forced to
+        // full-verify.
+        check(readMeta(dbPath, "match_baseline").isEmpty(), "test1h baseline invalidated on partial adopt");
         // The next production scan must therefore schedule a full verification.
         // The engine announces it in the backend log file only (the supervisor
         // signal carries supervisor lifecycle lines, not engine lines).
@@ -1069,6 +1077,85 @@ int main(int argc, char** argv) {
         check(readMeta(dbPath, "match_baseline") == QString::fromLatin1(msf::MediaSearchEngine::kEngineVersion),
               "test1h2 baseline adopted on full-scope retry");
         testBtn3->setChecked(false);
+        QObject::disconnect(diffConn);
+        QObject::disconnect(appliedConn);
+    }
+    // ---- Test 1h3 (0.9.4.153 P1-A): partial adoption with a VALID baseline
+    // must invalidate it. Keeping the old value would let the next A/AB scan
+    // skip the full verification even though the adopted scope never proved
+    // the out-of-scope subgraph. ----
+    {
+        msf::IndexPaths ip;
+        QString dbPath;
+        if (msf::IndexManager::resolve(
+                msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                msf::path_from_utf8((d / "media").string()), ip))
+            dbPath = QString::fromStdString(msf::path_to_utf8(ip.database));
+        // Precondition: the previous scans left a valid baseline behind.
+        check(readMeta(dbPath, "match_baseline") == QString::fromLatin1(msf::MediaSearchEngine::kEngineVersion),
+              "test1h3 baseline valid before partial adopt");
+        const QString g5a = storedPathFor(dbPath, "g5_a.bmp");
+        const QString g5b = storedPathFor(dbPath, "g5_b.bmp");
+        check(!g5a.isEmpty() && !g5b.isEmpty(), "test1h3 stored paths resolved");
+        // Fresh diff on an untouched pair member: corrupt g9_b. (g7 cannot be
+        // the ignore witness: Test 1d edited and adopted g7_a, so that pair
+        // is legitimately gone. g5's pair is intact.)
+        const auto target = d / "media" / "g9_b.bmp";
+        fs::copy_file(d / "media" / "g2_a.bmp", target,
+                      fs::copy_options::overwrite_existing, ec);
+        fs::last_write_time(target, fs::file_time_type::clock::now(), ec);
+        w.applyIgnore(QStringList{g5a}, true);
+        bool diffSeen = false;
+        const auto diffConn =
+            QObject::connect(supervisor, &BackendClient::testModeDiff, supervisor,
+                             [&](qulonglong, qulonglong, qulonglong, qulonglong,
+                                 qulonglong, qulonglong) { diffSeen = true; });
+        bool appliedSeen = false;
+        bool appliedOk = false;
+        const auto appliedConn =
+            QObject::connect(supervisor, &BackendClient::testApplied, supervisor,
+                             [&](bool ok, QString) { appliedSeen = true; appliedOk = ok; });
+        auto* testBtn4 = w.findChild<QPushButton*>("testBtn");
+        check(testBtn4 != nullptr, "test1h3 test toggle found");
+        testBtn4->setChecked(true);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1h3 test scan finished");
+        pumpUntil([&] { return diffSeen; }, 30000, "test1h3 diff reported");
+        QMessageBox* box = nullptr;
+        pumpUntil([&] { box = w.findChild<QMessageBox*>("testDiffBox"); return box != nullptr; },
+                  15000, "test1h3 Yes/No report shown");
+        if (box && box->button(QMessageBox::Yes)) box->button(QMessageBox::Yes)->click();
+        pumpUntil([&] { return appliedSeen; }, 60000, "test1h3 test result applied");
+        QApplication::processEvents();
+        check(appliedSeen && appliedOk, "test1h3 partial adoption succeeded");
+        // The valid baseline must be gone (invalidated in the adopt txn).
+        check(readMeta(dbPath, "match_baseline").isEmpty(), "test1h3 baseline invalidated on partial adopt");
+        // Out-of-scope rows still preserved.
+        check(countPairInDb(dbPath, "g5_a.bmp", "g5_b.bmp") == 1, "test1h3 ignored pair preserved");
+        // The next production scan must full-verify (observe the engine log),
+        // restamp, and drop the changed pair while keeping the rest.
+        const QString logPath =
+            QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QStringLiteral("/msf_scan.log");
+        const qint64 logBefore = QFileInfo(logPath).size();
+        w.applyIgnore(QStringList{g5a}, false);
+        testBtn4->setChecked(false);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1h3 production scan finished");
+        bool fullPass = false;
+        {
+            QFile lf(logPath);
+            if (lf.open(QIODevice::ReadOnly)) {
+                if (logBefore > 0) lf.seek(logBefore);
+                fullPass = QString::fromUtf8(lf.readAll()).contains(QStringLiteral("matchBaseline=forceFullPass"));
+            }
+        }
+        check(fullPass, "test1h3 full verification scheduled after invalidation");
+        check(readMeta(dbPath, "match_baseline") == QString::fromLatin1(msf::MediaSearchEngine::kEngineVersion),
+              "test1h3 baseline restamped after full verification");
+        check(countPairInDb(dbPath, "g9_a.bmp", "g9_b.bmp") == 0, "test1h3 changed pair dropped");
+        check(countPairInDb(dbPath, "g2_a.bmp", "g2_b.bmp") == 1, "test1h3 untouched pair kept");
         QObject::disconnect(diffConn);
         QObject::disconnect(appliedConn);
     }

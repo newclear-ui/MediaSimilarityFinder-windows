@@ -27,12 +27,17 @@
 #include "index_manager.h" // 0.9.4.152: persist-fail index resolve
 #include "database.h"      // 0.9.4.152: persist-fail DB assertions
 #include "path_utils.h"    // 0.9.4.152: persist-fail path conversion
+#include "media_search_engine.h" // 0.9.4.153: cancel-consistency baseline stamp
 #include <QLayout>
 #include <QLabel>      // 0.9.4.152: persist-fail status assertion
 #include <QListWidget> // 0.9.4.152: persist-fail group grid
 #include <QTimer>      // 0.9.4.152: persist-fail modal closer
 #include <QThread>     // 0.9.4.152: persist-fail pump
 #include <QElapsedTimer> // 0.9.4.152: persist-fail pump
+#include <QStandardPaths> // 0.9.4.153: cancel-consistency log tail
+#include <unordered_map>  // 0.9.4.153: cancel-consistency DB group map
+#include <string>         // 0.9.4.153: cancel-consistency DB group map
+#include <atomic>         // 0.9.4.153: cancel-consistency progress flag
 #include <QSettings>
 #include <QDir>
 #include <iostream>
@@ -421,6 +426,230 @@ int main(int argc, char** argv) {
     if (stillFailing) { std::cerr << "failure text survives retry\n"; return 1; }
     if (grid->count() != 2) { std::cerr << "retry groups=" << grid->count() << "\n"; return 1; }
     std::cout << "persist_fail=ok\n";
+    return 0;
+  }
+  // 0.9.4.153 P1-B: cancel-after-approval leaves the view consistent with
+  // the stored set. Loopback runs the real session in-process: a real scan
+  // with re-analyzed files is cancelled mid-analysis (large fixtures keep
+  // analysis in flight past the fixed cancel delay with wide margin), then
+  // the GUI must show exactly the DB's pruned set (no stale pairs), the
+  // baseline must be invalidated, and the next scan must force full
+  // verification and restamp. The worker-side CANCELLED|changed contract is
+  // pinned in-process by crash_diagnostics_test §5; this pins the GUI side.
+  if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--cancel-consistency") {
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication app(argc, argv);
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) { std::cerr << "temp settings dir failed\n"; return 1; }
+    QDir().mkpath(settingsDir.path() + "/settings");
+    initAppSettings(settingsDir.path() + "/settings");
+    QTemporaryDir dataDir;
+    if (!dataDir.isValid()) { std::cerr << "temp data dir failed\n"; return 1; }
+    // 30 identical pairs of 512px noise BMPs. Every file is re-written
+    // (fresh mtime => every file re-approved) and five spread members get
+    // unique pixels. Analysis of the whole set takes seconds while the first
+    // re-analyses are approved in ~100 ms, so a fixed-delay cancel always
+    // lands mid-analysis with a non-empty changed set.
+    const int kFiles = 30, kDim = 1024;
+    auto writeNoise = [&](const QString& p, unsigned seed) {
+      QFile f(p);
+      if (!f.open(QIODevice::WriteOnly)) return false;
+      const int row = kDim * 3, img = row * kDim, fs = 54 + img;
+      unsigned char hd[54] = {0};
+      hd[0] = 'B'; hd[1] = 'M';
+      hd[2] = (unsigned char)(fs & 0xFF); hd[3] = (unsigned char)((fs >> 8) & 0xFF);
+      hd[4] = (unsigned char)((fs >> 16) & 0xFF); hd[5] = (unsigned char)((fs >> 24) & 0xFF);
+      hd[10] = 54; hd[14] = 40; hd[18] = (unsigned char)(kDim & 0xFF); hd[19] = (unsigned char)((kDim >> 8) & 0xFF);
+      hd[22] = (unsigned char)(kDim & 0xFF); hd[23] = (unsigned char)((kDim >> 8) & 0xFF);
+      hd[26] = 1; hd[28] = 24;
+      hd[34] = (unsigned char)(img & 0xFF); hd[35] = (unsigned char)((img >> 8) & 0xFF);
+      hd[36] = (unsigned char)((img >> 16) & 0xFF); hd[37] = (unsigned char)((img >> 24) & 0xFF);
+      if (f.write((const char*)hd, 54) != 54) return false;
+      unsigned s = seed * 2654435761u + 1;
+      QByteArray line(row, 0);
+      for (int y = 0; y < kDim; ++y) {
+        char* d = line.data();
+        for (int x = 0; x < row; ++x) {
+          s = s * 1103515245u + 12345u;
+          d[x] = (char)((((s >> 16) & 0xFF) > 127) ? 255 : 0);
+        }
+        if (f.write(line) != row) return false;
+      }
+      return true;
+    };
+    QStringList members;
+    for (int i = 0; i < kFiles; ++i) {
+      const QString a = dataDir.filePath(QString("w%1_a.bmp").arg(i));
+      const QString b = dataDir.filePath(QString("w%1_b.bmp").arg(i));
+      if (!writeNoise(a, 1000 + (unsigned)i) || !writeNoise(b, 1000 + (unsigned)i)) {
+        std::cerr << "fixture write failed\n"; return 1;
+      }
+      members << a << b;
+    }
+    QSettings().setValue("ui/lastFolder", dataDir.path());
+    QSettings().setValue("ui/analyzeMode", 1); // Live (A)
+    QSettings().sync();
+    MainWindow w2;
+    w2.show();
+    QApplication::processEvents();
+    QTimer modalCloser;
+    modalCloser.setInterval(250);
+    QObject::connect(&modalCloser, &QTimer::timeout, [&]() {
+      if (QWidget* m = QApplication::activeModalWidget()) m->close();
+    });
+    modalCloser.start();
+    auto* scanBtn = w2.findChild<QPushButton*>("scan");
+    auto* grid = w2.findChild<QListWidget*>("imgGrid");
+    auto* splitBtn = w2.findChild<QToolButton*>("loadSplitBtn");
+    if (!scanBtn || !grid || !splitBtn) { std::cerr << "scan controls not found\n"; return 1; }
+    QElapsedTimer t;
+    const auto pumpFor = [&](std::function<bool()> done, int ms, const char* what) {
+      t.start();
+      while (!done()) {
+        QApplication::processEvents();
+        QThread::msleep(50);
+        if (t.elapsed() > ms) { std::cerr << "timeout: " << what << "\n"; return false; }
+      }
+      return true;
+    };
+    const auto dbFile = [&]() {
+      msf::IndexPaths ipx;
+      if (!msf::IndexManager::resolve(
+              msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+              msf::path_from_utf8(dataDir.path().toStdString()), ipx))
+        return QString();
+      return QString::fromStdString(msf::path_to_utf8(ipx.database));
+    }();
+    if (dbFile.isEmpty()) { std::cerr << "index resolve failed\n"; return 1; }
+    // Baseline scan: completes and stamps.
+    scanBtn->click();
+    QApplication::processEvents();
+    if (!pumpFor([&] { return scanBtn->isEnabled(); }, 300000, "baseline scan finished")) return 1;
+    QApplication::processEvents();
+    if (grid->count() != kFiles) { std::cerr << "baseline groups=" << grid->count() << "\n"; return 1; }
+    // Rewrite every _a file with unique pixels (fresh mtime re-approves
+    // everything; unique pixels drop every pair). Analysis of the whole set
+    // takes seconds while detection lands in ~100 ms, so the fixed-delay
+    // cancel always lands mid-analysis with a non-empty changed set.
+    QStringList changed;
+    for (int i = 0; i < kFiles; ++i) {
+      const QString p = dataDir.filePath(QString("w%1_a.bmp").arg(i));
+      if (!writeNoise(p, 9000 + (unsigned)i)) { std::cerr << "change write failed\n"; return 1; }
+      changed << p;
+    }
+    QSettings().sync();
+    auto* backend = w2.findChild<BackendClient*>();
+    if (!backend) { std::cerr << "backend not found\n"; return 1; }
+    // Cancel on the first analyzed file: progress proves analysis completed,
+    // and every file changed this scan, so the changed set is non-empty from
+    // here on. No wall-clock race in either direction.
+    std::atomic<bool> progressed{false};
+    QObject::connect(backend, &BackendClient::progress, &app,
+                     [&](int p, QString) { if (p > 0) progressed = true; },
+                     Qt::DirectConnection);
+    QObject::connect(backend, &BackendClient::progressCount, &app,
+                     [&](qulonglong d, qulonglong) { if (d > 0) progressed = true; },
+                     Qt::DirectConnection);
+    scanBtn->click();
+    QApplication::processEvents();
+    if (!pumpFor([&] { return !scanBtn->isEnabled(); }, 30000, "cancel scan started")) return 1;
+    if (!pumpFor([&] { return progressed.load(); }, 120000, "analysis in progress")) return 1;
+    if (scanBtn->isEnabled()) { std::cerr << "scan finished before cancel\n"; return 1; }
+    if (!QMetaObject::invokeMethod(&w2, "cancelScan", Qt::DirectConnection)) {
+      std::cerr << "cancel not invoked\n"; return 1;
+    }
+    QApplication::processEvents();
+    if (!pumpFor([&] { return scanBtn->isEnabled(); }, 180000, "cancelled scan settled")) return 1;
+    QApplication::processEvents();
+    if (!pumpFor([&] { return splitBtn->isEnabled(); }, 30000, "post-cancel reload")) return 1;
+    QApplication::processEvents();
+    // GUI must equal the pruned stored set exactly (any stale pair fails).
+    // Group maps (path -> sorted members) from both sides must be identical.
+    const auto guiGroups = [&]() {
+      QHash<QString, QStringList> out;
+      for (const QString& r : w2.testGroupRoots()) {
+        QStringList ps = w2.testGroupPathsFor(r);
+        std::sort(ps.begin(), ps.end());
+        for (const QString& p : ps) out[p] = ps;
+      }
+      return out;
+    };
+    const auto dbGroups = [&]() {
+      QHash<QString, QStringList> out;
+      msf::Database b;
+      if (!b.open(dbFile.toStdString()) || !b.initialize()) return out;
+      std::unordered_map<std::string, std::string> parent;
+      const auto find = [&](const std::string& p, auto&& self) -> std::string {
+        auto it = parent.find(p);
+        if (it == parent.end() || it->second == p) return p;
+        return it->second = self(it->second, self);
+      };
+      for (const auto& m : b.loadMatches()) {
+        parent.emplace(m.left, m.left);
+        parent.emplace(m.right, m.right);
+        const std::string a = find(m.left, find), c = find(m.right, find);
+        if (a != c) parent[a] = c;
+      }
+      b.close();
+      QHash<QString, QSet<QString>> acc;
+      for (const auto& kv : parent) {
+        const QString p = QString::fromStdString(kv.first);
+        const QString r = QString::fromStdString(find(kv.first, find));
+        acc[r].insert(p);
+      }
+      for (auto it = acc.begin(); it != acc.end(); ++it) {
+        const QSet<QString> members = it.value(); // named local: never range-construct from a temporary
+        QStringList ps(members.begin(), members.end());
+        std::sort(ps.begin(), ps.end());
+        for (const QString& p : ps) out[p] = ps;
+      }
+      return out;
+    };
+    if (guiGroups() != dbGroups()) { std::cerr << "gui/db group mismatch\n"; return 1; }
+    if (grid->count() != 0) { std::cerr << "stale view not reloaded\n"; return 1; }
+    // Every pair touched a changed file, so the stored set is empty: all
+    // changed members are singletons on screen (a missed reload would still
+    // show 30 groups here).
+    for (const QString& p : changed) {
+      if (!w2.testGroupPathsFor(p).isEmpty()) { std::cerr << "stale pair on screen\n"; return 1; }
+    }
+    // Baseline invalidated by the cancel.
+    {
+      msf::Database b;
+      if (!b.open(dbFile.toStdString()) || !b.initialize()) { std::cerr << "index reopen failed\n"; return 1; }
+      const bool empty = b.matchBaseline().empty();
+      b.close();
+      if (!empty) { std::cerr << "baseline not invalidated on cancel\n"; return 1; }
+    }
+    // Next scan must force full verification and restamp.
+    const QString logPath =
+        QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QStringLiteral("/msf_scan.log");
+    const qint64 logBefore = QFileInfo(logPath).size();
+    scanBtn->click();
+    QApplication::processEvents();
+    if (!pumpFor([&] { return scanBtn->isEnabled(); }, 300000, "post-cancel scan finished")) return 1;
+    QApplication::processEvents();
+    bool fullPass = false;
+    {
+      QFile lf(logPath);
+      if (lf.open(QIODevice::ReadOnly)) {
+        if (logBefore > 0) lf.seek(logBefore);
+        fullPass = QString::fromUtf8(lf.readAll()).contains(QStringLiteral("matchBaseline=forceFullPass"));
+      }
+    }
+    if (!fullPass) { std::cerr << "no forced full verification\n"; return 1; }
+    {
+      msf::Database b;
+      if (!b.open(dbFile.toStdString()) || !b.initialize()) { std::cerr << "restamp reopen failed\n"; return 1; }
+      const bool stamped = b.matchBaseline() == msf::MediaSearchEngine::kEngineVersion;
+      b.close();
+      if (!stamped) { std::cerr << "baseline not restamped\n"; return 1; }
+    }
+    if (guiGroups() != dbGroups()) { std::cerr << "post-rescan gui/db mismatch\n"; return 1; }
+    for (const QString& p : changed) {
+      if (!w2.testGroupPathsFor(p).isEmpty()) { std::cerr << "changed pair resurrected\n"; return 1; }
+    }
+    std::cout << "cancel_consistency=ok\n";
     return 0;
   }
   // Translation-table regression gate.
