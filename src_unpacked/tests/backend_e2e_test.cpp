@@ -72,15 +72,18 @@ namespace {
 int gChecks = 0;
 bool gOk = true;
 
+// 0.9.4.153: test-DB handles use a busy timeout instead of failing a read
+// silently on a transient lock. A one-shot SQLITE_BUSY read returns "" and
+// once flaked Test 1e ("main row untouched after No"); genuine absence still
+// reads as empty after the wait, so no real mismatch is masked.
+bool openTestDb(const QString& path, sqlite3** h);
+
 // 0.9.4.143: stored-pair probe for the changed-member regression.
 // 0.9.4.151: exact stored path for the partial-scope adoption test.
 QString storedPathFor(const QString& dbPath, const char* suffix) {
     sqlite3* h = nullptr;
     QString out;
-    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
-        if (h) sqlite3_close(h);
-        return out;
-    }
+    if (!openTestDb(dbPath, &h)) return out;
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(h, "SELECT path FROM files WHERE path LIKE ?",
                            -1, &st, nullptr) == SQLITE_OK) {
@@ -98,10 +101,7 @@ void check(bool cond, const char* what);
 int countPairInDb(const QString& dbPath, const char* a, const char* b) {
     sqlite3* h = nullptr;
     int n = -1;
-    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
-        if (h) sqlite3_close(h);
-        return -1;
-    }
+    if (!openTestDb(dbPath, &h)) return -1;
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(
             h,
@@ -125,10 +125,7 @@ int countPairInDb(const QString& dbPath, const char* a, const char* b) {
 QString readMeta(const QString& dbPath, const char* key) {
     sqlite3* h = nullptr;
     QString out;
-    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
-        if (h) sqlite3_close(h);
-        return out;
-    }
+    if (!openTestDb(dbPath, &h)) return out;
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(h, "SELECT value FROM meta WHERE key=?",
                            -1, &st, nullptr) == SQLITE_OK) {
@@ -145,10 +142,7 @@ QString readMeta(const QString& dbPath, const char* key) {
 int countContentHash(const QString& dbPath, const char* suffix) {
     sqlite3* h = nullptr;
     int n = -1;
-    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
-        if (h) sqlite3_close(h);
-        return -1;
-    }
+    if (!openTestDb(dbPath, &h)) return -1;
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(h, "SELECT COUNT(*) FROM content_hash WHERE rel LIKE ?",
                            -1, &st, nullptr) == SQLITE_OK) {
@@ -164,10 +158,7 @@ int countContentHash(const QString& dbPath, const char* suffix) {
 bool writeMeta(const QString& dbPath, const char* key, const QString& value) {
     sqlite3* h = nullptr;
     bool ok = false;
-    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
-        if (h) sqlite3_close(h);
-        return false;
-    }
+    if (!openTestDb(dbPath, &h)) return false;
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(h, "INSERT INTO meta(key,value) VALUES(?,?)"
                               " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -180,6 +171,13 @@ bool writeMeta(const QString& dbPath, const char* key, const QString& value) {
     sqlite3_finalize(st);
     sqlite3_close(h);
     return ok;
+}
+
+
+bool openTestDb(const QString& path, sqlite3** h) {
+    if (sqlite3_open(path.toUtf8().constData(), h) != SQLITE_OK) { if (*h) sqlite3_close(*h); return false; }
+    sqlite3_busy_timeout(*h, 10000);
+    return true;
 }
 
 void check(bool cond, const char* what) {
@@ -782,6 +780,32 @@ int main(int argc, char** argv) {
             std::cerr << "  [DBG 1e] rowBefore=" << rowBefore.toStdString()
                       << " rowAfter=" << rowAfterDbg.toStdString()
                       << " testChecked=" << (testBtn->isChecked() ? 1 : 0) << std::endl;
+            // One-shot forensics for the intermittent No-path failure: is the
+            // row absent, reordered (LIKE also matches g80..g89_a), or is the
+            // read itself failing (empty DB handle, lock, missing table)?
+            sqlite3* dh = nullptr;
+            if (sqlite3_open(dbPath.toUtf8().constData(), &dh) == SQLITE_OK) {
+                sqlite3_stmt* st = nullptr;
+                if (sqlite3_prepare_v2(dh, "SELECT COUNT(*) FROM files", -1, &st, nullptr) == SQLITE_OK) {
+                    if (sqlite3_step(st) == SQLITE_ROW)
+                        std::cerr << "  [DBG 1e] filesCount=" << sqlite3_column_int64(st, 0) << std::endl;
+                    sqlite3_finalize(st);
+                } else { std::cerr << "  [DBG 1e] count prepare failed\n"; }
+                if (sqlite3_prepare_v2(dh, "SELECT COUNT(*) FROM files WHERE path LIKE '%g8_a.bmp'", -1, &st, nullptr) == SQLITE_OK) {
+                    if (sqlite3_step(st) == SQLITE_ROW)
+                        std::cerr << "  [DBG 1e] likeCount=" << sqlite3_column_int64(st, 0) << std::endl;
+                    sqlite3_finalize(st);
+                } else { std::cerr << "  [DBG 1e] like prepare failed\n"; }
+                if (sqlite3_prepare_v2(dh, "SELECT rowid,path,size,fingerprint FROM files WHERE path LIKE '%g8_a.bmp' ORDER BY rowid", -1, &st, nullptr) == SQLITE_OK) {
+                    while (sqlite3_step(st) == SQLITE_ROW) {
+                        std::cerr << "  [DBG 1e] row rowid=" << sqlite3_column_int64(st, 0)
+                                  << " path=" << (const char*)sqlite3_column_text(st, 1)
+                                  << " size=" << sqlite3_column_int64(st, 2) << std::endl;
+                    }
+                    sqlite3_finalize(st);
+                } else { std::cerr << "  [DBG 1e] rows prepare failed\n"; }
+                sqlite3_close(dh);
+            } else { std::cerr << "  [DBG 1e] open failed\n"; }
         }
         check(rowAfterDbg == rowBefore, "test1e main row untouched after No");
         check(readRow(dbPath, "g8_a.bmp") != readRow(scratchDb, "g8_a.bmp"),
