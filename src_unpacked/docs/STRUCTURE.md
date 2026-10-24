@@ -30,6 +30,7 @@
 - docs/architecture/storage-design.ko.md / docs/architecture/storage-design.md — 인덱스 저장 위치(스캔 대상 밖 `Index/`), 트랜잭션/체크포인트 정책, 썸네일 캐시, GUI 상세 로그와 Console benchmark 저장소 분리. **KO/EN 각본을 서로 독립된 파일로 보존한다. 영문은 suffix 없는 `storage-design.md` 를 유지하며 개명하지 않는다.**
 - docs/architecture/database-structure.ko.md / .en.md — 현재 영속 DB 구조 상세: `index.sqlite`(files/matches/thumbs/file_trace/content_hash/meta), `video_cache.sqlite`(video_fingerprint_cache), 이미지/비디오 공유 모델, PRAGMA, 버전 상수(kDatabaseVersion 1.0.6 / engine 1.5.1 / cache 9 / sampling "3"), 그리고 **쌍매칭 검증 개선 예정 내역(V-1~V-7, 예비 판정)**. 실측 문서로 링크한다.
 - docs/architecture/database-verification-benchmark.ko.md / .en.md — 위 개선(V-1~V-7)의 **실측 기록**(계획·조건·원시값·판정). 측정 전에는 `Not measured`로 두고 추정으로 채우지 않는다. baseline은 0.9.4.91 로그.
+- docs/architecture/match-checkpoint-durability.ko.md / .en.md — 스캔 중 매치 체크포인트의 강제 종료 내구성 설계안(D1 crash marker 권장, D2/D3 기각 사유, 검증 계획). **미구현 (PROPOSED)**. 근거: build-history 0.9.4.151 (C1/C2) · 0.9.4.152 (미입증 선언) · 0.9.4.153 (P1-A/P1-B 종료 경로).
 
 ## src/ 핵심 계층
 

@@ -30,6 +30,7 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 - docs/build-history/<version>.ko.md / .en.md — per-version implementation and validation evidence.
 - docs/architecture/database-structure.ko.md / .en.md — current persistent DB structure: `index.sqlite` (files/matches/thumbs/file_trace/content_hash/meta; images+videos shared via files.kind), `video_cache.sqlite` (video_fingerprint_cache, video-only), PRAGMA/WAL, version constants (DB 1.0.6 / engine 1.5.1 / cache 9 / sampling "3"), and the planned pair-verification speedups V-1..V-7 with preliminary verdicts. Links to the measurement record.
 - docs/architecture/database-verification-benchmark.ko.md / .en.md — measurement record for the V-1..V-7 pair-verification speedups (plan, conditions, raw values, verdicts; baseline = the 0.9.4.91 log). Unmeasured values are `Not measured`.
+- docs/architecture/match-checkpoint-durability.ko.md / .en.md - crash-durability design for in-scan match checkpoints (recommended D1 crash marker, rejected D2/D3 with reasons, verification plan). PROPOSED, not implemented. Evidence: build-history 0.9.4.151 (C1/C2), 0.9.4.152 (declared unproven), 0.9.4.153 (P1-A/P1-B exit paths).
 - docs/document-naming.ko.md / .en.md — canonical documentation naming, location, and role-separation rules.
 - Version progression is evidence-driven: validated states may advance 0.9.4.0 → 0.9.4.1 → 0.9.4.2 without fixed version assignments to roadmap nodes.
 
