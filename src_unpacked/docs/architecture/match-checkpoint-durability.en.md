@@ -1,6 +1,6 @@
-# Match-checkpoint crash durability (proposal, not implemented)
+# Match-checkpoint crash durability (design + implemented in 0.9.4.154)
 
-Status: **PROPOSED** — not implemented as of 0.9.4.153. This document is a design only and changes no behavior.
+Status: **IMPLEMENTED in 0.9.4.154** — implemented as designed below; the marker path is verified by crash_diagnostics_test section 7. Forced-kill mid-write durability itself remains best-effort (WAL + single-txn semantics unchanged).
 Related: `docs/build-history/0.9.4.151.en.md` (C1/C2), `0.9.4.152.en.md` (kill durability declared unproven), `0.9.4.153.en.md` (P1-A/P1-B exit paths).
 
 ## 1. Problem

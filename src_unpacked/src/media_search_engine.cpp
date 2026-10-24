@@ -761,8 +761,13 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   // pass (like Sequential: changedPtr=nullptr, live streaming off) and stamps
   // the baseline after a completed pass. Sequential always runs that pass.
   const std::string baselineVersion = db_.matchBaseline();
+  // 0.9.4.154 (D1 crash marker): the worker passes the PRE-EXISTING marker
+  // state explicitly via ScanControl::forceFullPass (a leftover means the previous run
+  // died mid-scan). The scan must NOT read the key itself here: the worker
+  // just set it for crash protection, and seeing its own mark would force
+  // a full pass on every scan.
   const bool baselineFullPass =
-      analyzeMode!=AnalyzeMode::Sequential && baselineVersion!=kEngineVersion;
+      analyzeMode!=AnalyzeMode::Sequential && (baselineVersion!=kEngineVersion || (control && control->forceFullPass));
   // 0.9.4.129: live streaming runs only in the modes that own it. Sequential
   // (B) verifies AFTER the walk (analyze_mode.h) and its final pass emits
   // every pair, so feeding the live pipe there would double-emit each
@@ -1355,7 +1360,8 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // single file: candidates come from the existing index.
     changedPtr=nullptr;
     msf::backendLogLine(std::string("matchBaseline=forceFullPass engine=")+kEngineVersion+
-                        " stored="+(baselineVersion.empty()?std::string("missing"):baselineVersion));
+                        " stored="+(baselineVersion.empty()?std::string("missing"):baselineVersion)+
+                        ((control && control->forceFullPass) ? std::string(" dirty=1") : std::string()));
   }
   const bool skipBothChangedImages=(analyzeMode==AnalyzeMode::Hybrid)&&liveMatch;
   // 0.9.4.81 B-slice: Sequential processes the image pass in 1000-file windows

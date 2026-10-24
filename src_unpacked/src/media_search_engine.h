@@ -102,6 +102,11 @@ struct ScanControl {
   // setting: a content change that preserves both size and mtime is not
   // detected; "강제 재검증" (duplicate members) and strict mode cover that.
   bool fastRescan = false;
+  // 0.9.4.154 (D1 crash marker): set by the worker from the PRE-EXISTING
+  // scan_dirty state (a leftover means the previous run died mid-scan).
+  // Forces one B-equivalent full verification pass regardless of the
+  // match baseline. Default false: direct engine callers keep baseline-only logic.
+  bool forceFullPass = false;
   // Kind selection: set false to skip images or videos entirely (GUI option).
   bool scanImages=true, scanVideos=true;
   // 0.9.4.81: how/when candidate-pair verification runs. Default Sequential (B).
@@ -141,6 +146,12 @@ public:
   // correct set. Deleting the stamp is data-safe (it forces verification,
   // never deletes pairs).
   void invalidateMatchBaseline() { db_.setMatchBaseline(""); }
+  // 0.9.4.154 (D1 crash marker): the worker records the pre-existing marker
+  // state into ScanControl::forceFullPass and (re)sets the key for crash
+  // coverage; the settled-exit guard clears it. Direct engine callers keep
+  // baseline-only semantics (forceFullPass defaults to false).
+  bool scanDirty() const { return db_.scanDirty(); }
+  bool setScanDirty(bool v) { return db_.setScanDirty(v); }
  // Load the pairs persisted by the last completed scan. Paths use the same
  // canonical UTF-8 form as scan results, so reload maps 1:1 onto files().
   std::vector<SearchMatch> loadMatches() const;

@@ -347,6 +347,96 @@ int main(int argc, char** argv) {
         check(dbBaseline(dbT).isEmpty(), "exception invalidated the baseline");
     }
 
+    // ---- 7. (0.9.4.154 D1) A surviving scan_dirty marker forces one full
+    // verification pass. The marker stands in for a forced kill (process
+    // death skips every settled-exit cleanup, leaving exactly this DB
+    // state): baseline valid, marker set, one file changed.
+    {
+        const auto mdir = d / "dirty_media";
+        fs::create_directories(mdir, ec);
+        bool fixturesOk = writeBmp(mdir / "k_a.bmp", 41) && writeBmp(mdir / "k_b.bmp", 41) &&
+                           writeBmp(mdir / "l_a.bmp", 42) && writeBmp(mdir / "l_b.bmp", 42);
+        check(fixturesOk, "dirty fixtures written");
+        const QString mroot = QString::fromStdString(mdir.string());
+        const QString mapp = QString::fromStdString(d.string());
+        // Baseline run: completes, stamps the baseline, leaves no marker.
+        {
+            ScanWorker w(mroot, mapp, 8, 50, 50, false);
+            w.setAnalyzeMode(msf::AnalyzeMode::Live);
+            bool fin = false;
+            QObject::connect(&w, &ScanWorker::finished, &w,
+                             [&](const QString&) { fin = true; }, Qt::DirectConnection);
+            w.run();
+            check(fin, "dirty baseline scan finished");
+        }
+        const QString dbD = indexDbFile(d, mdir);
+        check(!dbD.isEmpty(), "dirty index resolved");
+        check(dbBaseline(dbD) == QStringLiteral("1.5.1"), "dirty baseline stamped");
+        {
+            msf::Database b;
+            check(b.open(dbD.toStdString()) && b.initialize(), "dirty index open");
+            check(!b.scanDirty(), "no marker after clean scan");
+            b.close();
+        }
+        // Simulate the post-kill DB state: baseline intact, marker set.
+        {
+            msf::Database b;
+            check(b.open(dbD.toStdString()) && b.initialize(), "dirty index reopen");
+            check(b.setScanDirty(true), "crash marker planted");
+            b.close();
+        }
+        if (!writeBmp(mdir / "k_a.bmp", 43)) check(false, "dirty change write");
+        fs::last_write_time(mdir / "k_a.bmp", fs::file_time_type::clock::now(), ec);
+        const QString logPath =
+            QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QStringLiteral("/msf_scan.log");
+        const qint64 logBefore = QFileInfo(logPath).size();
+        // The next A/AB scan must full-verify despite the valid baseline.
+        {
+            ScanWorker w(mroot, mapp, 8, 50, 50, false);
+            w.setAnalyzeMode(msf::AnalyzeMode::Live);
+            bool fin = false;
+            QObject::connect(&w, &ScanWorker::finished, &w,
+                             [&](const QString&) { fin = true; }, Qt::DirectConnection);
+            w.run();
+            check(fin, "post-crash scan finished");
+        }
+        bool fullPass = false;
+        {
+            QFile lf(logPath);
+            if (lf.open(QIODevice::ReadOnly)) {
+                if (logBefore > 0) lf.seek(logBefore);
+                const QString tail = QString::fromUtf8(lf.readAll());
+                fullPass = tail.contains(QStringLiteral("matchBaseline=forceFullPass")) &&
+                           tail.contains(QStringLiteral("dirty=1"));
+            }
+        }
+        check(fullPass, "crash marker forced full verification");
+        check(dbBaseline(dbD) == QStringLiteral("1.5.1"), "baseline restamped after crash recovery");
+        {
+            msf::Database b;
+            check(b.open(dbD.toStdString()) && b.initialize(), "dirty index reopened");
+            check(!b.scanDirty(), "marker cleared after clean scan");
+            b.close();
+            int kPairs = 0, lPairs = 0;
+            msf::Database b2;
+            if (b2.open(dbD.toStdString()) && b2.initialize()) {
+                for (const auto& m : b2.loadMatches()) {
+                    const std::string lf = std::filesystem::path(msf::path_from_utf8(m.left)).filename().string();
+                    const bool touched = lf == "k_a.bmp" || lf == "k_b.bmp";
+                    if (touched) ++kPairs;
+                    else {
+                        const std::string rf = std::filesystem::path(msf::path_from_utf8(m.right)).filename().string();
+                        if (rf == "k_a.bmp" || rf == "k_b.bmp") ++kPairs;
+                        else ++lPairs;
+                    }
+                }
+                b2.close();
+            }
+            check(kPairs == 0, "crashed-then-changed pair dropped");
+            check(lPairs >= 1, "untouched pair kept after crash recovery");
+        }
+    }
+
     fs::remove_all(d, ec);
     std::cout << "crash_diagnostics_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";

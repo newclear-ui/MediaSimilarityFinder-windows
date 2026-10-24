@@ -66,6 +66,26 @@ void ScanWorker::run() {
     control_.buildVersion = QCoreApplication::applicationVersion().toStdString();
     if (!engine_.openIndexForRoot(root_.toStdString(), appDir_.toStdString()))
       throw std::runtime_error("Portable index open failed");
+    // 0.9.4.154 (D1 crash marker): mark the index dirty in its own autocommit
+    // transaction, cleared by the settledExit guard below on EVERY settled
+    // exit (complete/cancel/reported failure, including exception unwinds).
+    // Only a forced kill skips destructors, leaving the key set so the next
+    // A/AB scan runs one forced full verification. Best-effort: a DB that
+    // cannot take the marker will fail the scan itself right after.
+    // 0.9.4.154 (D1): read the PRE-EXISTING marker before setting our own.
+    // Only a leftover from a previous killed run forces a full pass; the
+    // flag travels to the engine on ScanControl (the scan must not read
+    // the key itself — it would see the mark we just wrote).
+    const bool prevDirty = engine_.scanDirty();
+    control_.forceFullPass = prevDirty;
+    struct SettledExit {
+      msf::MediaSearchEngine* e;
+      ~SettledExit() noexcept {
+        if (e) try { e->setScanDirty(false); } catch (...) {}
+      }
+    } settledExit{&engine_};
+    if (!engine_.setScanDirty(true))
+      msf::backendLogLine("scanWorker scan_dirty mark failed");
     // 0.9.4.85: the count prepass runs FIRST so the summary shows "총 파일"
     // before the engine-version revalidation (which can decode images for
     // minutes). 0.9.4.83 had moved it after the gate, so during a long

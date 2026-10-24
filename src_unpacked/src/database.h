@@ -80,6 +80,10 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
   // set. Separate from engineVersion(): that stamp is also written by
   // revalidateMatches() without a full pass and cannot prove completeness.
   std::string matchBaseline() const; bool setMatchBaseline(const std::string& v);
+ // 0.9.4.154 (D1 crash marker): set while a scan is in flight, cleared on
+ // every settled exit. Absent = clean; a surviving key forces one full
+ // verification pass on the next A/AB scan.
+ bool scanDirty() const; bool setScanDirty(bool v);
   std::string samplingGeneration() const; bool setSamplingGeneration(const std::string& v);
   // 0.9.4.81 B-slice resume frontier: opaque "key#done" string written at each
   // analyze slice boundary and cleared when the Sequential analyze completes.
