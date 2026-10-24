@@ -69,6 +69,28 @@ int gChecks = 0;
 bool gOk = true;
 
 // 0.9.4.143: stored-pair probe for the changed-member regression.
+// 0.9.4.151: exact stored path for the partial-scope adoption test.
+QString storedPathFor(const QString& dbPath, const char* suffix) {
+    sqlite3* h = nullptr;
+    QString out;
+    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
+        if (h) sqlite3_close(h);
+        return out;
+    }
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(h, "SELECT path FROM files WHERE path LIKE ?",
+                           -1, &st, nullptr) == SQLITE_OK) {
+        const QByteArray pat = QByteArray("%") + suffix;
+        sqlite3_bind_text(st, 1, pat.constData(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW)
+            out = QString::fromUtf8((const char*)sqlite3_column_text(st, 0));
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(h);
+    return out;
+}
+
+void check(bool cond, const char* what);
 int countPairInDb(const QString& dbPath, const char* a, const char* b) {
     sqlite3* h = nullptr;
     int n = -1;
@@ -730,6 +752,89 @@ int main(int argc, char** argv) {
         auto* reloadBtn = w.findChild<QToolButton*>("loadSplitBtn"); // 0.9.4.149 merged slot
         pumpUntil([&] { return reloadBtn && reloadBtn->isEnabled() && grid->count() > 0; }, 30000,
                   "test1g silent reload finished");
+    }
+    // ---- Test 1g2 (0.9.4.151): analysis-failure-only scan must refresh the view.
+    // Replacing a pair member with an empty file fails analysis (analyzed==0)
+    // but the member was still re-analyzed, so its stale pair is pruned from
+    // the stored set. Pre-fix the GUI kept the stale group: the silent
+    // re-apply required analyzed>0. ----
+    {
+        const auto target = d / "media" / "g3_b.bmp";
+        { std::ofstream f(target, std::ios::binary | std::ios::trunc); } // 0 bytes
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1g2 failure-only scan finished");
+        QApplication::processEvents();
+        msf::IndexPaths ip;
+        QString dbPath;
+        if (msf::IndexManager::resolve(
+                msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                msf::path_from_utf8((d / "media").string()), ip))
+            dbPath = QString::fromStdString(msf::path_to_utf8(ip.database));
+        check(countPairInDb(dbPath, "g3_a.bmp", "g3_b.bmp") == 0, "test1g2 stale pair pruned from DB");
+        const QString ga3 = QString::fromStdString(msf::path_to_utf8((d / "media" / "g3_a.bmp")));
+        const QString gb3 = QString::fromStdString(msf::path_to_utf8((d / "media" / "g3_b.bmp")));
+        pumpUntil([&] { return !w.testGroupPathsFor(ga3).contains(gb3); }, 30000,
+                  "test1g2 GUI drops the stale pair");
+        check(!w.testGroupPathsFor(ga3).contains(gb3), "test1g2 GUI group no longer pairs the files");
+        auto* reloadBtn2 = w.findChild<QToolButton*>("loadSplitBtn");
+        pumpUntil([&] { return reloadBtn2 && reloadBtn2->isEnabled() && grid->count() > 0; }, 30000,
+                  "test1g2 silent reload finished");
+    }
+    // ---- Test 1h (0.9.4.151): partial-scope (ignored) Test Mode adoption preserves out-of-scope rows.
+    // The scratch scan never produces ignored rows; pre-fix Yes deleted them
+    // from the main index (wholesale table replacement), even though the diff
+    // correctly excluded them from `removed`. ----
+    {
+        msf::IndexPaths ip;
+        QString dbPath;
+        if (msf::IndexManager::resolve(
+                msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                msf::path_from_utf8((d / "media").string()), ip))
+            dbPath = QString::fromStdString(msf::path_to_utf8(ip.database));
+        const QString g5a = storedPathFor(dbPath, "g5_a.bmp");
+        const QString g5b = storedPathFor(dbPath, "g5_b.bmp");
+        check(!g5a.isEmpty() && !g5b.isEmpty(), "test1h stored paths resolved");
+        // Force a real diff (else an identical rescan reports nothing and
+        // shows no Yes/No box): same-pixel copy with a fresh timestamp.
+        const auto target = d / "media" / "g4_b.bmp";
+        fs::copy_file(d / "media" / "g2_a.bmp", target,
+                      fs::copy_options::overwrite_existing, ec);
+        fs::last_write_time(target, fs::file_time_type::clock::now(), ec);
+        w.applyIgnore(QStringList{g5a}, true);
+        check(countPairInDb(dbPath, "g5_a.bmp", "g5_b.bmp") == 1, "test1h pair present before");
+        bool diffSeen = false;
+        const auto diffConn =
+            QObject::connect(supervisor, &BackendClient::testModeDiff, supervisor,
+                             [&](qulonglong, qulonglong, qulonglong, qulonglong,
+                                 qulonglong, qulonglong) { diffSeen = true; });
+        bool appliedSeen = false;
+        const auto appliedConn =
+            QObject::connect(supervisor, &BackendClient::testApplied, supervisor,
+                             [&](bool, QString) { appliedSeen = true; });
+        auto* testBtn2 = w.findChild<QPushButton*>("testBtn");
+        check(testBtn2 != nullptr, "test1h test toggle found");
+        testBtn2->setChecked(true);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1h test scan finished");
+        pumpUntil([&] { return diffSeen; }, 30000, "test1h diff reported");
+        QMessageBox* box = nullptr;
+        pumpUntil([&] { box = w.findChild<QMessageBox*>("testDiffBox"); return box != nullptr; },
+                  15000, "test1h Yes/No report shown");
+        if (box && box->button(QMessageBox::Yes)) box->button(QMessageBox::Yes)->click();
+        pumpUntil([&] { return appliedSeen; }, 60000, "test1h test result applied");
+        QApplication::processEvents();
+        check(countPairInDb(dbPath, "g5_a.bmp", "g5_b.bmp") == 1, "test1h ignored pair preserved");
+        // Ignored files are hidden from the results by design (ignoredHint),
+        // so the GUI must NOT show the pair while the DB row is preserved for
+        // un-ignoring. Pre-fix the DB row itself was deleted by Yes.
+        check(!w.testGroupPathsFor(g5a).contains(g5b), "test1h ignored pair hidden from GUI by design");
+        check(countPairInDb(dbPath, "g1_a.bmp", "g1_b.bmp") == 0, "test1h earlier change survives adoption");
+        w.applyIgnore(QStringList{g5a}, false);
+        testBtn2->setChecked(false);
+        QObject::disconnect(diffConn);
+        QObject::disconnect(appliedConn);
     }
     // ---- Test 2: forced kill right after scan start -> restart -> auto-resume. ----
     // The kill lands deterministically with no wait at all: supervisor.scanning_

@@ -2145,7 +2145,12 @@ void MainWindow::scanFinished(QString msg) {
   if (msg.startsWith(QStringLiteral("CANCELLED"))) {
     // Partial progress is kept by design (checkpoints): report what survived.
     const QStringList st = msg.split('|');
-    contentChanged = st.size() > 2 && st[2].toULongLong() > 0;
+    // 0.9.4.151: 4th field = re-analyzed-file count (worker appends it). A
+    // cancel after re-analysis approval already pruned stale pairs from the
+    // stored set, so the pre-scan view must be refreshed like a changed scan.
+    const qulonglong cancelChanged = st.size() > 3 ? st[3].toULongLong() : 0;
+    contentChanged = st.size() > 2 && (st[2].toULongLong() > 0 || cancelChanged > 0);
+    reloadIntent = cancelChanged > 0 && startedWithView_ && !(testBtn_ && testBtn_->isChecked());
     const QString detail = st.size() > 2
         ? QString(" (%1 %2, %3 %4)").arg(st[1]).arg(trStr(lang(), "scanned")).arg(st[2]).arg(trStr(lang(), "analyzed"))
         : QString();
@@ -2159,8 +2164,12 @@ void MainWindow::scanFinished(QString msg) {
     const qulonglong analyzed = st.size() > 2 ? st[2].toULongLong() : 0;
     const qulonglong unchanged = st.size() > 3 ? st[3].toULongLong() : 0;
     const qulonglong completed = st.size() > 1 ? st[1].toULongLong() : 0;
-    contentChanged = analyzed > 0;
-    reloadIntent = analyzed > 0 && startedWithView_ && !(testBtn_ && testBtn_->isChecked());
+    // 0.9.4.151: 7th field = re-analyzed-file count (append-only; older
+    // workers omit it and read as 0). An analysis-failure-only scan analyzes
+    // nothing but still prunes stale pairs, so it must also refresh the view.
+    const qulonglong changedCount = st.size() > 6 ? st[6].toULongLong() : 0;
+    contentChanged = analyzed > 0 || changedCount > 0;
+    reloadIntent = (analyzed > 0 || changedCount > 0) && startedWithView_ && !(testBtn_ && testBtn_->isChecked());
     if (targetKnown_ && completed != targetTotal_)
       scanLog(QString("targetMismatch fixed=%1 completed=%2").arg(targetTotal_).arg(completed));
     lastTotalN_ = completed;
@@ -2242,6 +2251,20 @@ loadSplitBtn_->setEnabled(true);
   // 0.9.4.118: append-first (no row churn when the streamed list already holds).
   rebuildGroups();
   refreshGroupList(/*append=*/true); refreshFileViews(); refreshDetail();
+  // 0.9.4.151: a failed scan may already have pruned stale pairs from the
+  // stored set (the worker checkpoints the pruned set before reporting). The
+  // worker appends "|msfChanged=N"; when N > 0, silently reload the stored
+  // set so the screen stops showing pairs the DB no longer holds. Messages
+  // without the suffix (backend crashes, older workers) keep the old behavior.
+  qulonglong failedChanged = 0;
+  {
+    const int bar = msg.lastIndexOf(QLatin1Char('|'));
+    if (bar >= 0) {
+      const QString tail = msg.mid(bar + 1);
+      if (tail.startsWith(QStringLiteral("msfChanged=")))
+        failedChanged = tail.mid(11).toULongLong();
+    }
+  }
   if (willAutoResume) {
     statusMsg_->setText(lang() == UiLang::Ko
                             ? QStringLiteral("백엔드가 종료되었습니다. 재시작 후 검색을 자동으로 이어갑니다.")
@@ -2251,6 +2274,23 @@ loadSplitBtn_->setEnabled(true);
     statusMsg_->setText(trStr(lang(), "scanErr") + ": " + msg);
   }
   setRunning(false);
+  // 0.9.4.151 (continued): post-failure stored-set refresh. The error stays on
+  // screen (the reload path preserves status/summary); reuse the same pending
+  // machinery as the changed-scan refresh in scanFinished.
+  if (!willAutoResume && failedChanged > 0) {
+    reloadAfterScan_ = true;
+    silentReload_ = true;
+    reloadSort_ = sortBox_->currentIndex();
+    if (currentGroup_ >= 0 && currentGroup_ < groups_.size() && !groups_[currentGroup_].paths.isEmpty())
+      reloadSelRep_ = groups_[currentGroup_].paths.front();
+    reloadSelFile_ = currentFile_;
+    reloadVerifyTotal_ = lastVerifyTotal_;
+    reloadVerifyDone_ = lastVerifyDone_;
+    scanLog(QString("reloadAfterScan scheduled after failure changed=%1").arg(failedChanged));
+    QTimer::singleShot(0, this, [this] {
+      if (!scanning_ && !loading_ && !reverify_) loadIndex();
+    });
+  }
 }
 std::string MainWindow::telemetryJsonForTest() const {
   if (!backend_) return {};
@@ -2590,7 +2630,10 @@ void MainWindow::loadIndex() {
   sortBox_->blockSignals(true); sortBox_->setCurrentIndex(kSortNone); sortBox_->blockSignals(false);
   updateSortEnabled();
   refreshGroupList(); refreshFileViews(); refreshDetail();
-  statusMsg_->setText(trStr(lang(), "loadRunning"));
+  // 0.9.4.151: a silent post-scan/post-failure refresh must not clobber the
+  // status the scan just reported (scanDone summary or the failure error).
+  // Explicit user loads still show the loading text.
+  if (!silentReload_) statusMsg_->setText(trStr(lang(), "loadRunning"));
   // One press per load: disable the button and show a NON-modal notice, so the
   // window stays movable while the index is read. onResults clears both.
   loading_ = true;

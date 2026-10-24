@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.150 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.151 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -750,6 +750,11 @@ if(MSF_BUILD_GUI)
       # out-of-range input; the policy mapping itself is covered by
       # resource_policy_test.
       add_test(NAME ui_cpu_policy_test COMMAND msf_ui_settings_test --cpu-policy)
+      # 0.9.4.151: Date sort orders groups by newest member creation date
+      # (descending = recently added first). Offscreen, synthetic rows over
+      # real temp files with distinct birth times; filesystems without
+      # birth-time support SKIP.
+      add_test(NAME ui_date_sort_test COMMAND msf_ui_settings_test --date-sort)
       # 0.9.4.29 settings-identity migration. Every phase is its own process so
       # a same-process QSettings cache can never make a broken migration pass.
       set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")

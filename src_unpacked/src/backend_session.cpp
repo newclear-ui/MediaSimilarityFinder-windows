@@ -94,14 +94,61 @@ static bool execSqlQuiet(sqlite3* db, const char* sql, std::string* err) {
     return true;
 }
 
-// 0.9.4.135: Test Mode result adoption. Copies files, matches, thumbs,
-// content hashes, traces and meta from the scratch scan database into the main
-// index database inside ONE transaction (ATTACH + DELETE/INSERT .. SELECT).
-// The main index is either fully replaced by the completed test-scan state or
-// left untouched (SQLite rolls back on any failure). No file swapping, so the
-// WAL sidecars of either database are handled by SQLite itself.
+// 0.9.4.135: Test Mode result adoption.
+// 0.9.4.151: scope-aware adoption (was: wholesale table replacement). The old
+// code deleted every row of files/matches/thumbs/content_hash/file_trace/meta
+// and copied the scratch tables in full, so a partial-scope Test Mode run
+// (images-only, videos-only, or a non-empty ignore list) deleted the
+// out-of-scope rows the scratch scan never produced. publishTestDiff() above
+// already excludes those rows from `removed`; adoption must honor the same
+// scope: only in-scope rows are replaced, out-of-scope rows are preserved.
+// The main index is either updated for the completed test-scan scope or left
+// untouched (SQLite rolls back on any failure). No file swapping, so the WAL
+// sidecars of either database are handled by SQLite itself.
+struct AdoptScope {
+    bool scanImages = true;
+    bool scanVideos = true;
+    QSet<QString> ignored;
+};
 static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPaths& scratch,
-                               QString* detail) {
+                               const AdoptScope& scope, QString* detail) {
+    // Scope inputs: the same membership rule as publishTestDiff() (media kind
+    // from the stored row + the raw ignored set, compared as stored strings).
+    std::unordered_set<std::string> scopePaths;   // every in-scope path (union)
+    std::unordered_set<std::string> removedPaths; // in-scope main rows the scratch lacks
+    {
+        msf::Database mainDb, scratchDb;
+        if (!mainDb.open(msf::path_to_utf8(main.database)) || !mainDb.initialize() ||
+            !scratchDb.open(msf::path_to_utf8(scratch.database)) || !scratchDb.initialize()) {
+            *detail = QStringLiteral("adopt scope read failed");
+            return false;
+        }
+        const auto mainRows = mainDb.all();
+        const auto scratchRows = scratchDb.all();
+        mainDb.close();
+        scratchDb.close();
+        std::unordered_map<std::string, int> kindByPath;
+        kindByPath.reserve(mainRows.size() + scratchRows.size() + 1);
+        std::unordered_set<std::string> scratchSet;
+        scratchSet.reserve(scratchRows.size() + 1);
+        for (const auto& x : scratchRows) {
+            scratchSet.insert(x.path);
+            kindByPath.emplace(x.path, x.kind);
+        }
+        for (const auto& x : mainRows) kindByPath.emplace(x.path, x.kind);
+        const auto inScope = [&](const std::string& p, int kind) {
+            const bool vid = kind == (int)msf::MediaKind::Video;
+            if (vid ? !scope.scanVideos : !scope.scanImages) return false;
+            if (scope.ignored.contains(QString::fromStdString(p))) return false;
+            return true;
+        };
+        scopePaths.reserve(kindByPath.size() + 1);
+        for (const auto& kv : kindByPath)
+            if (inScope(kv.first, kv.second)) scopePaths.insert(kv.first);
+        for (const auto& x : mainRows)
+            if (scratchSet.find(x.path) == scratchSet.end() && scopePaths.find(x.path) != scopePaths.end())
+                removedPaths.insert(x.path);
+    }
     sqlite3* db = nullptr;
     const std::string mainPath = msf::path_to_utf8(main.database);
     if (sqlite3_open(mainPath.c_str(), &db) != SQLITE_OK) {
@@ -120,17 +167,49 @@ static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPath
     attach += "' AS src;";
     bool ok = execSqlQuiet(db, attach.c_str(), &err);
     if (ok) ok = execSqlQuiet(db, "BEGIN IMMEDIATE;", &err);
-    // Wholesale adoption: every table the completed test scan produced replaces
-    // the main index content (pairs and thumbs included, so the adopted state
-    // is self-consistent). file_trace is diagnostics but still belongs to the
-    // rows being replaced.
+    // Scope-aware adoption: per-path tables drop only the in-scope rows the
+    // scratch lacks, then upsert every scratch row (INSERT OR REPLACE, so
+    // out-of-scope rows survive). Pairs are replaced for the in-scope
+    // subgraph only (both endpoints in scope); a pair touching an ignored or
+    // out-of-scope file is preserved. Meta has no per-path rows: scratch keys
+    // are upserted without deleting main-only keys.
+    const auto bindPaths = [&](const char* tableSql, const std::unordered_set<std::string>& paths) {
+        if (!ok || paths.empty()) return;
+        if (!execSqlQuiet(db, "CREATE TEMP TABLE adopt_paths(path TEXT PRIMARY KEY);", &err)) { ok = false; return; }
+        sqlite3_stmt* ins = nullptr;
+        if (sqlite3_prepare_v2(db, "INSERT INTO adopt_paths VALUES(?);", -1, &ins, nullptr) != SQLITE_OK) { ok = false; return; }
+        for (const auto& p : paths) {
+            sqlite3_reset(ins);
+            sqlite3_bind_text(ins, 1, p.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(ins) != SQLITE_DONE) { ok = false; break; }
+        }
+        sqlite3_finalize(ins);
+        if (ok) ok = execSqlQuiet(db, tableSql, &err);
+        if (!execSqlQuiet(db, "DROP TABLE adopt_paths;", nullptr)) ok = false;
+    };
+    if (ok && !removedPaths.empty()) {
+        // Order matters: matches reference files, but there is no FK; delete
+        // the pruned pairs explicitly before dropping their file rows.
+        bindPaths("DELETE FROM matches WHERE left_path IN (SELECT path FROM adopt_paths)"
+                  " OR right_path IN (SELECT path FROM adopt_paths);", removedPaths);
+        for (const char* t : {"files", "thumbs", "content_hash", "file_trace"}) {
+            if (!ok) break;
+            const std::string del = std::string("DELETE FROM ") + t +
+                                    " WHERE path IN (SELECT path FROM adopt_paths);";
+            bindPaths(del.c_str(), removedPaths);
+        }
+    }
+    if (ok && !scopePaths.empty()) {
+        bindPaths("DELETE FROM matches WHERE left_path IN (SELECT path FROM adopt_paths)"
+                  " AND right_path IN (SELECT path FROM adopt_paths);", scopePaths);
+    }
     for (const char* sql : {
-             "DELETE FROM files; INSERT INTO files SELECT * FROM src.files;",
-             "DELETE FROM matches; INSERT INTO matches SELECT * FROM src.matches;",
-             "DELETE FROM thumbs; INSERT INTO thumbs SELECT * FROM src.thumbs;",
-             "DELETE FROM content_hash; INSERT INTO content_hash SELECT * FROM src.content_hash;",
-             "DELETE FROM file_trace; INSERT INTO file_trace SELECT * FROM src.file_trace;",
-             "DELETE FROM meta; INSERT INTO meta SELECT * FROM src.meta;"}) {
+             "INSERT OR REPLACE INTO files SELECT * FROM src.files;",
+             "INSERT OR REPLACE INTO matches SELECT * FROM src.matches;",
+             "INSERT OR REPLACE INTO thumbs SELECT * FROM src.thumbs;",
+             "INSERT OR REPLACE INTO content_hash SELECT * FROM src.content_hash;",
+             "INSERT OR REPLACE INTO file_trace SELECT * FROM src.file_trace;",
+             "INSERT OR REPLACE INTO meta SELECT * FROM src.meta;"}) {
         if (!ok) break;
         ok = execSqlQuiet(db, sql, &err);
     }
@@ -708,7 +787,14 @@ void BackendSession::runApplyTestResult() {
         mainDb.close();
     }
     QString detail;
-    const bool ok = adoptIndexDatabase(mainPaths, scratchPaths, &detail);
+    // 0.9.4.151: pass the test scan's scope so adoption replaces only
+    // in-scope rows (partial-scope runs must not delete ignored or
+    // out-of-scope files, pairs, thumbs, hashes, or traces).
+    AdoptScope scope;
+    scope.scanImages = testScanImages_;
+    scope.scanVideos = testScanVideos_;
+    scope.ignored = testIgnored_;
+    const bool ok = adoptIndexDatabase(mainPaths, scratchPaths, scope, &detail);
     msf::backendLogLine(QString("testApply ok=%1 detail=%2").arg(ok ? 1 : 0).arg(detail).toStdString());
     if (ok) {
         // Future thumbnails/forget calls belong to the production index again.

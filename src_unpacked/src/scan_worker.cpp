@@ -323,7 +323,16 @@ void ScanWorker::run() {
     // every pair ever found, so unfinished work on those files resumes on the
     // next scan of the same folder; a partial set on cancel keeps the last
     // completed checkpoint, matching the scan-side semantics.
-    persistMatchesSnapshot();
+    // 0.9.4.151: a failed save must not report success. The DB keeps the old
+    // set (saveMatches rolls back), so report failed instead of results and a
+    // "Scan complete" the database does not hold.
+    if (!persistMatchesSnapshot()) {
+      allMatches_.clear();
+      try { allMatches_.shrink_to_fit(); } catch (...) {}
+      try { emit failed("match index save failed: stored pairs unchanged"); } catch (...) {}
+      try { msf::backendLogLine("scanWorker final match persist failed"); } catch (...) {}
+      return;
+    }
     // P4: the accumulated set has been persisted wholesale; retaining it
     // would pin every match's strings until the next scan (hundreds of MB on
     // match storms). Release it — nothing reads allMatches_ after this point
@@ -331,13 +340,18 @@ void ScanWorker::run() {
     allMatches_.clear();
     allMatches_.shrink_to_fit();
     // Diagnostic counters (ChatGPT step 1): where a video-heavy scan with few
-    // results loses its pairs. Log-only (the finished message below is parsed
-    // positionally and must not change shape).
+    // results loses its pairs. Log-only. The finished message is parsed
+    // positionally (existing fields keep their indices; only APPEND fields).
+    // 0.9.4.151: trailing changed-file count (|N on CANCELLED, 7th field on
+    // completion) so the GUI can re-apply the stored index after a scan that
+    // re-analyzed files but analyzed nothing new (analysis-failure-only) or
+    // was cancelled after re-analysis approval.
     msf::backendLogLine(QString("videoStats indexedVideos=%1 pairs=%2 temporal=%3 matches=%4")
                 .arg(r.indexedVideos).arg(r.videoCandidatePairs)
                 .arg(r.videoTemporalChecks).arg(r.videoMatches).toStdString());
     { QMutexLocker g(&pendingMutex_); if (!pending_.isEmpty()) emit matchesArrived(); }
-    if (control_.cancel.load()) { if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson); emit finished(QString("CANCELLED|%1|%2").arg(r.scanned).arg(r.analyzed)); return; }
+    const int changedCount = changedFiles_.size();
+    if (control_.cancel.load()) { if (!telemetryJson.isEmpty()) emit telemetryReady(telemetryJson); emit finished(QString("CANCELLED|%1|%2|%3").arg(r.scanned).arg(r.analyzed).arg(changedCount)); return; }
     const auto& fs = engine_.files();
     QVector<GuiFile> files; files.reserve((int)fs.size());
     for (const auto& f : fs) {
@@ -360,7 +374,7 @@ void ScanWorker::run() {
     emit finished(QString("Scan complete: %1 files, %2 analyzed, %3 candidates, %4 groups%5")
                       .arg(r.scanned).arg(r.analyzed).arg(r.candidates).arg(r.groups)
                       .arg(r.failed ? QString(", %1 could not be analyzed").arg(r.failed) : QString())
-                  + QString("|%1|%2|%3|%4|%5").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates));
+                  + QString("|%1|%2|%3|%4|%5|%6").arg(r.scanned).arg(r.analyzed).arg(r.unchanged).arg(r.groups).arg(r.candidates).arg(changedFiles_.size()));
   } catch (const std::exception& e) {
     try { msf::backendLogLine(QString("scanWorker caught exception: %1").arg(QString::fromUtf8(e.what())).toStdString()); } catch (...) {}
     // engine_.scan() may unwind before finishScan() finalizes telemetry. Stop
@@ -375,7 +389,10 @@ void ScanWorker::run() {
     // fault stack sits in this handler's persist path). Persist and report
     // are attempted independently; each swallows its own failure.
     try { persistMatchesSnapshot(); } catch (...) {}
-    try { emit failed(e.what()); } catch (...) {}
+    // 0.9.4.151: carry the re-analyzed-file count so the GUI can re-apply the
+    // stored index when a failed scan already pruned stale pairs (same suffix
+    // contract as the non-standard handler below; absent suffix = 0).
+    try { emit failed(QString::fromUtf8(e.what()) + QString("|msfChanged=%1").arg(changedFiles_.size())); } catch (...) {}
     try { msf::backendLogLine("scanWorker std::exception failure reported"); } catch (...) {}
     // P4: same release as the normal path (persist already checkpointed).
     // shrink_to_fit guarded: this handler must never throw (0.9.4.65 rule).
@@ -393,7 +410,7 @@ void ScanWorker::run() {
     // (0.9.4.65) Same no-throw rule as above: the handler itself throwing
     // re-enters terminate() -> abort() with no record.
     try { persistMatchesSnapshot(); } catch (...) {}
-    try { emit failed("unhandled non-standard exception in scan worker"); } catch (...) {}
+    try { emit failed(QStringLiteral("unhandled non-standard exception in scan worker") + QString("|msfChanged=%1").arg(changedFiles_.size())); } catch (...) {}
     try { msf::backendLogLine("scanWorker non-standard failure reported"); } catch (...) {}
     allMatches_.clear();
     try { allMatches_.shrink_to_fit(); } catch (...) {}
@@ -428,7 +445,14 @@ QVector<LiveMatch> ScanWorker::currentMatchSet() const {
   }
   return out;
 }
-void ScanWorker::persistMatchesSnapshot() {
+bool ScanWorker::persistMatchesSnapshot() {
+  // 0.9.4.151: test-only fault injection (like MSF_TEST_THROW_PERSIST below):
+  // makes the save report failure deterministically so the failure path is
+  // provable without a real disk fault.
+  if (qEnvironmentVariableIsSet("MSF_TEST_FAIL_PERSIST")) {
+    msf::backendLogLine("matchPersist injected failure (MSF_TEST_FAIL_PERSIST)");
+    return false;
+  }
   // Test-only fault injection (0.9.4.65): makes the failure-handler path
   // throw deterministically, proving the handler itself never lets an
   // exception escape the worker slot (terminate -> abort). Production code
@@ -445,7 +469,15 @@ void ScanWorker::persistMatchesSnapshot() {
   }
   std::vector<msf::SearchMatch> all; all.reserve((std::size_t)cur.size());
   for (const auto& m : cur) all.push_back({m.left.toStdString(), m.right.toStdString(), m.percent});
-  engine_.saveMatches(all);
+  // 0.9.4.151: the return used to be ignored at every call site, so a failed
+  // save still reported "Scan complete" with success telemetry while the DB
+  // kept the old set. Report the failure; the final persist's caller turns it
+  // into failed() instead of results()+finished().
+  if (!engine_.saveMatches(all)) {
+    msf::backendLogLine("matchPersist saveMatches failed");
+    return false;
+  }
+  return true;
 }
 void ScanWorker::pause() { control_.pause.store(true); }
 void ScanWorker::resume() { control_.pause.store(false); }

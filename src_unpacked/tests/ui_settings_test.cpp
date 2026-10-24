@@ -1,4 +1,4 @@
-﻿// Cross-process QSettings round-trip probe for the main window UI state.
+// Cross-process QSettings round-trip probe for the main window UI state.
 //
 // --probe-write <dir> <W> <H>: build the window, resize it, destroy it
 //    (the destructor persists geometry/splitter/headers), then confirm the
@@ -218,6 +218,94 @@ int main(int argc, char** argv) {
       }
       std::cout << "resource_ui=ok\n";
     }
+    return 0;
+  }
+  // 0.9.4.151: Date-sort order regression gate (offscreen, synthetic rows).
+  // Groups must order by newest member creation date: descending puts the
+  // recently-added pair first, ascending reverses it. Birth times come from
+  // real files (set via QFile::setFileTime); filesystems without birth-time
+  // support SKIP instead of failing.
+  if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--date-sort") {
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication app(argc, argv);
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) { std::cerr << "temp settings dir failed\n"; return 1; }
+    QDir().mkpath(settingsDir.path() + "/settings");
+    initAppSettings(settingsDir.path() + "/settings");
+    QTemporaryDir td;
+    if (!td.isValid()) { std::cerr << "temp fixture dir failed\n"; return 1; }
+    const QString old1 = td.filePath("old_a.bmp"), old2 = td.filePath("old_b.bmp");
+    const QString new1 = td.filePath("new_a.bmp"), new2 = td.filePath("new_b.bmp");
+    for (const QString& p : {old1, old2, new1, new2}) {
+      QFile f(p);
+      if (!f.open(QIODevice::WriteOnly) || f.write("x") != 1) {
+        std::cerr << "fixture write failed\n"; return 1;
+      }
+      f.close();
+    }
+    const QDateTime tOld = QDateTime::currentDateTime().addDays(-2);
+    const QDateTime tNew = QDateTime::currentDateTime();
+    bool timeOk = true;
+    for (const QString& p : {old1, old2}) {
+      QFile f(p);
+      timeOk &= f.open(QIODevice::ReadWrite) &&
+                f.setFileTime(tOld, QFileDevice::FileBirthTime);
+      f.close();
+    }
+    for (const QString& p : {new1, new2}) {
+      QFile f(p);
+      timeOk &= f.open(QIODevice::ReadWrite) &&
+                f.setFileTime(tNew, QFileDevice::FileBirthTime);
+      f.close();
+    }
+    const qint64 bOld = QFileInfo(old1).birthTime().toMSecsSinceEpoch();
+    const qint64 bNew = QFileInfo(new1).birthTime().toMSecsSinceEpoch();
+    if (!timeOk || bOld <= 0 || bNew <= 0 || !(bOld < bNew)) {
+      std::cout << "date_sort=skip (no birth-time support)\n";
+      return 0;
+    }
+    MainWindow w2;
+    QVector<BackendFile> files;
+    for (const QString& p : {old1, old2, new1, new2}) {
+      BackendFile f; f.path = p; f.size = 1; f.fpHex = QStringLiteral("1"); files << f;
+    }
+    QStringList rows;
+    rows << old1 + "\t" + old2 + "\t100.0\t1" << new1 + "\t" + new2 + "\t100.0\t1";
+    const bool invoked = QMetaObject::invokeMethod(
+        &w2, "onResults", Qt::DirectConnection,
+        Q_ARG(QVector<BackendFile>, files), Q_ARG(QStringList, rows));
+    if (!invoked) { std::cerr << "onResults not invoked\n"; return 1; }
+    QApplication::processEvents();
+    auto* sortBox = w2.findChild<QComboBox*>("sortBox");
+    auto* sortDir = w2.findChild<QComboBox*>("sortDirBox");
+    if (!sortBox || !sortDir || sortBox->count() != 5) {
+      std::cerr << "date sort combo missing\n"; return 1;
+    }
+    const auto firstPaths = [&]() {
+      const QStringList roots = w2.testGroupRoots();
+      if (roots.size() != 2) return QStringList{};
+      const QStringList ps = w2.testGroupPathsFor(roots.at(0));
+      return ps;
+    };
+    const QSet<QString> newSet({new1, new2}), oldSet({old1, old2});
+    sortDir->setCurrentIndex(0); // descending
+    sortBox->setCurrentIndex(4); // Date
+    QApplication::processEvents();
+    const QStringList descFirst = firstPaths();
+    const bool descOk = descFirst.size() == 2 &&
+        QSet<QString>(descFirst.begin(), descFirst.end()) == newSet;
+    if (!descOk) {
+      std::cerr << "date sort descending puts newest first\n"; return 1;
+    }
+    sortDir->setCurrentIndex(1); // ascending
+    QApplication::processEvents();
+    const QStringList ascFirst = firstPaths();
+    const bool ascOk = ascFirst.size() == 2 &&
+        QSet<QString>(ascFirst.begin(), ascFirst.end()) == oldSet;
+    if (!ascOk) {
+      std::cerr << "date sort ascending puts oldest first\n"; return 1;
+    }
+    std::cout << "date_sort=ok\n";
     return 0;
   }
   // Translation-table regression gate.

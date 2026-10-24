@@ -18,6 +18,7 @@ Database::~Database(){ close(); }
 void Database::close(){
     finalizeStatements();
     if(db_){ sqlite3_close(D(db_)); db_=nullptr; }
+    txActive_=false; // 0.9.4.151: a closed handle holds no transaction
 }
 
 bool Database::open(const std::string& p){
@@ -115,9 +116,9 @@ bool Database::initialize(){
   return true;
 }
 
-bool Database::beginTransaction(){return db_ && exec("BEGIN IMMEDIATE TRANSACTION;");}
-bool Database::commitTransaction(){return db_ && exec("COMMIT;");}
-bool Database::rollbackTransaction(){return db_ && exec("ROLLBACK;");}
+bool Database::beginTransaction(){ if(!db_ || !exec("BEGIN IMMEDIATE TRANSACTION;")) return false; txActive_=true; return true; }
+bool Database::commitTransaction(){ if(!db_ || !exec("COMMIT;")) return false; txActive_=false; return true; }
+bool Database::rollbackTransaction(){ if(!db_ || !exec("ROLLBACK;")) return false; txActive_=false; return true; }
 
 bool Database::upsert(const FileState& x){
  if(!db_) return false;
@@ -254,6 +255,15 @@ bool Database::saveMatchesCore(const std::vector<StoredMatch>& matches){
 
 bool Database::saveMatches(const std::vector<StoredMatch>& matches){
   if(!db_) return false;
+  // 0.9.4.151: scan checkpoints call this while the scan's own transaction is
+  // open on the same handle (nested BEGIN would fail and the persist was
+  // silently lost). A savepoint nests correctly and keeps the same all-or-
+  // nothing contract for the match set.
+  if(txActive_){
+    if(!exec("SAVEPOINT msf_save;")) return false;
+    if(!saveMatchesCore(matches)){ exec("ROLLBACK TO SAVEPOINT msf_save;"); exec("RELEASE SAVEPOINT msf_save;"); return false; }
+    return exec("RELEASE SAVEPOINT msf_save;");
+  }
   if(!exec("BEGIN IMMEDIATE TRANSACTION;")) return false;
   if(!saveMatchesCore(matches)){ exec("ROLLBACK;"); return false; }
   return exec("COMMIT;");

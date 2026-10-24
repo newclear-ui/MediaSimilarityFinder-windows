@@ -99,6 +99,12 @@ public: ~Database(); bool open(const std::string& path); void close(); bool init
 private:
     std::string path_;
     void* db_=nullptr;
+    // 0.9.4.151: tracks whether this handle currently holds an open
+    // transaction (set by begin/commit/rollback). saveMatches() uses it to
+    // pick a SAVEPOINT when a caller transaction is already open (scan
+    // checkpoints run inside the scan's transaction; a nested BEGIN would
+    // fail and silently drop the match durability the comments promise).
+    bool txActive_=false;
     void* upsertStmt_=nullptr;
     void* removeStmt_=nullptr;
     void* containsStmt_=nullptr;

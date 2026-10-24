@@ -88,7 +88,11 @@ private:
   int storedCount_ = 0;
   QSet<QString> changedFiles_;
   QVector<LiveMatch> currentMatchSet() const; // worker thread: stored minus changed + emitted
-  void persistMatchesSnapshot();    // save the full accumulated set (worker thread only)
+  // 0.9.4.151: returns false when the match set could not be saved (the
+  // caller decides: checkpoints only log, the final persist fails the scan
+  // instead of reporting a success the DB does not hold).
+  // save the full accumulated set (worker thread only)
+  bool persistMatchesSnapshot();
   int matchesSinceSave_=0; qint64 lastSaveMs_=0; // incremental-checkpoint throttle
   qint64 lastEmitMs_=0;
   // Progress-signal throttle (worker thread only): the engine reports every

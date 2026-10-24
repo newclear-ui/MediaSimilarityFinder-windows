@@ -167,6 +167,12 @@ public:
     const int gi = pathGroup_.value(path, -1);
     return (gi >= 0 && gi < groups_.size()) ? groups_[gi].paths : QStringList{};
   }
+  // 0.9.4.151: group roots in current display order (Date-sort regression pin).
+  QStringList testGroupRoots() const {
+    QStringList r;
+    for (const auto& g : groups_) r << g.root;
+    return r;
+  }
   // 0.9.4.112 (S4): write the last detailed-log record through the exact
   // production save routine (the dialog's Save button only adds the file
   // picker on top). Returns true when the record was written.
@@ -578,8 +584,11 @@ private:
   void onMidTabChanged(int idx);
   void updateIgnoreTab();
   void unignoreSelected();
+ public:
+  // 0.9.4.151: test hook for the partial-scope adoption regression test.
   void clearIgnored();
   void applyIgnore(const QStringList& paths, bool on);
+ private:
   void gridSelected(QListWidgetItem*, QListWidgetItem*);
   void gridCheckChanged(QListWidgetItem*);
   // right

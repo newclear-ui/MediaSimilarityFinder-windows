@@ -96,6 +96,33 @@ int main(int argc, char** argv) {
         qunsetenv("MSF_TEST_THROW_PERSIST");
     }
 
+    // ---- 4. (0.9.4.151) A failed match persist fails loudly. ----
+    // persistMatchesSnapshot() used to ignore saveMatches()'s return, so a
+    // failed save still reported success while the DB kept the old set.
+    // MSF_TEST_FAIL_PERSIST injects the failure (production never sets it):
+    // the worker must emit failed(), never results()+finished().
+    {
+        qputenv("MSF_TEST_FAIL_PERSIST", "1");
+        ScanWorker w(QString::fromStdString((d / "media").string()),
+                     QString::fromStdString(d.string()),
+                     8, 50, 50, false);
+        bool failedSeen = false;
+        QString failedMsg;
+        bool finishedSeen = false;
+        QObject::connect(&w, &ScanWorker::failed, &w,
+                         [&](const QString& m) { failedSeen = true; failedMsg = m; },
+                         Qt::DirectConnection);
+        QObject::connect(&w, &ScanWorker::finished, &w,
+                         [&](const QString&) { finishedSeen = true; },
+                         Qt::DirectConnection);
+        fs::create_directories(d / "media", ec);
+        w.run();
+        check(failedSeen, "failed() emitted when the final match persist fails");
+        check(failedMsg.contains("match index save failed"), "failure reason names the cause");
+        check(!finishedSeen, "no success finish after a failed persist");
+        qunsetenv("MSF_TEST_FAIL_PERSIST");
+    }
+
     fs::remove_all(d, ec);
     std::cout << "crash_diagnostics_selfcheck=" << (gOk ? "ok" : "FAILED")
               << " checks=" << gChecks << "\n";
