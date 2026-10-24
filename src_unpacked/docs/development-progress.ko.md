@@ -29,7 +29,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | --- | --- | --- | --- | --- |
 | 0 | **0.9.4.105/.106 + 0.9.4.64+** | **현장 GUI acceptance** | .105 대량 삭제/이동·진행창·preview/index·`delete/move/prune/forget` 로그; .106 파생본/동일 복사본 배지 + real Backend IPC `identical`; 설정/resize/filename selection/Tiles·ListMode/traversal/Test Mode scratch 격리/crash recovery | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
 | 1 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance** | 2026-10-18 실기 보고로 18/18 항목 증거 확보 → **ACCEPTED**. S4 최종 CLOSED와 S5 GATE OPEN 연동 완료 | **ACCEPTED** |
-| 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture + 18건/79건 실파일 decode·verdict·session 증거 확보. 전체 corpus pre/post 비교 잔여 | **CONDITIONAL** |
+| 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture + 18건/79건 + 134건 real-file evidence 확보. full-corpus census 완료(2026-10-25): 178,293개 중 XMP orientation 106개 전부 값 1, 격리 headless 실엔진 105+1건 analyzed·failed=0. CONDITIONAL 해제 사용자 확인 대기.  | **CONDITIONAL** |
 | 3 | S5 | **실제 dataset product benchmark** | GATE OPEN. XMP-REAL-001 부분 측정(7 cases 21 SUCCESS) + `.126` recover CLI 확보. 정상 완료 cohort·임계값 대기 | **IN PROGRESS / GATE OPEN** |
 | 4 | S6 | **measurement / data-mining gate** | S5 실측 표본을 이용해 build/case 비교 후보와 gate 판정. 진단 기계는 실저널에서 계약대로 동작 확인 | **DEFERRED / 임계값·비교 표본 대기** |
 

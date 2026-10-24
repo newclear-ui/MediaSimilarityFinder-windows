@@ -29,7 +29,7 @@ A separate `workprogress` document is intentionally not created; this document i
 | --- | --- | --- | --- | --- |
 | 0 | **0.9.4.105/.106 + 0.9.4.64+** | **Real-world GUI acceptance** | .105 bulk delete/move, progress dialog, preview/index, `delete/move/prune/forget` logs; .106 derivative/copy badges plus real Backend IPC `identical`; settings/resize/filename selection/Tiles·ListMode/traversal/Test Mode scratch isolation/crash recovery | **IMPLEMENTED / MANUAL ACCEPTANCE PENDING** |
 | 1 | Product acceptance | **Final Search / Index / Comparison acceptance** | 18/18 items evidenced in the 2026-10-18 field report -> **ACCEPTED**. S4 final CLOSED and S5 GATE OPEN linkage complete | **ACCEPTED** |
-| 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | Fixture + 18/79-copy real-file decode/verdict/session evidence held. Full-corpus pre/post comparison remains | **CONDITIONAL** |
+| 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | Fixture + 18/79/134-copy real-file evidence held. Full-corpus census done (2026-10-25): 106 XMP-orientation files of 178,293, all value 1; isolated headless real-engine run analyzed 105+1, failed 0. CONDITIONAL close pending user confirmation. | **CONDITIONAL** |
 | 3 | S5 | **Real-dataset product benchmark** | GATE OPEN. XMP-REAL-001 partial measurement (7 cases, 21 SUCCESS) + `.126` recover CLI held. Normal-completion cohort and thresholds pending | **IN PROGRESS / GATE OPEN** |
 | 4 | S6 | **Measurement / data-mining gate** | Derive build/case comparisons and evaluate the gate from real S5 samples. Diagnostics confirmed working per contract on real journals | **DEFERRED / thresholds and comparison samples pending** |
 
