@@ -134,6 +134,13 @@ public:
  // from disk are preserved for resuming unfinished work. Safe on cancel: the
  // caller may pass a partial set to keep the last completed progress.
   bool saveMatches(const std::vector<SearchMatch>& matches);
+  // 0.9.4.152 (P1): drop the match-completeness baseline so the next A/AB
+  // scan runs one full verification pass. Used when the final match persist
+  // fails: file rows are already committed with new fingerprints while the
+  // pair set keeps the old rows, and only a full pass can re-derive the
+  // correct set. Deleting the stamp is data-safe (it forces verification,
+  // never deletes pairs).
+  void invalidateMatchBaseline() { db_.setMatchBaseline(""); }
  // Load the pairs persisted by the last completed scan. Paths use the same
  // canonical UTF-8 form as scan results, so reload maps 1:1 onto files().
   std::vector<SearchMatch> loadMatches() const;

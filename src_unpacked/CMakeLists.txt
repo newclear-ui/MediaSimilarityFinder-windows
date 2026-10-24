@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.151 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.152 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -755,6 +755,12 @@ if(MSF_BUILD_GUI)
       # real temp files with distinct birth times; filesystems without
       # birth-time support SKIP.
       add_test(NAME ui_date_sort_test COMMAND msf_ui_settings_test --date-sort)
+      # 0.9.4.152: failed match persist leaves GUI == DB and recovers on
+      # retry. Loopback runs the real session in-process, so the injected
+      # failure reaches the worker (a real-backend e2e cannot set backend
+      # env vars). Fast(A) targeted mode proves the retry rediscovers pairs
+      # through the forced full verification.
+      add_test(NAME ui_persist_fail_test COMMAND msf_ui_settings_test --persist-fail)
       # 0.9.4.29 settings-identity migration. Every phase is its own process so
       # a same-process QSettings cache can never make a broken migration pass.
       set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")

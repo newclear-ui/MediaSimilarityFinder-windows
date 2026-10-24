@@ -24,7 +24,15 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include "index_manager.h" // 0.9.4.152: persist-fail index resolve
+#include "database.h"      // 0.9.4.152: persist-fail DB assertions
+#include "path_utils.h"    // 0.9.4.152: persist-fail path conversion
 #include <QLayout>
+#include <QLabel>      // 0.9.4.152: persist-fail status assertion
+#include <QListWidget> // 0.9.4.152: persist-fail group grid
+#include <QTimer>      // 0.9.4.152: persist-fail modal closer
+#include <QThread>     // 0.9.4.152: persist-fail pump
+#include <QElapsedTimer> // 0.9.4.152: persist-fail pump
 #include <QSettings>
 #include <QDir>
 #include <iostream>
@@ -306,6 +314,113 @@ int main(int argc, char** argv) {
       std::cerr << "date sort ascending puts oldest first\n"; return 1;
     }
     std::cout << "date_sort=ok\n";
+    return 0;
+  }
+  // 0.9.4.152: failed match persist must leave GUI == DB and recover on retry.
+  // Loopback runs the real BackendSession in-process, so MSF_TEST_FAIL_PERSIST
+  // reaches the worker (a real-backend e2e cannot set backend env vars).
+  // Fast(A) targeted mode + invalidated baseline: the retry must rediscover
+  // the pairs through the forced full verification, not report stale groups.
+  if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--persist-fail") {
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication app(argc, argv);
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) { std::cerr << "temp settings dir failed\n"; return 1; }
+    QDir().mkpath(settingsDir.path() + "/settings");
+    initAppSettings(settingsDir.path() + "/settings");
+    QTemporaryDir dataDir;
+    if (!dataDir.isValid()) { std::cerr << "temp data dir failed\n"; return 1; }
+    const auto writeBmp = [](const QString& p, unsigned seed) {
+      QFile f(p);
+      if (!f.open(QIODevice::WriteOnly)) return false;
+      const int w = 8, h = 8, row = w * 3, img = row * h, fs = 54 + img;
+      unsigned char hd[54] = {0};
+      hd[0] = 'B'; hd[1] = 'M';
+      hd[2] = (unsigned char)(fs & 0xFF); hd[3] = (unsigned char)((fs >> 8) & 0xFF);
+      hd[10] = 54; hd[14] = 40; hd[18] = (unsigned char)w; hd[22] = (unsigned char)h;
+      hd[26] = 1; hd[28] = 24;
+      hd[34] = (unsigned char)(img & 0xFF); hd[35] = (unsigned char)((img >> 8) & 0xFF);
+      if (f.write((const char*)hd, 54) != 54) return false;
+      unsigned s = seed * 2654435761u + 1;
+      for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+          s = s * 1103515245u + 12345u;
+          const char v = (char)((((s >> 16) & 0xFF) > 127) ? 255 : 0);
+          if (f.write(&v, 1) != 1 || f.write(&v, 1) != 1 || f.write(&v, 1) != 1) return false;
+        }
+      return true;
+    };
+    const QString a1 = dataDir.filePath("a1.bmp"), a2 = dataDir.filePath("a2.bmp");
+    const QString b1 = dataDir.filePath("b1.bmp"), b2 = dataDir.filePath("b2.bmp");
+    if (!writeBmp(a1, 11) || !writeBmp(a2, 11) || !writeBmp(b1, 77) || !writeBmp(b2, 77)) {
+      std::cerr << "fixture write failed\n"; return 1;
+    }
+    QSettings().setValue("ui/lastFolder", dataDir.path());
+    QSettings().setValue("ui/analyzeMode", 1); // Fast(A): targeted verification
+    QSettings().sync();
+    MainWindow w2;
+    w2.show();
+    QApplication::processEvents();
+    QTimer modalCloser;
+    modalCloser.setInterval(250);
+    QObject::connect(&modalCloser, &QTimer::timeout, [&]() {
+      if (QWidget* m = QApplication::activeModalWidget()) m->close();
+    });
+    modalCloser.start();
+    auto* scanBtn = w2.findChild<QPushButton*>("scan");
+    auto* grid = w2.findChild<QListWidget*>("imgGrid");
+    auto* splitBtn = w2.findChild<QToolButton*>("loadSplitBtn");
+    if (!scanBtn || !grid || !splitBtn) { std::cerr << "scan controls not found\n"; return 1; }
+    QElapsedTimer t;
+    const auto pumpFor = [&](std::function<bool()> done, int ms, const char* what) {
+      t.start();
+      while (!done()) {
+        QApplication::processEvents();
+        QThread::msleep(50);
+        if (t.elapsed() > ms) { std::cerr << "timeout: " << what << "\n"; return false; }
+      }
+      return true;
+    };
+    qputenv("MSF_TEST_FAIL_PERSIST", "1");
+    scanBtn->click();
+    QApplication::processEvents();
+    if (!pumpFor([&] { return scanBtn->isEnabled(); }, 120000, "failed scan settled")) return 1;
+    QApplication::processEvents();
+    qunsetenv("MSF_TEST_FAIL_PERSIST");
+    // Failure surfaced, never reported as success.
+    bool failureShown = false;
+    for (auto* lb : w2.findChildren<QLabel*>())
+      if (lb->text().contains(QStringLiteral("match index save failed"))) failureShown = true;
+    if (!failureShown) { std::cerr << "failure reason not delivered\n"; return 1; }
+    // Reload finished (both buttons back): the screen must equal the DB.
+    if (!pumpFor([&] { return splitBtn->isEnabled(); }, 30000, "post-failure reload")) return 1;
+    QApplication::processEvents();
+    msf::IndexPaths ip;
+    if (!msf::IndexManager::resolve(
+            msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+            msf::path_from_utf8(dataDir.path().toStdString()), ip)) {
+      std::cerr << "index resolve failed\n"; return 1;
+    }
+    msf::Database db;
+    const std::string dbFile = msf::path_to_utf8(ip.database);
+    if (!db.open(dbFile) || !db.initialize()) { std::cerr << "index open failed\n"; return 1; }
+    const auto dbPairs = db.loadMatches();
+    const auto dbFiles = db.all();
+    db.close();
+    if (!dbPairs.empty()) { std::cerr << "unsaved matches persisted\n"; return 1; }
+    if (dbFiles.size() != 4) { std::cerr << "file rows lost\n"; return 1; }
+    if (grid->count() != 0) { std::cerr << "unsaved matches on screen\n"; return 1; }
+    // Retry with a working persist: full verification rediscovers the pairs.
+    scanBtn->click();
+    QApplication::processEvents();
+    if (!pumpFor([&] { return scanBtn->isEnabled(); }, 120000, "retry scan finished")) return 1;
+    QApplication::processEvents();
+    bool stillFailing = false;
+    for (auto* lb : w2.findChildren<QLabel*>())
+      if (lb->text().contains(QStringLiteral("match index save failed"))) stillFailing = true;
+    if (stillFailing) { std::cerr << "failure text survives retry\n"; return 1; }
+    if (grid->count() != 2) { std::cerr << "retry groups=" << grid->count() << "\n"; return 1; }
+    std::cout << "persist_fail=ok\n";
     return 0;
   }
   // Translation-table regression gate.

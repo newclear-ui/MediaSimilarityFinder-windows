@@ -326,10 +326,17 @@ void ScanWorker::run() {
     // 0.9.4.151: a failed save must not report success. The DB keeps the old
     // set (saveMatches rolls back), so report failed instead of results and a
     // "Scan complete" the database does not hold.
+    // 0.9.4.152 (P1): carry the re-analyzed-file count (|msfChanged=N) so the
+    // GUI reloads the last committed set instead of showing streamed matches
+    // that were never persisted; drop the completeness baseline so the next
+    // A/AB scan full-verifies (file rows are already committed with new
+    // fingerprints while pairs keep the old rows).
     if (!persistMatchesSnapshot()) {
+      const int failedChanged = changedFiles_.size();
+      try { engine_.invalidateMatchBaseline(); } catch (...) {}
       allMatches_.clear();
       try { allMatches_.shrink_to_fit(); } catch (...) {}
-      try { emit failed("match index save failed: stored pairs unchanged"); } catch (...) {}
+      try { emit failed(QString("match index save failed: stored pairs unchanged|msfChanged=%1").arg(failedChanged)); } catch (...) {}
       try { msf::backendLogLine("scanWorker final match persist failed"); } catch (...) {}
       return;
     }

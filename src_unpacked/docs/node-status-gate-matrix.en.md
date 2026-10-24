@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.151` (audit finding fixes) - CPU CTest 125/125 - GPU CTest 126/126
-Last updated: 2026-10-22
+Baseline: `0.9.4.152` (directed re-review fixes) - CPU CTest 125/125 - GPU CTest 126/126
+Last updated: 2026-10-24
 
 ## Role of this document
 

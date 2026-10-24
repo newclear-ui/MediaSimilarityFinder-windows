@@ -1,6 +1,6 @@
 # Build Status
 
-- Current development version: **0.9.4.151** — Audit finding fixes (scope-aware Test Mode adoption, cancel/fail view consistency, loud match-save failure, in-scan checkpoint savepoints)
+- Current development version: **0.9.4.152** — Directed re-review fixes (content_hash rel mapping, full-scope-only meta adoption, loud save failure with silent re-apply, savepoint semantics; kill durability unproven)
 - Official preserved baseline: 0.9.2.32 — Large-result Match streaming and report retention bounds
 - Windows CPU: 0.9.2.35–0.9.2.39 — VS18 2026 build, UI rewrite rounds
 - CUDA validation: 0.9.2.40 — RTX 3080 Ti, Toolkit 13.4, 38/38 PASS

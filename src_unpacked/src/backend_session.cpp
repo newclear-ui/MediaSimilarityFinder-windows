@@ -14,6 +14,7 @@
 #include <unordered_set>
 
 #include "backend_log.h"
+#include "dataset_fingerprint.h"
 #include "file_meta.h"
 #include "gpu_backend.h"
 #include "image_decoder.h"
@@ -109,6 +110,11 @@ struct AdoptScope {
     bool scanImages = true;
     bool scanVideos = true;
     QSet<QString> ignored;
+    // 0.9.4.152: the scan root in product UTF-8 form, used to map absolute
+    // stored paths to content_hash `rel` keys (canonicalRelativePath — the
+    // same function the writer uses, never a guess).
+    std::string rootUtf8;
+    bool full() const { return scanImages && scanVideos && ignored.isEmpty(); }
 };
 static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPaths& scratch,
                                const AdoptScope& scope, QString* detail) {
@@ -116,6 +122,7 @@ static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPath
     // from the stored row + the raw ignored set, compared as stored strings).
     std::unordered_set<std::string> scopePaths;   // every in-scope path (union)
     std::unordered_set<std::string> removedPaths; // in-scope main rows the scratch lacks
+    std::unordered_set<std::string> removedRels;  // their content_hash `rel` keys
     {
         msf::Database mainDb, scratchDb;
         if (!mainDb.open(msf::path_to_utf8(main.database)) || !mainDb.initialize() ||
@@ -148,6 +155,15 @@ static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPath
         for (const auto& x : mainRows)
             if (scratchSet.find(x.path) == scratchSet.end() && scopePaths.find(x.path) != scopePaths.end())
                 removedPaths.insert(x.path);
+        // 0.9.4.152 (P0): content_hash is keyed by `rel`, not `path`. Map each
+        // removed absolute path through the same canonicalization the writer
+        // uses; unmappable rows are kept (a stale cache row is harmless, a
+        // failed DELETE would roll back the whole adoption).
+        removedRels.reserve(removedPaths.size() + 1);
+        for (const auto& p : removedPaths) {
+            const std::string rel = msf::canonicalRelativePath(scope.rootUtf8, p);
+            if (!rel.empty()) removedRels.insert(rel);
+        }
     }
     sqlite3* db = nullptr;
     const std::string mainPath = msf::path_to_utf8(main.database);
@@ -171,11 +187,24 @@ static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPath
     // scratch lacks, then upsert every scratch row (INSERT OR REPLACE, so
     // out-of-scope rows survive). Pairs are replaced for the in-scope
     // subgraph only (both endpoints in scope); a pair touching an ignored or
-    // out-of-scope file is preserved. Meta has no per-path rows: scratch keys
-    // are upserted without deleting main-only keys.
-    const auto bindPaths = [&](const char* tableSql, const std::unordered_set<std::string>& paths) {
+    // out-of-scope file is preserved.
+    // 0.9.4.152 (P1 meta): `meta` holds whole-index state (match_baseline,
+    // analyze_frontier, dataset_fp_cache, sampling_generation...). A partial
+    // scope never verified the out-of-scope subgraph, so adopting the
+    // scratch's global stamps would be a lie (e.g. a fresh match_baseline
+    // would skip the next full verification). Full scope adopts meta;
+    // partial scope keeps the main index's meta (conservative: a missing
+    // baseline simply schedules one full pass on the next scan).
+    //
+    // One TEMP fill shared by the scoped deletes below. Table key columns are
+    // mapped explicitly at each call site: files/thumbs/file_trace use
+    // `path`, content_hash uses `rel` (0.9.4.152 P0: assuming `path`
+    // everywhere fails the whole transaction), matches are addressed by
+    // endpoint (either side for pruned rows, both sides for the in-scope
+    // subgraph replacement).
+    const auto withAdoptPaths = [&](const std::unordered_set<std::string>& paths, const char* delSql) {
         if (!ok || paths.empty()) return;
-        if (!execSqlQuiet(db, "CREATE TEMP TABLE adopt_paths(path TEXT PRIMARY KEY);", &err)) { ok = false; return; }
+        if (!execSqlQuiet(db, "CREATE TEMP TABLE adopt_paths(k TEXT PRIMARY KEY);", &err)) { ok = false; return; }
         sqlite3_stmt* ins = nullptr;
         if (sqlite3_prepare_v2(db, "INSERT INTO adopt_paths VALUES(?);", -1, &ins, nullptr) != SQLITE_OK) { ok = false; return; }
         for (const auto& p : paths) {
@@ -184,34 +213,38 @@ static bool adoptIndexDatabase(const msf::IndexPaths& main, const msf::IndexPath
             if (sqlite3_step(ins) != SQLITE_DONE) { ok = false; break; }
         }
         sqlite3_finalize(ins);
-        if (ok) ok = execSqlQuiet(db, tableSql, &err);
+        if (ok) ok = execSqlQuiet(db, delSql, &err);
         if (!execSqlQuiet(db, "DROP TABLE adopt_paths;", nullptr)) ok = false;
     };
     if (ok && !removedPaths.empty()) {
         // Order matters: matches reference files, but there is no FK; delete
         // the pruned pairs explicitly before dropping their file rows.
-        bindPaths("DELETE FROM matches WHERE left_path IN (SELECT path FROM adopt_paths)"
-                  " OR right_path IN (SELECT path FROM adopt_paths);", removedPaths);
-        for (const char* t : {"files", "thumbs", "content_hash", "file_trace"}) {
+        withAdoptPaths(removedPaths, "DELETE FROM matches WHERE left_path IN (SELECT k FROM adopt_paths)"
+                                     " OR right_path IN (SELECT k FROM adopt_paths);");
+        for (const auto& t : {"files", "thumbs", "file_trace"}) {
             if (!ok) break;
-            const std::string del = std::string("DELETE FROM ") + t +
-                                    " WHERE path IN (SELECT path FROM adopt_paths);";
-            bindPaths(del.c_str(), removedPaths);
+            const std::string del = std::string("DELETE FROM ") + t + " WHERE path IN (SELECT k FROM adopt_paths);";
+            withAdoptPaths(removedPaths, del.c_str());
         }
+        withAdoptPaths(removedRels, "DELETE FROM content_hash WHERE rel IN (SELECT k FROM adopt_paths);");
     }
     if (ok && !scopePaths.empty()) {
-        bindPaths("DELETE FROM matches WHERE left_path IN (SELECT path FROM adopt_paths)"
-                  " AND right_path IN (SELECT path FROM adopt_paths);", scopePaths);
+        withAdoptPaths(scopePaths, "DELETE FROM matches WHERE left_path IN (SELECT k FROM adopt_paths)"
+                                   " AND right_path IN (SELECT k FROM adopt_paths);");
     }
     for (const char* sql : {
              "INSERT OR REPLACE INTO files SELECT * FROM src.files;",
              "INSERT OR REPLACE INTO matches SELECT * FROM src.matches;",
              "INSERT OR REPLACE INTO thumbs SELECT * FROM src.thumbs;",
              "INSERT OR REPLACE INTO content_hash SELECT * FROM src.content_hash;",
-             "INSERT OR REPLACE INTO file_trace SELECT * FROM src.file_trace;",
-             "INSERT OR REPLACE INTO meta SELECT * FROM src.meta;"}) {
+             "INSERT OR REPLACE INTO file_trace SELECT * FROM src.file_trace;"}) {
         if (!ok) break;
         ok = execSqlQuiet(db, sql, &err);
+    }
+    // Meta has no per-path rows: full-scope adoption upserts every scratch
+    // key; partial scope keeps the main index's global stamps (see above).
+    if (ok && scope.full()) {
+        ok = execSqlQuiet(db, "INSERT OR REPLACE INTO meta SELECT * FROM src.meta;", &err);
     }
     if (!ok) {
         execSqlQuiet(db, "ROLLBACK;", nullptr);
@@ -794,6 +827,9 @@ void BackendSession::runApplyTestResult() {
     scope.scanImages = testScanImages_;
     scope.scanVideos = testScanVideos_;
     scope.ignored = testIgnored_;
+    // 0.9.4.152: root for content_hash `rel` mapping (same product UTF-8
+    // form the scan and the fingerprint writer use).
+    scope.rootUtf8 = msf::path_to_utf8(rootPath);
     const bool ok = adoptIndexDatabase(mainPaths, scratchPaths, scope, &detail);
     msf::backendLogLine(QString("testApply ok=%1 detail=%2").arg(ok ? 1 : 0).arg(detail).toStdString());
     if (ok) {

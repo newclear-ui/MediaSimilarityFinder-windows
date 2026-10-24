@@ -63,7 +63,25 @@ int main(){
       if(!keepPair) return 29;
     }
     if(!db.forget({})) return 30; // empty input: no-op success
-    std::cout<<"database=ok\nincremental=ok\ntransaction=ok\nfrontier=ok\nforget=ok\n";
+    // 0.9.4.152: saveMatches() inside an open caller transaction uses a
+    // SAVEPOINT (mid-scan checkpoints run inside the scan's transaction; a
+    // nested BEGIN would fail and the persist would be silently lost).
+    if(!db.saveMatches({{"n1.jpg","n2.png",90.0}})) return 31;
+    if(!db.beginTransaction()) return 32;
+    if(!db.saveMatches({{"s1.jpg","s2.png",80.0}})) return 33; // nested: must succeed
+    {
+      bool seen = false;
+      for (const auto& m : db.loadMatches()) if (m.left == "s1.jpg") seen = true;
+      if (!seen) return 34; // in-tx visibility: the savepoint wrote into the tx
+    }
+    if(!db.rollbackTransaction()) return 35;
+    for (const auto& m : db.loadMatches()) if (m.left == "s1.jpg") return 36;
+    {
+      bool kept = false;
+      for (const auto& m : db.loadMatches()) if (m.left == "n1.jpg") kept = true;
+      if (!kept) return 37; // pre-tx data intact after the rollback
+    }
+    std::cout<<"database=ok\nincremental=ok\ntransaction=ok\nfrontier=ok\nforget=ok\nsavepoint=ok\n";
     db.close(); // Windows cannot remove an open database file; close first.
     std::filesystem::remove(p);
     return 0;

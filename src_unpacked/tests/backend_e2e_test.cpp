@@ -39,6 +39,9 @@
 #include <QTimer>
 #include <QLabel>
 #include <QMessageBox>
+#include <QFileInfo>      // 0.9.4.152: backend log tail check
+#include <QStandardPaths> // 0.9.4.152: backend log tail check
+#include <QFile>          // 0.9.4.152: backend log tail check
 #include <QTreeWidget>
 #include <filesystem>
 #include <fstream>
@@ -62,6 +65,7 @@
 // test to GUI internals beyond MainWindow; the supervisor is constructed
 // here directly instead).
 #include "backend_supervisor.h"
+#include "media_search_engine.h" // 0.9.4.152: kEngineVersion for the baseline assertions
 
 namespace {
 
@@ -115,6 +119,67 @@ int countPairInDb(const QString& dbPath, const char* a, const char* b) {
     sqlite3_finalize(st);
     sqlite3_close(h);
     return n;
+}
+
+// 0.9.4.152: meta key probe for the partial-scope adoption test.
+QString readMeta(const QString& dbPath, const char* key) {
+    sqlite3* h = nullptr;
+    QString out;
+    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
+        if (h) sqlite3_close(h);
+        return out;
+    }
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(h, "SELECT value FROM meta WHERE key=?",
+                           -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW)
+            out = QString::fromUtf8((const char*)sqlite3_column_text(st, 0));
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(h);
+    return out;
+}
+
+// 0.9.4.152: content_hash row counter (keyed by `rel`) for the P0 test.
+int countContentHash(const QString& dbPath, const char* suffix) {
+    sqlite3* h = nullptr;
+    int n = -1;
+    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
+        if (h) sqlite3_close(h);
+        return -1;
+    }
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(h, "SELECT COUNT(*) FROM content_hash WHERE rel LIKE ?",
+                           -1, &st, nullptr) == SQLITE_OK) {
+        const QByteArray pat = QByteArray("%") + suffix;
+        sqlite3_bind_text(st, 1, pat.constData(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW) n = sqlite3_column_int(st, 0);
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(h);
+    return n;
+}
+
+bool writeMeta(const QString& dbPath, const char* key, const QString& value) {
+    sqlite3* h = nullptr;
+    bool ok = false;
+    if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
+        if (h) sqlite3_close(h);
+        return false;
+    }
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(h, "INSERT INTO meta(key,value) VALUES(?,?)"
+                              " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                           -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_TRANSIENT);
+        const QByteArray v = value.toUtf8();
+        sqlite3_bind_text(st, 2, v.constData(), -1, SQLITE_TRANSIENT);
+        ok = sqlite3_step(st) == SQLITE_DONE;
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(h);
+    return ok;
 }
 
 void check(bool cond, const char* what) {
@@ -784,7 +849,11 @@ int main(int argc, char** argv) {
     // ---- Test 1h (0.9.4.151): partial-scope (ignored) Test Mode adoption preserves out-of-scope rows.
     // The scratch scan never produces ignored rows; pre-fix Yes deleted them
     // from the main index (wholesale table replacement), even though the diff
-    // correctly excluded them from `removed`. ----
+    // correctly excluded them from `removed`.
+    // 0.9.4.152: also covers the P0 content_hash `rel` key (a deleted file's
+    // hash row must be removed for adoption to succeed at all) and the P1
+    // meta rule (a partial adoption must not touch match_baseline: the next
+    // production scan has to schedule a full verification pass). ----
     {
         msf::IndexPaths ip;
         QString dbPath;
@@ -801,6 +870,17 @@ int main(int argc, char** argv) {
         fs::copy_file(d / "media" / "g2_a.bmp", target,
                       fs::copy_options::overwrite_existing, ec);
         fs::last_write_time(target, fs::file_time_type::clock::now(), ec);
+        // 0.9.4.152: delete a file outright. Its content_hash row (keyed by
+        // `rel`) must be removed for adoption to succeed — with the P0 bug
+        // (DELETE ... WHERE path ...) the statement fails and the whole
+        // adoption rolls back.
+        std::error_code removeEc;
+        fs::remove(d / "media" / "g6_a.bmp", removeEc);
+        check(!removeEc, "test1h fixture file deleted");
+        check(countContentHash(dbPath, "g6_a.bmp") >= 1, "test1h doomed content_hash row exists");
+        // 0.9.4.152: stale the completeness baseline. A partial adoption must
+        // preserve it (not upgrade it from a scope-limited scratch DB).
+        check(writeMeta(dbPath, "match_baseline", "0.0.0"), "test1h baseline staled");
         w.applyIgnore(QStringList{g5a}, true);
         check(countPairInDb(dbPath, "g5_a.bmp", "g5_b.bmp") == 1, "test1h pair present before");
         bool diffSeen = false;
@@ -831,8 +911,164 @@ int main(int argc, char** argv) {
         // un-ignoring. Pre-fix the DB row itself was deleted by Yes.
         check(!w.testGroupPathsFor(g5a).contains(g5b), "test1h ignored pair hidden from GUI by design");
         check(countPairInDb(dbPath, "g1_a.bmp", "g1_b.bmp") == 0, "test1h earlier change survives adoption");
+        // 0.9.4.152 P0: the deleted file's rows are gone (files + pair +
+        // content_hash rel row) and adoption still succeeded.
+        check(countPairInDb(dbPath, "g6_a.bmp", "g6_b.bmp") == 0, "test1h deleted pair pruned");
+        check(countContentHash(dbPath, "g6_a.bmp") == 0, "test1h deleted content_hash rel pruned");
+        // 0.9.4.152 P1 meta: the stale baseline survived the partial adoption.
+        check(readMeta(dbPath, "match_baseline") == QStringLiteral("0.0.0"), "test1h baseline preserved on partial adopt");
+        // The next production scan must therefore schedule a full verification.
+        // The engine announces it in the backend log file only (the supervisor
+        // signal carries supervisor lifecycle lines, not engine lines).
         w.applyIgnore(QStringList{g5a}, false);
         testBtn2->setChecked(false);
+        const qint64 scanLogBefore = QFileInfo(
+            QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QStringLiteral("/msf_scan.log")).size();
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1h production scan finished");
+        bool forceFullPassSeen2 = false;
+        {
+            QFile lf(QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QStringLiteral("/msf_scan.log"));
+            if (lf.open(QIODevice::ReadOnly)) {
+                if (scanLogBefore > 0) lf.seek(scanLogBefore);
+                const QString tail = QString::fromUtf8(lf.readAll());
+                forceFullPassSeen2 = tail.contains(QStringLiteral("matchBaseline=forceFullPass"));
+            }
+        }
+        check(forceFullPassSeen2, "test1h full verification scheduled after partial adopt");
+        check(readMeta(dbPath, "match_baseline") == QString::fromLatin1(msf::MediaSearchEngine::kEngineVersion),
+              "test1h baseline stamped after full verification");
+        // Full verification must not drop untouched identical pairs (g2 was
+        // never modified by any test; g8 was edited in 1e and correctly
+        // unpaired by the new fingerprints).
+        check(countPairInDb(dbPath, "g2_a.bmp", "g2_b.bmp") == 1, "test1h untouched pair survives full verification");
+        QObject::disconnect(diffConn);
+        QObject::disconnect(appliedConn);
+    }
+    // ---- Test 1h2 (0.9.4.152): a failed adoption rolls back without partial writes.
+    // A held write lock makes the adopt transaction fail (BEGIN IMMEDIATE
+    // times out); Yes must report failure and leave the main index exactly as
+    // it was — no adopted rows, no dropped pairs, no baseline change. After
+    // releasing the lock the same diff adopts cleanly on retry, and a
+    // full-scope adoption carries the fresh match_baseline. ----
+    {
+        msf::IndexPaths ip;
+        QString dbPath;
+        if (msf::IndexManager::resolve(
+                msf::path_from_utf8(QApplication::applicationDirPath().toStdString()),
+                msf::path_from_utf8((d / "media").string()), ip))
+            dbPath = QString::fromStdString(msf::path_to_utf8(ip.database));
+        const auto rowOf = [&](const char* suffix) -> QString {
+            sqlite3* h = nullptr;
+            QString out;
+            if (sqlite3_open(dbPath.toUtf8().constData(), &h) != SQLITE_OK) {
+                if (h) sqlite3_close(h);
+                return out;
+            }
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(
+                    h,
+                    "SELECT size,fingerprint,mirror_fingerprint,crop_4x3,crop_1x1,crop_9x16,"
+                    "mirror_crop_4x3,mirror_crop_1x1,mirror_crop_9x16 FROM files WHERE path LIKE ?",
+                    -1, &st, nullptr) == SQLITE_OK) {
+                const QByteArray pat = QByteArray("%") + suffix;
+                sqlite3_bind_text(st, 1, pat.constData(), -1, SQLITE_TRANSIENT);
+                if (sqlite3_step(st) == SQLITE_ROW) {
+                    for (int col = 0; col < 9; ++col)
+                        out += QString::number((qulonglong)sqlite3_column_int64(st, col)) + ',';
+                }
+                sqlite3_finalize(st);
+            }
+            sqlite3_close(h);
+            return out;
+        };
+        // Fresh diff for the retry half: same-pixel copy with a new timestamp.
+        const auto target = d / "media" / "g8_b.bmp";
+        fs::copy_file(d / "media" / "g2_a.bmp", target,
+                      fs::copy_options::overwrite_existing, ec);
+        fs::last_write_time(target, fs::file_time_type::clock::now(), ec);
+        check(writeMeta(dbPath, "match_baseline", "0.0.0"), "test1h2 baseline staled");
+        const QString rowBefore = rowOf("g8_b.bmp");
+        check(!rowBefore.isEmpty(), "test1h2 main row read before");
+        // Bisect aid: g2 was never modified by any test, so its pair must
+        // still exist here; if it does not, the drop happened in 1h's
+        // production scan, not in the failed adopt. (g8 was edited in 1e
+        // and is legitimately unpaired by its new fingerprints.)
+        check(countPairInDb(dbPath, "g2_a.bmp", "g2_b.bmp") == 1, "test1h2 pair present before");
+        const int chBefore = countContentHash(dbPath, "g8_b.bmp");
+        check(chBefore >= 1, "test1h2 content_hash row exists");
+        bool diffSeen = false;
+        const auto diffConn =
+            QObject::connect(supervisor, &BackendClient::testModeDiff, supervisor,
+                             [&](qulonglong, qulonglong, qulonglong, qulonglong,
+                                 qulonglong, qulonglong) { diffSeen = true; });
+        bool appliedSeen = false;
+        bool appliedOk = false;
+        QString appliedDetail;
+        const auto appliedConn =
+            QObject::connect(supervisor, &BackendClient::testApplied, supervisor,
+                             [&](bool ok, QString detail) {
+                                 appliedSeen = true; appliedOk = ok; appliedDetail = detail;
+                             });
+        auto* testBtn3 = w.findChild<QPushButton*>("testBtn");
+        check(testBtn3 != nullptr, "test1h2 test toggle found");
+        testBtn3->setChecked(true);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1h2 test scan finished");
+        pumpUntil([&] { return diffSeen; }, 30000, "test1h2 diff reported");
+        // Hold a write lock on the main index so the adopt transaction fails.
+        sqlite3* lockH = nullptr;
+        bool locked = false;
+        if (sqlite3_open(dbPath.toUtf8().constData(), &lockH) == SQLITE_OK) {
+            char* e1 = nullptr;
+            locked = sqlite3_exec(lockH, "BEGIN IMMEDIATE;", nullptr, nullptr, &e1) == SQLITE_OK;
+            sqlite3_free(e1);
+            if (locked) {
+                char* e2 = nullptr;
+                if (sqlite3_exec(lockH, "INSERT INTO meta(key,value) VALUES('test_lock','1')"
+                                        " ON CONFLICT(key) DO UPDATE SET value='1';",
+                                 nullptr, nullptr, &e2) != SQLITE_OK)
+                    locked = false;
+                sqlite3_free(e2);
+            }
+        }
+        check(locked, "test1h2 write lock held");
+        QMessageBox* box = nullptr;
+        pumpUntil([&] { box = w.findChild<QMessageBox*>("testDiffBox"); return box != nullptr; },
+                  15000, "test1h2 Yes/No report shown");
+        if (box && box->button(QMessageBox::Yes)) box->button(QMessageBox::Yes)->click();
+        pumpUntil([&] { return appliedSeen; }, 60000, "test1h2 failed adoption reported");
+        check(appliedSeen && !appliedOk, "test1h2 adoption refused under lock");
+        // No partial writes: row, pair, hash and baseline are untouched (g2 is
+        // the untouched witness pair; g8's own pair was legitimately dropped
+        // by its 1e edit once fingerprints renewed).
+        check(rowOf("g8_b.bmp") == rowBefore, "test1h2 row unchanged after rollback");
+        check(countPairInDb(dbPath, "g2_a.bmp", "g2_b.bmp") == 1, "test1h2 pair kept after rollback");
+        check(countContentHash(dbPath, "g8_b.bmp") == chBefore, "test1h2 hash kept after rollback");
+        check(readMeta(dbPath, "match_baseline") == QStringLiteral("0.0.0"), "test1h2 baseline kept after rollback");
+        check(readMeta(dbPath, "test_lock").isEmpty(), "test1h2 lock marker not adopted");
+        { char* e3 = nullptr; sqlite3_exec(lockH, "ROLLBACK;", nullptr, nullptr, &e3); sqlite3_free(e3); }
+        sqlite3_close(lockH);
+        // Retry with the lock released: the same diff adopts cleanly. Full
+        // scope (no ignored, all media) so the fresh baseline is adopted.
+        appliedSeen = false;
+        appliedOk = false;
+        testBtn3->setChecked(true);
+        scan->click();
+        QApplication::processEvents();
+        pumpUntil([&] { return scan->isEnabled(); }, 180000, "test1h2 retry scan finished");
+        box = nullptr;
+        pumpUntil([&] { box = w.findChild<QMessageBox*>("testDiffBox"); return box != nullptr; },
+                  15000, "test1h2 retry Yes/No shown");
+        if (box && box->button(QMessageBox::Yes)) box->button(QMessageBox::Yes)->click();
+        pumpUntil([&] { return appliedSeen; }, 60000, "test1h2 retry applied");
+        check(appliedSeen && appliedOk, "test1h2 retry adoption succeeded");
+        check(rowOf("g8_b.bmp") != rowBefore, "test1h2 row adopted on retry");
+        check(readMeta(dbPath, "match_baseline") == QString::fromLatin1(msf::MediaSearchEngine::kEngineVersion),
+              "test1h2 baseline adopted on full-scope retry");
+        testBtn3->setChecked(false);
         QObject::disconnect(diffConn);
         QObject::disconnect(appliedConn);
     }
