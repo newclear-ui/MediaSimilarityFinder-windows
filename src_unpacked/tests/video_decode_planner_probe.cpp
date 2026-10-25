@@ -6,12 +6,13 @@
 //   product currently does not record.
 //
 // THE GAP THIS FILLS
-//   VideoFingerprintEngine::build() reports videos.buildMs as one lumped number,
-//   and videos.decodedFrames is set to frames32.size() -- the number of frames
-//   EMITTED AT SAMPLE POINTS, not the number of frames FFmpeg actually produced.
+//   VideoFingerprintEngine::build() reports videos.buildMs as one lumped number.
+//   (Since 0.9.4.155, videos.decodedFrames is the number of frames FFmpeg
+//   actually produced, including discarded intermediates -- previously it was
+//   frames32.size(), the number of frames EMITTED AT SAMPLE POINTS.)
 //   The roadmap asks for "requested sample frames" and "decoded frames"; the
-//   first has no field at all and the second is misnamed. Seek count, seek
-//   latency and keyframe/GOP cost are all absent too.
+//   first has no field at all. Seek count, seek latency and keyframe/GOP cost
+//   are all absent too.
 //
 // FAITHFULNESS
 //   The sampling plan is the REAL production function (msf::make_sample_plan),

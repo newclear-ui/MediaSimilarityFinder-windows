@@ -260,6 +260,10 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // executor contract guarantees a candidate is only produced when it provably
   // matches production, so a fallback here can never be hiding a mismatch.
   bool sparseUsed=false;
+  // 0.9.4.155: honestly-decoded frame count for VideoBuildStats.
+  // Sequential path from the sweep itself; sparse path from the
+  // executor stats (SparseSeekStats.decoded, same receive_frame basis).
+  std::size_t decodedCount=0; long long sparseDecoded=0;
   {
     const char* mode=std::getenv("MSF_VIDEO_SAMPLING");
     const bool plannerOn = mode && std::strcmp(mode,"off")!=0;
@@ -290,7 +294,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
       if(wantSparse){
         SparseSeekStats ss;
         if(d.framesAt96Plus32ExactSparse(plan.timestamps,frames96,frames32,&ss)){
-          sparseUsed=true;
+          sparseUsed=true; sparseDecoded=ss.decoded;
           if(stats){ stats->planSparseAccepted=true; stats->planSparseSeeks=ss.seeks;
                      stats->planSparseDecoded=ss.decoded; stats->planSparseLandingViolations=ss.landingViolations; }
         } else if(stats){
@@ -304,12 +308,13 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
       stats->planReason=(int)SamplingReason::PlannerDisabled;
     }
   }
-  if(!sparseUsed && !d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel)){d.close();return false;}
+  if(sparseUsed){ decodedCount=(std::size_t)sparseDecoded; }
+  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount)){d.close();return false;}
   // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
   // full-file sweep cost ~50% of build time on decode-bound files (each sweep
   // is a single sequential decode, never one seek per timestamp).
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats);
-  if(stats){ stats->cacheHit=false; stats->decodedFrames=frames32.size();
+  if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
     stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); }
   d.close();if(built.hashes.empty())return false;
   memoryStore(p,sz,mt,built,nullptr);savePersistent(p,sz,mt,built,nullptr);o=std::move(built);return true;

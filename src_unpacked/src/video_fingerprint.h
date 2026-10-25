@@ -13,7 +13,9 @@ class GpuBackend;
 struct VideoBuildStats {
   bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0;
   // Node A: decoded vs sampled stay separate. decodedFrames = frames actually
-  // decoded this run (0 on cache hit is measured, not missing); sampledFrames
+  // decoded this run (0 on cache hit is measured, not missing), including
+  // intermediate sweep frames that matched no sample and were discarded;
+  // sampledFrames
   // = sample-plan intent (unknown on cache hit); keptFrames = final hashes.
   std::size_t decodedFrames=0, sampledFrames=0, keptFrames=0;
   bool cacheHit=false;

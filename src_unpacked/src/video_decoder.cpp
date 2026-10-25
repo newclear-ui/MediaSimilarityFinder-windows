@@ -95,7 +95,7 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
 }
 
 bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::vector<VideoFrame>& out,
-                      const std::atomic<bool>* cancel){
+                      const std::atomic<bool>* cancel,std::size_t* decodedOut){
     out.clear();
     if(path_.empty() || w<=0 || h<=0 || seconds.empty()) return false;
     if(cancel && cancel->load(std::memory_order_relaxed)) return false;
@@ -115,6 +115,10 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
     AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
     if(!pkt||!fr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
     std::size_t next=0;
+    // 0.9.4.155: count every frame FFmpeg actually produces, not just the
+    // ones matching a sample target. GPU-decode replacement and frame-
+    // download savings cannot be measured from kept frames alone.
+    if(decodedOut) *decodedOut=0;
     auto emitFrame=[&](AVFrame* src,double t)->bool{
         AVFrame* dst=av_frame_alloc(); if(!dst) return false;
         dst->format=AV_PIX_FMT_GRAY8; dst->width=w; dst->height=h;
@@ -131,6 +135,7 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         if(cancel && cancel->load(std::memory_order_relaxed)){ av_packet_unref(pkt); break; }
         if(pkt->stream_index==stream_ && avcodec_send_packet(cc,pkt)>=0){
             while(avcodec_receive_frame(cc,fr)>=0){
+                if(decodedOut) ++(*decodedOut);
                 double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
                 while(next<targets.size() && t+0.05>=targets[next]){
                     if(!emitFrame(fr,t)) { av_packet_unref(pkt); av_packet_free(&pkt); av_frame_free(&fr); return !out.empty(); }
@@ -158,15 +163,17 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         if(raw.size()!=(size_t)w*h) continue;
         std::vector<std::uint8_t> data(raw.begin(),raw.end());
         out.push_back({secondsAt,w,h,std::move(data)});
+        // No-FFmpeg fallback: each CLI decode yields at most one kept frame.
+        if(decodedOut) ++(*decodedOut);
     }
     return !out.empty();
 #endif
 }
 
 bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32,
-                               const std::atomic<bool>* cancel){
+                               const std::atomic<bool>* cancel,std::size_t* decodedOut){
     out96.clear(); out32.clear();
-    if(!framesAt(seconds,96,96,out96,cancel)) return false;
+    if(!framesAt(seconds,96,96,out96,cancel,decodedOut)) return false;
     out32.reserve(out96.size());
     for(const auto& f:out96){
         if(f.width!=96||f.height!=96||f.gray.size()!=(std::size_t)96*96) continue;
