@@ -7,7 +7,7 @@ Production code change: **NONE** — this document pre-registers engineering and
 
 ## 1. Purpose
 
-Improve on uniform duration-only sampling and all-pairs comparison. Goals: (1) exclude a 10-second short and a 2-hour film from default whole-video candidates; (2) use a small set of duration-aware representative frames and temporal structure; (3) tolerate ad/intro/credit edits while prioritizing distinctive main content and temporal continuity; (4) refine only uncertain candidates; (5) distinguish retained frames from actual decoded frames; and (6) separate whole-video duplicates from partial-clip search.
+Improve on uniform duration-only sampling and all-pairs comparison. Goals: (1) exclude a 10-second short and a 2-hour film from default whole-video candidates; (2) use a small set of duration-aware representative frames and temporal structure; (3) tolerate ad/intro/credit edits while prioritizing distinctive main content and temporal continuity; (4) refine only uncertain candidates; (5) distinguish retained frames from actual decoded frames; (6) separate whole-video duplicates from partial-clip search; and (7) expose recommended automatic defaults plus user-adjustable short/long-form probe intervals and frame budgets in a Video tab in Settings.
 
 CPU/GPU decoder and hardware acceleration selection are out of scope.
 
@@ -38,13 +38,14 @@ Result types: Byte-identical / Same full content / Edited full-content variant /
 
 | Class | Duration | Policy | Target |
 |---|---:|---|---:|
-| V0 | Up to 15s | Full timeline, scene-change driven | 4–6 |
-| V1 | Over 15s–60s | Full timeline, initial 5s probes + event refinement | 6–10 |
-| V2 | 1–10m | 6–8 observation regions across the full timeline | 8–14 |
-| V3 | 10–25m | Distributed beginning/middle/end | 9–13 |
-| V4 | 25–60m | Down-weight recurring intros/recaps/credits; core focus | 9–12 |
-| V5 | 60–150m | Opening + few middle anchors + reverse-time ending | 10–14 |
-| V6 | Over 150m | Expand by structural complexity | 12–16 |
+| G1 | Up to 15s | Full timeline, scene-change driven | 4–6 |
+| G2 | Over 15s–60s | Full timeline, initial 5s probes + event refinement | 6–10 |
+| G3 | 1–3m | 6–8 observation regions across the full timeline | 8–10 |
+| G4 | 3–10m | 6–8 observation regions across the full timeline | 10–14 |
+| G5 | 10–25m | Distributed beginning/middle/end | 9–13 |
+| G6 | 25–60m | Down-weight recurring intros/recaps/credits; core focus | 9–12 |
+| G7 | 60–150m | Opening + few middle anchors + reverse-time ending | 10–14 |
+| G8 | Over 150m | Expand by structural complexity | 12–16 |
 
 For a 130-minute film, observe 0–30 seconds at about 5-second intervals (about six probes; keep 1–2), find the main-content boundary between 30 seconds and 3 minutes (keep 1–2), retain one early-core frame, 2–3 middle anchors, and 1–3 late-core/pre-ending anchors. Reverse probes at T-15s/30s/1/2/4/8/12/20m are examples; store black/credits as interval metadata. Center target about 12. Not a proven optimum or quota.
 
@@ -80,17 +81,35 @@ Enforce monotonic timestamp correspondences. Check affine offset/scale first; us
 
 **Gate:** Detect re-encodes and intro/ad/credit edits while separating different episodes; measure candidate recall separately from final precision/recall.
 
-### V5 — Partial Clip (Separate Proposal)
+### V5 — GUI Video Settings Tab
+
+After V0–V4 pass their offline accuracy and cost gates, add a **Video** tab to the Settings dialog so users can adjust the validated policies. Present Short-form / Mid-length / Long-form groups while preserving internal G1–G8 cohorts and structural classification.
+
+- Default mode: **Automatic (recommended)**. Select the existing cohort policy from duration and structure. Do not require users to force-classify each file.
+- Custom mode: expose per-profile Probe intervals, representative-frame targets/budgets, and additional refinement allowance for uncertain candidates.
+- Short-form (up to 60s): recommend a **5-second full-timeline frame-check interval**. Allow a user override in the proposed 1–60s range; changing 5s to 3s makes observation positions denser across the short clip's complete timeline. Representative-frame target is usually 6–10; up to 15s uses 4–6.
+- Mid-length (over 60s–25m): keep structure-aware automatic policy by default. Do not recommend a user mode that uniformly samples every point in the entire video at one fixed interval.
+- Long-form (over 25m): recommend a **5-second structural-boundary detail interval** and a **5-second main-content refinement interval**. Apply them only inside automatically narrowed opening/main-content-start/ending boundary windows and selected uncertain core windows. This is not a mode that scans the entire film every 5/3 seconds. Changing 5s to 3s densifies observations only inside those selected windows.
+- Keep 1–3 distributed main-content anchors automatic. Representative-frame targets remain 9–12 for 25–60m, 10–14 for 60–150m, and 12–16 over 150m. Add 1–2 frames only in distinctive main-content regions for uncertain candidates.
+- Partial-clip search remains a separate feature and OFF by default.
+
+The proposed initial UI range for custom intervals is 1–60 seconds. Finalize the ceiling and per-file Probe/Kept budgets using real-data measurements; never allow unbounded extraction. A frame-check interval is Probe timestamp spacing, not the number of retained frames or actual decodedFrames.
+
+Persist settings through the existing user-preferences layer. Freeze a settings snapshot at search start; edits during a run apply to the next search. Reflect fingerprint-affecting policy changes in cache-reuse eligibility so fingerprints from different policies cannot be mixed. Do not introduce a DB/schema/cache migration before inspecting the current cache contract.
+
+**Gate:** Verify the Video tab, Automatic (recommended) first-run defaults, save/restart round-trip, 5s-to-3s scope, invalid-value rejection/clamping, next-run-only application, safe stale-cache/reuse behavior, and candidate recall/precision plus Probe/Kept/Decoded/time telemetry on short-form, episode, and film datasets. The UI must not present interval changes as a reduction in actual decoded frames.
+
+### V6 — Partial Clip (Separate Proposal)
 
 Use a timeline index/query route separate from default whole-video search. Do not assume 10–14 representative frames can find short clips from arbitrary long-video positions. Return source/query intervals and keep disabled from default search until separately approved.
 
-### V6 — Production Adoption
+### V7 — Production Adoption
 
 Validate V0–V4 offline/shadow against ground truth and current production. Propose only parts passing both accuracy and cost gates. Review engine version only if verdict semantics change; review cache/DB migration only if persistent structural payloads require it. GUI acceptance follows the core algorithm separately.
 
 ## 6. Evaluation and Telemetry
 
-Evaluation pairs: byte-identical, re-encode/resolution/fps changes, horizontal mirror, leading ad/intro, credit changes, mid-roll, head/tail trim, different episodes sharing intro, videos sharing only logos/music, rapid montage, and partial short clips from long-form (V5).
+Evaluation pairs: byte-identical, re-encode/resolution/fps changes, horizontal mirror, leading ad/intro, credit changes, mid-roll, head/tail trim, different episodes sharing intro, videos sharing only logos/music, rapid montage, and partial short clips from long-form (V6).
 
 Record duration/structural profile/boundary confidence, probeCount, requested samples, keptFrames, actual decodedFrames, seek/landing (experimental only), decode/convert/fingerprint/compare/alignment time, candidate counts, candidate recall, precision/recall, false positives/negatives, core coverage, cache hits/bytes, kept-frame p95 and index size. Unmeasured values are Not measured/Not available, never zero.
 
@@ -122,4 +141,4 @@ Hardware decoder implementation, production sparse seek reintroduction, vertical
 
 ## 10. Current Status
 
-This is a plan/pre-registration and is not added to the Active Build Queue. It does not replace XMP acceptance or the S5 real-dataset benchmark. No build version, schedule, or production adoption is assigned. Until the user separately directs implementation, do not change source/tests/DB/engine.
+This is a plan/pre-registration and is not added to the Active Build Queue. The Video settings tab is planned as V5 after the V0–V4 accuracy/cost gates and is not implemented today. It does not replace XMP acceptance or the S5 real-dataset benchmark. No build version, schedule, or production adoption is assigned. Until the user separately directs implementation, do not change source/tests/DB/engine.
