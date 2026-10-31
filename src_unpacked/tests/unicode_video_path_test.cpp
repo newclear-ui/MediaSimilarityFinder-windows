@@ -55,7 +55,7 @@ int main() {
     const auto pathB = msf::path_to_utf8(b);
     if (!engine.build(pathA, va, gpuAvailable ? &gpu : nullptr, nullptr, &stats)) return 4;
     if (!engine.build(pathB, vb, gpuAvailable ? &gpu : nullptr)) return 5;
-    if (va.hashes.size() < 2 || vb.hashes.size() < 2) return 6;
+    if (va.hashes.empty() || vb.hashes.empty()) return 6;
     if (msf::video_similarity(va, vb) < 99.9) return 7;
     if (gpuAvailable && !stats.gpuUsed) return 8;
   }

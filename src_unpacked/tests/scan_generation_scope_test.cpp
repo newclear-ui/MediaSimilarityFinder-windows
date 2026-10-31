@@ -232,7 +232,7 @@ int main() {
         check(r.completed, "F2 rescan completes");
         check(r.analyzed == 2, "F2 regrids on the kept old value (exact)");
         check(r.unchanged == 0, "F2 reuses nothing while unstamped");
-        check(readGeneration(dbF) == "3", "F2 stamp recovers once writable");
+        check(readGeneration(dbF) == std::string(msf::MediaSearchEngine::kSamplingGeneration) + ":" + msf::VideoPolicy().policyId(), "F2 stamp recovers once writable");
         e.close();
     }
     fs::remove_all(rootF, ec); fs::remove_all(appF, ec);

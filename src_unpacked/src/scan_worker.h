@@ -50,6 +50,9 @@ public slots:
   // 0.9.4.134 fast-rescan: trust (size,mtime) for unchanged rows (no 64 KiB
   // quick-hash read in the walk). Default false = strict (current behavior).
   void setFastRescan(bool b) { fastRescan_ = b; }
+ // 0.9.4.156 (V workstream): video comparison policy (GUI Video tab).
+ // Stored before run(); run() forwards it to the engine.
+ void setVideoPolicy(const msf::VideoPolicy& p) { videoPolicy_ = p; }
   QVector<LiveMatch> takePending(); // thread-safe drain for the GUI
   const msf::MediaSearchEngine& scanEngine() const { return engine_; }
   // 0.9.4.153: test hook for the cancel-after-change regression test. Lets a
@@ -115,5 +118,6 @@ private:
   msf::ResourceMode resourceMode_=msf::ResourceMode::Custom; // see setResourceMode
   msf::AnalyzeMode analyzeMode_=msf::AnalyzeMode::Sequential; // see setAnalyzeMode
   bool fastRescan_ = false; // see setFastRescan
+ msf::VideoPolicy videoPolicy_; // see setVideoPolicy
 };
 

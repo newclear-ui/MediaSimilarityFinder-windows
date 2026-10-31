@@ -108,6 +108,20 @@ void BackendSupervisor::startScan(const BackendScanConfig& cfg) {
     p[QStringLiteral("testMode")] = cfg.testMode;
     p[QStringLiteral("analyzeMode")] = static_cast<int>(cfg.analyzeMode);
     p[QStringLiteral("fastRescan")] = cfg.fastRescan;
+    // 0.9.4.156 (V workstream): video comparison policy (keys mirror
+    // BackendServer::videoPolicyFromJson).
+    QJsonObject video;
+    video[QStringLiteral("mode")] = static_cast<int>(cfg.videoPolicy.mode);
+    video[QStringLiteral("shortInterval")] = cfg.videoPolicy.shortIntervalSec;
+    video[QStringLiteral("longStructInterval")] = cfg.videoPolicy.longStructIntervalSec;
+    video[QStringLiteral("longPreciseInterval")] = cfg.videoPolicy.longPreciseIntervalSec;
+    QJsonArray kept;
+    for (int v : cfg.videoPolicy.keptTarget) kept.push_back(v);
+    video[QStringLiteral("keptTargets")] = kept;
+    video[QStringLiteral("uncertainBoost")] = cfg.videoPolicy.uncertainBoost;
+    video[QStringLiteral("boostFrames")] = cfg.videoPolicy.boostFrames;
+    video[QStringLiteral("partialClip")] = cfg.videoPolicy.partialClip;
+    p[QStringLiteral("video")] = video;
     QJsonObject exec;
     exec[QStringLiteral("cpuMode")] = cfg.exec.cpuMode;
     exec[QStringLiteral("cpuPercent")] = cfg.exec.cpuPercent;

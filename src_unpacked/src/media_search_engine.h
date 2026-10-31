@@ -196,6 +196,11 @@ public:
   // Required on Windows, where open files cannot be deleted.
   void close();
  void setResourcePolicy(const ResourcePolicy& policy){ policy_=policy; }
+ // 0.9.4.156 (V workstream): video comparison policy (GUI Video tab).
+ // Set once per scan by the worker; forwarded to the fingerprint engine.
+ // Effective sampling generation derives from it (see scan()).
+ void setVideoPolicy(const VideoPolicy& p){ videoPolicy_=p; videoEngine_.setVideoPolicy(p); }
+ const VideoPolicy& videoPolicy() const { return videoPolicy_; }
  void setExpensiveStageGuard(std::function<bool()> guard){ expensiveStageGuard_=std::move(guard); }
  ResourcePolicy resourcePolicy() const { return policy_; }
  SearchReport scan(const std::string& root, unsigned maxDistance=8, ScanControl* control=nullptr);
@@ -238,7 +243,7 @@ const std::vector<MediaFile>& files() const { return files_; }
   bool getColorThumb(const std::string& path, int& w, int& h, std::vector<unsigned char>& bgra) const;
   bool getVideoThumb(const std::string& path, std::vector<unsigned char>& gray48) const;
   private:
-  Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
+  Database db_; std::vector<MediaFile> files_; ResourcePolicy policy_{}; VideoPolicy videoPolicy_; VideoFingerprintEngine videoEngine_; std::function<bool()> expensiveStageGuard_; IndexPaths managedIndex_{}; bool managedIndexActive_=false;
   mutable GpuBackend videoGpu_;
   std::atomic<std::uint64_t> gpuImagesProcessed_{0};
   // Live analyzed count for the GUI panel during a running scan. Incremented

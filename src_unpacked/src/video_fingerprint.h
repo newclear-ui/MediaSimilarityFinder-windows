@@ -1,6 +1,7 @@
 #pragma once
 #include "video_decoder.h"
 #include "crop_fingerprint.h"
+#include "video_policy.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -56,6 +57,9 @@ public:
    bool build(const std::string&,VideoFingerprint&,GpuBackend* gpu=nullptr,std::atomic<bool>* gpuActivity=nullptr,VideoBuildStats* stats=nullptr,
               const std::atomic<bool>* cancel=nullptr) const;
   bool buildFull(const std::string&,VideoFingerprint&,VideoCropFingerprint&,int decodeSize=96) const;
+  // 0.9.4.156: video comparison policy (GUI Video tab). Stored per engine
+  // and applied at build start (run snapshot). Default = Auto recommended.
+  void setVideoPolicy(const VideoPolicy& p) const;
  bool openPersistentCache(const std::string& sqlitePath) const;
  void closePersistentCache() const;
  void clearCache() const;
@@ -65,13 +69,16 @@ public:
   bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&,VideoCropFingerprint*) const;
   bool peekThumb48(const std::string&,std::vector<std::uint8_t>&) const;
 private:
-  struct CacheEntry { std::uint64_t size=0, modified=0; std::string quickHash; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; };
+  struct CacheEntry { std::uint64_t size=0, modified=0; std::string quickHash; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; std::string policyId; };
   static constexpr std::size_t kMemoryCacheMax = 64;
   mutable std::list<std::pair<std::string,CacheEntry>> cacheList_;
   mutable std::unordered_map<std::string,std::list<std::pair<std::string,CacheEntry>>::iterator> cacheMap_;
   mutable std::mutex cacheMutex_;
  mutable void* cacheDb_=nullptr;
  mutable void* loadStmt_=nullptr;
+   // 0.9.4.156: policy whose fingerprints this engine currently builds.
+   // Set once per scan before parallel analyze; read-only during the scan.
+   mutable VideoPolicy videoPolicy_;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
    static constexpr int kCacheFormatVersion=9;

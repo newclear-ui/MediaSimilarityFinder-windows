@@ -58,6 +58,14 @@ void ScanWorker::run() {
     } catch (...) {}
     engine_.setResourcePolicy(msf::make_policy(resourceMode_, cpu_, gpu_));
     auto policy = engine_.resourcePolicy(); policy.gpuEnabled = gpuEnabled_; engine_.setResourcePolicy(policy);
+    // 0.9.4.156 (V workstream): run snapshot of the video policy. Pending
+    // items stay explicit no-ops: uncertain-boost needs selective
+    // re-extraction (V4) and partial-clip needs its own route (V6).
+    engine_.setVideoPolicy(videoPolicy_);
+    if (videoPolicy_.uncertainBoost)
+      msf::backendLogLine("videoPolicy uncertainBoost requested: selective re-extraction not implemented (V4 scope); no-op");
+    if (videoPolicy_.partialClip)
+      msf::backendLogLine("videoPolicy partialClip requested: no partial-clip route (V6 scope); whole-video path used");
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     control_.analyzeMode = analyzeMode_;
     control_.fastRescan = fastRescan_;

@@ -16,7 +16,7 @@ static std::string quick_identity(const std::string& path){
   return std::to_string(h);
 }
 
-static bool insert_seed(sqlite3* raw,const std::string& media,int version){
+static bool insert_seed(sqlite3* raw,const std::string& media,int version,const char* policy="v1"){
   constexpr int kT=48; constexpr std::size_t kPx=(std::size_t)kT*kT;
   std::vector<unsigned char> blob(sizeof(std::uint32_t)+3*(sizeof(double)+2*sizeof(std::uint64_t))+6*sizeof(std::uint64_t)+sizeof(std::uint32_t)+sizeof(std::uint32_t)+3*kPx+sizeof(std::uint32_t)+3*6*sizeof(std::uint64_t)+sizeof(std::uint32_t)+3*sizeof(double));
   std::uint32_t n=3; std::memcpy(blob.data(),&n,sizeof(n)); char* c=(char*)blob.data()+sizeof(n);
@@ -30,10 +30,10 @@ static bool insert_seed(sqlite3* raw,const std::string& media,int version){
   for(int i=0;i<3;++i){const std::uint64_t n=static_cast<std::uint64_t>(i); const std::uint64_t ch[6]={101+n,201+n,301+n,401+n,501+n,601+n}; for(auto h:ch){std::memcpy(c,&h,sizeof(h));c+=sizeof(h);}}
   std::uint32_t cropTsCount=3; std::memcpy(c,&cropTsCount,sizeof(cropTsCount)); c+=sizeof(cropTsCount);
   for(int i=0;i<3;++i){double t=i*2.0;std::memcpy(c,&t,sizeof(t));c+=sizeof(t);}
- sqlite3_stmt* st=nullptr; const char*q="INSERT OR REPLACE INTO video_fingerprint_cache(path,size,modified,quick_hash,duration,step_count,cache_version,payload) VALUES(?,?,?,?,?,?,?,?)";
+ sqlite3_stmt* st=nullptr; const char*q="INSERT OR REPLACE INTO video_fingerprint_cache(path,size,modified,quick_hash,duration,step_count,cache_version,policy,payload) VALUES(?,?,?,?,?,?,?,?,?)";
  if(sqlite3_prepare_v2(raw,q,-1,&st,nullptr)!=SQLITE_OK)return false;
   const auto quick=quick_identity(media);
-  sqlite3_bind_text(st,1,media.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(st,2,(sqlite3_int64)std::filesystem::file_size(media));sqlite3_bind_int64(st,3,(sqlite3_int64)std::filesystem::last_write_time(media).time_since_epoch().count());sqlite3_bind_text(st,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(st,5,12.0);sqlite3_bind_int(st,6,3);sqlite3_bind_int(st,7,version);sqlite3_bind_blob(st,8,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);
+  sqlite3_bind_text(st,1,media.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(st,2,(sqlite3_int64)std::filesystem::file_size(media));sqlite3_bind_int64(st,3,(sqlite3_int64)std::filesystem::last_write_time(media).time_since_epoch().count());sqlite3_bind_text(st,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(st,5,12.0);sqlite3_bind_int(st,6,3);sqlite3_bind_int(st,7,version);sqlite3_bind_text(st,8,policy,-1,SQLITE_TRANSIENT);sqlite3_bind_blob(st,9,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);
  const bool ok=sqlite3_step(st)==SQLITE_DONE;sqlite3_finalize(st);return ok;
 }
 
@@ -54,5 +54,11 @@ int main(){
  if(!e.openPersistentCache(db))return 7;
   raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 8; if(!insert_seed(raw,media,6))return 9; sqlite3_close(raw);
    msf::VideoFingerprint stale; if(e.build(media,stale))return 10; // no valid v6 row remains, and x.mp4 is intentionally not decodable
+ // 0.9.4.156 (V workstream): a row stored under another policy must not match. Same undecodable file, same version, foreign policy -> fall through to decode and fail.
+ e.closePersistentCache();
+ if(!e.openPersistentCache(db))return 12;
+ raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 13;
+ if(!insert_seed(raw,media,9,"other-policy"))return 14; sqlite3_close(raw);
+ msf::VideoFingerprint foreign; if(e.build(media,foreign))return 15;
  e.closePersistentCache(); std::filesystem::remove_all(d); std::cout<<"video_cache_api=ok\n";return 0;
 }

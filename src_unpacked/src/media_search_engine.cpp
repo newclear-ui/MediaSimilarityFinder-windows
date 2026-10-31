@@ -472,7 +472,12 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
   msf::backendLogLine(std::string("scanAnalyzeMode=") + analyzeModeKey(analyzeMode));
   auto old=db_.all();
   std::unordered_map<std::string,FileState> oldByPath; oldByPath.reserve(old.size()*2+1); for(const auto&x:old) oldByPath.emplace(x.path,x);
-  const bool videoRegrid=(db_.samplingGeneration()!=kSamplingGeneration);
+  // 0.9.4.156 (V workstream): the generation stamp carries the sampling
+  // policy. Any policy change regrids once (full video re-analysis) so a
+  // fingerprint built under one policy is never reused by another.
+  const std::string effectiveSamplingGeneration =
+      std::string(kSamplingGeneration) + ":" + videoPolicy_.policyId();
+  const bool videoRegrid=(db_.samplingGeneration()!=effectiveSamplingGeneration);
  const bool hasIgnored=control && !control->ignoredPaths.empty();
   const int workers=recommended_worker_count(policy_,static_cast<int>(std::thread::hardware_concurrency()));
   const std::size_t gpuBatch=std::max<std::size_t>(1,recommended_gpu_batch_size(policy_,256));
@@ -1512,7 +1517,7 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
     // video scan safely regrids instead of trusting an unwritten stamp. The
     // failure is metadata-only — the scan results are already committed and
     // valid, so it must not fail or roll back the search.
-    if(videoScopeProcessed){ if(!db_.setSamplingGeneration(kSamplingGeneration)){ } }
+    if(videoScopeProcessed){ if(!db_.setSamplingGeneration(effectiveSamplingGeneration)){ } }
    }
   // Distinct linkage clusters among this scan's pairs (live + final streams).
   // The GUI rebuilds the same union-find from streamed matches, so telemetry's

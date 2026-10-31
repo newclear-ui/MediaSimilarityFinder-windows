@@ -20,8 +20,8 @@ static sqlite3* VDB(void* p){return reinterpret_cast<sqlite3*>(p);}
 static std::string quickIdentity(const std::string& path){std::ifstream f(path_from_utf8(path),std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
 bool VideoFingerprintEngine::preparePersistentStatements() const{
  sqlite3* db=VDB(cacheDb_); if(!db)return false;
-  const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND quick_hash=? AND cache_version=?";
-  const char* saveSql="INSERT INTO video_fingerprint_cache(path,size,modified,quick_hash,duration,step_count,cache_version,payload) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET size=excluded.size,modified=excluded.modified,quick_hash=excluded.quick_hash,duration=excluded.duration,step_count=excluded.step_count,cache_version=excluded.cache_version,payload=excluded.payload";
+  const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND quick_hash=? AND cache_version=? AND policy=?";
+  const char* saveSql="INSERT INTO video_fingerprint_cache(path,size,modified,quick_hash,duration,step_count,cache_version,policy,payload) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET size=excluded.size,modified=excluded.modified,quick_hash=excluded.quick_hash,duration=excluded.duration,step_count=excluded.step_count,cache_version=excluded.cache_version,policy=excluded.policy,payload=excluded.payload";
  sqlite3_stmt* load=nullptr; sqlite3_stmt* save=nullptr;
  if(sqlite3_prepare_v2(db,loadSql,-1,&load,nullptr)!=SQLITE_OK)return false;
  if(sqlite3_prepare_v2(db,saveSql,-1,&save,nullptr)!=SQLITE_OK){sqlite3_finalize(load);return false;}
@@ -59,6 +59,17 @@ bool VideoFingerprintEngine::openPersistentCache(const std::string& path) const{
     sqlite3_finalize(info);
   }
   if(!hasQuick && sqlite3_exec(db,"ALTER TABLE video_fingerprint_cache ADD COLUMN quick_hash TEXT NOT NULL DEFAULT '';",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
+ // 0.9.4.156 (V workstream): sampling-policy discriminator. Pre-existing
+ // rows get 'legacy' and can never match a real policy, so fingerprints
+ // built under one sampling policy are never reused by another. No cache
+ // version bump and no purge: old rows stay valid for nobody, new rows
+ // carry their policy.
+ bool hasPolicy=false;
+ if(sqlite3_prepare_v2(db,"PRAGMA table_info(video_fingerprint_cache)",-1,&info,nullptr)==SQLITE_OK){
+  while(sqlite3_step(info)==SQLITE_ROW){const unsigned char*n=sqlite3_column_text(info,1);if(n&&std::strcmp(reinterpret_cast<const char*>(n),"policy")==0)hasPolicy=true;}
+  sqlite3_finalize(info);
+ }
+ if(!hasPolicy && sqlite3_exec(db,"ALTER TABLE video_fingerprint_cache ADD COLUMN policy TEXT NOT NULL DEFAULT 'legacy';",nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
   const std::string purgeSql="DELETE FROM video_fingerprint_cache WHERE cache_version != "+std::to_string(kCacheFormatVersion)+";";
   if(sqlite3_exec(db,purgeSql.c_str(),nullptr,nullptr,nullptr)!=SQLITE_OK){sqlite3_close(db);cacheDb_=nullptr;return false;}
  return preparePersistentStatements();
@@ -70,7 +81,8 @@ bool VideoFingerprintEngine::loadPersistent(const std::string&p,std::uint64_t sz
    const std::string quick=quickIdentity(p); std::lock_guard<std::mutex> lock(dbMutex_); if(!cacheDb_)return false;
   sqlite3_stmt* s=reinterpret_cast<sqlite3_stmt*>(loadStmt_); if(!s)return false;
   sqlite3_reset(s); sqlite3_clear_bindings(s);
-   sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int(s,5,kCacheFormatVersion);
+   const std::string polLoad=videoPolicy_.policyId();
+ sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int(s,5,kCacheFormatVersion);sqlite3_bind_text(s,6,polLoad.c_str(),-1,SQLITE_TRANSIENT);
   bool ok=false;
   if(sqlite3_step(s)==SQLITE_ROW){
    o.duration=sqlite3_column_double(s,0);const auto*n=(const unsigned char*)sqlite3_column_blob(s,1);int bytes=sqlite3_column_bytes(s,1);
@@ -163,16 +175,35 @@ void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz
   const std::uint32_t cropTsCount=cropCount;
   std::memcpy(cur,&cropTsCount,sizeof(cropTsCount));cur+=sizeof(cropTsCount);
   for(std::uint32_t i=0;i<cropCount;++i){std::memcpy(cur,&crop->timestamps[i],sizeof(double));cur+=sizeof(double);}
-  sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(s,5,f.duration);sqlite3_bind_int(s,6,(int)count);sqlite3_bind_int(s,7,kCacheFormatVersion);sqlite3_bind_blob(s,8,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
+  sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);const std::string polSave=videoPolicy_.policyId();
+sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(s,5,f.duration);sqlite3_bind_int(s,6,(int)count);sqlite3_bind_int(s,7,kCacheFormatVersion);sqlite3_bind_text(s,8,polSave.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_blob(s,9,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
 }
 VideoFingerprintEngine::~VideoFingerprintEngine(){closePersistentCache();}
-static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops, GpuBackend* gpu, std::atomic<bool>* gpuActivity, VideoBuildStats* stats){
+static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops, GpuBackend* gpu, std::atomic<bool>* gpuActivity, VideoBuildStats* stats, std::size_t keptTarget){
   built.duration=duration;
   constexpr double kMinVariance=6.0; constexpr std::size_t kFloorRatio=30;
   std::vector<char> keep(frames32.size(),1);
-  std::size_t nVar=0;for(const auto&f:frames32){double s=0;for(unsigned char v:f.gray)s+=v;const double m=s/(f.gray.empty()?1:(double)f.gray.size());double sq=0;for(unsigned char v:f.gray){double dv=(double)v-m;sq+=dv*dv;}const double sd=f.gray.empty()?0.0:std::sqrt(sq/f.gray.size());if(sd<kMinVariance)keep[nVar]=0;++nVar;}
+  std::vector<double> frameSd(frames32.size(),0.0);
+  std::size_t nVar=0;for(const auto&f:frames32){double s=0;for(unsigned char v:f.gray)s+=v;const double m=s/(f.gray.empty()?1:(double)f.gray.size());double sq=0;for(unsigned char v:f.gray){double dv=(double)v-m;sq+=dv*dv;}const double sd=f.gray.empty()?0.0:std::sqrt(sq/f.gray.size());frameSd[nVar]=sd;if(sd<kMinVariance)keep[nVar]=0;++nVar;}
   std::size_t kept=0;for(char k:keep)if(k)++kept;
   if(frames32.size()&&kept*100/frames32.size()<kFloorRatio) keep.assign(frames32.size(),1);
+  // 0.9.4.156: kept-frame soft target (V workstream). Trim only when the
+  // variance floor already passes: rank by per-frame stddev, drop the
+  // flattest, rebuild chronologically so DTW keeps time order. The floor
+  // rule above wins ties: degenerate inputs keep everything instead.
+  if(keptTarget>0){
+   std::size_t keptNow=0;for(char k:keep)if(k)++keptNow;
+   if(keptNow>keptTarget&&frames32.size()&&keptNow*100/frames32.size()>=kFloorRatio){
+    std::vector<std::size_t> idx;idx.reserve(frames32.size());
+    for(std::size_t i=0;i<keep.size();++i) if(keep[i]) idx.push_back(i);
+    std::sort(idx.begin(),idx.end(),[&](std::size_t a,std::size_t b){return frameSd[a]>frameSd[b];});
+    idx.resize(keptTarget);
+    std::sort(idx.begin(),idx.end());
+    std::vector<char> trimmed(keep.size(),0);
+    for(std::size_t i:idx) trimmed[i]=1;
+    keep.swap(trimmed);
+   }
+  }
    std::vector<double> ts; std::vector<std::uint64_t> hs, mhs; std::vector<std::uint8_t> thumbs;
    std::vector<PerceptualHashPair> pairs(frames32.size()); std::vector<char> pairReady(frames32.size(),0);
    const bool gpuRequested=gpu!=nullptr;
@@ -224,6 +255,9 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
     if(crops){ crops->timestamps.push_back(i<frames32.size()?frames32[i].timestamp:cf.timestamp); crops->a4x3.push_back(c.a4x3); crops->a1x1.push_back(c.a1x1); crops->a9x16.push_back(c.a9x16); crops->mirrorA4x3.push_back(c.mirrorA4x3); crops->mirrorA1x1.push_back(c.mirrorA1x1); crops->mirrorA9x16.push_back(c.mirrorA9x16); }
   }
 }
+// 0.9.4.156: stored comparison policy (GUI Video tab). Set once per scan
+// before parallel analyze; read-only during the scan.
+void VideoFingerprintEngine::setVideoPolicy(const VideoPolicy& p) const{ videoPolicy_=p; }
 bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBackend* gpu,std::atomic<bool>* gpuActivity,VideoBuildStats* stats,
                               const std::atomic<bool>* cancel)const{
   // Cooperative cancel (0.9.4.78): a Stop landing mid-sweep stops at frame
@@ -249,7 +283,14 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   if(loadPersistent(p,sz,mt,o,&preservedCrop)){memoryStore(p,sz,mt,o,&preservedCrop); noteCacheHit(o); return true;}
   if(loadPersistent(p,sz,mt,o,nullptr)){memoryStore(p,sz,mt,o,nullptr); noteCacheHit(o); return true;}
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
-  VideoFingerprint built; auto plan=make_sample_plan(i.duration);
+  VideoFingerprint built;
+  // 0.9.4.156 (V workstream): short-form interval rides the uniform sweep
+  // (<=60 s). Longer cohorts keep the legacy tier ladder: local-window
+  // refinement (V2/V3) does not exist yet, so stored long-form intervals
+  // stay unused (propagated + telemetry only).
+  const double shortIv=(i.duration<=60.0)?videoPolicy_.shortIntervalSec:0.0;
+  const std::size_t keptTarget=(std::size_t)videoPolicy_.keptTarget[msf::videoCohortForDuration(i.duration)];
+  auto plan=make_sample_plan(i.duration,shortIv);
   std::vector<VideoFrame> frames32, frames96;
   // E-3B: adaptive sampling planner. The production default stays sequential;
   // the planner is enabled only by an explicit environment switch so that a
@@ -313,7 +354,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
   // full-file sweep cost ~50% of build time on decode-bound files (each sweep
   // is a single sequential decode, never one seek per timestamp).
-   processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats);
+   processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
     stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); }
   d.close();if(built.hashes.empty())return false;
@@ -327,7 +368,9 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
   if(loadPersistent(p,sz2,mt2,b,&c)){memoryStore(p,sz2,mt2,b,&c);base=std::move(b);crop=std::move(c);return true;}
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
   const int size=std::max(32,std::min(192,decodeSize));
-  auto plan=make_sample_plan(i.duration);
+  const double shortIvFull=(i.duration<=60.0)?videoPolicy_.shortIntervalSec:0.0;
+  const std::size_t keptTargetFull=(std::size_t)videoPolicy_.keptTarget[msf::videoCohortForDuration(i.duration)];
+  auto plan=make_sample_plan(i.duration,shortIvFull);
   std::vector<VideoFrame> frames32, framesHi;
   if(size==96){
    if(!d.framesAt96Plus32(plan.timestamps,framesHi,frames32)){d.close();return false;}
@@ -337,7 +380,7 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
   }
   d.close();
   VideoCropFingerprint cHi;
-   processVideoFrames(frames32,size==96?framesHi:std::vector<VideoFrame>(),i.duration,b,size==96?&cHi:nullptr,nullptr,nullptr,nullptr);
+   processVideoFrames(frames32,size==96?framesHi:std::vector<VideoFrame>(),i.duration,b,size==96?&cHi:nullptr,nullptr,nullptr,nullptr,keptTargetFull);
   if(size!=96){
     VideoDecoder d2;
     if(d2.open(p)){ std::vector<VideoFrame> frames96; d2.framesAt(plan.timestamps,96,96,frames96); d2.close();
@@ -379,6 +422,7 @@ bool VideoFingerprintEngine::memoryLookup(const std::string&p,std::uint64_t sz,s
   if(it==cacheMap_.end()) return false;
   CacheEntry& e=it->second->second;
   if(e.size!=sz||e.modified!=mt||e.quickHash!=quick) return false;
+  if(e.policyId!=videoPolicy_.policyId()) return false;
   if(needCrop&&!e.hasCrop) return false;
   cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
   o=e.fingerprint;
@@ -399,7 +443,7 @@ void VideoFingerprintEngine::memoryStore(const std::string&p,std::uint64_t sz,st
     cacheMap_.erase(cacheList_.back().first);
     cacheList_.pop_back();
   }
-  CacheEntry e; e.size=sz; e.modified=mt; e.quickHash=quick; e.fingerprint=f;
+  CacheEntry e; e.size=sz; e.modified=mt; e.quickHash=quick; e.fingerprint=f; e.policyId=videoPolicy_.policyId();
   if(crop){ e.crop=*crop; e.hasCrop=true; }
   cacheList_.emplace_front(p,std::move(e));
   cacheMap_[p]=cacheList_.begin();

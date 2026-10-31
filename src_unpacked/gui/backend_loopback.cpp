@@ -100,7 +100,8 @@ void LoopbackBackendClient::startScan(const BackendScanConfig& cfg) {
                         cfg.gpuEnabled, cfg.scanImages, cfg.scanVideos,
                         cfg.ignored, cfg.detailedLog,
                         cfg.exec.cpuMode, cfg.exec.strategy, cfg.testMode,
-                        static_cast<int>(cfg.analyzeMode), cfg.fastRescan);
+                        static_cast<int>(cfg.analyzeMode), cfg.fastRescan,
+                        cfg.videoPolicy);
 }
 
 void LoopbackBackendClient::loadIndex(const QString& root, const QString& appDir) {

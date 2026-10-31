@@ -14,6 +14,9 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QTabWidget>
 #include <QMetaObject>
 #include <QPushButton>
 #include <QToolButton> // 0.9.4.149: merged Load/Re-verify slot
@@ -668,6 +671,119 @@ int main(int argc, char** argv) {
   // label is "files". Comparing English against the key would flag that as a
   // false positive, and "fixing" it by capitalizing would be a cosmetic change
   // to working UI.
+  // 0.9.4.156 (V workstream): Video settings tab. Presence, Auto default,
+  // invalid-input clamping, custom round-trip through a real dialog Save.
+  // Persistence across restarts is covered by --video-verify (separate
+  // process, like the ui_settings write/verify pair).
+  if (argc == 3 && (QString::fromLocal8Bit(argv[1]) == "--video-write" ||
+                    QString::fromLocal8Bit(argv[1]) == "--video-verify")) {
+    const bool doWrite = QString::fromLocal8Bit(argv[1]) == "--video-write";
+    const QString dir = QString::fromLocal8Bit(argv[2]);
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication app(argc, argv);
+    QDir().mkpath(dir);
+    initAppSettings(dir);
+    if (!doWrite) {
+      QSettings st; st.sync();
+      const struct Exp { const char* k; int v; } ex[] = {
+        {"video/mode", 1}, {"video/shortInterval", 3},
+        {"video/g1Target", 6}, {"video/g2Target", 9},
+        {"video/g3Target", 10}, {"video/g4Target", 13},
+        {"video/g5Target", 10}, {"video/g6Target", 11},
+        {"video/g7Target", 12}, {"video/g8Target", 14},
+        {"video/longStructInterval", 5}, {"video/longPreciseInterval", 5},
+        {"video/boostFrames", 2},
+      };
+      for (const auto& e : ex)
+        if (QSettings().value(QString::fromLatin1(e.k), -1).toInt() != e.v) {
+          std::cerr << "video ini mismatch: " << e.k << "\n"; return 1;
+        }
+      if (QSettings().value(QStringLiteral("video/uncertainBoost"), true).toBool() != false) {
+        std::cerr << "video boost not persisted as false\n"; return 1;
+      }
+      if (QSettings().value(QStringLiteral("video/partialClip"), false).toBool() != true) {
+        std::cerr << "video partialClip not persisted as true\n"; return 1;
+      }
+      std::cout << "video_tab_verify=ok\n"; return 0;
+    }
+    // Fresh video/* section every write run: the shared CTest dir persists
+    // across runs, and stale values would fake the first-run defaults.
+    { QSettings stFresh; stFresh.remove(QStringLiteral("video")); stFresh.sync(); }
+    MainWindow w; w.show(); QApplication::processEvents();
+    QString fail; bool done = false;
+    QTimer driver; driver.setInterval(150);
+    QObject::connect(&driver, &QTimer::timeout, [&]() {
+      if (done) return;
+      QWidget* m = QApplication::activeModalWidget();
+      if (!m || m->objectName() != QStringLiteral("settingsDlg")) return;
+      QDialog* dlg = qobject_cast<QDialog*>(m);
+      if (!dlg) return;
+      auto failWith = [&](const char* what) {
+        fail = QString::fromLatin1(what); done = true;
+        if (auto* bb = dlg->findChild<QDialogButtonBox*>())
+          if (auto* b = bb->button(QDialogButtonBox::Cancel)) b->click();
+      };
+      QTabWidget* tabs = dlg->findChild<QTabWidget*>();
+      if (!tabs) { failWith("no tab widget"); return; }
+      int vtab = -1;
+      for (int i = 0; i < tabs->count(); ++i)
+        if (tabs->widget(i)->findChild<QComboBox*>("videoModeBox")) { vtab = i; break; }
+      if (vtab < 0) { failWith("no video tab"); return; }
+      tabs->setCurrentIndex(vtab);
+      QWidget* vt = tabs->widget(vtab);
+      auto* mode = vt->findChild<QComboBox*>("videoModeBox");
+      if (!mode || mode->currentIndex() != 0) { failWith("Auto is not the first-run default"); return; }
+      auto spinCheck = [&](const char* n, int lo, int hi, int def) -> QSpinBox* {
+        QSpinBox* s = vt->findChild<QSpinBox*>(QString::fromLatin1(n));
+        if (!s || s->minimum() != lo || s->maximum() != hi || s->value() != def) { failWith(n); return nullptr; }
+        return s;
+      };
+      QSpinBox* shortSpin = spinCheck("videoShortIntervalSpin", 1, 60, 5);
+      QSpinBox* g1 = spinCheck("videoG1Spin", 4, 6, 5);
+      QSpinBox* g2 = spinCheck("videoG2Spin", 6, 10, 8);
+      QSpinBox* g3 = spinCheck("videoG3Spin", 8, 10, 9);
+      QSpinBox* g4 = spinCheck("videoG4Spin", 10, 14, 12);
+      QSpinBox* g5 = spinCheck("videoG5Spin", 9, 13, 11);
+      QSpinBox* g6 = spinCheck("videoG6Spin", 9, 12, 10);
+      QSpinBox* g7 = spinCheck("videoG7Spin", 10, 14, 12);
+      QSpinBox* g8 = spinCheck("videoG8Spin", 12, 16, 14);
+      QSpinBox* longStruct = spinCheck("videoLongStructSpin", 1, 60, 5);
+      QSpinBox* longPrecise = spinCheck("videoLongPreciseSpin", 1, 60, 5);
+      QSpinBox* boostCount = spinCheck("videoBoostCountSpin", 1, 2, 1);
+      if (!shortSpin || !g1 || !g2 || !g3 || !g4 || !g5 || !g6 || !g7 || !g8 || !longStruct || !longPrecise || !boostCount) return;
+      QCheckBox* boost = vt->findChild<QCheckBox*>("videoBoostBox");
+      QCheckBox* partial = vt->findChild<QCheckBox*>("videoPartialBox");
+      if (!boost || !boost->isChecked() || !partial || partial->isChecked()) { failWith("boost/partial defaults"); return; }
+      // Invalid inputs clamp in-widget; the clamped values are what persist.
+      shortSpin->setValue(999);
+      if (shortSpin->value() != 60) { failWith("short interval not clamped"); return; }
+      g1->setValue(0);
+      if (g1->value() != 4) { failWith("g1 target not clamped"); return; }
+      mode->setCurrentIndex(1);
+      shortSpin->setValue(3); g1->setValue(6); g2->setValue(9);
+      g3->setValue(10); g4->setValue(13); g5->setValue(10);
+      g6->setValue(11); g7->setValue(12); g8->setValue(14);
+      boost->setChecked(false); boostCount->setValue(2); partial->setChecked(true);
+      done = true;
+      if (auto* bb = dlg->findChild<QDialogButtonBox*>())
+        if (auto* b = bb->button(QDialogButtonBox::Save)) b->click();
+    });
+    driver.start();
+    QMetaObject::invokeMethod(&w, "configureMonitor");
+    driver.stop();
+    if (!fail.isEmpty()) { std::cerr << fail.toStdString() << std::endl; return 1; }
+    if (!done) { std::cerr << "settings dialog never appeared\n"; return 1; }
+    QSettings st; st.sync();
+    if (st.value(QStringLiteral("video/mode"), -1).toInt() != 1) { std::cerr << "video mode not saved\n"; return 1; }
+    if (st.value(QStringLiteral("video/shortInterval"), -1).toInt() != 3) { std::cerr << "video interval not saved\n"; return 1; }
+    { msf::VideoPolicy vp = videoPolicyFromSettings();
+      if (vp.mode != msf::VideoMode::Custom) { std::cerr << "video mode not mapped\n"; return 1; }
+      if (vp.shortIntervalSec != 3.0) { std::cerr << "video interval not mapped\n"; return 1; }
+      if (vp.keptTarget[0] != 6 || vp.keptTarget[4] != 10 || vp.keptTarget[7] != 14) { std::cerr << "video kept targets not mapped\n"; return 1; }
+      if (vp.policyId() == "v1") { std::cerr << "custom policy misidentified as v1\n"; return 1; }
+      if (vp.uncertainBoost || vp.boostFrames != 2 || !vp.partialClip) { std::cerr << "video flags not mapped\n"; return 1; } }
+    std::cout << "video_tab_write=ok\n"; return 0;
+  }
   if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--tr-keys") {
     static const char* const kKeys[] = {
       // file list view: headers and the view-mode toggles
@@ -736,6 +852,17 @@ int main(int argc, char** argv) {
       "sortDate",
       // 0.9.4.143: configurable recent-folder count (Favorites)
       "recentLimitLabel", "recentLimitTip",
+      // 0.9.4.156 (V workstream): Video settings tab keys.
+      "video", "videoModeLabel", "videoModeAuto", "videoModeCustom",
+      "videoShortGroup", "videoShortInterval", "videoShortIntervalTip",
+      "videoKeptTarget",
+      "videoG1", "videoG2", "videoG3", "videoG4",
+      "videoG5", "videoG6", "videoG7", "videoG8",
+      "videoMidGroup", "videoMidAutoNote",
+      "videoLongGroup", "videoLongStruct", "videoLongPrecise",
+      "videoLongPendingNote", "videoAnchorNote",
+      "videoBoost", "videoBoostCount", "videoBoostPendingNote",
+      "videoPartial", "videoPartialNote", "videoHonestNote",
     };
     int missing = 0;
     for (const char* k : kKeys) {

@@ -2,7 +2,7 @@
 
 Status: **PROPOSED / PRE-REGISTERED / DEFERRED**  
 Workstream: **V — Video Content Matching** (separate product feature outside the A→B→C→D→I→E→F→G→H mainline)  
-Product baseline: **0.9.4.155** · Build version: **Unassigned**  
+Product baseline: **0.9.4.155** · Build version: **0.9.4.156 (V tab round 1: settings + propagation + interval/budget + cache split; V2/V3/V4/V6 + V-gates pending)**  
 Production code change: **NONE** — this document pre-registers engineering and validation gates only.
 
 ## 1. Purpose
@@ -141,4 +141,4 @@ Hardware decoder implementation, production sparse seek reintroduction, vertical
 
 ## 10. Current Status
 
-This is a plan/pre-registration and is not added to the Active Build Queue. The Video settings tab is planned as V5 after the V0–V4 accuracy/cost gates and is not implemented today. It does not replace XMP acceptance or the S5 real-dataset benchmark. No build version, schedule, or production adoption is assigned. Until the user separately directs implementation, do not change source/tests/DB/engine.
+This is a plan/pre-registration and is not added to the Active Build Queue. The V5 UI round 1 of the Video settings tab (settings + propagation + interval/budget + cache split) is implemented in 0.9.4.156. The V0–V4 accuracy/cost gates and the V2/V3/V4/V6 core implementations are still pending. It does not replace XMP acceptance or the S5 real-dataset benchmark. No build version, schedule, or production adoption is assigned. A separate start instruction (instruction folder) authorized the V5 UI round-1 scope only; out-of-scope source/tests/DB/engine changes still require a separate instruction.

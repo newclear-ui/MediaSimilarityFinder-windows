@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.155 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.156 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -772,6 +772,14 @@ if(MSF_BUILD_GUI)
       # show exactly the DB's pruned set, the baseline must be invalidated,
       # and the next scan must force full verification and restamp.
       add_test(NAME ui_cancel_consistency_test COMMAND msf_ui_settings_test --cancel-consistency)
+      # 0.9.4.156 (V workstream): Video settings tab. Write drives a real
+      # settings dialog (tab presence, Auto default, clamping, custom values,
+      # Save); verify runs in a fresh process so INI persistence is proven,
+      # not a same-process QSettings cache artifact.
+      set(MSF_VIDEO_SETTINGS_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-video-settings")
+      add_test(NAME ui_video_write_test COMMAND msf_ui_settings_test --video-write "${MSF_VIDEO_SETTINGS_DIR}")
+      add_test(NAME ui_video_verify_test COMMAND msf_ui_settings_test --video-verify "${MSF_VIDEO_SETTINGS_DIR}")
+      set_tests_properties(ui_video_verify_test PROPERTIES DEPENDS ui_video_write_test)
       # 0.9.4.29 settings-identity migration. Every phase is its own process so
       # a same-process QSettings cache can never make a broken migration pass.
       set(MSF_MIGRATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-settings-migrate")

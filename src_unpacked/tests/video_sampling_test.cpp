@@ -24,5 +24,14 @@ int main(){
   if(coverage(p999.timestamps,p1002.timestamps)<0.8) return 11;
   auto p2999=msf::make_sample_plan(299.9), p3001=msf::make_sample_plan(300.1);
   if(std::abs(p2999.intervalSec-p3001.intervalSec)>1e-9) return 12;
+  // 0.9.4.156 (V workstream): explicit interval override (uniform sweep).
+  auto p60=msf::make_sample_plan(60,5);
+  if(std::abs(p60.intervalSec-5)>1e-9) return 13;
+  if(p60.timestamps.size()!=13) return 14; // 0,5,...,55 + final 60
+  auto p60b=msf::make_sample_plan(60,3);
+  if(std::abs(p60b.intervalSec-3)>1e-9) return 15;
+  if(p60b.timestamps.size()!=21) return 16; // 0,3,...,57 + final 60
+  auto p0=msf::make_sample_plan(60,0);
+  if(std::abs(p0.intervalSec-2)>1e-9||p0.timestamps.size()!=31) return 17; // legacy tier kept
   std::cout<<"video_sampling=ok\n";return 0;
 }

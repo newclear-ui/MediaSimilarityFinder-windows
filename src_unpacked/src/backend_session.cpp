@@ -271,7 +271,7 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
                               bool scanImages, bool scanVideos,
                               const QSet<QString>& ignored, bool detailedLog,
                               int cpuMode, int strategy, bool testMode, int analyzeMode,
-                              bool fastRescan) {
+                              bool fastRescan, const msf::VideoPolicy& videoPolicy) {
     teardownWorker();
     const QString effectiveAppDir = testMode ? testScratchAppDir(appDir, root) : appDir;
     lastAppDir_ = effectiveAppDir;
@@ -297,6 +297,8 @@ void BackendSession::startScan(const QString& root, const QString& appDir, int d
     worker_->setResourceMode(mode);
     worker_->setAnalyzeMode(msf::analyzeModeFromInt(analyzeMode));
     worker_->setFastRescan(fastRescan);
+    // 0.9.4.156 (V workstream): run snapshot of the video policy.
+    worker_->setVideoPolicy(videoPolicy);
     worker_->setIgnored(ignored);
     worker_->setDetailedLog(detailedLog);
     worker_->moveToThread(thread_);

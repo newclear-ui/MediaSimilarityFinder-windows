@@ -65,7 +65,8 @@ public:
                    bool scanImages, bool scanVideos,
                    const QSet<QString>& ignored, bool detailedLog,
                    int cpuMode, int strategy, bool testMode = false,
-                   int analyzeMode = 0, bool fastRescan = false);
+                   int analyzeMode = 0, bool fastRescan = false,
+                   const msf::VideoPolicy& videoPolicy = msf::VideoPolicy());
     // Live policy refresh (P4): monitor applies immediately; the stored
     // engine policy applies to the next scan (worker pool sizing is only
     // safe at scan start). Reports through onPolicyApplied().

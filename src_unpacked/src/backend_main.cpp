@@ -227,6 +227,31 @@ private:
         send(m);
     }
 
+    // 0.9.4.156 (V workstream): video comparison policy from the GUI.
+    // Missing object = Auto recommended defaults. Keys mirror the
+    // supervisor payload writer below.
+    static msf::VideoPolicy videoPolicyFromJson(const QJsonObject& v) {
+        msf::VideoPolicy p;
+        if (v.isEmpty()) return p;
+        p.mode = v.value(QStringLiteral("mode")).toInt(0) == 0
+                 ? msf::VideoMode::Auto : msf::VideoMode::Custom;
+        p.shortIntervalSec = v.value(QStringLiteral("shortInterval")).toDouble(5.0);
+        p.longStructIntervalSec = v.value(QStringLiteral("longStructInterval")).toDouble(5.0);
+        p.longPreciseIntervalSec = v.value(QStringLiteral("longPreciseInterval")).toDouble(5.0);
+        const QJsonArray g = v.value(QStringLiteral("keptTargets")).toArray();
+        if (g.size() == 8) {
+            for (int i = 0; i < 8; ++i) {
+                const int x = g.at(i).toInt(-1);
+                if (x >= 1 && x <= 64) p.keptTarget[(std::size_t)i] = x;
+            }
+        }
+        p.uncertainBoost = v.value(QStringLiteral("uncertainBoost")).toBool(true);
+        const int bf = v.value(QStringLiteral("boostFrames")).toInt(1);
+        p.boostFrames = (bf >= 1 && bf <= 2) ? bf : 1;
+        p.partialClip = v.value(QStringLiteral("partialClip")).toBool(false);
+        return p;
+    }
+
     void startScanFrom(const Message& m) {
         const QJsonObject p = m.payload;
         const QJsonObject exec = p.value(QStringLiteral("exec")).toObject();
@@ -252,7 +277,8 @@ private:
                             exec.value(QStringLiteral("strategy")).toInt(0),
                             p.value(QStringLiteral("testMode")).toBool(false),
                             p.value(QStringLiteral("analyzeMode")).toInt(0),
-                            p.value(QStringLiteral("fastRescan")).toBool(false));
+                            p.value(QStringLiteral("fastRescan")).toBool(false),
+                            videoPolicyFromJson(p.value(QStringLiteral("video")).toObject()));
     }
 
     void updatePolicyFrom(const Message& m) {

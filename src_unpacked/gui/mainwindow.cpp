@@ -151,7 +151,37 @@ QString trStr(UiLang lang, const char* key) {
   // current 3-way (size,mtime,quick-hash) change detection.
   if (!std::strcmp(key,"fastRescan")) return S("빠른 재스캔 (크기·수정시각만 비교)","Fast rescan (compare size/mtime only)");
   if (!std::strcmp(key,"fastRescanTip")) return S("켜면 변경되지 않은 파일의 64KiB 해시 읽기를 생략해 재스캔이 빨라집니다. 크기와 수정시각이 같은 내용 변경은 감지하지 못하므로, 중요하면 중복 파일 재검증을 주기적으로 실행하세요.","When on, unchanged files skip the 64 KiB hash read, making rescans much faster. A content change that preserves both size and mtime is then not detected; run the duplicate re-verification periodically if that matters.");
-  if (!std::strcmp(key,"help")) return S("도움말","Help");
+    // 0.9.4.156 (V workstream): Video settings tab.
+  if (!std::strcmp(key,"video")) return S("동영상","Videos");
+  if (!std::strcmp(key,"videoModeLabel")) return S("비교 프로파일","Comparison profile");
+  if (!std::strcmp(key,"videoModeAuto")) return S("자동(권장)","Auto (recommended)");
+  if (!std::strcmp(key,"videoModeCustom")) return S("사용자 지정","Custom");
+  if (!std::strcmp(key,"videoShortGroup")) return S("숏폼 (60초 이하)","Shorts (up to 60 s)");
+  if (!std::strcmp(key,"videoShortInterval")) return S("전체 구간 프레임 확인 간격","Whole-timeline probe interval");
+  if (!std::strcmp(key,"videoShortIntervalTip")) return S("숏폼 전체 시간축의 관찰 위치 간격입니다. 이 값을 줄이면 관찰이 촘촘해지지만 보관 프레임 수나 디코더 출력 프레임 수를 뜻하지 않습니다.","Probe spacing across the whole short-form timeline. Tightening it adds observation points, not kept frames or decoder output frames.");
+  if (!std::strcmp(key,"videoKeptTarget")) return S("대표 프레임 목표","Kept-frame target");
+  if (!std::strcmp(key,"videoG1")) return S("G1 (15초 이하)","G1 (up to 15 s)");
+  if (!std::strcmp(key,"videoG2")) return S("G2 (15~60초)","G2 (15-60 s)");
+  if (!std::strcmp(key,"videoG3")) return S("G3 (1~3분)","G3 (1-3 min)");
+  if (!std::strcmp(key,"videoG4")) return S("G4 (3~10분)","G4 (3-10 min)");
+  if (!std::strcmp(key,"videoG5")) return S("G5 (10~25분)","G5 (10-25 min)");
+  if (!std::strcmp(key,"videoG6")) return S("G6 (25~60분)","G6 (25-60 min)");
+  if (!std::strcmp(key,"videoG7")) return S("G7 (60~150분)","G7 (60-150 min)");
+  if (!std::strcmp(key,"videoG8")) return S("G8 (150분 초과)","G8 (over 150 min)");
+  if (!std::strcmp(key,"videoMidGroup")) return S("중간 길이 (60초 초과~25분)","Mid-length (over 60 s-25 min)");
+  if (!std::strcmp(key,"videoMidAutoNote")) return S("구조 기반 자동 정책 (전체 구간 6~8 관찰 / 시작·중간·끝 분산)","Structural auto policy (6-8 whole-timeline probes / start-middle-end spread)");
+  if (!std::strcmp(key,"videoLongGroup")) return S("롱폼 (25분 초과)","Long-form (over 25 min)");
+  if (!std::strcmp(key,"videoLongStruct")) return S("구조 경계 상세 확인 간격","Boundary detail interval");
+  if (!std::strcmp(key,"videoLongPrecise")) return S("본편 정밀 비교 간격","Main-feature precision interval");
+  if (!std::strcmp(key,"videoLongPendingNote")) return S("국소 정밀 탐색이 구현될 때까지 전체 탐색에는 적용되지 않습니다.","Not applied to whole-film sweeps until local refinement exists.");
+  if (!std::strcmp(key,"videoAnchorNote")) return S("본편 anchor: 1~3개 분산 구간","Main anchors: 1-3 spread intervals");
+  if (!std::strcmp(key,"videoBoost")) return S("불확실 후보 추가 보강","Uncertain-candidate boost");
+  if (!std::strcmp(key,"videoBoostCount")) return S("구간당 추가 프레임","Extra frames per interval");
+  if (!std::strcmp(key,"videoBoostPendingNote")) return S("선택적 재추출 미구현 상태에서는 동작하지 않습니다 (V4 범위).","No-op until selective re-extraction exists (V4 scope).");
+  if (!std::strcmp(key,"videoPartial")) return S("부분 클립 검색","Partial-clip search");
+  if (!std::strcmp(key,"videoPartialNote")) return S("별도 경로가 없으므로 전체 영상 중복 검색을 수행합니다 (V6 범위).","No separate route yet; whole-video search is used (V6 scope).");
+  if (!std::strcmp(key,"videoHonestNote")) return S("프레임 확인 간격은 Probe(관찰) 위치의 간격이며, 보관 프레임 수나 디코더 출력 프레임 수를 뜻하지 않습니다.","Probe interval sets observation positions only, not kept frames or decoder output frames.");
+if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
   if (!std::strcmp(key,"explorer")) return S("탐색기","Explorer");
   if (!std::strcmp(key,"favorites")) return S("즐겨찾기","Favorites");
@@ -1770,6 +1800,9 @@ void MainWindow::beginScan(bool resumeLastConfig) {
     cfg.testMode = testBtn_ && testBtn_->isChecked();
     cfg.analyzeMode = msf::analyzeModeFromInt(QSettings().value("ui/analyzeMode", 0).toInt());
     cfg.fastRescan = QSettings().value("ui/fastRescan", false).toBool();
+    // 0.9.4.156 (V workstream): video comparison policy snapshot, frozen
+    // per scan like the other cfg fields (lastScanCfg_ reuses it verbatim).
+    cfg.videoPolicy = videoPolicyFromSettings();
     cfg.exec = currentExecPolicy();
     lastScanCfg_ = cfg;
     haveLastScanCfg_ = true;
@@ -5166,6 +5199,98 @@ void MainWindow::configureMonitor() {
   connect(watchRemove, &QPushButton::clicked, watchList, [watchList] { delete watchList->takeItem(watchList->currentRow()); });
   connect(compareRemove, &QPushButton::clicked, compareList, [compareList] { delete compareList->takeItem(compareList->currentRow()); });
 
+  // 0.9.4.156 (V workstream): Video settings tab. Short-form intervals ride the
+  // uniform sweep; long-form intervals are stored + propagated but apply only
+  // to future local-window refinement (see the pending notes below).
+  auto* videoTab = new QWidget(tabs);
+  auto* videoLay = new QVBoxLayout(videoTab);
+  auto* videoModeRow = new QHBoxLayout;
+  auto* videoModeLabel = new QLabel(trStr(lang(), "videoModeLabel"), videoTab);
+  auto* videoModeBox = new QComboBox(videoTab);
+  videoModeBox->setObjectName("videoModeBox");
+  videoModeBox->addItem(trStr(lang(), "videoModeAuto"));   // index 0
+  videoModeBox->addItem(trStr(lang(), "videoModeCustom")); // index 1
+  { const int m = QSettings().value("video/mode", 0).toInt();
+    videoModeBox->setCurrentIndex(m == 1 ? 1 : 0); }
+  videoModeRow->addWidget(videoModeLabel); videoModeRow->addWidget(videoModeBox); videoModeRow->addStretch(1);
+  videoLay->addLayout(videoModeRow);
+  auto* shortGroup = new QGroupBox(trStr(lang(), "videoShortGroup"), videoTab);
+  auto* shortLay = new QGridLayout(shortGroup);
+  auto* shortIntLabel = new QLabel(trStr(lang(), "videoShortInterval"), shortGroup);
+  auto* shortIntSpin = new QSpinBox(shortGroup);
+  shortIntSpin->setObjectName("videoShortIntervalSpin");
+  shortIntSpin->setRange(1, 60); shortIntSpin->setSuffix(QStringLiteral(" s"));
+  shortIntSpin->setValue(QSettings().value("video/shortInterval", (int)msf::kVideoShortIntervalDefault).toInt());
+  shortIntSpin->setToolTip(trStr(lang(), "videoShortIntervalTip"));
+  shortLay->addWidget(shortIntLabel, 0, 0); shortLay->addWidget(shortIntSpin, 0, 1);
+  auto* midGroup = new QGroupBox(trStr(lang(), "videoMidGroup"), videoTab);
+  auto* midLay = new QGridLayout(midGroup);
+  auto* midNote = new QLabel(trStr(lang(), "videoMidAutoNote"), midGroup);
+  midNote->setWordWrap(true);
+  midLay->addWidget(midNote, 0, 0, 1, 3);
+  auto* longGroup = new QGroupBox(trStr(lang(), "videoLongGroup"), videoTab);
+  auto* longLay = new QGridLayout(longGroup);
+  auto* longStructLabel = new QLabel(trStr(lang(), "videoLongStruct"), longGroup);
+  auto* longStructSpin = new QSpinBox(longGroup);
+  longStructSpin->setObjectName("videoLongStructSpin");
+  longStructSpin->setRange(1, 60); longStructSpin->setSuffix(QStringLiteral(" s"));
+  longStructSpin->setValue(QSettings().value("video/longStructInterval", (int)msf::kVideoLongStructIntervalDefault).toInt());
+  auto* longPreciseLabel = new QLabel(trStr(lang(), "videoLongPrecise"), longGroup);
+  auto* longPreciseSpin = new QSpinBox(longGroup);
+  longPreciseSpin->setObjectName("videoLongPreciseSpin");
+  longPreciseSpin->setRange(1, 60); longPreciseSpin->setSuffix(QStringLiteral(" s"));
+  longPreciseSpin->setValue(QSettings().value("video/longPreciseInterval", (int)msf::kVideoLongPreciseIntervalDefault).toInt());
+  longLay->addWidget(longStructLabel, 0, 0); longLay->addWidget(longStructSpin, 0, 1);
+  longLay->addWidget(longPreciseLabel, 1, 0); longLay->addWidget(longPreciseSpin, 1, 1);
+  auto* longPending = new QLabel(trStr(lang(), "videoLongPendingNote"), longGroup);
+  longPending->setWordWrap(true);
+  longLay->addWidget(longPending, 2, 0, 1, 3);
+  auto* anchorNote = new QLabel(trStr(lang(), "videoAnchorNote"), longGroup);
+  anchorNote->setWordWrap(true);
+  longLay->addWidget(anchorNote, 3, 0, 1, 3);
+  videoLay->addWidget(shortGroup); videoLay->addWidget(midGroup); videoLay->addWidget(longGroup);
+  auto* boostRow = new QHBoxLayout;
+  auto* boostBox = new QCheckBox(trStr(lang(), "videoBoost"), videoTab);
+  boostBox->setObjectName("videoBoostBox");
+  boostBox->setChecked(QSettings().value("video/uncertainBoost", true).toBool());
+  boostBox->setToolTip(trStr(lang(), "videoBoostPendingNote"));
+  auto* boostCountSpin = new QSpinBox(videoTab);
+  boostCountSpin->setObjectName("videoBoostCountSpin");
+  boostCountSpin->setRange(1, 2);
+  boostCountSpin->setValue(QSettings().value("video/boostFrames", 1).toInt());
+  auto* boostCountLabel = new QLabel(trStr(lang(), "videoBoostCount"), videoTab);
+  boostRow->addWidget(boostBox); boostRow->addWidget(boostCountLabel); boostRow->addWidget(boostCountSpin); boostRow->addStretch(1);
+  videoLay->addLayout(boostRow);
+  auto* partialBox = new QCheckBox(trStr(lang(), "videoPartial"), videoTab);
+  partialBox->setObjectName("videoPartialBox");
+  partialBox->setChecked(QSettings().value("video/partialClip", false).toBool());
+  partialBox->setToolTip(trStr(lang(), "videoPartialNote"));
+  videoLay->addWidget(partialBox);
+  auto* honestNote = new QLabel(trStr(lang(), "videoHonestNote"), videoTab);
+  honestNote->setWordWrap(true);
+  videoLay->addWidget(honestNote);
+  videoLay->addStretch(1);
+  // Kept-frame soft targets per cohort (UI order G1..G8 across the groups).
+  auto gRow = [&](QGridLayout* lay, int r, const char* key, const char* obj, int gi) {
+    auto* lb = new QLabel(trStr(lang(), key), videoTab);
+    auto* sp = new QSpinBox(videoTab);
+    sp->setObjectName(obj);
+    sp->setRange(msf::kVideoKeptMin[gi], msf::kVideoKeptMax[gi]);
+    QString ini = QString::fromLatin1("video/g%1Target").arg(gi + 1);
+    sp->setValue(QSettings().value(ini, msf::kVideoKeptDefault[gi]).toInt());
+    lay->addWidget(lb, r, 0); lay->addWidget(sp, r, 1);
+    auto* tgt = new QLabel(trStr(lang(), "videoKeptTarget"), videoTab);
+    lay->addWidget(tgt, r, 2);
+  };
+  gRow(shortLay, 1, "videoG1", "videoG1Spin", 0);
+  gRow(shortLay, 2, "videoG2", "videoG2Spin", 1);
+  gRow(midLay, 1, "videoG3", "videoG3Spin", 2);
+  gRow(midLay, 2, "videoG4", "videoG4Spin", 3);
+  gRow(midLay, 3, "videoG5", "videoG5Spin", 4);
+  gRow(longLay, 4, "videoG6", "videoG6Spin", 5);
+  gRow(longLay, 5, "videoG7", "videoG7Spin", 6);
+  gRow(longLay, 6, "videoG8", "videoG8Spin", 7);
+  tabs->addTab(videoTab, trStr(lang(), "video"));
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dlg);
   root->addWidget(buttons);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -5203,6 +5328,21 @@ void MainWindow::configureMonitor() {
   if (backend_) backend_->updateResourcePolicy(currentExecPolicy());
   st.setValue("ui/analyzeMode", analyzeModeBox->currentIndex());
   st.setValue("ui/fastRescan", fastRescan->isChecked());
+  // 0.9.4.156 (V workstream): Video tab snapshot. Spin boxes self-clamp to
+  // their ranges, so stored values are always valid on the next read.
+  st.setValue("video/mode", videoModeBox->currentIndex());
+  st.setValue("video/shortInterval", shortIntSpin->value());
+  st.setValue("video/longStructInterval", longStructSpin->value());
+  st.setValue("video/longPreciseInterval", longPreciseSpin->value());
+  st.setValue("video/uncertainBoost", boostBox->isChecked());
+  st.setValue("video/boostFrames", boostCountSpin->value());
+  st.setValue("video/partialClip", partialBox->isChecked());
+  const char* gkeys[8] = {"videoG1Spin", "videoG2Spin", "videoG3Spin", "videoG4Spin",
+                           "videoG5Spin", "videoG6Spin", "videoG7Spin", "videoG8Spin"};
+  for (int gi = 0; gi < 8; ++gi) {
+    if (auto* sp = videoTab->findChild<QSpinBox*>(QString::fromLatin1(gkeys[gi])))
+      st.setValue(QString::fromLatin1("video/g%1Target").arg(gi + 1), sp->value());
+  }
   applyDetailLogVisibility();
   st.setValue("ui/language", langSel->currentData().toString());
   setLanguage(langSel->currentIndex());

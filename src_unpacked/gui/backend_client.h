@@ -17,6 +17,7 @@
 #pragma once
 #include <QObject>
 #include <QSet>
+#include <QSettings>
 #include <QSize>
 #include <QString>
 #include <QStringList>
@@ -25,7 +26,8 @@
 #include <string>
 
 #include "resource_policy.h" // msf::ResourcePolicy: plain config data (brief §10 payload class)
-#include "analyze_mode.h"    // msf::AnalyzeMode: selectable verify scheduling (0.9.4.81)
+#include "analyze_mode.h"
+#include "video_policy.h" // msf::VideoPolicy: video comparison policy
 
 // Execution policy (directive §9–14, P4): two independent axes cross the
 // boundary with identical meaning. Backend never reinterprets them:
@@ -34,6 +36,28 @@
 //   forced off backend-side), 2=GPU_MAX (GPU allowed; scheduler auto-splits,
 //   no share boost exists in code — documented, not silently upgraded).
 // - gpuEnabled: effective GPU switch after strategy enforcement.
+// 0.9.4.156 (V workstream): VideoPolicy from portable QSettings, with the
+// directive table as fallback and per-cohort range clamping. Single source
+// for beginScan and tests: stored values travel unchanged when valid.
+inline msf::VideoPolicy videoPolicyFromSettings() {
+  msf::VideoPolicy p;
+  QSettings st;
+  const int mode = st.value(QStringLiteral("video/mode"), 0).toInt();
+  p.mode = (mode == 1) ? msf::VideoMode::Custom : msf::VideoMode::Auto;
+  auto clampI = [](int v, int lo, int hi, int dflt) { return (v >= lo && v <= hi) ? v : dflt; };
+  p.shortIntervalSec = clampI(st.value(QStringLiteral("video/shortInterval"), (int)msf::kVideoShortIntervalDefault).toInt(), 1, 60, (int)msf::kVideoShortIntervalDefault);
+  p.longStructIntervalSec = clampI(st.value(QStringLiteral("video/longStructInterval"), (int)msf::kVideoLongStructIntervalDefault).toInt(), 1, 60, (int)msf::kVideoLongStructIntervalDefault);
+  p.longPreciseIntervalSec = clampI(st.value(QStringLiteral("video/longPreciseInterval"), (int)msf::kVideoLongPreciseIntervalDefault).toInt(), 1, 60, (int)msf::kVideoLongPreciseIntervalDefault);
+  static const char* kk[8] = {"video/g1Target", "video/g2Target", "video/g3Target", "video/g4Target", "video/g5Target", "video/g6Target", "video/g7Target", "video/g8Target"};
+  for (int i = 0; i < 8; ++i)
+    p.keptTarget[(std::size_t)i] = clampI(st.value(QString::fromLatin1(kk[i]), msf::kVideoKeptDefault[i]).toInt(), msf::kVideoKeptMin[i], msf::kVideoKeptMax[i], msf::kVideoKeptDefault[i]);
+  p.uncertainBoost = st.value(QStringLiteral("video/uncertainBoost"), true).toBool();
+  const int bf = st.value(QStringLiteral("video/boostFrames"), 1).toInt();
+  p.boostFrames = (bf >= 1 && bf <= 2) ? bf : 1;
+  p.partialClip = st.value(QStringLiteral("video/partialClip"), false).toBool();
+  return p;
+}
+
 struct ExecutionPolicy {
     int cpuMode = 3; // ResourceMode::Balanced
     int cpuPercent = 55;
@@ -67,6 +91,8 @@ struct BackendScanConfig {
     // 0.9.4.134 fast-rescan: trust (size,mtime) for unchanged rows instead of
     // re-reading their 64 KiB quick hash. Default false = strict.
     bool fastRescan = false;
+    // 0.9.4.156 (V workstream): video comparison policy snapshot.
+    msf::VideoPolicy videoPolicy;
     ExecutionPolicy exec;
 };
 
