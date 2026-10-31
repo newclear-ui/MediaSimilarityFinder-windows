@@ -44,7 +44,7 @@
 | video_sampling.* | 동영상 샘플 플랜(sampling_interval) |
 | video_decoder.h | FFmpeg(MSF_HAS_FFMPEG) 디코더 인터페이스 |
 | video_fingerprint.* | 동영상 지문: timestamps+hashes+mirror, SQLite 캐시(v9, base+crop 프레임), 단일 스윕 96 디코드+32 유도, 저분산 프레임 필터 + 장면전환, video_similarity(DTW, sceneBonus, 다이아딕 격자 정렬) |
-| docs/architecture/video-similarity-search.ko.md / .en.md | 영상 길이 cohort, Probe/Kept/Decoded 구분, 130분 약 10~14 대표 프레임 목표, 본편/엔딩 구조 탐색, 시간 연속성 기반 판정, 별도 partial-clip 검색 설계(PROPOSED; §16 보강) |
+| docs/architecture/video-similarity-search.ko.md / .en.md | 영상 길이 cohort, Probe/Kept/Decoded 구분, 130분 약 10~14 대표 프레임 목표, 본편/엔딩 구조 탐색, 시간 연속성 기반 판정, GUI 동영상 탭 자동 권장값/사용자 지정 간격·프레임 예산(PROPOSED; §16–17 보강) |
 | docs/architecture/video-gpu-hash.ko.md / .en.md | 영상 32x32 pHash CUDA batch 경로와 CPU fallback 설계 |
 | docs/architecture/video-ssim-gpu.ko.md / .en.md | 영상 48x48 MSSIM CUDA row-batch 경로와 CPU fallback 설계 |
 | docs/architecture/resource-scheduling.ko.md / .en.md | CPU/GPU 자원 정책, 실시간 Adaptive Scheduler, INI 성능 프로파일, 선택적 hardware video decode 목표 설계 |
@@ -115,7 +115,7 @@
 - docs/implementation-briefs/B-adaptive-scheduler.ko.md / .en.md — Node B staged Scheduler implementation scope and gate.
 - docs/implementation-briefs/C-calibration-profile.ko.md / .en.md — Node C profile/calibration reuse + extension scope.
 - docs/implementation-briefs/D-pipeline-queue.ko.md / .en.md — Node D pipeline/queue optimization scope.
-- docs/implementation-briefs/V-video-content-matching.ko.md / .en.md — separate proposed V workstream; pre-registered V0–V6 gates, not in the active queue.
+- docs/implementation-briefs/V-video-content-matching.ko.md / .en.md — separate proposed V workstream; pre-registered V0–V7 gates including V5 GUI Video Settings, V6 Partial-clip, and V7 production adoption; not in the active queue.
 - docs/implementation-briefs/process-backend-isolation-0.9.4.ko.md / .en.md — 0.9.4.x GUI↔Backend process isolation implementation brief: ownership, IPC contract, lifecycle, watchdog/restart, SQLite authority, recovery semantics, migration boundaries, acceptance gates, and 0.9.5 deferrals.
 - docs/implementation-briefs/S4-gui-diagnostic-logging.ko.md / .en.md — current S4 GUI detailed-logging design.
 - docs/implementation-briefs/S4-gui-benchmark-integration.ko.md / .en.md — historical/superseded GUI benchmark execution design, retained for provenance.
