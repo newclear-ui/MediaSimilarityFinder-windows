@@ -382,10 +382,11 @@ CPU-only, GPU OFF, GPU ON/AUTO, low-end simulation, acceleration-not-beneficial,
 - 구현 예정서: docs/implementation-briefs/V-video-content-matching.{ko,en}.md
 - 현재 Active Build Queue에 포함하지 않는다. XMP acceptance 및 S5 real-dataset benchmark 등 Progress의 기존 우선순위를 대체하지 않는다.
 - 핵심 범위: 길이별 후보 모집단 분리, 전체 영상/부분 클립 검색 분리, 시작부/본편/역방향 엔딩 구조 탐색, 대표 프레임 예산, 시간 연속성·희귀 장면 기반 검증.
+- GUI 범위: 설정 대화상자에 동영상 탭을 추가하고 **자동(권장)**을 기본값으로 제공한다. 사용자 지정에서는 숏폼 전체 구간 관찰 간격(권장 5초), 롱폼의 구조 경계/본편 정밀 관찰 간격(각 권장 5초, 선택된 국소 창에만 적용), 길이별 대표 프레임 예산과 불확실 후보 보강량을 조정한다. 중간 길이는 기존 cohort 자동 정책을 유지한다.
 - Node E의 ExactnessPolicy::RefuseAll 및 production sparse-seek 거부를 그대로 유지한다. V의 새로운 콘텐츠 판정 기준은 기존 Node E의 decoder exactness Gate를 자동 해제하지 않는다.
 - 첫 prototype은 기존 순차 디코드 경로 기준으로 정확도와 kept-frame 감소를 검증한다. 실제 decodedFrames 감소는 별도 decoder prototype의 exactness·cost Gate가 통과할 때만 주장한다.
 - Partial-clip search는 기본 전체 중복 검색과 다른 별도 기능/색인으로 유지한다.
-- 버전 번호, 구현 착수일, production adoption은 미정이며 사용자 지시 전까지 source 변경을 시작하지 않는다.
+- 구현 순서: V0 데이터/정답 기준 → V1 후보 분리 → V2 구조 Probe → V3 대표 프레임 → V4 시간축 검증 → V5 GUI 동영상 설정 탭 → V6 별도 Partial-clip → V7 production adoption. GUI 탭은 V0~V4의 정확도·비용 Gate 이후에 노출한다.
 
 ## 버전 번호 규칙
 
