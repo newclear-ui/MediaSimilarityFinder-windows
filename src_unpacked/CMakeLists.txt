@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.156 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.157 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -857,6 +857,12 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_video_scan_e2e_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_video_scan_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME video_scan_e2e_test COMMAND msf_video_scan_e2e_test)
+  # 0.9.4.157: video thumbnails must be served end-to-end (engine art +
+  # store fetch + disk round-trip), the same path BackendSession uses.
+  add_executable(msf_video_thumb_e2e_test tests/video_thumb_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
+  target_link_libraries(msf_video_thumb_e2e_test PRIVATE msf_core Qt6::Widgets)
+  target_include_directories(msf_video_thumb_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+  add_test(NAME video_thumb_e2e_test COMMAND msf_video_thumb_e2e_test)
       # View-mode round-trip probe: Tiles -> Icons must keep grid items
       # visible (explicit grid size + delegate swap must fully reset), plus
       # the real MainWindow viewBox path (256 Icon -> List/Tiles -> 256 Icon

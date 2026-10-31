@@ -15,8 +15,13 @@ JpegThumb compress(int w, int h, const unsigned char* src, int pixelFormat,
     if (!hnd) return out;
     unsigned char* buf = nullptr;
     unsigned long size = 0;
+    // 0.9.4.156: subsampling must match the pixel format. A gray frame
+    // compressed as TJSAMP_420 fails (tjCompress2 rejects it), which broke
+    // EVERY video thumbnail served from engine art (images use BGRA and were
+    // unaffected). Gray JPEGs have no chroma planes to subsample.
+    const int subsamp = (pixelFormat == TJPF_GRAY) ? TJSAMP_GRAY : TJSAMP_420;
     const int rc = tjCompress2(hnd, src, w, pitch, h, pixelFormat, &buf, &size,
-                               TJSAMP_420, quality, TJFLAG_FASTDCT);
+                               subsamp, quality, TJFLAG_FASTDCT);
     tjDestroy(hnd);
     if (rc != 0 || !buf || size == 0) {
         if (buf) tjFree(buf);
