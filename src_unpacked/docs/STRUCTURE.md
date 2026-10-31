@@ -45,6 +45,7 @@
 | video_decoder.h | FFmpeg(MSF_HAS_FFMPEG) 디코더 인터페이스 |
 | video_fingerprint.* | 동영상 지문: timestamps+hashes+mirror, SQLite 캐시(v9, base+crop 프레임), 단일 스윕 96 디코드+32 유도, 저분산 프레임 필터 + 장면전환, video_similarity(DTW, sceneBonus, 다이아딕 격자 정렬) |
 | docs/architecture/video-gpu-hash.ko.md / .en.md | 영상 32x32 pHash CUDA batch 경로와 CPU fallback 설계 |
+| docs/architecture/video-similarity-search.ko.md / .en.md | 영상 길이 cohort 분리, sparse 대표 프레임/구간 지문, 시작·역방향 엔딩 탐색, 시간 연속성 기반 전체 중복 판정 및 별도 부분 클립 검색의 제안 아키텍처(PROPOSED) |
 | docs/architecture/video-ssim-gpu.ko.md / .en.md | 영상 48x48 MSSIM CUDA row-batch 경로와 CPU fallback 설계 |
 | docs/architecture/resource-scheduling.ko.md / .en.md | CPU/GPU 자원 정책, 실시간 Adaptive Scheduler, INI 성능 프로파일, 선택적 hardware video decode 목표 설계 |
 | similarity.* | 해시 유사도 / 이미지 매칭 |
