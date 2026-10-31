@@ -162,6 +162,7 @@ stay in the origin documents.
 | `color_thumb` no-FFmpeg classification | R1 done (0.9.4.113) — keep-as-is confirmed (user decision) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
 | Register nvcc warnings in the release gate | undecided | `worklog/0.9.4.*` |
 | Dedicated console-output regression test | not added | `worklog/0.9.4.*` |
+| V — Video Content Matching | **PROPOSED / DEFERRED** — pre-registered only; outside the Active Build Queue | development-roadmap.{ko,en}.md, implementation-briefs/V-video-content-matching.*, architecture/video-similarity-search.* |
 
 ## Version invariance check
 

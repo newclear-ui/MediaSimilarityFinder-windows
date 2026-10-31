@@ -394,6 +394,19 @@ Validate:
 
 Acceptance is based on correctness + end-to-end throughput + fallback correctness + stability + observability, not a single GPU-utilization number.
 
+## V — Video Content Matching / Duplicate Semantics (Proposed Feature Workstream)
+
+**Status: PROPOSED / PRE-REGISTERED / DEFERRED.** V does not insert a node into the A→B→C→D→I→E→F→G→H mainline and does not reopen Node E. It is a separate product-feature workstream for video-content verdict semantics and search policy.
+
+- Authoritative design: docs/architecture/video-similarity-search.{ko,en}.md
+- Implementation plan: docs/implementation-briefs/V-video-content-matching.{ko,en}.md
+- Do not add it to the Active Build Queue. It does not replace existing Progress priorities such as XMP acceptance or the S5 real-dataset benchmark.
+- Scope: duration-aware candidate separation, separate whole-video/partial-clip search, opening/main-content/reverse-time ending structure analysis, representative-frame budgets, and temporal/rarity-based verification.
+- Keep Node E's ExactnessPolicy::RefuseAll and production sparse-seek rejection unchanged. V's content-verdict criteria do not automatically lift Node E's decoder exactness gate.
+- The first prototype validates accuracy and kept-frame reduction against the existing sequential decode path. Claim an actual decodedFrames reduction only after a separate decoder prototype passes exactness and cost gates.
+- Partial-clip search remains a separate feature/index, not part of default whole-video duplicate search.
+- Version number, implementation start date, and production adoption are unassigned; do not change source before the user's separate implementation instruction.
+
 ## Version number policy
 
 Version numbers are not roadmap node numbers.
