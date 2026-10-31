@@ -6,6 +6,8 @@
 > Purpose: Design a duration- and structure-aware algorithm that selects a small set of representative frames and timeline features, while separating whole-video duplicates from partial-clip search.  
 > This document does not choose CPU/GPU decoder implementations or hardware-acceleration paths.
 
+> 2026-10-31 refinement: §16 is the current controlling detail for Probe/Kept/Decoded counts, the 130-minute budget, main-content weighting, and the Node E decoder boundary.
+
 ## 1. Role and Goals
 
 This document defines the **video-content duplicate-detection semantics** for MediaSimilarityFinder. It is separate from how a decoder obtains frames through CPU, CUDA, NVDEC, D3D11VA, or another backend.
@@ -330,3 +332,87 @@ This document records no implementation or measurement result. Any eventual impl
 - `architecture/video-ssim-gpu.{ko,en}.md`: temporal MSSIM GPU path.
 - `architecture/database-structure.{ko,en}.md`: current persistent DB and video fingerprint cache structure.
 - `development-progress.{ko,en}.md`: Video comparison semantics / GUI video acceptance remains DEFERRED; this document is a future design reference.
+
+
+## 16. 2026-10-31 Refinement — Separate Probe / Kept / Decoded and Verify Adaptively
+
+This section turns the earlier design into an implementation contract. Where interpretation differs, this section controls the count split, main-content weighting, adaptive refinement, and decoder boundary.
+
+### 16.1 Three Counts Are Different
+
+| Quantity | Meaning | Persisted |
+|---|---|---|
+| Probe observation | A time position observed for brightness, color, visual change, or transition structure | Usually not as an image |
+| Kept representative frame | A distinctive frame retained as a comparison fingerprint | Yes |
+| Decoded frame | A frame actually output by the decoder, including decoded intermediates later discarded | Measurement |
+
+**Retaining 12 representative frames does not mean the decoder processed only 12 frames.**
+
+The current make_sample_plan() uses a 32-second interval above 3,840 seconds. A 130-minute (7,800-second) video requests about 245 timestamps including the end. But VideoDecoder::framesAt() seeks once to the first target and sequentially decodes to the final target. At 25-fps CFR this can be on the order of 195,000 decoded frames. This is an **arithmetic illustration, not a measured value**; measure the actual number through 0.9.4.155's decodedFrames.
+
+The first objective is therefore **fewer retained frames and less comparison work**. Do not claim reduced decode work until a separate decoder approach passes correctness and performance gates.
+
+### 16.2 Three Observation Stages
+
+1. **Probe:** Where possible, compute average brightness/dark ratio, low-resolution color changes, edge density, scene changes, fades, and low-information intervals in one sequential stream. Probes are not retained images, but the current sequential decoder may still decode intermediate frames to compute them.
+2. **Keep:** Retain only the most distinctive frame from a useful interval. Exclude/reduce the ordinary quota for repeated near-identical frames, black screens, common logos/titles, and credits.
+3. **Refine:** Add only 1–2 frames in a discriminative main-content region when the initial candidate remains uncertain. Do not tighten the sampling interval uniformly for all videos.
+
+### 16.3 Initial Frame Budget for a 130-Minute Film
+
+| Role | Probe plan | Retained target |
+|---|---|---:|
+| Opening | 0–30 seconds at about 5-second intervals (about 6 observations) | 1–2 |
+| Main-content boundary | Adaptive search between 30 seconds and 3 minutes, starting around 30/45/60/90/120/180 seconds | 1–2 |
+| Early main content | A distinctive scene after the main-content start | 1 |
+| Middle main content | 1–3 distributed intervals | 2–3 |
+| Late core / pre-ending | Reverse-time search from the end to locate the credits boundary | 1–3 |
+| Ending / credits | T-15s, T-30s, T-1/2/4/8/12/20m; de-duplicate with final-30-second observations | Usually 0 |
+
+The center target is about 12; the initial range is 10–14. Long black/credit intervals reduce the retained count. Do not stop mechanically at T-20m; expand earlier if credits continue. Twelve is not a quota.
+
+### 16.4 Duration Operation
+
+- Up to 60 seconds: cover the full timeline, not just the first 30 seconds; begin with observations around every 5 seconds and refine on scene changes. Target 6–10 frames.
+- 1–10 minutes: divide the complete timeline into about 6–8 observation regions. Target 8–14.
+- 10–25 minutes: distribute across beginning/middle/end. Target 9–13.
+- 25–60 minutes: apply episode-like weighting only when repeated intros/recaps/credits are detected; focus on main content. Target 9–12.
+- 60–150 minutes: target 10–14.
+- Over 150 minutes: start with 12–16 and adjust to structural complexity.
+
+Duration cohorts control candidate/sample policy; genre is inferred separately from structure.
+
+### 16.5 Main-Content Candidate Filtering and Weighting
+
+Distinguish introInterval, mainContentInterval, creditsInterval, and postCreditsInterval. If the main-content boundary is uncertain, do not pretend total duration is core duration; include boundary uncertainty in the score.
+
+R_total is a coarse candidate filter. When main-content boundaries are valid, use R_core=min(coreA,coreB)/max(coreA,coreB) as a secondary ranking feature. Neither becomes a fixed threshold before validation.
+
+Down-weight broadcaster/studio logos, program openings, recaps, and credits according to their frequency in the library. Give more weight to rare main-content scenes. Long-form candidates cannot be accepted from opening+ending alone; they need independent evidence in separated core regions.
+
+### 16.6 Temporal Continuity and Adaptive Stopping
+
+Matched timestamps must be monotonic. Check affine offset/scale first; use piecewise monotonic alignment or DTW when inserted/deleted intervals require it. Evaluate time gaps, main-content coverage, distinctive-scene count, and whether matches cluster only in opening/credits alongside frame scores.
+
+Stop when a candidate is clear. If only a common intro matches or scores are close, add 1–2 frames only from relevant core regions. Return Uncertain when the verdict remains unstable within budget; never extract indefinitely.
+
+### 16.7 Node E / Decoder Boundary
+
+Node E did not adopt production sparse seek due to exactness failures and retains ExactnessPolicy::RefuseAll. Choosing reverse-time timestamps does not guarantee reverse playback or random-seek exactness.
+
+- The first prototype uses the current sequential decoder as its baseline.
+- Timestamp-neighborhood seeks, keyframe jumps, and window decode are tested only in separate prototype/measurement paths.
+- Never describe fewer Probe/Kept frames as fewer decodedFrames.
+- Claim actual decoder savings only when decodedFrames, sampledFrames, keptFrames, seek/landing, decode time, and end-to-end time are all measured.
+- Production random access remains prohibited until a separate codec/profile/exactness/fallback gate and explicit roadmap change.
+
+### 16.8 Cache / Engine Version Boundary
+
+Validate early stages in scratch results. Do not bump cache format, DB schema, or engine version before representative frames, interval payloads, and verdict semantics are settled. Analyze re-generation/re-validation and compatibility cost only when production verdict semantics actually change.
+
+### 16.9 Research References
+
+- IEEE Access 2026, A Review of Partial Video Copy Detection: Technical Advances, Evaluation Frameworks, and Future Trends, DOI 10.1109/ACCESS.2026.3707321: distinguishes whole-video near-duplicate judgement from partial-copy localization and reviews coarse-to-fine verification through temporal consistency/sequence alignment after keyframe retrieval.
+- Luo et al., IEEE TPAMI 2025, FiGVCL: Fine-Grained Benchmark and Method for Video Copy Localization, DOI 10.1109/TPAMI.2025.3595625: addresses evaluation and localization that preserve temporal correspondence in partial copies.
+
+These references inform design/evaluation only; they do not approve importing deep models, datasets, or dependencies.

@@ -6,6 +6,8 @@
 > 목적: 영상 길이와 구조에 맞춰 적은 수의 대표 프레임 및 시간축 정보를 선택하고, 전체 영상 중복과 부분 클립 탐색을 분리하는 알고리즘 설계.  
 > 이 문서는 CPU/GPU 디코더 구현이나 하드웨어 가속 경로를 결정하지 않는다.
 
+> 2026-10-31 보강: §16은 Probe/Kept/Decoded 수량, 130분 예산, 본편 가중, Node E decoder 경계를 구체화하는 최신 기준이다.
+
 ## 1. 문서의 역할과 목표
 
 이 문서는 MediaSimilarityFinder의 **동영상 콘텐츠 중복 판정 의미론**을 설명한다. 디코더가 어떤 CPU/GPU 경로로 프레임을 가져오는지, CUDA/NVDEC/D3D11VA를 어떻게 연결하는지와는 별개의 계층이다.
@@ -330,3 +332,87 @@ t_B \approx a t_A + b
 - `architecture/video-ssim-gpu.{ko,en}.md`: temporal MSSIM GPU 경로.
 - `architecture/database-structure.{ko,en}.md`: 현재 영속 DB와 video fingerprint cache 구조.
 - `development-progress.{ko,en}.md`: Video comparison semantics / GUI video acceptance는 계속 DEFERRED이며, 이 문서는 향후 설계 참조다.
+
+
+## 16. 2026-10-31 설계 보강 — Probe / Kept / Decoded 분리와 적응형 비교
+
+이 절은 앞선 설계를 구현 가능한 계약으로 구체화한다. 이전 절과 해석이 충돌하면 이 절의 수량 분리, 본편 중심 가중, 적응형 추가 검증, decoder 경계를 우선한다.
+
+### 16.1 세 가지 수량은 서로 다르다
+
+| 수량 | 의미 | 보관 |
+|---|---|---|
+| Probe observation | 밝기·색상·화면 변화·전환 구조를 관찰한 시간 위치 | 보통 이미지로 저장하지 않음 |
+| Kept representative frame | 비교 지문으로 남긴 식별력 있는 대표 프레임 | 저장 |
+| Decoded frame | 디코더가 실제 출력한 프레임. 중간에 디코드한 뒤 버린 프레임 포함 | 계측 |
+
+**대표 프레임 12장을 보관하는 것은 디코더가 12프레임만 처리했다는 뜻이 아니다.**
+
+현재 make_sample_plan()은 3,840초 초과 영상에 32초 간격을 적용한다. 130분(7,800초) 영상은 종료 지점을 포함해 약 245개 timestamp를 요청한다. 그러나 VideoDecoder::framesAt()은 첫 target으로 한 번 seek하고 마지막 target까지 순차 디코드한다. 25fps CFR을 가정하면 약 195,000프레임 규모의 디코드가 발생할 수 있다. 이는 **산술 예시이지 실측값이 아니며**, 실제 값은 0.9.4.155의 decodedFrames로 확인한다.
+
+따라서 새 설계의 첫 목표는 **보관 프레임과 비교량 감소**다. 실제 디코드량까지 줄었다고 주장하려면 별도 decoder 접근법이 정확성·성능 Gate를 통과해야 한다.
+
+### 16.2 3단계 관찰
+
+1. **Probe:** 가능한 한 한 번의 순차 스트림에서 평균 밝기/dark ratio, 저해상도 색상 변화, 에지 밀도, 장면 변화, fade, 저정보량 구간을 계산한다. Probe는 보관 이미지가 아니지만 현재 sequential decoder에서는 계산을 위해 중간 프레임이 실제로 디코드될 수 있다.
+2. **Keep:** 구간 내에서 가장 식별력 높은 프레임만 보관한다. 같은 화면의 연속 프레임, 암전, 공통 로고/타이틀/크레디트는 일반 quota에서 제외하거나 가중치를 낮춘다.
+3. **Refine:** 초기 후보가 애매할 때만 식별 정보가 부족한 본편 구간에 1~2개 프레임을 추가한다. 모든 영상에 균일하게 간격을 좁히지 않는다.
+
+### 16.3 130분 영화의 초기 프레임 예산
+
+| 역할 | Probe 계획 | 보관 목표 |
+|---|---|---:|
+| 오프닝 | 0~30초, 약 5초 간격(약 6회) | 1~2장 |
+| 본편 시작 경계 | 30초~3분에서 30/45/60/90/120/180초 등을 시작점으로 적응 탐색 | 1~2장 |
+| 본편 초반 | 본편 시작 후 고유 장면 | 1장 |
+| 본편 중간 | 1~3개 분산 구간 | 2~3장 |
+| 본편 후반/엔딩 직전 | 종료 시점에서 역방향으로 크레디트 경계 탐색 | 1~3장 |
+| 종료/크레디트 | T-15초, T-30초, T-1/2/4/8/12/20분. 마지막 30초 관찰과 중복 제거 | 보통 0장 |
+
+중심 목표는 약 12장, 초기 범위는 10~14장이다. 암전/크레디트가 길면 보관 수는 줄어든다. T-20분에서 무조건 멈추지 말고 크레디트가 계속되면 과거로 확장한다. 12장은 quota가 아니다.
+
+### 16.4 길이별 운용
+
+- 60초 이하: 첫 30초만 보지 않고 전체 구간을 약 5초 간격으로 관찰한 뒤 장면 변화에 따라 보완. 6~10장.
+- 1~10분: 전체를 6~8개 관찰 구간으로 분할. 8~14장.
+- 10~25분: 시작/중간/끝 분산. 9~13장.
+- 25~60분: 반복 인트로·요약·크레디트 신호가 있을 때 episode-like 가중, 본편 중심. 9~12장.
+- 60~150분: 10~14장.
+- 150분 초과: 12~16장부터 구조 복잡도에 따라 조정.
+
+길이 cohort는 후보·샘플 정책을 결정하는 축이며 장르 판정은 별도 구조 분석이다.
+
+### 16.5 본편 중심 후보 필터와 가중
+
+introInterval, mainContentInterval, creditsInterval, postCreditsInterval을 구분한다. 본편 경계를 신뢰성 있게 찾지 못하면 전체 duration을 본편 duration인 것처럼 취급하지 않고 경계 불확실성을 점수에 반영한다.
+
+전체 길이 비율 R_total은 거친 후보 필터다. 본편 경계가 유효하면 R_core=min(coreA,coreB)/max(coreA,coreB)를 후보 ranking에 보조 사용한다. 둘 다 검증 전 고정 임계값으로 쓰지 않는다.
+
+라이브러리에서 자주 등장하는 제작사/방송사 로고, 프로그램 오프닝, 회차 요약, 크레디트는 낮은 가중치를 준다. 드물고 본편에 속한 장면은 높은 가중치를 준다. 장편은 opening+ending만 맞아서는 승인하지 않고, 서로 떨어진 본편 구간에도 독립 증거가 있어야 한다.
+
+### 16.6 시간 연속성 및 적응형 종료
+
+후보 대응 timestamp는 단조 증가해야 한다. 먼저 affine offset/scale을 확인하고, 삽입/삭제 구간이 있으면 piecewise monotonic alignment 또는 DTW를 사용한다. 프레임 점수뿐 아니라 시간 간격, 본편 coverage, 고유 장면 수, 일치가 오프닝/크레디트에 편중되는지 함께 평가한다.
+
+후보가 명확해지면 중단한다. 공통 인트로만 일치하거나 점수 차이가 작으면 본편 구간에서만 1~2장씩 보강한다. 예산 내에서도 판정이 안정되지 않으면 Uncertain으로 남기며 무한히 추출하지 않는다.
+
+### 16.7 Node E / decoder 경계
+
+Node E는 exactness 문제로 production sparse seek를 채택하지 않았고 ExactnessPolicy::RefuseAll을 유지한다. 역방향 timestamp 선택은 역재생 디코드나 random seek 정확성 보장이 아니다.
+
+- 첫 prototype은 현행 sequential decoder를 기준으로 한다.
+- timestamp 주변 seek, keyframe jump, window decode는 별도 prototype/계측 경로에서만 시험한다.
+- Probe/Kept 수 감소를 decodedFrames 감소로 표현하지 않는다.
+- 실제 decoder 절감 주장은 decodedFrames, sampledFrames, keptFrames, seek/landing, decode time, end-to-end time이 모두 확인될 때만 허용한다.
+- production random access는 별도 codec/profile/exactness/fallback Gate와 명시적 로드맵 변경 전까지 금지다.
+
+### 16.8 Cache / Engine 버전 경계
+
+초기 단계는 scratch 결과로 검증한다. 대표 프레임·interval payload 및 verdict semantics가 확정되기 전에는 cache format, DB schema, engine version을 올리지 않는다. production 판정 의미가 실제 변경될 때에만 재생성/재검증 및 호환성 비용을 분석한다.
+
+### 16.9 연구 참고
+
+- IEEE Access 2026, A Review of Partial Video Copy Detection: Technical Advances, Evaluation Frameworks, and Future Trends, DOI 10.1109/ACCESS.2026.3707321: whole-video near-duplicate와 partial-copy localization의 목적을 구분하고, keyframe retrieval 후 temporal consistency/sequence alignment로 검증하는 coarse-to-fine 구조를 정리한다.
+- Luo et al., IEEE TPAMI 2025, FiGVCL: Fine-Grained Benchmark and Method for Video Copy Localization, DOI 10.1109/TPAMI.2025.3595625: 부분 복사 구간의 temporal correspondence를 보존하는 평가·localization을 다룬다.
+
+참고 연구는 설계·평가 근거일 뿐, deep model·데이터셋·외부 의존성 도입을 승인하지 않는다.
