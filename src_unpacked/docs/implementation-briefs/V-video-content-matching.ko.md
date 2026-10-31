@@ -7,7 +7,7 @@ Production code change: **NONE** — 구현 계약과 검증 Gate의 사전등�
 
 ## 1. 목적
 
-영상 길이와 구조가 다른 파일을 같은 간격으로 샘플링하고 모든 파일 쌍을 비교하는 방식을 개선한다. 목표는 (1) 10초 숏폼과 2시간 영화를 기본 전체 중복 후보에서 분리, (2) 길이별 소수 대표 프레임과 시간 구조 정보 사용, (3) 광고/인트로/크레디트 편집 차이를 흡수하되 본편의 고유 장면·시간 연속성을 중심으로 판정, (4) 애매한 후보만 추가 추출, (5) 보관 프레임과 실제 디코드 수 분리 계측, (6) 전체 영상 중복과 부분 클립 검색 분리다.
+영상 길이와 구조가 다른 파일을 같은 간격으로 샘플링하고 모든 파일 쌍을 비교하는 방식을 개선한다. 목표는 (1) 10초 숏폼과 2시간 영화를 기본 전체 중복 후보에서 분리, (2) 길이별 소수 대표 프레임과 시간 구조 정보 사용, (3) 광고/인트로/크레디트 편집 차이를 흡수하되 본편의 고유 장면·시간 연속성을 중심으로 판정, (4) 애매한 후보만 추가 추출, (5) 보관 프레임과 실제 디코드 수 분리 계측, (6) 전체 영상 중복과 부분 클립 검색 분리, (7) 설정 창의 동영상 탭에서 자동 권장값과 숏폼/롱폼별 사용자 지정 관찰 간격·프레임 예산 제공이다.
 
 CPU/GPU 디코더나 하드웨어 가속 선택은 이 예정서의 범위가 아니다.
 
@@ -38,13 +38,14 @@ Node E production sparse seek는 sequential baseline과 frame exactness가 깨�
 
 | Class | 길이 | 정책 | 목표 |
 |---|---:|---|---:|
-| V0 | 15초 이하 | 전체 시간축, 장면 변화 중심 | 4~6장 |
-| V1 | 15초 초과~60초 | 전체 구간, 5초 초기 Probe + 이벤트 보완 | 6~10장 |
-| V2 | 1~10분 | 6~8개 전체 관찰 구간 | 8~14장 |
-| V3 | 10~25분 | 시작·중간·끝 분산 | 9~13장 |
-| V4 | 25~60분 | 반복 인트로/요약/크레디트 감쇠, 본편 중심 | 9~12장 |
-| V5 | 60~150분 | 시작 + 소수 중간 + 역방향 엔딩 | 10~14장 |
-| V6 | 150분 초과 | 구조 복잡도에 따라 확장 | 12~16장 |
+| G1 | 15초 이하 | 전체 시간축, 장면 변화 중심 | 4~6장 |
+| G2 | 15초 초과~60초 | 전체 구간, 5초 초기 Probe + 이벤트 보완 | 6~10장 |
+| G3 | 1~3분 | 전체 시간축 6~8 관찰 구간 | 8~10장 |
+| G4 | 3~10분 | 전체 시간축 6~8 관찰 구간 | 10~14장 |
+| G5 | 10~25분 | 시작·중간·끝 분산 | 9~13장 |
+| G6 | 25~60분 | 반복 인트로/요약/크레디트 감쇠, 본편 중심 | 9~12장 |
+| G7 | 60~150분 | 시작 + 소수 중간 + 역방향 엔딩 | 10~14장 |
+| G8 | 150분 초과 | 구조 복잡도에 따라 확장 | 12~16장 |
 
 130분 영화는 오프닝 0~30초 약 6 Probe(1~2장 유지), 30초~3분 본편 경계(1~2장), 본편 초반 1장, 중간 2~3장, 본편 후반/엔딩 직전 1~3장을 목표로 한다. T-15초/30초/1/2/4/8/12/20분은 종료부 구조 Probe 예시이며 암전/크레디트는 interval metadata로 기록한다. 중심 목표 약 12장이다. 수치는 검증된 최적값이나 quota가 아니다.
 
@@ -80,17 +81,35 @@ timestamp 대응 단조 증가를 강제한다. affine offset/scale부터 확인
 
 **Gate:** re-encode/intro/ad/credit 수정본 검출과 서로 다른 회차의 분리. Candidate recall과 final precision/recall을 분리 계측.
 
-### V5 — Partial-clip (별도 제안)
+### V5 — GUI 동영상 설정 탭
+
+V0~V4의 offline 정확도·비용 Gate를 통과한 정책을 사용자가 조정할 수 있도록 설정 대화상자에 **동영상 탭**을 추가한다. UI는 숏폼/중간 길이/롱폼 세 그룹으로 보여주되 내부 G1~G8 cohort와 구조 판정은 보존한다.
+
+- 기본 모드: **자동(권장)**. 길이와 구조에 따라 기존 cohort 정책을 자동 적용한다. 처음부터 사용자가 영상 유형을 강제로 분류하게 하지 않는다.
+- 사용자 지정 모드: 프로파일별 Probe 간격과 대표 프레임 목표/예산, 불확실 후보 추가 보강량을 편집한다.
+- 숏폼(60초 이하): 전체 시간축의 프레임 확인 간격 **5초 권장**. 1~60초 범위에서 사용자 지정이 가능하도록 하며, 예를 들어 5초를 3초로 변경하면 숏폼 전체 시간축의 관찰 위치가 더 촘촘해진다. 대표 프레임은 보통 6~10장 목표이며 15초 이하는 4~6장이다.
+- 중간 길이(60초 초과~25분): 자동 구조 기반 정책을 기본으로 한다. 전체 구간을 무조건 동일 간격으로 샘플링하는 사용자 옵션은 기본 권장으로 두지 않는다.
+- 롱폼(25분 초과): 구조 경계 상세 간격 **5초 권장**, 본편 정밀 보강 간격 **5초 권장**. 각각 자동으로 좁혀진 오프닝/본편 시작/종료 경계 창과, 후보가 불확실한 본편 국소 창 안에서만 적용한다. 영화 전체를 5초/3초마다 훑는 모드가 아니다. 5초→3초 변경은 선택된 창 안의 관찰을 촘촘하게 한다.
+- 롱폼의 본편 anchor는 자동 1~3개 분산 구간을 유지한다. 대표 프레임 목표는 25~60분 9~12장, 60~150분 10~14장, 150분 초과 12~16장이다. 애매한 후보는 식별력 있는 본편 구간에 1~2장씩 추가 보강한다.
+- 부분 클립 검색은 별도 기능이며 기본 OFF를 유지한다.
+
+사용자 지정 간격의 초기 UI 입력 범위는 1~60초 제안으로 둔다. 최종 상한과 파일당 Probe/Kept 예산은 실데이터 측정으로 확정하고 무제한 추출을 허용하지 않는다. 프레임 확인 간격은 Probe timestamp 간격이지 대표 프레임 수나 실제 decodedFrames 수가 아니다.
+
+설정은 기존 사용자 설정 저장 계층에 저장한다. 검색 시작 시 설정 snapshot을 고정하고 실행 중 변경은 다음 검색부터 적용한다. fingerprint 생성 정책을 바꾸는 값은 cache reuse 적합성 검사에 반영해 서로 다른 정책의 지문이 혼합되지 않도록 한다. 실제 cache contract 확인 전 임의 DB/schema/cache migration을 하지 않는다.
+
+**Gate:** 동영상 탭 표시, 자동(권장) 첫 실행값, 저장·재시작 round-trip, 5초→3초 값 적용 범위, 잘못된 입력 거부/상한, 실행 중 변경의 다음 검색 적용, cache stale/reuse 안전성, 숏폼·에피소드·영화별 candidate recall/precision 및 Probe/Kept/Decoded/시간 계측을 확인한다. UI는 interval 조정을 실제 디코드 프레임 감소로 표현하지 않는다.
+
+### V6 — Partial-clip (별도 제안)
 
 기본 whole-video 경로와 별도의 timeline index/query route. 10~14 대표 프레임만으로 장편 임의 위치의 숏폼을 모두 찾을 수 있다고 가정하지 않는다. source/query interval을 반환해야 하며 별도 사용자 옵션 전에는 기본 검색에 포함하지 않는다.
 
-### V6 — Production 채택
+### V7 — Production 채택
 
 V0~V4를 offline/shadow로 검증한다. 정답 데이터와 현행 결과를 대조해 정확도·비용 Gate를 통과한 부분만 production 제안한다. 판정 semantics가 바뀔 때만 engine version 검토, persistent payload가 필요할 때만 cache/DB migration 검토. GUI acceptance는 core algorithm 이후 별도 수행한다.
 
 ## 6. 필수 평가·계측
 
-평가쌍: byte-identical, re-encode/resolution/fps 변경, horizontal mirror, leading ad/intro, credit 길이 변경, mid-roll, head/tail trim, 서로 다른 episode의 공통 intro, 공통 로고/음악만 같은 영상, fast montage, 장편에서 추출한 부분 숏폼(V5).
+평가쌍: byte-identical, re-encode/resolution/fps 변경, horizontal mirror, leading ad/intro, credit 길이 변경, mid-roll, head/tail trim, 서로 다른 episode의 공통 intro, 공통 로고/음악만 같은 영상, fast montage, 장편에서 추출한 부분 숏폼(V6).
 
 계측: duration/structural profile/boundary confidence, probeCount, requested samples, keptFrames, actual decodedFrames, seek/landing(실험만), decode·convert·fingerprint·compare·alignment time, candidate count, candidate recall, precision/recall, false positive/negative, core coverage, cache hit/bytes, kept-frame p95와 index size. 미측정은 0이 아니라 Not measured/Not available.
 
@@ -122,4 +141,4 @@ NVDEC/D3D11VA/Vulkan 구현, Node E sparse seek production 재도입, vertical f
 
 ## 10. 현재 상태
 
-이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 사용자의 별도 착수 지시 전까지 source/test/DB/engine 변경을 금지한다.
+이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭은 V0~V4 정확도·비용 Gate 이후의 V5 단계로 계획하며 현재 구현된 기능이 아니다. XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 사용자의 별도 착수 지시 전까지 source/test/DB/engine 변경을 금지한다.
