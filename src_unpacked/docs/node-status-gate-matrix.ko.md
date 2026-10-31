@@ -158,7 +158,7 @@ vcpkg 이동                            하지 않음 (project-local 유지)
 | `color_thumb` no-FFmpeg classification | R1 완료(0.9.4.113) — 현행 유지 확정(사용자 확인) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
 | nvcc 경고 release gate 등록 | 미결정 | `worklog/0.9.4.*` |
 | 콘솔 출력 전용 회귀 테스트 | 미추가 | `worklog/0.9.4.*` |
-| V — Video Content Matching | **PROPOSED / DEFERRED** — 사전등록만 완료, Active Build Queue 밖 | development-roadmap.{ko,en}.md, implementation-briefs/V-video-content-matching.*, architecture/video-similarity-search.* |
+| V — Video Content Matching | **PROPOSED / DEFERRED** — GUI 동영상 탭(자동 권장/사용자 지정), 숏폼·롱폼 관찰 간격과 프레임 예산까지 사전 설계; V0~V4 정확도·비용 Gate 후 V5 UI. 구현/실측 없음, Active Build Queue 밖 | development-roadmap.{ko,en}.md, implementation-briefs/V-video-content-matching.*, architecture/video-similarity-search.* |
 
 ## 버전 불변 확인
 
