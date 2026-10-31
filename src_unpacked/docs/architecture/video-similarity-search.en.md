@@ -432,14 +432,17 @@ A **Custom** mode exposes per-profile overrides. Present three understandable gr
 | UI profile / setting | Recommended default | Scope and meaning |
 |---|---:|---|
 | Short-form (up to 60s) — full-timeline frame-check interval | **5 seconds** | Probe positions across the complete timeline. Scene-change events may trigger additional observations. |
-| Short-form — representative-frame target | Automatic, usually **6–10 frames** | G1 videos up to 15s target 4–6. Repeated/low-information frames are excluded; this is not a quota. |
+| Short-form — representative-frame target | Automatic: G1 **5 frames** (4–6), G2 **8 frames** (6–10) | Custom mode selects an integer target within the proposed range for that cohort. Exclude redundant/low-information frames. |
 | Mid-length (over 60s–25m) — comparison policy | Automatic (recommended) | Keep 6–8 observation regions for 1–10m and beginning/middle/end distribution for 10–25m. Prefer structure-aware probes over one fixed uniform cadence. |
 | Long-form (over 25m) — structural-boundary detail interval | **5 seconds** | Applies only inside narrowed opening/main-content-start/ending boundary windows. It does not scan the whole film every five seconds. |
 | Long-form — main-content refinement interval | **5 seconds** | Applies only inside a selected core region when an initial candidate is uncertain. A user can change 5s to 3s to inspect that region more densely. |
 | Long-form — initial core anchors | Automatic, **1–3 distributed regions** | Do not increase all regions uniformly with duration. Seek independent evidence in separated main-content regions. |
-| Long-form — representative-frame target | Automatic | 25–60m: 9–12; 60–150m: 10–14; over 150m: 12–16. A 130-minute film has a center target of about 12. |
+| Long-form — representative-frame target | Automatic: G6 **10 frames** (9–12), G7 **12 frames** (10–14), G8 **14 frames** (12–16) | A 130-minute film has a recommended center target of 12. Custom mode selects within the proposed cohort range. |
 | Uncertain-candidate refinement | Enabled (recommended), **1–2 additional frames per region** | Refine only distinctive core regions when only a common intro matches or scores are close. |
 | Partial-clip search | Off by default | Keep it separate from whole-video duplicate search and its index; run only when explicitly enabled. |
+
+
+Custom representative-frame targets default to the recommended cohort centers above; users may choose an integer target within the proposed range for that cohort. This is a **soft target**, not a quota. The actual retained count may be lower due to redundancy/low information, and the separate refinement allowance is used only for ambiguous candidates. These centers are initial UI recommendations, not measured optima.
 
 Custom intervals are positive values in seconds. The initial UI proposal is **1–60 seconds**; finalize the input ceiling and total Probe budget using real accuracy/throughput measurements. Even with a dense interval, enforce separate per-file Probe and retained-frame budgets; never allow unbounded expansion.
 
