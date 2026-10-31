@@ -416,3 +416,62 @@ Validate early stages in scratch results. Do not bump cache format, DB schema, o
 - Luo et al., IEEE TPAMI 2025, FiGVCL: Fine-Grained Benchmark and Method for Video Copy Localization, DOI 10.1109/TPAMI.2025.3595625: addresses evaluation and localization that preserve temporal correspondence in partial copies.
 
 These references inform design/evaluation only; they do not approve importing deep models, datasets, or dependencies.
+
+## 17. GUI Settings — Video Tab and User-Adjustable Profiles
+
+> **Design status: PROPOSED / NOT IMPLEMENTED / NOT VALIDATED.** This section adds a GUI settings contract to Workstream V; it does not imply that a Video tab already exists in the product.
+
+### 17.1 Settings layout
+
+Add a **Video** tab to the Settings dialog. The default selection is **Automatic (recommended)** and retains the existing internal G1–G8 duration cohorts and structural classification. In Automatic mode, the application chooses the sampling policy from duration, scene changes, and intro/credit structure. Do not make manual forced classification as “short” or “movie” the default.
+
+A **Custom** mode exposes per-profile overrides. Present three understandable groups in the UI (Short-form / Mid-length / Long-form), while preserving the existing fine-grained duration cohorts internally.
+
+### 17.2 Recommended defaults and editable controls
+
+| UI profile / setting | Recommended default | Scope and meaning |
+|---|---:|---|
+| Short-form (up to 60s) — full-timeline frame-check interval | **5 seconds** | Probe positions across the complete timeline. Scene-change events may trigger additional observations. |
+| Short-form — representative-frame target | Automatic, usually **6–10 frames** | G1 videos up to 15s target 4–6. Repeated/low-information frames are excluded; this is not a quota. |
+| Mid-length (over 60s–25m) — comparison policy | Automatic (recommended) | Keep 6–8 observation regions for 1–10m and beginning/middle/end distribution for 10–25m. Prefer structure-aware probes over one fixed uniform cadence. |
+| Long-form (over 25m) — structural-boundary detail interval | **5 seconds** | Applies only inside narrowed opening/main-content-start/ending boundary windows. It does not scan the whole film every five seconds. |
+| Long-form — main-content refinement interval | **5 seconds** | Applies only inside a selected core region when an initial candidate is uncertain. A user can change 5s to 3s to inspect that region more densely. |
+| Long-form — initial core anchors | Automatic, **1–3 distributed regions** | Do not increase all regions uniformly with duration. Seek independent evidence in separated main-content regions. |
+| Long-form — representative-frame target | Automatic | 25–60m: 9–12; 60–150m: 10–14; over 150m: 12–16. A 130-minute film has a center target of about 12. |
+| Uncertain-candidate refinement | Enabled (recommended), **1–2 additional frames per region** | Refine only distinctive core regions when only a common intro matches or scores are close. |
+| Partial-clip search | Off by default | Keep it separate from whole-video duplicate search and its index; run only when explicitly enabled. |
+
+Custom intervals are positive values in seconds. The initial UI proposal is **1–60 seconds**; finalize the input ceiling and total Probe budget using real accuracy/throughput measurements. Even with a dense interval, enforce separate per-file Probe and retained-frame budgets; never allow unbounded expansion.
+
+### 17.3 Interpretation of recommended defaults
+
+- **Short-form:** for a 60-second clip, a 5-second interval means about 12 baseline observation positions across the full timeline. It does not mean all 12 frames will be retained; the final representative-frame target is usually 6–10, selected by information content and redundancy.
+- **Long-form:** do not uniformly sample an entire film every 5 or 3 seconds. First locate opening/main-content/ending structure adaptively and distribute a few core anchors. A user override from 5s to 3s applies only to automatically selected **local detail windows**.
+- **Precision and cost:** shorter intervals can increase Probe positions and feature-computation work. Raising the retained-frame target can increase fingerprint/comparison/cache cost. Do not guarantee accuracy gains or linear accuracy improvement from more samples.
+- Automatic mode preserves all existing G1–G8 cohorts. Do not collapse the 60s–25m range into either Short-form or Long-form. Apply episode-like weighting to 25–60m content only when repeated opening/recap/credit structure is detected.
+
+### 17.4 Settings persistence and run lifecycle
+
+1. Persist Automatic/Custom selection and profile overrides through the existing user-preferences layer. Do not introduce a new settings file, DB, or schema prematurely.
+2. Freeze the effective settings as a **run snapshot** when a search begins. UI changes during a run apply only to the next search.
+3. Separate fingerprint-affecting settings (sampling interval/frame budget) from verdict-only thresholds. Fingerprint-affecting settings change cache reuse eligibility and therefore require a policy ID/hash or equivalent cache-freshness check.
+4. Never silently mix old cached fingerprints with results produced under a different policy. Design preservation of old results, stale marking, and explicit regeneration/revalidation; inspect the current cache contract before deciding whether migration is required.
+5. Do not bump engine version, cache format, or DB schema for the initial UI alone. Decide through a separate gate only if persistent payloads or production verdict semantics actually change and compatibility evidence warrants it.
+
+### 17.5 Honest UI wording and telemetry
+
+Use **Frame-check interval** as the user-facing label. Its help text must say: “Spacing between candidate Probe timestamps; this is not the number of retained frames or the number of frames output by the decoder.”
+
+With the current VideoDecoder::framesAt() single-seek-then-sequential-decode path, intermediate frames may still be decoded even when target timestamps are farther apart. Do not claim fewer decoded frames or shorter end-to-end time merely because the user changed 5s to 3s. Record the effective profile/interval, probeCount, sampledFrames, keptFrames, decodedFrames, fingerprint/compare time, and final verdict evidence separately in run telemetry.
+
+### 17.6 GUI settings acceptance gate
+
+- Confirm that the Settings dialog contains a Video tab and first-run defaults to Automatic (recommended).
+- Confirm Automatic mode uses the G1–G8 duration/structure policy and correctly handles cohort boundaries without requiring forced media-type selection.
+- Verify that a user override from 5s to 3s is confined to the short-form full timeline or the selected local detail windows for long-form.
+- Verify settings save/restart round-trip, invalid-value rejection/clamping, and next-run-only application when changed during an active search.
+- Verify that profile changes do not incorrectly reuse stale video fingerprints or mix results produced by different policies.
+- Compare candidate recall, precision/recall, Probe/Kept/Decoded counts, and fingerprint/compare/end-to-end time for each interval/frame budget using real short-form, episode, and film datasets.
+- Verify the UI makes no decoder-savings claim and CPU/GPU/fallback paths preserve identical verdict semantics.
+
+Expose only policies that have passed V's algorithm/accuracy gates. This GUI scope is a design proposal; implementation, manual GUI acceptance, and performance measurements remain outstanding.
