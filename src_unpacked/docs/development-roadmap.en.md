@@ -402,10 +402,11 @@ Acceptance is based on correctness + end-to-end throughput + fallback correctnes
 - Implementation plan: docs/implementation-briefs/V-video-content-matching.{ko,en}.md
 - Do not add it to the Active Build Queue. It does not replace existing Progress priorities such as XMP acceptance or the S5 real-dataset benchmark.
 - Scope: duration-aware candidate separation, separate whole-video/partial-clip search, opening/main-content/reverse-time ending structure analysis, representative-frame budgets, and temporal/rarity-based verification.
+- GUI scope: add a Video tab to the Settings dialog with **Automatic (recommended)** as the default. Custom mode exposes the short-form full-timeline frame-check interval (5s recommended), long-form structural-boundary/main-content refinement intervals (5s each recommended, restricted to selected local windows), duration-aware representative-frame budgets, and uncertain-candidate refinement allowance. Mid-length content retains the existing automatic cohort policy.
 - Keep Node E's ExactnessPolicy::RefuseAll and production sparse-seek rejection unchanged. V's content-verdict criteria do not automatically lift Node E's decoder exactness gate.
 - The first prototype validates accuracy and kept-frame reduction against the existing sequential decode path. Claim an actual decodedFrames reduction only after a separate decoder prototype passes exactness and cost gates.
 - Partial-clip search remains a separate feature/index, not part of default whole-video duplicate search.
-- Version number, implementation start date, and production adoption are unassigned; do not change source before the user's separate implementation instruction.
+- Implementation order: V0 dataset/ground truth → V1 candidate separation → V2 structural probes → V3 representative frames → V4 temporal verification → V5 GUI Video Settings tab → V6 separate Partial-clip → V7 production adoption. Expose the GUI tab only after V0–V4 accuracy/cost gates pass.
 
 ## Version number policy
 
