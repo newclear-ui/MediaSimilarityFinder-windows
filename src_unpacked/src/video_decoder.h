@@ -23,6 +23,12 @@ public:
     // Decode multiple monotonically increasing timestamps from a single seek/decode pass.
     // cancel is polled between frames: a Stop landing mid-sweep winds down
     // promptly instead of decoding to the last timestamp (0.9.4.78). Null = run to the end.
+    // 0.9.4.158 completeness contract (P0/P1): returns true only when every
+    // requested sample was produced (EOF flush/drain included) and no cancel
+    // landed mid-sweep, except trailing targets within endpoint-quantization
+    // slack of the last decoded frame. Cancelled, truncated, or
+    // decoder-error sweeps clear the output and return false, so callers
+    // never fingerprint or cache a partial sample set as complete.
     // decodedOut (optional): receives the number of frames actually decoded
     // during the sweep, including intermediate frames that matched no target
     // and were discarded (so >= out.size() whenever FFmpeg decoded anything).

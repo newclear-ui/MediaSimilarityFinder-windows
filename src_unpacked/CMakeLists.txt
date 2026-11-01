@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.157 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.158 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -956,6 +956,13 @@ if(Qt6_FOUND)
     target_link_libraries(msf_video_cancel_test PRIVATE msf_core Qt6::Core)
     target_include_directories(msf_video_cancel_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME video_cancel_test COMMAND msf_video_cancel_test)
+    # 0.9.4.158 P0/P1: cancelled/truncated/incomplete sweeps must never
+    # produce or cache a fingerprint (decoder completeness contract +
+    # pre-store cancel recheck + EOF flush/drain).
+    add_executable(msf_video_complete_test tests/video_complete_test.cpp)
+    target_link_libraries(msf_video_complete_test PRIVATE msf_core Qt6::Core)
+    target_include_directories(msf_video_complete_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME video_complete_test COMMAND msf_video_complete_test)
     # 0.9.4.79 index janitor: stale per-root indexes + old TestMode scratch.
     add_executable(msf_index_janitor_test tests/index_janitor_test.cpp src/index_janitor.cpp)
     target_include_directories(msf_index_janitor_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -118,6 +118,11 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
     // 0.9.4.155: count every frame FFmpeg actually produces, not just the
     // ones matching a sample target. GPU-decode replacement and frame-
     // download savings cannot be measured from kept frames alone.
+    bool cancelled=false;
+    // 0.9.4.158 (P1): last actually-decoded frame time, for the tail rule
+    // below. Updated for every received frame, including intermediates that
+    // match no target (they still prove content existed at that time).
+    double lastDecodedT=0; bool anyDecoded=false;
     if(decodedOut) *decodedOut=0;
     auto emitFrame=[&](AVFrame* src,double t)->bool{
         AVFrame* dst=av_frame_alloc(); if(!dst) return false;
@@ -132,13 +137,21 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
     while(next<targets.size() && av_read_frame(fmt,pkt)>=0){
         // Cooperative cancel between packet reads: a Stop (or the stall
         // watchdog) landing mid-sweep stops here instead of decoding to EOF.
-        if(cancel && cancel->load(std::memory_order_relaxed)){ av_packet_unref(pkt); break; }
+        // 0.9.4.158 (P0): a cancelled sweep is a failure, never a partial
+        // success. The flag is recorded so the tail below clears the
+        // partial output instead of returning it as a usable sample set.
+        if(cancel && cancel->load(std::memory_order_relaxed)){ av_packet_unref(pkt); cancelled=true; break; }
         if(pkt->stream_index==stream_ && avcodec_send_packet(cc,pkt)>=0){
             while(avcodec_receive_frame(cc,fr)>=0){
                 if(decodedOut) ++(*decodedOut);
                 double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
+                lastDecodedT=t; anyDecoded=true;
                 while(next<targets.size() && t+0.05>=targets[next]){
-                    if(!emitFrame(fr,t)) { av_packet_unref(pkt); av_packet_free(&pkt); av_frame_free(&fr); return !out.empty(); }
+                    // 0.9.4.158 (P0): an emit failure is a sweep failure.
+                    // Returning the frames gathered so far would let the
+                    // caller fingerprint (and cache) an incomplete sample
+                    // set as if it were complete.
+                    if(!emitFrame(fr,t)) { av_packet_unref(pkt); av_packet_free(&pkt); av_frame_free(&fr); out.clear(); return false; }
                     ++next;
                 }
                 if(next>=targets.size()) break;
@@ -149,22 +162,86 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         // Once decoding has passed the last requested timestamp, there is no useful work left.
         if(next<targets.size() && !out.empty() && out.back().timestamp>targets.back()+0.05) break;
     }
+    // 0.9.4.158 (P1): EOF flush/drain. B-frames (and any reordered frames)
+    // held inside the decoder never surface from av_read_frame, so without
+    // a NULL-packet drain the tail samples would silently go missing while
+    // the sweep still reported success.
+    if(!cancelled && next<targets.size()){
+        if(avcodec_send_packet(cc,nullptr)>=0){
+            while(next<targets.size() && avcodec_receive_frame(cc,fr)>=0){
+                if(decodedOut) ++(*decodedOut);
+                double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
+                lastDecodedT=t; anyDecoded=true;
+                while(next<targets.size() && t+0.05>=targets[next]){
+                    if(!emitFrame(fr,t)) { av_packet_free(&pkt); av_frame_free(&fr); out.clear(); return false; }
+                    ++next;
+                }
+            }
+        }
+    }
     av_packet_free(&pkt); av_frame_free(&fr);
-    return !out.empty();
+    // 0.9.4.158 (P0/P1) completeness contract: success means every requested
+    // sample was produced and no cancel landed mid-sweep, EXCEPT trailing
+    // targets within endpoint-quantization slack of the last decoded frame.
+    // The plan always appends the exact duration endpoint, but the last
+    // decodable frame precedes it by up to a frame interval (low-fps files:
+    // tenths of a second), so demanding it would fail legitimate files.
+    // Cancelled sweeps always fail with cleared output: no partial sample
+    // set may reach fingerprinting or the caches. A truncated file (or
+    // decoder errors) leaves missing targets FAR beyond the slack, so it
+    // still fails with nothing stored.
+    if(cancelled || (cancel && cancel->load(std::memory_order_relaxed))){ out.clear(); return false; }
+    if(!anyDecoded || out.empty()){ out.clear(); return false; }
+    if(next<targets.size()){
+        // Tail tolerance: trailing targets within endpoint-quantization
+        // slack of the last actually-decoded frame are excused (frame-grid /
+        // muxer rounding at the duration endpoint). Anything else missing
+        // means real content loss (truncation, decode errors) -> failure.
+        double slack=0.5;
+        if(info_.fps>0.5) slack=std::clamp(1.5/info_.fps,0.15,1.5);
+        for(std::size_t k=next;k<targets.size();++k){
+            if(!(targets[k]<=lastDecodedT+slack)){ out.clear(); return false; }
+        }
+    }
+    for(std::size_t i=0;i<out.size();++i){
+        if(!(out[i].timestamp+0.05>=targets[i])){ out.clear(); return false; }
+        if(i>0 && out[i].timestamp+1e-6<out[i-1].timestamp){ out.clear(); return false; }
+    }
+    return true;
 #else
     // Fallback keeps the same API. Without linked FFmpeg, delegate each requested
     // timestamp to the command-line decoder (the optimized single-pass path is used
     // whenever FFmpeg is linked).
+    // 0.9.4.158: same completeness contract as the linked path (P0/P1),
+    // including the endpoint tail tolerance (the CLI seek for a duration-
+    // endpoint target yields no frame on low-fps files).
+    std::size_t valid=0;
+    std::vector<double> validStamps;
+    std::size_t firstMissOrdinal=SIZE_MAX, lastOkOrdinal=0;
+    double lastOkStamp=0; bool anyOk=false;
     for(double secondsAt:seconds){
+        if(cancel && cancel->load(std::memory_order_relaxed)){ out.clear(); return false; }
         if(!std::isfinite(secondsAt)||secondsAt<0) continue;
+        const std::size_t vi=valid++;
+        validStamps.push_back(secondsAt);
         std::ostringstream cmd; cmd<<"ffmpeg -v error -ss "<<secondsAt<<" -i \""<<path_<<"\" -frames:v 1 -vf scale="<<w<<":"<<h<<",format=gray -f rawvideo pipe:1";
         // Decode class: 120 s budget (single frame, normally < 10 s).
-        std::string raw; if(!captureSilent(cmd.str(),raw,120000)) continue;
-        if(raw.size()!=(size_t)w*h) continue;
+        std::string raw; if(!captureSilent(cmd.str(),raw,120000)){ firstMissOrdinal=std::min(firstMissOrdinal,vi); continue; }
+        if(raw.size()!=(size_t)w*h){ firstMissOrdinal=std::min(firstMissOrdinal,vi); continue; }
         std::vector<std::uint8_t> data(raw.begin(),raw.end());
         out.push_back({secondsAt,w,h,std::move(data)});
+        lastOkOrdinal=vi; lastOkStamp=secondsAt; anyOk=true;
         // No-FFmpeg fallback: each CLI decode yields at most one kept frame.
         if(decodedOut) ++(*decodedOut);
+    }
+    if(cancel && cancel->load(std::memory_order_relaxed)){ out.clear(); return false; }
+    if(out.size()==valid) return !out.empty();
+    // Partial CLI results fail, except trailing misses within endpoint slack
+    // of the last produced sample. An interior gap means real content loss.
+    if(!anyOk){ out.clear(); return false; }
+    if(firstMissOrdinal<=lastOkOrdinal){ out.clear(); return false; }
+    for(std::size_t k=0;k<validStamps.size();++k){
+        if(k>lastOkOrdinal && !(validStamps[k]<=lastOkStamp+1.0)){ out.clear(); return false; }
     }
     return !out.empty();
 #endif
@@ -173,7 +250,9 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
 bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32,
                                const std::atomic<bool>* cancel,std::size_t* decodedOut){
     out96.clear(); out32.clear();
-    if(!framesAt(seconds,96,96,out96,cancel,decodedOut)) return false;
+    // 0.9.4.158: framesAt owns the completeness contract (including the
+    // endpoint tail tolerance), so a true result is used as-is.
+    if(!framesAt(seconds,96,96,out96,cancel,decodedOut)){ out96.clear(); out32.clear(); return false; }
     out32.reserve(out96.size());
     for(const auto& f:out96){
         if(f.width!=96||f.height!=96||f.gray.size()!=(std::size_t)96*96) continue;
@@ -186,7 +265,10 @@ bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vect
         }
         out32.push_back(std::move(d));
     }
-    return !out32.empty();
+    // 0.9.4.158: the 32x32 set must stay 1:1 with the 96x96 sweep; a short
+    // derived set is a sweep failure, not a smaller fingerprint.
+    if(out32.size()!=out96.size() || out32.empty()){ out96.clear(); out32.clear(); return false; }
+    return true;
 }
 
 bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32,SparseSeekStats* st){

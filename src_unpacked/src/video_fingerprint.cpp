@@ -351,6 +351,12 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   }
   if(sparseUsed){ decodedCount=(std::size_t)sparseDecoded; }
   else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount)){d.close();return false;}
+  // 0.9.4.158 (P0/P1): the decoder owns the completeness contract (cancel,
+  // truncation, decode errors, EOF flush/drain, endpoint tail tolerance),
+  // so a true result is used as-is. The store below is still guarded: a
+  // Stop landing between the last decoded frame and the cache write must
+  // not persist anything.
+  if(cancel && cancel->load(std::memory_order_relaxed)){d.close();return false;}
   // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
   // full-file sweep cost ~50% of build time on decode-bound files (each sweep
   // is a single sequential decode, never one seek per timestamp).
@@ -358,6 +364,10 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
     stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); }
   d.close();if(built.hashes.empty())return false;
+  // 0.9.4.158 (P0): re-check cancel immediately before persisting. The sweep
+  // above can take minutes on long files; a Stop in this window must leave
+  // no memory or disk trace of the abandoned build.
+  if(cancel && cancel->load(std::memory_order_relaxed))return false;
   memoryStore(p,sz,mt,built,nullptr);savePersistent(p,sz,mt,built,nullptr);o=std::move(built);return true;
 }
 bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& base,VideoCropFingerprint& crop,int decodeSize) const{
@@ -571,15 +581,17 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
       pb.insert(pb.end(),&yFlip[j*kPx],&yFlip[(j+1)*kPx]);
     }
     if(!map.empty()){
-      if(options.stats) options.stats->gpuPairs+=map.size();
+      // 0.9.4.158 (P2): account offered vs executed GPU work separately.
+      // gpuPairs stays as the legacy offered-count for telemetry continuity.
+      if(options.stats){ options.stats->gpuPairs+=map.size(); options.stats->gpuSubmitted+=map.size(); }
       const auto t0=std::chrono::steady_clock::now();
       std::vector<double> out(map.size()*2);
       if(options.gpuActivity) options.gpuActivity->store(true,std::memory_order_relaxed);
       const bool ok=map.size()>=8&&options.gpu->ssimBatch(pa.data(),pb.data(),map.size()*2,out.data());
       if(options.gpuActivity) options.gpuActivity->store(false,std::memory_order_relaxed);
-      if(options.stats) options.stats->gpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
+      if(options.stats){ options.stats->gpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); }
       if(ok){
-       if(options.stats) options.stats->gpuUsed=true;
+       if(options.stats){ options.stats->gpuUsed=true; options.stats->gpuCompleted+=map.size(); }
        for(std::size_t k=0;k<map.size();++k) ssim[map[k]]=100.0*std::max(out[k*2],out[k*2+1]);
       } else if(options.stats) options.stats->gpuFallback=true;
     }

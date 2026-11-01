@@ -30,7 +30,12 @@ struct VideoBuildStats {
   bool planSparseRejected=false;    // sparse was attempted and rejected
   long long planSparseSeeks=0, planSparseDecoded=0, planSparseLandingViolations=0;
 };
-struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; std::size_t gpuPairs=0; };
+struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0; std::size_t gpuPairs=0;
+  // 0.9.4.158 (P2): gpuPairs historically counted every Hamming-gated pair
+  // offered to the GPU path, including sub-threshold batches (<8) that ran
+  // on the CPU. Kept for telemetry continuity; the split below separates
+  // offered work from work the GPU actually executed.
+  std::size_t gpuSubmitted=0; std::size_t gpuCompleted=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;
  std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0;
@@ -81,7 +86,7 @@ private:
    mutable VideoPolicy videoPolicy_;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
-   static constexpr int kCacheFormatVersion=9;
+   static constexpr int kCacheFormatVersion=10;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
   void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
