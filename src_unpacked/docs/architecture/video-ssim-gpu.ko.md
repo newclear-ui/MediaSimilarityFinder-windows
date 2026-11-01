@@ -17,6 +17,7 @@
 - `ssimBatch()` 호출은 `GpuBackend` mutex로 직렬화해 여러 temporal worker가 backend를 공유한다.
 - CPU와 동일한 C1/C2 상수·window 평균 규칙을 사용하므로 판정 임계값 의미가 바뀌지 않는다.
 - `ScanPipeline` temporal 검증과 `compareFingerprint()` live 경로가 같은 GPU backend를 공유한다.
+- 0.9.4.159: DTW 행 버퍼(`hamming`/`ssim`/packing/`out`)는 thread_local workspace에서 재사용한다(worker당 1개, 수식·순서 불변). pHash 스테이징도 1회 reserve한다.
 
 ## 제한
 

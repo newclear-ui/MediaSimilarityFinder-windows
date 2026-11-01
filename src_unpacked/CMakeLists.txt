@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.158 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.159 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -522,6 +522,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_ssim_test tests/video_ssim_test.cpp)
     target_link_libraries(msf_video_ssim_test PRIVATE msf_core)
     add_test(NAME video_ssim_test COMMAND msf_video_ssim_test)
+    # 0.9.4.159 P2: similarity workspace/perf probe (determinism pin +
+    # fixed-workload wall time for before/after comparison).
+    add_executable(msf_video_sim_perf_test tests/video_sim_perf_test.cpp)
+    target_link_libraries(msf_video_sim_perf_test PRIVATE msf_core)
+    add_test(NAME video_sim_perf_test COMMAND msf_video_sim_perf_test)
     add_executable(msf_video_gpu_benchmark_test tests/video_gpu_benchmark_test.cpp)
     target_link_libraries(msf_video_gpu_benchmark_test PRIVATE msf_core)
     add_test(NAME video_gpu_benchmark_test COMMAND msf_video_gpu_benchmark_test)

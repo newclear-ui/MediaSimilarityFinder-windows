@@ -17,6 +17,7 @@
 - `ssimBatch()` calls are serialized by the `GpuBackend` mutex so concurrent temporal workers share one backend.
 - Identical C1/C2 constants and window-averaging rules keep threshold semantics unchanged.
 - The `ScanPipeline` temporal stage and the `compareFingerprint()` live path share the same GPU backend.
+- 0.9.4.159: DTW-row buffers (`hamming`/`ssim`/packing/`out`) are reused from a thread_local workspace (one per worker; math and order untouched). pHash staging is reserved once.
 
 ## Limits
 

@@ -18,6 +18,19 @@
 namespace msf {
 static sqlite3* VDB(void* p){return reinterpret_cast<sqlite3*>(p);}
 static std::string quickIdentity(const std::string& path){std::ifstream f(path_from_utf8(path),std::ios::binary);if(!f)return{};unsigned char b[65536];f.read(reinterpret_cast<char*>(b),sizeof(b));const std::size_t n=static_cast<std::size_t>(f.gcount());std::uint64_t h=1469598103934665603ULL;for(std::size_t i=0;i<n;++i){h^=b[i];h*=1099511628211ULL;}return std::to_string(h);}
+// 0.9.4.159 (P2): reusable DTW-row workspace for video_similarity().
+// The rows used to allocate hamming/ssim (+ pa/pb/map/out on GPU-gated
+// rows) on EVERY row; with n x m candidate pairs this heap churn dominated
+// matching overhead on longer kept fingerprints. Buffers are reused across
+// rows and calls with identical math and order, so scores are unchanged.
+// One instance per worker thread: scan_pipeline fans candidate pairs out
+// over an async pool, so a shared static would race.
+struct VideoSimWorkspace{
+  std::vector<double> hamming, ssim, out;
+  std::vector<std::size_t> map;
+  std::vector<std::uint8_t> pa, pb;
+};
+static VideoSimWorkspace& simWorkspace(){ thread_local VideoSimWorkspace ws; return ws; }
 bool VideoFingerprintEngine::preparePersistentStatements() const{
  sqlite3* db=VDB(cacheDb_); if(!db)return false;
   const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND quick_hash=? AND cache_version=? AND policy=?";
@@ -208,7 +221,12 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
    std::vector<PerceptualHashPair> pairs(frames32.size()); std::vector<char> pairReady(frames32.size(),0);
    const bool gpuRequested=gpu!=nullptr;
    if(gpuRequested){
+     // 0.9.4.159 (P2): size the pHash staging buffers once. The loop below
+     // used to regrow packed/mirrored incrementally; values and order are
+     // unchanged, only the reallocations are gone.
+     std::size_t stageCount=0; for(char k:keep) if(k) ++stageCount;
      std::vector<std::size_t> map; std::vector<std::uint8_t> packed, mirrored;
+     map.reserve(stageCount); packed.reserve(stageCount*1024); mirrored.reserve(stageCount*1024);
      for(std::size_t i=0;i<frames32.size();++i){
        const auto& f=frames32[i];
        if(!keep[i]||f.width!=32||f.height!=32||f.gray.size()!=1024) continue;
@@ -218,18 +236,21 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
      }
      const std::size_t requested=256;
      std::size_t batch=requested; const auto safe=gpu->recommendedBatchSize(requested); if(safe>0) batch=safe;
+     // 0.9.4.159 (P2): reuse the hashBatch chunk buffers across chunks.
+     std::vector<std::uint64_t> normalBuf, mirrorBuf;
      for(std::size_t base=0;base<map.size();base+=batch){
-       const std::size_t n=std::min(batch,map.size()-base); std::vector<std::uint64_t> normal(n), mirror(n);
+       const std::size_t n=std::min(batch,map.size()-base);
+       normalBuf.resize(n); mirrorBuf.resize(n);
        const auto t0=std::chrono::steady_clock::now();
        if(gpuActivity) gpuActivity->store(true,std::memory_order_relaxed);
-       const bool normalOk=gpu->hashBatch(packed.data()+base*1024,n,normal.data());
-       const bool mirrorOk=gpu->hashBatch(mirrored.data()+base*1024,n,mirror.data());
+       const bool normalOk=gpu->hashBatch(packed.data()+base*1024,n,normalBuf.data());
+       const bool mirrorOk=gpu->hashBatch(mirrored.data()+base*1024,n,mirrorBuf.data());
        if(gpuActivity) gpuActivity->store(false,std::memory_order_relaxed);
        const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
        if(stats) stats->gpuMs+=ms;
        for(std::size_t k=0;k<n;++k){
          const auto i=map[base+k];
-         if(normalOk&&mirrorOk){ pairs[i]={normal[k],mirror[k]}; pairReady[i]=1; }
+         if(normalOk&&mirrorOk){ pairs[i]={normalBuf[k],mirrorBuf[k]}; pairReady[i]=1; }
        }
        if(stats){ if(normalOk&&mirrorOk) stats->gpuUsed=true; else stats->gpuFallback=true; }
      }
@@ -560,9 +581,15 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
    auto* f=&yFlip[j*kPx]; for(int yy=0;yy<kT;++yy)for(int xx=0;xx<kT;++xx) f[(std::size_t)yy*kT+xx]=p[(std::size_t)yy*kT+(kT-1-xx)];
   }
  }
+  // 0.9.4.159 (P2): DTW-row buffers come from the thread_local workspace
+  // instead of fresh per-row allocations. Same values in the same order,
+  // so scores are unchanged; only the heap churn is gone.
+  VideoSimWorkspace& ws=simWorkspace();
   for(std::size_t i=1;i<=n;++i){
    cur[0]=0;
-   std::vector<double> hamming(m,0), ssim(m,-1);
+   ws.hamming.assign(m,0); ws.ssim.assign(m,-1);
+   std::vector<double>& hamming=ws.hamming;
+   std::vector<double>& ssim=ws.ssim;
    for(std::size_t j=1;j<=m;++j){
     double sim=hash_similarity(x.hashes[i-1],y.hashes[j-1]);
     std::uint64_t xm=(i-1<x.mirrorHashes.size()?x.mirrorHashes[i-1]:0), ym=(j-1<y.mirrorHashes.size()?y.mirrorHashes[j-1]:0);
@@ -572,7 +599,10 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
     hamming[j-1]=sim;
    }
    if(useSsim&&options.gpu){
-    std::vector<std::uint8_t> pa,pb; std::vector<std::size_t> map;
+    ws.map.clear(); ws.pa.clear(); ws.pb.clear();
+    std::vector<std::uint8_t>& pa=ws.pa;
+    std::vector<std::uint8_t>& pb=ws.pb;
+    std::vector<std::size_t>& map=ws.map;
     for(std::size_t j=0;j<m;++j) if(hamming[j]>=threshold&&xHas[i-1]&&yHas[j]){
       map.push_back(j);
       pa.insert(pa.end(),&x.thumb48[(i-1)*kPx],&x.thumb48[i*kPx]);
@@ -585,7 +615,8 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
       // gpuPairs stays as the legacy offered-count for telemetry continuity.
       if(options.stats){ options.stats->gpuPairs+=map.size(); options.stats->gpuSubmitted+=map.size(); }
       const auto t0=std::chrono::steady_clock::now();
-      std::vector<double> out(map.size()*2);
+      ws.out.resize(map.size()*2);
+      std::vector<double>& out=ws.out;
       if(options.gpuActivity) options.gpuActivity->store(true,std::memory_order_relaxed);
       const bool ok=map.size()>=8&&options.gpu->ssimBatch(pa.data(),pb.data(),map.size()*2,out.data());
       if(options.gpuActivity) options.gpuActivity->store(false,std::memory_order_relaxed);
