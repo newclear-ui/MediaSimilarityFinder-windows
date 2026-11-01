@@ -257,7 +257,9 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
      if(stats && map.empty()) stats->gpuFallback=true;
    }
   constexpr int kT = VideoFingerprint::kThumbSize;
-   for(std::size_t i=0;i<frames32.size();++i){if(!keep[i])continue;const auto&f=frames32[i];ts.push_back(f.timestamp);{const auto hp=pairReady[i]?pairs[i]:perceptual_hash_pair(f.gray,f.width,f.height);hs.push_back(hp.normal);mhs.push_back(hp.mirrored);}
+   // 0.9.4.161 (P1): CPU pHash compute time only; GPU-covered frames add 0.
+   double cpuHashMs=0;
+   for(std::size_t i=0;i<frames32.size();++i){if(!keep[i])continue;const auto&f=frames32[i];ts.push_back(f.timestamp);{PerceptualHashPair hp; if(pairReady[i]){hp=pairs[i];} else {const auto ht0=std::chrono::steady_clock::now(); hp=perceptual_hash_pair(f.gray,f.width,f.height); cpuHashMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-ht0).count();} hs.push_back(hp.normal);mhs.push_back(hp.mirrored);}
     const std::size_t base=thumbs.size(); thumbs.resize(base+(std::size_t)kT*kT,0);
     if(i<frames96.size()){const auto&cf=frames96[i];
       if(cf.width==96&&cf.height==96&&(int)cf.gray.size()==96*96){
@@ -269,6 +271,7 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
     }
   }
   built.thumb48=std::move(thumbs);
+  if(stats) stats->phashCpuMs=cpuHashMs;
   for(std::size_t i=1;i<ts.size();++i){double sim=hash_similarity(hs[i-1],hs[i]);if(sim<25.0)built.sceneChanges.push_back(ts[i]);}
   built.timestamps=std::move(ts); built.hashes=std::move(hs); built.mirrorHashes=std::move(mhs);
   if(crops){ crops->timestamps.reserve(built.hashes.size()); crops->a4x3.reserve(built.hashes.size()); crops->a1x1.reserve(built.hashes.size()); crops->a9x16.reserve(built.hashes.size()); crops->mirrorA4x3.reserve(built.hashes.size()); crops->mirrorA1x1.reserve(built.hashes.size()); crops->mirrorA9x16.reserve(built.hashes.size()); }
@@ -370,8 +373,11 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
       stats->planReason=(int)SamplingReason::PlannerDisabled;
     }
   }
+  // 0.9.4.161 (P1): time the sweep itself (decode + grayscale convert).
+  const auto sweepT0=std::chrono::steady_clock::now();
   if(sparseUsed){ decodedCount=(std::size_t)sparseDecoded; }
   else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount)){d.close();return false;}
+  const double sweepMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sweepT0).count();
   // 0.9.4.158 (P0/P1): the decoder owns the completeness contract (cancel,
   // truncation, decode errors, EOF flush/drain, endpoint tail tolerance),
   // so a true result is used as-is. The store below is still guarded: a
@@ -383,7 +389,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // is a single sequential decode, never one seek per timestamp).
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
-    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); }
+    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; }
   d.close();if(built.hashes.empty())return false;
   // 0.9.4.158 (P0): re-check cancel immediately before persisting. The sweep
   // above can take minutes on long files; a Stop in this window must leave

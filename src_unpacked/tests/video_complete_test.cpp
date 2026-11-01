@@ -83,9 +83,14 @@ int main() {
     // 1. Baseline: uncancelled build succeeds.
     {
         msf::VideoFingerprint vf;
-        if (!e.build(clip, vf)) { std::cerr << "baseline build failed\n"; return 4; }
+        msf::VideoBuildStats st;
+        if (!e.build(clip, vf, nullptr, nullptr, &st)) { std::cerr << "baseline build failed\n"; return 4; }
         if (vf.hashes.empty()) { std::cerr << "baseline empty\n"; return 4; }
         if (!diskHit(e, clip)) { std::cerr << "baseline not cached\n"; return 4; }
+        // 0.9.4.161 (P1): the decode-stage split is populated, not zero.
+        if (!(st.decodeMs > 0.0)) { std::cerr << "decodeMs not measured\n"; return 4; }
+        if (!(st.phashCpuMs >= 0.0)) { std::cerr << "phashCpuMs missing\n"; return 4; }
+        if (st.cacheHit) { std::cerr << "fresh prime unexpectedly hit\n"; return 4; }
         std::cout << "  [ok] baseline succeeds and caches\n";
     }
     const std::size_t memBase = e.memoryCacheSize();

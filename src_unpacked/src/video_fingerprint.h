@@ -20,6 +20,11 @@ struct VideoBuildStats {
   // = sample-plan intent (unknown on cache hit); keptFrames = final hashes.
   std::size_t decodedFrames=0, sampledFrames=0, keptFrames=0;
   bool cacheHit=false;
+  // 0.9.4.161 (P1): decode-stage split. decodeMs = sweep wall time
+  // (decode + grayscale convert, both planner paths); phashCpuMs = CPU
+  // pHash compute time only (0 when the GPU batch covers everything).
+  // Cache hit records 0 for both (measured, like decodedFrames).
+  double decodeMs=0, phashCpuMs=0;
   // E-3B: sampling-planner telemetry. Reported so a decision can be explained
   // and so a fallback is never silent. strategy is a samplingDecisionName(); a
   // non-nullptr value is recorded even on a cache hit, because the decision is

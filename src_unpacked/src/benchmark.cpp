@@ -260,6 +260,8 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   reductionPct_ = 0;
   gpuImages_ = gpuFallback_ = 0;
   vidGpu_.store(0, std::memory_order_relaxed); vidGpuFallback_.store(0, std::memory_order_relaxed); vidGpuNs_.store(0, std::memory_order_relaxed);
+  vidDecodeNs_.store(0, std::memory_order_relaxed); vidPhashCpuNs_.store(0, std::memory_order_relaxed);
+  vidDecodeRecorded_ = vidPhashCpuRecorded_ = false;
   completed_ = false;
   cancelled_ = paused_ = failed_ = false;
   failedStage_.clear(); completionReason_.clear();
@@ -418,6 +420,12 @@ void TelemetryRecorder::addVideoGpu(bool used, bool fallback, double gpuMs) {
   if (fallback) vidGpuFallback_.fetch_add(1, std::memory_order_relaxed);
   vidGpuNs_.fetch_add((long long)(gpuMs * 1e6), std::memory_order_relaxed);
 }
+void TelemetryRecorder::addVideoStages(double decodeMs, double phashCpuMs) {
+  vidDecodeNs_.fetch_add((long long)(decodeMs * 1e6), std::memory_order_relaxed);
+  vidPhashCpuNs_.fetch_add((long long)(phashCpuMs * 1e6), std::memory_order_relaxed);
+  vidDecodeRecorded_ = true;
+  vidPhashCpuRecorded_ = true;
+}
 void TelemetryRecorder::sampleOnce(double tMs) {
   ResourceSample s;
   s.tMs = tMs;
@@ -575,6 +583,9 @@ std::string TelemetryRecorder::toJson() const {
   const double imgCropMs = (double)imgCropNs_.load() / 1e6;
   const double vidBuildMs = (double)vidBuildNs_.load() / 1e6;
   const double vidGpuMs = (double)vidGpuNs_.load() / 1e6;
+  // 0.9.4.161 (P1): decode-stage split locals for the videos section below.
+  const double vidDecodeMs = (double)vidDecodeNs_.load() / 1e6;
+  const double vidPhashCpuMs = (double)vidPhashCpuNs_.load() / 1e6;
   const double playSec = vidPlaySec_.load();
   double cpuMean = 0, cpuMax = 0, cpuVar = 0, sysMean = 0, memMax = 0, gpuDuty = 0;
   double ioReadMax = 0, ioWriteMax = 0, ioReadSum = 0, ioWriteSum = 0;
@@ -716,6 +727,12 @@ std::string TelemetryRecorder::toJson() const {
      << ",\"sampledFramesState\":\"" << measureStateName(vidSampledRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
      << ",\"playSec\":" << playSec << ",\"buildMs\":" << vidBuildMs
      << ",\"gpuVideos\":" << vidGpu_.load() << ",\"gpuFallbackVideos\":" << vidGpuFallback_.load() << ",\"gpuHashMs\":" << vidGpuMs
+     // 0.9.4.161 (P1): decode vs CPU-hash split. Each keeps its own state
+     // so an unscanned corpus stays not_measured instead of 0.
+     << ",\"decodeMs\":" << (vidDecodeRecorded_ ? std::to_string(vidDecodeMs) : std::string("null"))
+     << ",\"decodeMsState\":\"" << measureStateName(vidDecodeRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+     << ",\"phashCpuMs\":" << (vidPhashCpuRecorded_ ? std::to_string(vidPhashCpuMs) : std::string("null"))
+     << ",\"phashCpuMsState\":\"" << measureStateName(vidPhashCpuRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     // E-3B: the sampling planner. `sparseRejected` is reported next to
     // `sparseAccepted` so a fallback is never invisible, and the landing
     // violation count explains rejections rather than leaving them unexplained.

@@ -222,6 +222,9 @@ public:
                 std::size_t decodedFrames = kFramesNotProvided, std::size_t sampledFrames = kFramesNotProvided,
                 bool cacheHit = false);
   void addVideoGpu(bool used, bool fallback, double gpuMs);
+  // 0.9.4.161 (P1): per-file decode-stage split (decode sweep wall time vs
+  // CPU pHash compute time). Additive; cache hits contribute measured 0.
+  void addVideoStages(double decodeMs, double phashCpuMs);
 // E-3B: records one planner decision for one video file. Called for every
 // analysed file, including cache hits, because the decision is cheap input
 // analysis and is exactly what a reader needs to see when a scan looks odd.
@@ -315,6 +318,8 @@ private:
   std::atomic<std::uint64_t> vidRangeCount_{0}, vidRangeFiles_{0};
   std::atomic<long long> vidRangeMaxNs_{0};
   std::atomic<long long> vidBuildNs_{0};
+  std::atomic<long long> vidDecodeNs_{0}, vidPhashCpuNs_{0};
+  bool vidDecodeRecorded_ = false, vidPhashCpuRecorded_ = false;
   std::atomic<std::uint64_t> vidGpu_{0}, vidGpuFallback_{0};
   std::atomic<long long> vidGpuNs_{0};
   // E-3B adaptive sampling planner. A fallback must never be silent, so the

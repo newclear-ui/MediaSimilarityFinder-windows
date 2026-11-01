@@ -322,6 +322,36 @@ int main() {
     const std::string js2 = rec.toJson();
     expect(objStr(js2, "analyze", "state") == "not_measured", "C: a new run does not inherit analyze state");
   }
+  // --- 0.9.4.161 video stage split: decode vs CPU-hash timings are ---
+  // --- measured values with their own states, never zero-filled. ---
+  {
+    msf::TelemetryRecorder rec;
+    msf::TelemetryConfig cfg;
+    cfg.root = "C:/media"; cfg.build = "0.9.4.161"; cfg.engine = "1.5.1"; cfg.db = "1.0.6";
+    rec.start(cfg);
+    rec.addVideo(1000, 8.0, 50.0, 3, "v.mp4", 80,
+                 3, false);
+    rec.addVideoStages(40.0, 5.0);
+    const std::string js = rec.toJson();
+    expect(objNum(js, "videos", "decodeMs") == 40.0, "V: decodeMs recorded");
+    expect(objStr(js, "videos", "decodeMsState") == "measured", "V: decodeMsState measured");
+    expect(objNum(js, "videos", "phashCpuMs") == 5.0, "V: phashCpuMs recorded");
+    expect(objStr(js, "videos", "phashCpuMsState") == "measured", "V: phashCpuMsState measured");
+  }
+  {
+    // No stage calls: null + not_measured, never 0.
+    msf::TelemetryRecorder rec;
+    msf::TelemetryConfig cfg;
+    cfg.root = "C:/media"; cfg.build = "0.9.4.161"; cfg.engine = "1.5.1"; cfg.db = "1.0.6";
+    rec.start(cfg);
+    rec.addVideo(1000, 8.0, 50.0, 3, "v.mp4", 80,
+                 3, false);
+    const std::string js = rec.toJson();
+    expect(hasIn(js, "videos", "\"decodeMs\":null"), "V: decodeMs null without stage calls");
+    expect(objStr(js, "videos", "decodeMsState") == "not_measured", "V: decodeMsState not_measured");
+    expect(hasIn(js, "videos", "\"phashCpuMs\":null"), "V: phashCpuMs null without stage calls");
+    expect(objStr(js, "videos", "phashCpuMsState") == "not_measured", "V: phashCpuMsState not_measured");
+  }
   if (!firstFailure.empty()) { std::cout << "recorder section: " << firstFailure << "\n"; return 4; }
 
   if (failures) { std::cout << "analyze_telemetry=failed " << failures << " failure(s)\n"; return 1; }
