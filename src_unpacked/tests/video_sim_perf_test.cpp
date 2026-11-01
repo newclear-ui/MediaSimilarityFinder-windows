@@ -70,6 +70,17 @@ int main() {
     }
     std::cout << "  [ok] gpu agrees submitted=" << st.gpuSubmitted
               << " completed=" << st.gpuCompleted << "\n";
+    // 0.9.4.162 (P1): the all-GPU workload records no CPU fallback time.
+    if (st.cpuMs != 0.0) { std::cerr << "unexpected cpu fallback on gpu path\n"; return 5; }
+  }
+
+  // 0.9.4.162 (P1): CPU-fallback MSSIM time is measured, not zero.
+  {
+    msf::VideoSimilarityStats st;
+    auto co = o; co.gpu = nullptr; co.stats = &st;
+    (void)msf::video_similarity(fa, fb, co);
+    if (!(st.cpuMs > 0.0)) { std::cerr << "cpu fallback time not measured\n"; return 5; }
+    std::cout << "  [ok] cpuMs measured=" << st.cpuMs << "\n";
   }
 
   // Timed workload: same pair, fixed iteration count.

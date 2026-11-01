@@ -14,6 +14,7 @@
 #include <thread>
 #include <unordered_set>
 #include <unordered_map>
+#include <utility>
 namespace msf {
 void ScanPipeline::add(const MediaFile& f){files_.push_back(f);}
 void ScanPipeline::clear(){
@@ -265,12 +266,15 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
       const std::size_t n=e-b;
       const unsigned w=std::min<unsigned>(hw,static_cast<unsigned>(n));
       const std::size_t per=(n+w-1)/w;
-      std::vector<std::future<std::vector<VideoResult>>> futs; futs.reserve(w);
+      std::vector<std::future<std::pair<std::vector<VideoResult>,VideoSimilarityStats>>> futs; futs.reserve(w);
       for(unsigned k=0;k<w;++k){
         const std::size_t sb=b+k*per, se=std::min(e,sb+per);
         if(sb>=se) break;
         futs.emplace_back(std::async(std::launch::async,[&,sb,se](){
           std::vector<VideoResult> out; out.reserve(se-sb);
+          // 0.9.4.162 (P1): per-worker MSSIM split. Harvested sequentially
+          // below into tel (workers never touch shared telemetry).
+          VideoSimilarityStats vst;
           for(std::size_t t=sb;t<se;++t){
             if(stop && stop()) break;
             const auto tk=pendingVideo[t];
@@ -278,16 +282,18 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
             VideoFingerprint ai,bi;VideoCropFingerprint ac,bc;
             if(temporal(files_[tk.i],ai,ac)&&temporal(files_[tk.j],bi,bc)){
               vr.verified=true;
-              VideoSimilarityOptions options{threshold,8,2,2.0}; options.gpu=videoGpu_; options.gpuActivity=videoGpuActivity_;
+              VideoSimilarityOptions options{threshold,8,2,2.0}; options.gpu=videoGpu_; options.gpuActivity=videoGpuActivity_; options.stats=&vst;
               const double ts=video_crop_similarity(ai,ac,bi,bc,options);
               if(ts>=threshold){ vr.matched=true; vr.percent=ts; }
             }
             out.push_back(vr);
           }
-          return out;
+          return std::make_pair(std::move(out), vst);
         }));
       }
-      for(auto& fu:futs) for(const auto& vr:fu.get()) emitVideo(vr);
+      for(auto& fu:futs){ const auto r=fu.get(); for(const auto& vr:r.first) emitVideo(vr);
+        tel.videoMatchGpuMs+=r.second.gpuMs; tel.videoMatchCpuMs+=r.second.cpuMs;
+        tel.videoMatchSubmitted+=r.second.gpuSubmitted; tel.videoMatchCompleted+=r.second.gpuCompleted; }
     }
     pendingVideo.clear();
   };
@@ -573,6 +579,12 @@ if(isVideo){
   s.analyze.ssimEvals=tel.ssimEvals;
   s.analyze.frameSsimEvals=tel.frameSsimEvals;
   s.analyze.videoTemporalPairs=tel.videoTemporalPairs;
+  // 0.9.4.162 (P1): match-stage MSSIM split, harvested from the temporal
+  // workers above. Plain sums, same contract as the counters around them.
+  s.analyze.videoMatchGpuMs=tel.videoMatchGpuMs;
+  s.analyze.videoMatchCpuMs=tel.videoMatchCpuMs;
+  s.analyze.videoMatchSubmitted=tel.videoMatchSubmitted;
+  s.analyze.videoMatchCompleted=tel.videoMatchCompleted;
   // D9c: close out the verify breakdown the same way. The seven measured
   // stages are disjoint code regions, so "other" is the remainder of the
   // verify total after them. It absorbs the per-call control work the timers

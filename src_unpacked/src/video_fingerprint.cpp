@@ -636,7 +636,14 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
    for(std::size_t j=1;j<=m;++j){
     double sim=hamming[j-1];
     if(sim>=threshold&&useSsim&&xHas[i-1]&&yHas[j-1]){
-      const double s=ssim[j-1]>=0?ssim[j-1]:100.0*std::max(frame_ssim(&x.thumb48[(i-1)*kPx],&y.thumb48[(j-1)*kPx],kT,kT),frame_ssim(&x.thumb48[(i-1)*kPx],&yFlip[(j-1)*kPx],kT,kT));
+      double s=ssim[j-1];
+      if(s<0){
+        // 0.9.4.162 (P1): CPU fallback MSSIM time. Runs when there is no
+        // GPU, the batch is sub-threshold, or ssimBatch failed.
+        const auto ft0=std::chrono::steady_clock::now();
+        s=100.0*std::max(frame_ssim(&x.thumb48[(i-1)*kPx],&y.thumb48[(j-1)*kPx],kT,kT),frame_ssim(&x.thumb48[(i-1)*kPx],&yFlip[(j-1)*kPx],kT,kT));
+        if(options.stats) options.stats->cpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-ft0).count();
+      }
       sim=0.4*sim+0.6*s;
     }
     double timePenalty=0;if(i-1<x.timestamps.size()&&j-1<y.timestamps.size()&&tol>0){if(i>1&&j>1){double dx=x.timestamps[i-1]-x.timestamps[i-2];double dy=y.timestamps[j-1]-y.timestamps[j-2];double dt=std::abs(dx-dy);timePenalty=std::min(20.0,20.0*dt/tol);}}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;if(bonus>0&&xa[i-1]&&yb[j-1])match+=bonus;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);

@@ -33,6 +33,15 @@ struct AnalyzeTelemetry {
     std::uint64_t ssimEvals = 0;           // ssimBuf invocations
     std::uint64_t frameSsimEvals = 0;      // actual frame_ssim invocations
     std::uint64_t videoTemporalPairs = 0;  // pairs queued for temporal work
+    // 0.9.4.162 (P1): match-stage MSSIM split. Accumulated from the
+    // per-pair VideoSimilarityStats in the temporal flush (scan_pipeline):
+    // GPU-executed time, CPU-fallback time, offered pairs, GPU-completed
+    // pairs. Plain sums like the counters above (no null states here;
+    // absence of video work reads 0 alongside videoStageEntered=false).
+    double videoMatchGpuMs = 0;
+    double videoMatchCpuMs = 0;
+    std::uint64_t videoMatchSubmitted = 0;  // Hamming-gated pairs offered
+    std::uint64_t videoMatchCompleted = 0;  // pairs the GPU actually ran
 
     // Code-path entry flags. A stage that never ran is not "0 ms measured".
     bool analyzeRan = false;
@@ -123,6 +132,8 @@ inline void addAnalyzeTelemetry(AnalyzeTelemetry& d, const AnalyzeTelemetry& s) 
     d.verifyCalls += s.verifyCalls; d.verifyDecodeMisses += s.verifyDecodeMisses;
     d.verifyCacheHits += s.verifyCacheHits; d.ssimEvals += s.ssimEvals;
     d.frameSsimEvals += s.frameSsimEvals; d.videoTemporalPairs += s.videoTemporalPairs;
+    d.videoMatchGpuMs += s.videoMatchGpuMs; d.videoMatchCpuMs += s.videoMatchCpuMs;
+    d.videoMatchSubmitted += s.videoMatchSubmitted; d.videoMatchCompleted += s.videoMatchCompleted;
     d.analyzeRan = d.analyzeRan || s.analyzeRan;
     d.videoStageEntered = d.videoStageEntered || s.videoStageEntered;
     d.verifyKeyMs += s.verifyKeyMs; d.verifyDecodeMs += s.verifyDecodeMs;

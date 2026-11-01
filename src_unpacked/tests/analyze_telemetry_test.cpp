@@ -354,6 +354,23 @@ int main() {
   }
   if (!firstFailure.empty()) { std::cout << "recorder section: " << firstFailure << "\n"; return 4; }
 
+  // --- 0.9.4.162 match-stage MSSIM split folds additively (D3 style). ---
+  {
+    msf::AnalyzeTelemetry a, b;
+    a.videoMatchGpuMs = 1.5; a.videoMatchCpuMs = 0.5;
+    a.videoMatchSubmitted = 10; a.videoMatchCompleted = 8;
+    b.videoMatchGpuMs = 2.5; b.videoMatchCpuMs = 0.25;
+    b.videoMatchSubmitted = 6; b.videoMatchCompleted = 6;
+    msf::AnalyzeTelemetry m;
+    msf::addAnalyzeTelemetry(m, a);
+    msf::addAnalyzeTelemetry(m, b);
+    expect(m.videoMatchGpuMs == 4.0, "V: match gpu ms adds");
+    expect(m.videoMatchCpuMs == 0.75, "V: match cpu ms adds");
+    expect(m.videoMatchSubmitted == 16, "V: match submitted adds");
+    expect(m.videoMatchCompleted == 14, "V: match completed adds");
+  }
+  if (!firstFailure.empty()) { std::cout << "match-split section: " << firstFailure << "\n"; return 5; }
+
   if (failures) { std::cout << "analyze_telemetry=failed " << failures << " failure(s)\n"; return 1; }
   std::cout << "analyze_telemetry=ok checks=" << checks << "\n";
   return 0;

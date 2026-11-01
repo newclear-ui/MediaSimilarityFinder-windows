@@ -882,7 +882,15 @@ std::string TelemetryRecorder::toJson() const {
     a << ",\"msPerVerifyCallState\":\"" << measureStateName(hasVerify ? MeasureState::Measured : MeasureState::NotMeasured) << "\"";
     a << ",\"ssimEvals\":" << analyzeTel_.ssimEvals
       << ",\"frameSsimEvals\":" << analyzeTel_.frameSsimEvals
-      << ",\"videoTemporalPairs\":" << analyzeTel_.videoTemporalPairs;
+      << ",\"videoTemporalPairs\":" << analyzeTel_.videoTemporalPairs
+      // 0.9.4.162 (P1): match-stage MSSIM split. Plain sums from the
+      // temporal workers (GPU-executed vs CPU-fallback time, offered vs
+      // completed pairs). Additive keys; a video-free run reads 0
+      // alongside videoStageEntered=false (see the videos section).
+      << ",\"videoMatchGpuMs\":" << analyzeTel_.videoMatchGpuMs
+      << ",\"videoMatchCpuMs\":" << analyzeTel_.videoMatchCpuMs
+      << ",\"videoMatchSubmitted\":" << analyzeTel_.videoMatchSubmitted
+      << ",\"videoMatchCompleted\":" << analyzeTel_.videoMatchCompleted;
     // D9c: exclusive breakdown of verifyMs. Each field is a disjoint code
     // region and verifyOtherMs is the remainder, so the seven times plus other
     // reconstruct verifyMs without double counting. verifySumMs is published

@@ -40,7 +40,11 @@ struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double
   // offered to the GPU path, including sub-threshold batches (<8) that ran
   // on the CPU. Kept for telemetry continuity; the split below separates
   // offered work from work the GPU actually executed.
-  std::size_t gpuSubmitted=0; std::size_t gpuCompleted=0; };
+  std::size_t gpuSubmitted=0; std::size_t gpuCompleted=0;
+  // 0.9.4.162 (P1): CPU-fallback MSSIM time (frame_ssim when the GPU batch
+  // does not run). GPU time is gpuMs; together with submitted/completed
+  // they show where match-stage MSSIM actually ran.
+  double cpuMs=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;
  std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0;
