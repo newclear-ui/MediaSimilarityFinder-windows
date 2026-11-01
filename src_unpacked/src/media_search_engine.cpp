@@ -1098,14 +1098,25 @@ SearchReport MediaSearchEngine::scan(const std::string& root,unsigned maxDistanc
       if(futs[i].wait_for(std::chrono::milliseconds(0))!=std::future_status::ready) continue;
       taken[i]=1; --remaining; progressed=true;
        auto j=futs[i].get(); if(!stopSeen&&stopped(control)) stopSeen=true;
+       // 0.9.4.165 (P1): a build aborted by user cancel is NOT a failure.
+       // Pause never aborts builds (framesAt only watches cancel), so only
+       // the cancel flag selects this path -- never stopped(), which also
+       // waits out pauses. The admission skeleton (fingerprint 0, not
+       // failed) stays in place so the next scan retries it via
+       // pendingAnalysis; recording it settled here would drop the video
+       // from the index until its bytes change. Not counted in failed,
+       // not reported as a failed file.
+       const bool cancelledNow = control && control->cancel.load(std::memory_order_relaxed);
        if(j.ok){ FileState vs=j.state; vs.analysisFailed=false; if(!db_.upsert(vs)){ return VideoRangeResult::Failed; } ++r.analyzed; ++nVidAnalyzed; analyzedCount_.fetch_add(1, std::memory_order_relaxed); if(oldByPath.find(vs.path)==oldByPath.end()) ++nAdded; else ++nModified; MediaFile mf{vs.path,(MediaKind)vs.kind,vs.size,(std::uint64_t)vs.modified,vs.fingerprint,vs.mirrorFingerprint,vs.crop4x3,vs.crop1x1,vs.crop9x16,vs.mirrorCrop4x3,vs.mirrorCrop1x1,vs.mirrorCrop9x16,vs.duration};mf.quickHash=vs.quickHash;files_.push_back(mf); if(liveStreamActive) livePipe.addAndMatch(mf,maxDistance,liveEmit); }
-       else { FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed;
+       else if(!cancelledNow){ FileState vf=j.state; vf.fingerprint=0; vf.analysisFailed=true; if(!db_.upsert(vf)){ return VideoRangeResult::Failed; } ++nFailed;
         if(telemetryOn){ const double fms=(i<rangeFileMs.size())?rangeFileMs[i]:0.0;
           telemetry_.addFailedFile(true, j.state.path, "decode/analysis failed", fms); } }
        // Settlement trace (0.9.4.78) + slow-file log. rangeFileMs holds the
        // actual build time, a better elapsed metric than harvest latency.
+       // 0.9.4.165: a cancel-aborted build traces "cancelled" (settled
+       // without analysis per the file_trace contract), never "failed".
        { const std::int64_t fms=wallMs();
-         const std::string oc=j.ok?"analyzed":"failed";
+         const std::string oc=j.ok?"analyzed":(cancelledNow?"cancelled":"failed");
          db_.traceFinish(j.state.path,fms,oc);
          watchdog.noteActivity(steadyMs());
          const std::int64_t admitted=db_.traceAdmitted(j.state.path);

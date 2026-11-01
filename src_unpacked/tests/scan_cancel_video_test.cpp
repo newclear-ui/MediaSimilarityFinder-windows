@@ -12,7 +12,13 @@
 //
 // Deterministic, no timing races: stops fire from synchronous hooks
 // (per-harvest progress, per-admission walked), so admission counts are
-// exact on any worker count. ffmpeg lavfi testsrc clips are real decodable
+// exact on any worker count. 0.9.4.165: a mid-sweep abort is recorded as
+// *pending* (admission skeleton kept, never counted failed), so scenario A
+// holds for every cancel interleaving, not just the lucky ones: completions
+// persist and are reused, aborts are retried, failures stay zero.
+// Scenario D pins the same contract without any race at all (pre-set
+// cancel: everything pending, rescan analyzes everything).
+// ffmpeg lavfi testsrc clips are real decodable
 // videos (same pattern as color_thumb_test). If ffmpeg is unavailable the
 // test SKIPs instead of failing.
 #include "database.h"
@@ -205,6 +211,54 @@ int main() {
         e3.close();
     }
     fs::remove_all(rootC, ec); fs::remove_all(appC, ec);
+
+    // ---- Scenario D: deterministic mid-sweep abort (0.9.4.165). ----
+    // A tiny clip (completes in ~50ms) is harvested first and fires cancel;
+    // a heavy 4K-noise clip (~2s sweep, same fixture as video_complete_test)
+    // is guaranteed to be mid-sweep at that point, so its abort is not a
+    // wall-clock race. Pre-fix code settles the aborted build as failed;
+    // fixed code leaves it pending (failed==0, rescan analyzes it).
+    const auto rootD = fs::temp_directory_path() / "msf_vcancel_d";
+    const auto appD = fs::temp_directory_path() / "msf_vcancel_d_app";
+    fs::remove_all(rootD, ec); fs::remove_all(appD, ec);
+    fs::create_directories(rootD, ec);
+    if (!genClip(rootD / "a.mp4", 2, 0)) {
+        std::cout << "[SKIP] tiny fixture missing; abort race untestable\n";
+        return 0;
+    }
+    {
+        const std::string big = (rootD / "big.mp4").string();
+        const std::string bcmd = std::string("ffmpeg -hide_banner -loglevel error -y -f lavfi"
+            " -i testsrc=size=3840x2160:rate=10:duration=20"
+            " -vf noise=alls=20:allf=t -c:v mpeg4 -pix_fmt yuv420p -b:v 20M"
+            " -movflags +faststart \"") + big + "\"";
+        if (std::system(bcmd.c_str()) != 0 || !fs::exists(big, ec)) {
+            std::cout << "[SKIP] heavy fixture generation failed\n";
+            return 0;
+        }
+    }
+    {
+        msf::MediaSearchEngine e;
+        if (!e.openIndexForRoot(rootD.string(), appD.string())) { std::cerr << "openIndexForRoot failed (D)\n"; return 11; }
+        msf::ScanControl c;
+        c.progress = [&](std::size_t, std::size_t, const std::string&) { c.cancel.store(true); };
+        const auto r = e.scan(rootD.string(), 8, &c);
+        check(!r.completed, "D: cancelled scan reports completed=false");
+        check(r.analyzed == 1, "D: exactly the tiny clip analyzed (exact)");
+        check(r.failed == 0, "D: mid-sweep abort is not a failure");
+        e.close();
+    }
+    {
+        msf::MediaSearchEngine e2;
+        if (!e2.openIndexForRoot(rootD.string(), appD.string())) { std::cerr << "reopen failed (D)\n"; return 12; }
+        const auto r2 = e2.scan(rootD.string(), 8, nullptr);
+        check(r2.completed, "D: rescan completes");
+        check(r2.unchanged == 1, "D: finished clip reused as unchanged (exact)");
+        check(r2.analyzed == 1, "D: aborted clip analyzed fresh (exact)");
+        check(r2.failed == 0, "D: rescan records no failures");
+        e2.close();
+    }
+    fs::remove_all(rootD, ec); fs::remove_all(appD, ec);
 
     for (const auto& d : {rootA, appA, rootB, appB}) fs::remove_all(d, ec);
     std::cout << "video_cancel_selfcheck=" << (gOk ? "ok" : "FAILED")
