@@ -14,6 +14,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/error.h>
 }
 #endif
 namespace msf {
@@ -95,8 +96,9 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
 }
 
 bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::vector<VideoFrame>& out,
-                      const std::atomic<bool>* cancel,std::size_t* decodedOut){
+                      const std::atomic<bool>* cancel,std::size_t* decodedOut,std::size_t* errorOut){
     out.clear();
+    if(errorOut) *errorOut=0;
     if(path_.empty() || w<=0 || h<=0 || seconds.empty()) return false;
     if(cancel && cancel->load(std::memory_order_relaxed)) return false;
 #ifdef MSF_HAS_FFMPEG
@@ -134,15 +136,24 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         for(int y=0;y<h;++y) std::copy(dst->data[0]+y*dst->linesize[0],dst->data[0]+y*dst->linesize[0]+w,vf.gray.begin()+size_t(y)*w);
         sws_freeContext(sws); av_frame_free(&dst); out.push_back(std::move(vf)); return true;
     };
-    while(next<targets.size() && av_read_frame(fmt,pkt)>=0){
+    // 0.9.4.164 (P2): decode anomaly accounting. Rejected input packets
+    // (including EAGAIN drops, which this sweep skips rather than draining
+    // for -- a known frame-loss path, now visible) and non-EOF demuxer read
+    // errors are counted, never silent. EAGAIN on receive is normal flow
+    // control, not an error.
+    int readRc=0;
+    while(next<targets.size() && (readRc=av_read_frame(fmt,pkt))>=0){
         // Cooperative cancel between packet reads: a Stop (or the stall
         // watchdog) landing mid-sweep stops here instead of decoding to EOF.
         // 0.9.4.158 (P0): a cancelled sweep is a failure, never a partial
         // success. The flag is recorded so the tail below clears the
         // partial output instead of returning it as a usable sample set.
         if(cancel && cancel->load(std::memory_order_relaxed)){ av_packet_unref(pkt); cancelled=true; break; }
-        if(pkt->stream_index==stream_ && avcodec_send_packet(cc,pkt)>=0){
-            while(avcodec_receive_frame(cc,fr)>=0){
+        if(pkt->stream_index==stream_){
+            const int sent=avcodec_send_packet(cc,pkt);
+            // 0.9.4.164 (P2): rejected input is counted, never silent.
+            if(sent<0){ if(errorOut) ++(*errorOut); }
+            else while(avcodec_receive_frame(cc,fr)>=0){
                 if(decodedOut) ++(*decodedOut);
                 double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
                 lastDecodedT=t; anyDecoded=true;
@@ -162,12 +173,16 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         // Once decoding has passed the last requested timestamp, there is no useful work left.
         if(next<targets.size() && !out.empty() && out.back().timestamp>targets.back()+0.05) break;
     }
+    // 0.9.4.164 (P2): a non-EOF demuxer error ends the sweep like EOF does;
+    // count it so truncated/errored reads are visible in telemetry.
+    if(readRc<0 && readRc!=AVERROR_EOF){ if(errorOut) ++(*errorOut); }
     // 0.9.4.158 (P1): EOF flush/drain. B-frames (and any reordered frames)
     // held inside the decoder never surface from av_read_frame, so without
     // a NULL-packet drain the tail samples would silently go missing while
     // the sweep still reported success.
     if(!cancelled && next<targets.size()){
-        if(avcodec_send_packet(cc,nullptr)>=0){
+        if(avcodec_send_packet(cc,nullptr)<0){ if(errorOut) ++(*errorOut); }
+        else {
             while(next<targets.size() && avcodec_receive_frame(cc,fr)>=0){
                 if(decodedOut) ++(*decodedOut);
                 double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
@@ -226,8 +241,9 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         validStamps.push_back(secondsAt);
         std::ostringstream cmd; cmd<<"ffmpeg -v error -ss "<<secondsAt<<" -i \""<<path_<<"\" -frames:v 1 -vf scale="<<w<<":"<<h<<",format=gray -f rawvideo pipe:1";
         // Decode class: 120 s budget (single frame, normally < 10 s).
-        std::string raw; if(!captureSilent(cmd.str(),raw,120000)){ firstMissOrdinal=std::min(firstMissOrdinal,vi); continue; }
-        if(raw.size()!=(size_t)w*h){ firstMissOrdinal=std::min(firstMissOrdinal,vi); continue; }
+        // 0.9.4.164 (P2): CLI/decode failures count like linked-path errors.
+        std::string raw; if(!captureSilent(cmd.str(),raw,120000)){ firstMissOrdinal=std::min(firstMissOrdinal,vi); if(errorOut) ++(*errorOut); continue; }
+        if(raw.size()!=(size_t)w*h){ firstMissOrdinal=std::min(firstMissOrdinal,vi); if(errorOut) ++(*errorOut); continue; }
         std::vector<std::uint8_t> data(raw.begin(),raw.end());
         out.push_back({secondsAt,w,h,std::move(data)});
         lastOkOrdinal=vi; lastOkStamp=secondsAt; anyOk=true;
@@ -248,11 +264,11 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
 }
 
 bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32,
-                               const std::atomic<bool>* cancel,std::size_t* decodedOut){
+                               const std::atomic<bool>* cancel,std::size_t* decodedOut,std::size_t* errorOut){
     out96.clear(); out32.clear();
     // 0.9.4.158: framesAt owns the completeness contract (including the
     // endpoint tail tolerance), so a true result is used as-is.
-    if(!framesAt(seconds,96,96,out96,cancel,decodedOut)){ out96.clear(); out32.clear(); return false; }
+    if(!framesAt(seconds,96,96,out96,cancel,decodedOut,errorOut)){ out96.clear(); out32.clear(); return false; }
     out32.reserve(out96.size());
     for(const auto& f:out96){
         if(f.width!=96||f.height!=96||f.gray.size()!=(std::size_t)96*96) continue;

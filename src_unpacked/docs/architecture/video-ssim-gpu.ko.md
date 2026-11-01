@@ -18,6 +18,7 @@
 - CPU와 동일한 C1/C2 상수·window 평균 규칙을 사용하므로 판정 임계값 의미가 바뀌지 않는다.
 - `ScanPipeline` temporal 검증과 `compareFingerprint()` live 경로가 같은 GPU backend를 공유한다.
 - 0.9.4.159: DTW 행 버퍼(`hamming`/`ssim`/packing/`out`)는 thread_local workspace에서 재사용한다(worker당 1개, 수식·순서 불변). pHash 스테이징도 1회 reserve한다.
+- 0.9.4.164: `gpuMs`는 실제 `ssimBatch` 호출 구간만 측정한다(게이트 탈락 행의 packing 시간 제외). 미달 배치와 실패 배치는 `smallBatchPairs`/`failedBatchPairs`로 분리 집계한다.
 
 ## 제한
 

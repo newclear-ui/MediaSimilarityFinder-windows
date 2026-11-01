@@ -24,6 +24,10 @@ struct VideoBuildStats {
   // (decode + grayscale convert, both planner paths); phashCpuMs = CPU
   // pHash compute time only (0 when the GPU batch covers everything).
   // Cache hit records 0 for both (measured, like decodedFrames).
+  // 0.9.4.164 (P2): decode anomaly count (rejected packets, non-EOF
+  // demuxer read errors). Cache hit records 0 (measured, like
+  // decodedFrames). Sparse-path issues stay in the planner stats.
+  std::size_t decodeErrors=0;
   double decodeMs=0, phashCpuMs=0;
   // E-3B: sampling-planner telemetry. Reported so a decision can be explained
   // and so a fallback is never silent. strategy is a samplingDecisionName(); a
@@ -40,7 +44,10 @@ struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double
   // offered to the GPU path, including sub-threshold batches (<8) that ran
   // on the CPU. Kept for telemetry continuity; the split below separates
   // offered work from work the GPU actually executed.
+  // 0.9.4.164 (P2): fallback attribution. Sub-threshold batches never
+  // reach the GPU; failed batches reached it and fell back.
   std::size_t gpuSubmitted=0; std::size_t gpuCompleted=0;
+  std::size_t smallBatchPairs=0; std::size_t failedBatchPairs=0;
   // 0.9.4.162 (P1): CPU-fallback MSSIM time (frame_ssim when the GPU batch
   // does not run). GPU time is gpuMs; together with submitted/completed
   // they show where match-stage MSSIM actually ran.

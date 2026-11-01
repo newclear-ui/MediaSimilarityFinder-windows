@@ -83,6 +83,35 @@ int main() {
     std::cout << "  [ok] cpuMs measured=" << st.cpuMs << "\n";
   }
 
+  // 0.9.4.164 (P2): sub-threshold batches never reach the GPU.
+  // Hand-built 2x2 identical-hash pair: every cell gates (sim=100), so each
+  // row offers 2 pairs (<8) to the CPU fallback. A GpuBackend object is
+  // passed (pointer non-null) but ssimBatch is never reached, so this is
+  // deterministic on both trees with and without CUDA hardware.
+  {
+    msf::VideoFingerprint sa, sb;
+    sa.timestamps = {0, 1}; sb.timestamps = {0, 1};
+    sa.hashes = {0x0101010101010101ULL, 0x0202020202020202ULL};
+    sb.hashes = sa.hashes;
+    sa.mirrorHashes = {0, 0}; sb.mirrorHashes = {0, 0};
+    sa.thumb48.assign(2 * kPx, 0x7F); sb.thumb48.assign(2 * kPx, 0x7F);
+    msf::GpuBackend gsmall;
+    msf::VideoSimilarityOptions so;
+    so.thresholdPercent = 50.0;
+    so.gpu = &gsmall;
+    msf::VideoSimilarityStats sst;
+    so.stats = &sst;
+    const double s = msf::video_similarity(sa, sb, so);
+    if (!(s > 99.0)) { std::cerr << "small-batch similarity wrong\n"; return 5; }
+    if (sst.gpuSubmitted != 4) { std::cerr << "small-batch submitted wrong\n"; return 5; }
+    if (sst.gpuCompleted != 0) { std::cerr << "small-batch completed nonzero\n"; return 5; }
+    if (sst.smallBatchPairs != 4) { std::cerr << "small-batch count wrong\n"; return 5; }
+    if (sst.failedBatchPairs != 0) { std::cerr << "unexpected batch failure\n"; return 5; }
+    if (!(sst.cpuMs > 0.0)) { std::cerr << "small-batch cpu time missing\n"; return 5; }
+    if (sst.gpuMs != 0.0) { std::cerr << "gpu time without gpu call\n"; return 5; }
+    std::cout << "  [ok] small-batch accounting submitted=4 completed=0\n";
+  }
+
   // Timed workload: same pair, fixed iteration count.
   constexpr int kIters = 400;
   {

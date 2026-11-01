@@ -293,7 +293,8 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
       }
       for(auto& fu:futs){ const auto r=fu.get(); for(const auto& vr:r.first) emitVideo(vr);
         tel.videoMatchGpuMs+=r.second.gpuMs; tel.videoMatchCpuMs+=r.second.cpuMs;
-        tel.videoMatchSubmitted+=r.second.gpuSubmitted; tel.videoMatchCompleted+=r.second.gpuCompleted; }
+        tel.videoMatchSubmitted+=r.second.gpuSubmitted; tel.videoMatchCompleted+=r.second.gpuCompleted;
+        tel.videoMatchSmallBatch+=r.second.smallBatchPairs; tel.videoMatchBatchFailed+=r.second.failedBatchPairs; }
     }
     pendingVideo.clear();
   };
@@ -585,6 +586,9 @@ if(isVideo){
   s.analyze.videoMatchCpuMs=tel.videoMatchCpuMs;
   s.analyze.videoMatchSubmitted=tel.videoMatchSubmitted;
   s.analyze.videoMatchCompleted=tel.videoMatchCompleted;
+  // 0.9.4.164 (P2): fallback attribution copies.
+  s.analyze.videoMatchSmallBatch=tel.videoMatchSmallBatch;
+  s.analyze.videoMatchBatchFailed=tel.videoMatchBatchFailed;
   // D9c: close out the verify breakdown the same way. The seven measured
   // stages are disjoint code regions, so "other" is the remainder of the
   // verify total after them. It absorbs the per-call control work the timers

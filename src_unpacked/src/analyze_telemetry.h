@@ -42,6 +42,11 @@ struct AnalyzeTelemetry {
     double videoMatchCpuMs = 0;
     std::uint64_t videoMatchSubmitted = 0;  // Hamming-gated pairs offered
     std::uint64_t videoMatchCompleted = 0;  // pairs the GPU actually ran
+    // 0.9.4.164 (P2): fallback attribution. Sub-threshold batches never
+    // reach the GPU (kept for the gate-size decision record); failed
+    // batches reached it and fell back to CPU.
+    std::uint64_t videoMatchSmallBatch = 0;
+    std::uint64_t videoMatchBatchFailed = 0;
 
     // Code-path entry flags. A stage that never ran is not "0 ms measured".
     bool analyzeRan = false;
@@ -134,6 +139,7 @@ inline void addAnalyzeTelemetry(AnalyzeTelemetry& d, const AnalyzeTelemetry& s) 
     d.frameSsimEvals += s.frameSsimEvals; d.videoTemporalPairs += s.videoTemporalPairs;
     d.videoMatchGpuMs += s.videoMatchGpuMs; d.videoMatchCpuMs += s.videoMatchCpuMs;
     d.videoMatchSubmitted += s.videoMatchSubmitted; d.videoMatchCompleted += s.videoMatchCompleted;
+    d.videoMatchSmallBatch += s.videoMatchSmallBatch; d.videoMatchBatchFailed += s.videoMatchBatchFailed;
     d.analyzeRan = d.analyzeRan || s.analyzeRan;
     d.videoStageEntered = d.videoStageEntered || s.videoStageEntered;
     d.verifyKeyMs += s.verifyKeyMs; d.verifyDecodeMs += s.verifyDecodeMs;

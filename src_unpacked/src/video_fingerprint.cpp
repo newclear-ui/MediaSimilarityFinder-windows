@@ -329,6 +329,10 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // Sequential path from the sweep itself; sparse path from the
   // executor stats (SparseSeekStats.decoded, same receive_frame basis).
   std::size_t decodedCount=0; long long sparseDecoded=0;
+  // 0.9.4.164 (P2): decode anomaly count for telemetry. Sparse path errors
+  // stay in the planner stats (SparseSeekStats); the sequential sweep
+  // reports rejected packets and non-EOF read errors here.
+  std::size_t sweepErrors=0;
   {
     const char* mode=std::getenv("MSF_VIDEO_SAMPLING");
     const bool plannerOn = mode && std::strcmp(mode,"off")!=0;
@@ -376,7 +380,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // 0.9.4.161 (P1): time the sweep itself (decode + grayscale convert).
   const auto sweepT0=std::chrono::steady_clock::now();
   if(sparseUsed){ decodedCount=(std::size_t)sparseDecoded; }
-  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount)){d.close();return false;}
+  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors)){d.close();return false;}
   const double sweepMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sweepT0).count();
   // 0.9.4.158 (P0/P1): the decoder owns the completeness contract (cancel,
   // truncation, decode errors, EOF flush/drain, endpoint tail tolerance),
@@ -389,7 +393,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // is a single sequential decode, never one seek per timestamp).
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
-    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; }
+    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; }
   d.close();if(built.hashes.empty())return false;
   // 0.9.4.158 (P0): re-check cancel immediately before persisting. The sweep
   // above can take minutes on long files; a Stop in this window must leave
@@ -620,17 +624,25 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
       // 0.9.4.158 (P2): account offered vs executed GPU work separately.
       // gpuPairs stays as the legacy offered-count for telemetry continuity.
       if(options.stats){ options.stats->gpuPairs+=map.size(); options.stats->gpuSubmitted+=map.size(); }
-      const auto t0=std::chrono::steady_clock::now();
-      ws.out.resize(map.size()*2);
-      std::vector<double>& out=ws.out;
-      if(options.gpuActivity) options.gpuActivity->store(true,std::memory_order_relaxed);
-      const bool ok=map.size()>=8&&options.gpu->ssimBatch(pa.data(),pb.data(),map.size()*2,out.data());
-      if(options.gpuActivity) options.gpuActivity->store(false,std::memory_order_relaxed);
-      if(options.stats){ options.stats->gpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); }
-      if(ok){
-       if(options.stats){ options.stats->gpuUsed=true; options.stats->gpuCompleted+=map.size(); }
-       for(std::size_t k=0;k<map.size();++k) ssim[map[k]]=100.0*std::max(out[k*2],out[k*2+1]);
-      } else if(options.stats) options.stats->gpuFallback=true;
+      // 0.9.4.164 (P2): time ONLY the actual ssimBatch call. Previously the
+      // clock wrapped the size gate too, so sub-threshold rows added
+      // packing/branch time to gpuMs without ever touching the GPU.
+      // Sub-threshold and failed batches are attributed separately below.
+      bool ok=false;
+      if(map.size()>=8){
+        const auto t0=std::chrono::steady_clock::now();
+        ws.out.resize(map.size()*2);
+        std::vector<double>& out=ws.out;
+        if(options.gpuActivity) options.gpuActivity->store(true,std::memory_order_relaxed);
+        ok=options.gpu->ssimBatch(pa.data(),pb.data(),map.size()*2,out.data());
+        if(options.gpuActivity) options.gpuActivity->store(false,std::memory_order_relaxed);
+        if(options.stats){ options.stats->gpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); }
+        if(ok){
+         if(options.stats){ options.stats->gpuUsed=true; options.stats->gpuCompleted+=map.size(); }
+         for(std::size_t k=0;k<map.size();++k) ssim[map[k]]=100.0*std::max(out[k*2],out[k*2+1]);
+        } else if(options.stats) options.stats->failedBatchPairs+=map.size();
+      } else if(options.stats) options.stats->smallBatchPairs+=map.size();
+      if(!ok && options.stats) options.stats->gpuFallback=true;
     }
    }
    for(std::size_t j=1;j<=m;++j){

@@ -262,6 +262,8 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   vidGpu_.store(0, std::memory_order_relaxed); vidGpuFallback_.store(0, std::memory_order_relaxed); vidGpuNs_.store(0, std::memory_order_relaxed);
   vidDecodeNs_.store(0, std::memory_order_relaxed); vidPhashCpuNs_.store(0, std::memory_order_relaxed);
   vidDecodeRecorded_ = vidPhashCpuRecorded_ = false;
+  vidDecodeErrors_.store(0, std::memory_order_relaxed);
+  vidDecodeErrorsRecorded_ = false;
   completed_ = false;
   cancelled_ = paused_ = failed_ = false;
   failedStage_.clear(); completionReason_.clear();
@@ -425,6 +427,10 @@ void TelemetryRecorder::addVideoStages(double decodeMs, double phashCpuMs) {
   vidPhashCpuNs_.fetch_add((long long)(phashCpuMs * 1e6), std::memory_order_relaxed);
   vidDecodeRecorded_ = true;
   vidPhashCpuRecorded_ = true;
+}
+void TelemetryRecorder::addVideoDecodeErrors(std::uint64_t errors) {
+  vidDecodeErrors_.fetch_add(errors, std::memory_order_relaxed);
+  vidDecodeErrorsRecorded_ = true;
 }
 void TelemetryRecorder::sampleOnce(double tMs) {
   ResourceSample s;
@@ -733,6 +739,10 @@ std::string TelemetryRecorder::toJson() const {
      << ",\"decodeMsState\":\"" << measureStateName(vidDecodeRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
      << ",\"phashCpuMs\":" << (vidPhashCpuRecorded_ ? std::to_string(vidPhashCpuMs) : std::string("null"))
      << ",\"phashCpuMsState\":\"" << measureStateName(vidPhashCpuRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+     // 0.9.4.164 (P2): decode anomaly count. Additive; unscanned corpora
+     // read null (not a structural zero).
+     << ",\"decodeErrors\":" << (vidDecodeErrorsRecorded_ ? std::to_string(vidDecodeErrors_.load()) : std::string("null"))
+     << ",\"decodeErrorsState\":\"" << measureStateName(vidDecodeErrorsRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     // E-3B: the sampling planner. `sparseRejected` is reported next to
     // `sparseAccepted` so a fallback is never invisible, and the landing
     // violation count explains rejections rather than leaving them unexplained.
@@ -890,7 +900,10 @@ std::string TelemetryRecorder::toJson() const {
       << ",\"videoMatchGpuMs\":" << analyzeTel_.videoMatchGpuMs
       << ",\"videoMatchCpuMs\":" << analyzeTel_.videoMatchCpuMs
       << ",\"videoMatchSubmitted\":" << analyzeTel_.videoMatchSubmitted
-      << ",\"videoMatchCompleted\":" << analyzeTel_.videoMatchCompleted;
+      << ",\"videoMatchCompleted\":" << analyzeTel_.videoMatchCompleted
+      // 0.9.4.164 (P2): fallback attribution (additive, same contract).
+      << ",\"videoMatchSmallBatch\":" << analyzeTel_.videoMatchSmallBatch
+      << ",\"videoMatchBatchFailed\":" << analyzeTel_.videoMatchBatchFailed;
     // D9c: exclusive breakdown of verifyMs. Each field is a disjoint code
     // region and verifyOtherMs is the remainder, so the seven times plus other
     // reconstruct verifyMs without double counting. verifySumMs is published

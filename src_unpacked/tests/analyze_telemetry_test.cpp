@@ -332,11 +332,14 @@ int main() {
     rec.addVideo(1000, 8.0, 50.0, 3, "v.mp4", 80,
                  3, false);
     rec.addVideoStages(40.0, 5.0);
+    rec.addVideoDecodeErrors(2);
     const std::string js = rec.toJson();
     expect(objNum(js, "videos", "decodeMs") == 40.0, "V: decodeMs recorded");
     expect(objStr(js, "videos", "decodeMsState") == "measured", "V: decodeMsState measured");
     expect(objNum(js, "videos", "phashCpuMs") == 5.0, "V: phashCpuMs recorded");
     expect(objStr(js, "videos", "phashCpuMsState") == "measured", "V: phashCpuMsState measured");
+    expect(objNum(js, "videos", "decodeErrors") == 2.0, "V: decodeErrors recorded");
+    expect(objStr(js, "videos", "decodeErrorsState") == "measured", "V: decodeErrorsState measured");
   }
   {
     // No stage calls: null + not_measured, never 0.
@@ -351,6 +354,8 @@ int main() {
     expect(objStr(js, "videos", "decodeMsState") == "not_measured", "V: decodeMsState not_measured");
     expect(hasIn(js, "videos", "\"phashCpuMs\":null"), "V: phashCpuMs null without stage calls");
     expect(objStr(js, "videos", "phashCpuMsState") == "not_measured", "V: phashCpuMsState not_measured");
+    expect(hasIn(js, "videos", "\"decodeErrors\":null"), "V: decodeErrors null without error calls");
+    expect(objStr(js, "videos", "decodeErrorsState") == "not_measured", "V: decodeErrorsState not_measured");
   }
   if (!firstFailure.empty()) { std::cout << "recorder section: " << firstFailure << "\n"; return 4; }
 
@@ -359,8 +364,10 @@ int main() {
     msf::AnalyzeTelemetry a, b;
     a.videoMatchGpuMs = 1.5; a.videoMatchCpuMs = 0.5;
     a.videoMatchSubmitted = 10; a.videoMatchCompleted = 8;
+    a.videoMatchSmallBatch = 4; a.videoMatchBatchFailed = 1;
     b.videoMatchGpuMs = 2.5; b.videoMatchCpuMs = 0.25;
     b.videoMatchSubmitted = 6; b.videoMatchCompleted = 6;
+    b.videoMatchSmallBatch = 2; b.videoMatchBatchFailed = 0;
     msf::AnalyzeTelemetry m;
     msf::addAnalyzeTelemetry(m, a);
     msf::addAnalyzeTelemetry(m, b);
@@ -368,6 +375,17 @@ int main() {
     expect(m.videoMatchCpuMs == 0.75, "V: match cpu ms adds");
     expect(m.videoMatchSubmitted == 16, "V: match submitted adds");
     expect(m.videoMatchCompleted == 14, "V: match completed adds");
+    expect(m.videoMatchSmallBatch == 6, "V: match small-batch adds");
+    expect(m.videoMatchBatchFailed == 1, "V: match batch-failed adds");
+    msf::TelemetryRecorder rec2;
+    msf::TelemetryConfig cfg2;
+    cfg2.root = "C:/media"; cfg2.build = "0.9.4.164"; cfg2.engine = "1.5.1"; cfg2.db = "1.0.6";
+    rec2.start(cfg2);
+    rec2.setAnalyzeTelemetry(m);
+    const std::string js3 = rec2.toJson();
+    expect(hasIn(js3, "analyze", "\"videoMatchGpuMs\":"), "V: match gpu ms key present");
+    expect(hasIn(js3, "analyze", "\"videoMatchSmallBatch\":"), "V: match small-batch key present");
+    expect(hasIn(js3, "analyze", "\"videoMatchBatchFailed\":"), "V: match batch-failed key present");
   }
   if (!firstFailure.empty()) { std::cout << "match-split section: " << firstFailure << "\n"; return 5; }
 
