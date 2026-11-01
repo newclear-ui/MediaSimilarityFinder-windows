@@ -1,6 +1,7 @@
 // Corpus-scale CPU/GPU benchmark for video pHash + 48x48 MSSIM paths.
 // Synthetic but size-representative: thousands of pairs, as in a large scan.
-// PASS contract: correctness within tolerance on GPU; timing always reported.
+// PASS contract: exactness within 1e-6 on GPU at every measured size;
+// timing always reported. Threshold decisions use the section-4 sweep.
 // On CPU-only builds the GPU sections are skipped and CPU timing is reported.
 #include "fingerprint.h"
 #include "gpu_backend.h"
@@ -129,6 +130,91 @@ int main() {
     if (!gst.gpuUsed || gst.gpuPairs == 0) return 6;
   }
 
+  // ---- 5. hashBatch chunk-size sweep ----
+  // 0.9.4.163 (P2): the product chunks pHash GPU work via
+  // recommendedBatchSize(256). This sweep times the same 1024 frames at
+  // several chunkings so the chunk size can be set from evidence.
+  // Measurement only: PASS = identical hashes at every chunking.
+  if (available) {
+    const std::size_t kChunks[] = {64, 128, 256, 512, 1024};
+    constexpr int kHashIters = 10;
+    std::cout << " hashSweep(chunkMs):";
+    for (std::size_t chunk : kChunks) {
+      std::vector<std::uint64_t> hout(kHashN, 0);
+      // Warmup outside the measurement.
+      for (std::size_t base = 0; base < kHashN; base += chunk)
+        if (!gpu.hashBatch(gray32.data() + base * 1024, chunk,
+                           hout.data() + base))
+          return 9;
+      const double h0 = nowMs();
+      for (int r = 0; r < kHashIters; ++r)
+        for (std::size_t base = 0; base < kHashN; base += chunk)
+          if (!gpu.hashBatch(gray32.data() + base * 1024, chunk,
+                             hout.data() + base))
+            return 9;
+      const double chunkMs = (nowMs() - h0) / kHashIters;
+      std::size_t hmism = 0;
+      for (std::size_t i = 0; i < kHashN; ++i)
+        if (hout[i] != cpuHashes[i]) ++hmism;
+      if (hmism > kHashN / 100) {
+        std::cerr << "hashchunk_mismatch chunk=" << chunk << " mism=" << hmism
+                  << "\n";
+        return 10;
+      }
+      std::cout << " [" << chunk << ":" << chunkMs << "ms"
+                << (hmism == 0 ? ",exact" : ",tol") << "]";
+    }
+    std::cout << "\n";
+  }
+  // ---- 4. ssimBatch batch-size sweep: CPU/GPU crossover for the >=8 gate ----
+  // 0.9.4.163 (P2): the product routes sub-8 gated rows to CPU fallback.
+  // This sweep measures end-to-end per-pair cost (transfer+launch+kernel)
+  // against CPU frame_ssim at the same sizes so the gate can be set from
+  // evidence instead of habit. Measurement only: PASS = ssimBatch succeeds
+  // and matches CPU within 1e-6 at every size (extends the section-2
+  // exactness contract across sizes, including sub-threshold sizes the
+  // product currently routes to CPU).
+  if (available) {
+    constexpr std::size_t kSweepMax = 128;
+    std::vector<std::uint8_t> swA(kSweepMax * kPx), swB(kSweepMax * kPx);
+    for (std::size_t i = 0; i < swA.size(); ++i) {
+      swA[i] = static_cast<std::uint8_t>((i * 7 + (i / kPx) * 13) & 0xFF);
+      swB[i] = static_cast<std::uint8_t>(
+          (swA[i] + ((i % 11 == 0) ? 23 : 0)) & 0xFF);
+    }
+    const std::size_t kSizes[] = {1, 2, 4, 8, 16, 32, 64, 128};
+    constexpr int kWarm = 5, kIters = 50;
+    std::cout << " ssimSweep(perPairUs gpu/cpu):";
+    for (std::size_t n : kSizes) {
+      std::vector<double> gout(n, 0), cout_(n, 0);
+      for (int w = 0; w < kWarm; ++w) {
+        if (!gpu.ssimBatch(swA.data(), swB.data(), n, gout.data())) return 7;
+        for (std::size_t i = 0; i < n; ++i)
+          cout_[i] = msf::frame_ssim(&swA[i * kPx], &swB[i * kPx], kT, kT);
+      }
+      const double g0 = nowMs();
+      for (int r = 0; r < kIters; ++r)
+        if (!gpu.ssimBatch(swA.data(), swB.data(), n, gout.data())) return 7;
+      const double gpuPerPairUs =
+          (nowMs() - g0) * 1000.0 / (double)(kIters * (n ? n : 1));
+      const double c0 = nowMs();
+      for (int r = 0; r < kIters; ++r)
+        for (std::size_t i = 0; i < n; ++i)
+          cout_[i] = msf::frame_ssim(&swA[i * kPx], &swB[i * kPx], kT, kT);
+      const double cpuPerPairUs =
+          (nowMs() - c0) * 1000.0 / (double)(kIters * (n ? n : 1));
+      double sweepDiff = 0;
+      for (std::size_t i = 0; i < n; ++i)
+        sweepDiff = std::max(sweepDiff, std::abs(gout[i] - cout_[i]));
+      if (sweepDiff > 1e-6) {
+        std::cerr << "sweep_maxdiff n=" << n << " diff=" << sweepDiff << "\n";
+        return 8;
+      }
+      std::cout << " [" << n << ":g=" << gpuPerPairUs << ",c=" << cpuPerPairUs
+                << "]";
+    }
+    std::cout << "\n";
+  }
   const double hashSpeedup =
       (available && hashGpuMs > 0) ? hashCpuMs / hashGpuMs : 0;
   const double ssimSpeedup =
