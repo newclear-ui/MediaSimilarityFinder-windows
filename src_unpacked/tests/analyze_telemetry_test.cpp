@@ -333,6 +333,7 @@ int main() {
                  3, false);
     rec.addVideoStages(40.0, 5.0);
     rec.addVideoDecodeErrors(2);
+    rec.addVideoNopts(1);
     const std::string js = rec.toJson();
     expect(objNum(js, "videos", "decodeMs") == 40.0, "V: decodeMs recorded");
     expect(objStr(js, "videos", "decodeMsState") == "measured", "V: decodeMsState measured");
@@ -340,6 +341,8 @@ int main() {
     expect(objStr(js, "videos", "phashCpuMsState") == "measured", "V: phashCpuMsState measured");
     expect(objNum(js, "videos", "decodeErrors") == 2.0, "V: decodeErrors recorded");
     expect(objStr(js, "videos", "decodeErrorsState") == "measured", "V: decodeErrorsState measured");
+    expect(objNum(js, "videos", "noptsFrames") == 1.0, "V: noptsFrames recorded");
+    expect(objStr(js, "videos", "noptsFramesState") == "measured", "V: noptsFramesState measured");
   }
   {
     // No stage calls: null + not_measured, never 0.
@@ -356,6 +359,8 @@ int main() {
     expect(objStr(js, "videos", "phashCpuMsState") == "not_measured", "V: phashCpuMsState not_measured");
     expect(hasIn(js, "videos", "\"decodeErrors\":null"), "V: decodeErrors null without error calls");
     expect(objStr(js, "videos", "decodeErrorsState") == "not_measured", "V: decodeErrorsState not_measured");
+    expect(hasIn(js, "videos", "\"noptsFrames\":null"), "V: noptsFrames null without nopts calls");
+    expect(objStr(js, "videos", "noptsFramesState") == "not_measured", "V: noptsFramesState not_measured");
   }
   if (!firstFailure.empty()) { std::cout << "recorder section: " << firstFailure << "\n"; return 4; }
 

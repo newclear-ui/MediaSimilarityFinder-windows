@@ -229,6 +229,9 @@ public:
   // non-EOF demuxer read errors). Additive; a cache hit contributes a
   // measured 0, exactly like decodedFrames.
   void addVideoDecodeErrors(std::uint64_t errors);
+  // 0.9.4.166 (P1): NOPTS fallback count (assumed-timing samples).
+  // Additive; a cache hit contributes a measured 0, like decodeErrors.
+  void addVideoNopts(std::uint64_t n);
 // E-3B: records one planner decision for one video file. Called for every
 // analysed file, including cache hits, because the decision is cheap input
 // analysis and is exactly what a reader needs to see when a scan looks odd.
@@ -326,6 +329,8 @@ private:
   bool vidDecodeRecorded_ = false, vidPhashCpuRecorded_ = false;
   std::atomic<std::uint64_t> vidDecodeErrors_{0};
   bool vidDecodeErrorsRecorded_ = false;
+  std::atomic<std::uint64_t> vidNopts_{0};
+  bool vidNoptsRecorded_ = false;
   std::atomic<std::uint64_t> vidGpu_{0}, vidGpuFallback_{0};
   std::atomic<long long> vidGpuNs_{0};
   // E-3B adaptive sampling planner. A fallback must never be silent, so the

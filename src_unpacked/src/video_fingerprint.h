@@ -27,7 +27,8 @@ struct VideoBuildStats {
   // 0.9.4.164 (P2): decode anomaly count (rejected packets, non-EOF
   // demuxer read errors). Cache hit records 0 (measured, like
   // decodedFrames). Sparse-path issues stay in the planner stats.
-  std::size_t decodeErrors=0;
+  // 0.9.4.166 (P1): noptsFrames counts NOPTS fallbacks (assumed timing).
+  std::size_t decodeErrors=0, noptsFrames=0;
   double decodeMs=0, phashCpuMs=0;
   // E-3B: sampling-planner telemetry. Reported so a decision can be explained
   // and so a fallback is never silent. strategy is a samplingDecisionName(); a

@@ -89,9 +89,11 @@ int main() {
         if (!diskHit(e, clip)) { std::cerr << "baseline not cached\n"; return 4; }
         // 0.9.4.161 (P1): the decode-stage split is populated, not zero.
         // 0.9.4.164 (P2): clean decodes record zero errors.
+        // 0.9.4.166 (P1): clean decodes record zero NOPTS fallbacks.
         if (!(st.decodeMs > 0.0)) { std::cerr << "decodeMs not measured\n"; return 4; }
         if (!(st.phashCpuMs >= 0.0)) { std::cerr << "phashCpuMs missing\n"; return 4; }
         if (st.decodeErrors != 0) { std::cerr << "clean decode reported errors\n"; return 4; }
+        if (st.noptsFrames != 0) { std::cerr << "clean decode used NOPTS fallback\n"; return 4; }
         if (st.cacheHit) { std::cerr << "fresh prime unexpectedly hit\n"; return 4; }
         std::cout << "  [ok] baseline succeeds and caches\n";
     }

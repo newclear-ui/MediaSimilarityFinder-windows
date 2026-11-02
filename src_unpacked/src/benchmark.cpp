@@ -264,6 +264,8 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   vidDecodeRecorded_ = vidPhashCpuRecorded_ = false;
   vidDecodeErrors_.store(0, std::memory_order_relaxed);
   vidDecodeErrorsRecorded_ = false;
+  vidNopts_.store(0, std::memory_order_relaxed);
+  vidNoptsRecorded_ = false;
   completed_ = false;
   cancelled_ = paused_ = failed_ = false;
   failedStage_.clear(); completionReason_.clear();
@@ -431,6 +433,10 @@ void TelemetryRecorder::addVideoStages(double decodeMs, double phashCpuMs) {
 void TelemetryRecorder::addVideoDecodeErrors(std::uint64_t errors) {
   vidDecodeErrors_.fetch_add(errors, std::memory_order_relaxed);
   vidDecodeErrorsRecorded_ = true;
+}
+void TelemetryRecorder::addVideoNopts(std::uint64_t n) {
+  vidNopts_.fetch_add(n, std::memory_order_relaxed);
+  vidNoptsRecorded_ = true;
 }
 void TelemetryRecorder::sampleOnce(double tMs) {
   ResourceSample s;
@@ -743,6 +749,10 @@ std::string TelemetryRecorder::toJson() const {
      // read null (not a structural zero).
      << ",\"decodeErrors\":" << (vidDecodeErrorsRecorded_ ? std::to_string(vidDecodeErrors_.load()) : std::string("null"))
      << ",\"decodeErrorsState\":\"" << measureStateName(vidDecodeErrorsRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+     // 0.9.4.166 (P1): NOPTS fallback count. Additive; unscanned corpora
+     // read null (not a structural zero).
+     << ",\"noptsFrames\":" << (vidNoptsRecorded_ ? std::to_string(vidNopts_.load()) : std::string("null"))
+     << ",\"noptsFramesState\":\"" << measureStateName(vidNoptsRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     // E-3B: the sampling planner. `sparseRejected` is reported next to
     // `sparseAccepted` so a fallback is never invisible, and the landing
     // violation count explains rejections rather than leaving them unexplained.

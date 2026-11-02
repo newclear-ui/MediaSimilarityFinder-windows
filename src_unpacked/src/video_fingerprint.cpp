@@ -332,7 +332,8 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // 0.9.4.164 (P2): decode anomaly count for telemetry. Sparse path errors
   // stay in the planner stats (SparseSeekStats); the sequential sweep
   // reports rejected packets and non-EOF read errors here.
-  std::size_t sweepErrors=0;
+  // 0.9.4.166 (P1): NOPTS fallback count travels with the error count.
+  std::size_t sweepErrors=0, sweepNopts=0;
   {
     const char* mode=std::getenv("MSF_VIDEO_SAMPLING");
     const bool plannerOn = mode && std::strcmp(mode,"off")!=0;
@@ -380,7 +381,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // 0.9.4.161 (P1): time the sweep itself (decode + grayscale convert).
   const auto sweepT0=std::chrono::steady_clock::now();
   if(sparseUsed){ decodedCount=(std::size_t)sparseDecoded; }
-  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors)){d.close();return false;}
+  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){d.close();return false;}
   const double sweepMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sweepT0).count();
   // 0.9.4.158 (P0/P1): the decoder owns the completeness contract (cancel,
   // truncation, decode errors, EOF flush/drain, endpoint tail tolerance),
@@ -393,7 +394,7 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // is a single sequential decode, never one seek per timestamp).
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
-    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; }
+    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; stats->noptsFrames=sweepNopts; }
   d.close();if(built.hashes.empty())return false;
   // 0.9.4.158 (P0): re-check cancel immediately before persisting. The sweep
   // above can take minutes on long files; a Stop in this window must leave

@@ -96,9 +96,11 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
 }
 
 bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::vector<VideoFrame>& out,
-                      const std::atomic<bool>* cancel,std::size_t* decodedOut,std::size_t* errorOut){
+                      const std::atomic<bool>* cancel,std::size_t* decodedOut,std::size_t* errorOut,std::size_t* noptsOut){
     out.clear();
     if(errorOut) *errorOut=0;
+    if(noptsOut) *noptsOut=0;
+    if(noptsOut) *noptsOut=0;
     if(path_.empty() || w<=0 || h<=0 || seconds.empty()) return false;
     if(cancel && cancel->load(std::memory_order_relaxed)) return false;
 #ifdef MSF_HAS_FFMPEG
@@ -155,7 +157,12 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
             if(sent<0){ if(errorOut) ++(*errorOut); }
             else while(avcodec_receive_frame(cc,fr)>=0){
                 if(decodedOut) ++(*decodedOut);
-                double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
+                // 0.9.4.166 (P1): a NOPTS frame carries no measured time; the
+        // requested target is substituted and counted. Such samples hold
+        // assumed, not observed, timing.
+        double t=0; const bool nopts=fr->best_effort_timestamp==AV_NOPTS_VALUE;
+        if(nopts){ t=targets[next]; if(noptsOut) ++(*noptsOut); }
+        else t=fr->best_effort_timestamp*av_q2d(st->time_base);
                 lastDecodedT=t; anyDecoded=true;
                 while(next<targets.size() && t+0.05>=targets[next]){
                     // 0.9.4.158 (P0): an emit failure is a sweep failure.
@@ -185,7 +192,12 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         else {
             while(next<targets.size() && avcodec_receive_frame(cc,fr)>=0){
                 if(decodedOut) ++(*decodedOut);
-                double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?targets[next]:fr->best_effort_timestamp*av_q2d(st->time_base);
+                // 0.9.4.166 (P1): a NOPTS frame carries no measured time; the
+        // requested target is substituted and counted. Such samples hold
+        // assumed, not observed, timing.
+        double t=0; const bool nopts=fr->best_effort_timestamp==AV_NOPTS_VALUE;
+        if(nopts){ t=targets[next]; if(noptsOut) ++(*noptsOut); }
+        else t=fr->best_effort_timestamp*av_q2d(st->time_base);
                 lastDecodedT=t; anyDecoded=true;
                 while(next<targets.size() && t+0.05>=targets[next]){
                     if(!emitFrame(fr,t)) { av_packet_free(&pkt); av_frame_free(&fr); out.clear(); return false; }
@@ -264,11 +276,11 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
 }
 
 bool VideoDecoder::framesAt96Plus32(const std::vector<double>& seconds,std::vector<VideoFrame>& out96,std::vector<VideoFrame>& out32,
-                               const std::atomic<bool>* cancel,std::size_t* decodedOut,std::size_t* errorOut){
+                               const std::atomic<bool>* cancel,std::size_t* decodedOut,std::size_t* errorOut,std::size_t* noptsOut){
     out96.clear(); out32.clear();
     // 0.9.4.158: framesAt owns the completeness contract (including the
     // endpoint tail tolerance), so a true result is used as-is.
-    if(!framesAt(seconds,96,96,out96,cancel,decodedOut,errorOut)){ out96.clear(); out32.clear(); return false; }
+    if(!framesAt(seconds,96,96,out96,cancel,decodedOut,errorOut,noptsOut)){ out96.clear(); out32.clear(); return false; }
     out32.reserve(out96.size());
     for(const auto& f:out96){
         if(f.width!=96||f.height!=96||f.gray.size()!=(std::size_t)96*96) continue;
