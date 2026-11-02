@@ -644,6 +644,22 @@ double frame_ssim(const std::uint8_t* a, const std::uint8_t* b, int w, int h){
  if(!nw) return 0;
  return std::clamp(acc/nw,0.0,1.0);
 }
+// 0.9.4.169 (V4 diagnostic): MSF_VIDEO_DUMP_MATRIX=<file> appends one block per
+// scored pair: x/y timestamps (x = shorter side) and the n*m cell matrices
+// ham (pre-SSIM max over mirror variants), ssim (-1 = not computed) and
+// final (post-blend, what the DTW sees). Off unless the variable is set.
+static void dumpSimMatrix(const char* path,const VideoFingerprint& x,const VideoFingerprint& y,double thr,
+                          const std::vector<double>& ham,const std::vector<double>& ssim,const std::vector<double>& fin){
+  static std::mutex mu; std::lock_guard<std::mutex> lk(mu);
+  std::ofstream f(path,std::ios::app); if(!f) return;
+  const std::size_t n=x.hashes.size(), m=y.hashes.size();
+  f<<"# pair n="<<n<<" m="<<m<<" threshold="<<thr<<" (x=shorter side)\n";
+  f<<"tx"; for(std::size_t i=0;i<n;++i) f<<'\t'<<(i<x.timestamps.size()?x.timestamps[i]:-1.0); f<<"\n";
+  f<<"ty"; for(std::size_t j=0;j<m;++j) f<<'\t'<<(j<y.timestamps.size()?y.timestamps[j]:-1.0); f<<"\n";
+  const std::pair<const char*,const std::vector<double>*> blocks[3]={{"ham",&ham},{"ssim",&ssim},{"final",&fin}};
+  for(const auto& b:blocks){ f<<"["<<b.first<<"]\n";
+    for(std::size_t i=0;i<n;++i){ for(std::size_t j=0;j<m;++j){ if(j) f<<'\t'; f<<(*b.second)[i*m+j]; } f<<"\n"; } }
+}
 double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const VideoSimilarityOptions& options){
   if(a.hashes.empty()||b.hashes.empty())return 0;const double threshold=std::clamp(options.thresholdPercent,0.0,100.0),gap=std::max(0.0,options.gapPenalty),tol=std::max(0.0,options.timeToleranceSeconds),bonus=std::max(0.0,options.sceneBonus);
   if(options.stats) ++options.stats->scoredPairs;
@@ -669,11 +685,16 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
   // 0.9.4.159 (P2): DTW-row buffers come from the thread_local workspace
   // instead of fresh per-row allocations. Same values in the same order,
   // so scores are unchanged; only the heap churn is gone.
-  // 0.9.4.167 (V4): match coverage accounting. Runs on the Hamming gate
-  // (already computed per cell above), so it costs no extra scoring.
+  // 0.9.4.167 (V4): match coverage accounting. 0.9.4.169: covered* is now
+  // decided AFTER the SSIM blend (second loop), so it uses the same evidence
+  // as the DTW score; raw* keeps the old pre-SSIM Hamming-only coverage.
   // Reported per pair via stats; strict gating below is diagnostic-only.
-  std::vector<char> colCovered(m,0);
-  std::vector<char> rowCovered(n,0);
+  std::vector<char> colCovered(m,0), rowCovered(n,0), rawRow(n,0), rawCol(m,0);
+  const double covGate=std::max(threshold, options.coverageGate>=0?std::clamp(options.coverageGate,0.0,100.0):threshold);
+  const char* dumpPath=getenv("MSF_VIDEO_DUMP_MATRIX");
+  const bool dump=(dumpPath&&*dumpPath);
+  std::vector<double> dumpHam, dumpSsim, dumpFin;
+  if(dump){ dumpHam.assign(n*m,0); dumpSsim.assign(n*m,-1); dumpFin.assign(n*m,0); }
   VideoSimWorkspace& ws=simWorkspace();
   for(std::size_t i=1;i<=n;++i){
    cur[0]=0;
@@ -687,7 +708,8 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
     if(ym) sim=std::max(sim,hash_similarity(x.hashes[i-1],ym));
     if(xm&&ym) sim=std::max(sim,hash_similarity(xm,ym));
     hamming[j-1]=sim;
-    if(sim>=threshold){ rowCovered[i-1]=1; colCovered[j-1]=1; }
+    if(sim>=threshold){ rawRow[i-1]=1; rawCol[j-1]=1; }
+    if(dump) dumpHam[(i-1)*m+(j-1)]=sim;
    }
    if(useSsim&&options.gpu){
     ws.map.clear(); ws.pa.clear(); ws.pb.clear();
@@ -737,8 +759,11 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
         s=100.0*std::max(frame_ssim(&x.thumb48[(i-1)*kPx],&y.thumb48[(j-1)*kPx],kT,kT),frame_ssim(&x.thumb48[(i-1)*kPx],&yFlip[(j-1)*kPx],kT,kT));
         if(options.stats) options.stats->cpuMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-ft0).count();
       }
+      if(dump) dumpSsim[(i-1)*m+(j-1)]=s;
       sim=0.4*sim+0.6*s;
     }
+    if(sim>=covGate){ rowCovered[i-1]=1; colCovered[j-1]=1; }
+    if(dump) dumpFin[(i-1)*m+(j-1)]=sim;
     double timePenalty=0;if(i-1<x.timestamps.size()&&j-1<y.timestamps.size()&&tol>0){if(i>1&&j>1){double dx=x.timestamps[i-1]-x.timestamps[i-2];double dy=y.timestamps[j-1]-y.timestamps[j-2];double dt=std::abs(dx-dy);timePenalty=std::min(20.0,20.0*dt/tol);}}double match=(sim>=threshold?sim:sim-100.0)-timePenalty;if(bonus>0&&xa[i-1]&&yb[j-1])match+=bonus;cur[j]=std::max({0.0,prev[j-1]+match,prev[j]-gap,cur[j-1]-gap});best=std::max(best,cur[j]);
    }
    std::swap(prev,cur);
@@ -748,20 +773,27 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
   // the short side (gap<=1 merged). Strict mode (MSF_VIDEO_STRICT_COVERAGE=1,
   // diagnostic: thresholds are uncalibrated placeholders, V-gate pending)
   // rejects pairs below coverage instead of scoring them.
-  double covShort=0, covLong=0; std::size_t covSegs=0;
+  double covShort=0, covLong=0, rawCovS=0, rawCovL=0; std::size_t covSegs=0;
   {
     std::size_t rc=0, cc=0;
     for(char c:rowCovered) if(c) ++rc;
     for(char c:colCovered) if(c) ++cc;
     covShort=n?(double)rc/(double)n:0.0;
     covLong=m?(double)cc/(double)m:0.0;
+    std::size_t rr=0, rcn=0;
+    for(char r:rawRow) if(r) ++rr;
+    for(char r:rawCol) if(r) ++rcn;
+    rawCovS=n?(double)rr/(double)n:0.0;
+    rawCovL=m?(double)rcn/(double)m:0.0;
     std::size_t gap=2;
     for(std::size_t i=0;i<n;++i){
       if(rowCovered[i]){ if(gap>1) ++covSegs; gap=0; }
       else if(gap<=1) ++gap;
     }
   }
-  if(options.stats){ options.stats->covShort=covShort; options.stats->covLong=covLong; options.stats->covSegments=covSegs; }
+  if(options.stats){ options.stats->covShort=covShort; options.stats->covLong=covLong; options.stats->covSegments=covSegs;
+    options.stats->rawCovShort=rawCovS; options.stats->rawCovLong=rawCovL; }
+  if(dump) dumpSimMatrix(dumpPath,x,y,threshold,dumpHam,dumpSsim,dumpFin);
   {
     const char* strict=getenv("MSF_VIDEO_STRICT_COVERAGE");
     if(strict && std::string(strict)=="1" && (covShort<0.5 || covLong<0.2 || covSegs<1)) return 0.0;

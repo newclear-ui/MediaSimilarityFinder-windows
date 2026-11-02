@@ -1,8 +1,8 @@
 # V-video-content-matching — 동영상 콘텐츠 중복 판정 구현 예정서
 
-Status: **PROPOSED / PRE-REGISTERED / DEFERRED**  
+Status: **PARTIALLY ADOPTED (V3 production default since 0.9.4.168; V2/V4 diagnostic, V6 pending) / V-gates OPEN**  
 Workstream: **V — Video Content Matching** (A→B→C→D→I→E→F→G→H 본선 밖 별도 제품 기능)  
-Product baseline: **0.9.4.167** · Build version: **0.9.4.167 (V2 구조 프로브 + V3 대표 선택 + V4 커버리지, 모두 진단용 게이트, 기본 동작 불변; V-gate 검증 대기)**  
+Product baseline: **0.9.4.169** · Build version: **0.9.4.169 (V3 production 기본값 채택; V2/V4 진단 유지; V4 커버리지는 post-SSIM 기준으로 재정의; strict 게이트 미검증)**  
 Production code change: **V2/V3/V4 진단 경로에 한함** (환경 변수 opt-in, 기본 동작은 0.9.4.156과 동일). 구현 계약과 검증 Gate의 사전등록을 유지한다.
 
 ## 1. 목적
@@ -141,4 +141,4 @@ NVDEC/D3D11VA/Vulkan 구현, Node E sparse seek production 재도입, vertical f
 
 ## 10. 현재 상태
 
-이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭의 V5 UI 1차(설정+전파+간격/예산+캐시 분리)는 0.9.4.156에 구현되었다. V0~V4 정확도·비용 Gate는 여전히 pending이다. V3 구간기반 선택은 0.9.4.168에서 production 기본값으로 채택됐다(legacy는 MSF_VIDEO_KEPT=legacy 롤백; 선택방식 캐시 식별 +seg/+var로 1회 재구축; 현장 근거 1에서 49/50 동일). V2 구조 프로브는 차선으로 진단 유지한다 — 구조-윈도우 선택의 재사용 진입점이며 보존 사유와 재사용 방법은 video_structure.h와 worklog 현장 근거 1에 기록했다. V4 커버리지는 진단 유지(strict 임계값 미검증). 검증은 사용자 데이터셋 대기. XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 지시 폴더의 별도 착수 지시에 따라 V5 UI 1차 범위에 한해 구현되었다. 범위 외 source/test/DB/engine 변경은 여전히 별도 지시가 필요하다.
+이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭의 V5 UI 1차(설정+전파+간격/예산+캐시 분리)는 0.9.4.156에 구현되었다. V0~V4 정확도·비용 Gate는 여전히 pending이다. V3 구간기반 선택은 0.9.4.168에서 production 기본값으로 채택됐다(legacy는 MSF_VIDEO_KEPT=legacy 롤백; 선택방식 캐시 식별 +seg/+var로 1회 재구축; 현장 근거 1에서 49/50 동일). 알려진 한계: segmented 경로는 kMinVariance 하한을 적용하지 않아 저분산 프레임을 보관할 수 있다(P1 재검토 항목, 롤백 보류). V2 구조 프로브는 차선으로 진단 유지한다 — 구조-윈도우 선택의 재사용 진입점이며 보존 사유와 재사용 방법은 video_structure.h와 worklog 현장 근거 1에 기록했다. V4 커버리지는 0.9.4.169에서 post-SSIM 기준으로 재정의됐다(점수와 같은 근거 사용; rawCov*는 구 Hamming 전용값 보존; coverageGate 분리; strict 게이트는 여전히 diagnostic OFF·미검증). 검증은 사용자 데이터셋 대기. XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 지시 폴더의 별도 착수 지시에 따라 V5 UI 1차 범위에 한해 구현되었다. 범위 외 source/test/DB/engine 변경은 여전히 별도 지시가 필요하다.

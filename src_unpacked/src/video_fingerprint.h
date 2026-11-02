@@ -64,6 +64,11 @@ struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double
   double cpuMs=0;
   double covShort=0, covLong=0;
   std::size_t covSegments=0;
+  // 0.9.4.169 (V4): covShort/covLong/covSegments now count only cells that
+  // still pass the gate AFTER the SSIM blend (the same evidence the DTW
+  // score uses). rawCov* keep the old Hamming-only fractions (pre-SSIM,
+  // any mirror variant) so the two can be compared per pair.
+  double rawCovShort=0, rawCovLong=0;
   // Scored-pair count for the AnalyzeTelemetry mean denominator.
   std::size_t scoredPairs=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
@@ -85,7 +90,11 @@ struct VideoCropFingerprint {
  std::vector<std::uint64_t> mirrorA4x3, mirrorA1x1, mirrorA9x16;
  std::vector<double> timestamps;
 };
-struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; double sceneBonus=0; GpuBackend* gpu=nullptr; std::atomic<bool>* gpuActivity=nullptr; VideoSimilarityStats* stats=nullptr; };
+struct VideoSimilarityOptions { double thresholdPercent=50.0; double gapPenalty=8.0; double timeToleranceSeconds=2.0; double sceneBonus=0; GpuBackend* gpu=nullptr; std::atomic<bool>* gpuActivity=nullptr; VideoSimilarityStats* stats=nullptr;
+  // 0.9.4.169 (V4): coverage-only gate on the post-blend cell similarity.
+  // <0 = use thresholdPercent. Never lowers below thresholdPercent and never
+  // affects the DTW score or the pair verdict.
+  double coverageGate=-1; };
 class VideoFingerprintEngine{
 public:
  ~VideoFingerprintEngine();

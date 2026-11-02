@@ -3,6 +3,7 @@
 > **Design status: PROPOSED / NOT IMPLEMENTED / NOT VALIDATED**
 >
 > Baseline date: 2026-10-31  
+> Implementation status (2026-11-02): V3 segmented selection is the 0.9.4.168 production default. V2 structure probe and V4 coverage are diagnostic (coverage redefined post-SSIM in 0.9.4.169). Strict gate and V6 partial-clip unvalidated. See build-history 0.9.4.167-169.  
 > Purpose: Design a duration- and structure-aware algorithm that selects a small set of representative frames and timeline features, while separating whole-video duplicates from partial-clip search.  
 > This document does not choose CPU/GPU decoder implementations or hardware-acceleration paths.
 

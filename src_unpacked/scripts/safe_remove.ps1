@@ -72,7 +72,13 @@ foreach ($item in $resolved) {
     # this exact path counts as "recycled"; anything else aborts loudly.
     $sid = ((& whoami /user /FO LIST 2>$null | Select-String 'SID') -replace '.*(S-1-5-21-[\d-]+).*','$1').Trim()
     if (-not $sid) { $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
-    $binRoot = Join-Path 'C:\$Recycle.Bin' $sid
+    # 0.9.4.169 (P5): the bin root follows the ITEM's drive, not C:. The old
+    # code joined 'C:\$Recycle.Bin' unconditionally, so items on D: (or any
+    # non-C: volume) could never match a $I record and always threw
+    # not_in_recycle_bin. If the item's volume has no bin folder (recycle
+    # disabled, removable media), keep fail-closed below.
+    $driveRoot = [IO.Path]::GetPathRoot($item)
+    $binRoot = Join-Path ($driveRoot + '$Recycle.Bin') $sid
     $found = $false
     $verifyDeadline = (Get-Date).AddSeconds(30)
     while (-not $found -and (Get-Date) -lt $verifyDeadline) {

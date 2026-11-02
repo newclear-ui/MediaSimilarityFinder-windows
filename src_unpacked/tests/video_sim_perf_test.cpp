@@ -160,6 +160,39 @@ int main() {
     std::cout << "  [ok] strict gate rejects partial coverage\n";
   }
 
+  // 0.9.4.169 (V4): coverage is decided after the SSIM blend. Hash-identical
+  // frames whose thumbs are unrelated (random hash collisions) count in
+  // rawCov* but must not count in covShort/covLong/covSegments, and must
+  // match the DTW score (0). Flat-vs-noise thumbs give MSSIM ~0.01, so the
+  // blend 0.4*100+0.6*~1 stays far below the 50 threshold.
+  {
+    constexpr std::size_t kPxC = (std::size_t)msf::VideoFingerprint::kThumbSize * msf::VideoFingerprint::kThumbSize;
+    const std::uint64_t H = 0x0101010101010101ULL;
+    msf::VideoFingerprint ca, cb;
+    for (int i = 0; i < 4; ++i) {
+      ca.timestamps.push_back((double)i); cb.timestamps.push_back((double)i);
+      ca.hashes.push_back(H); cb.hashes.push_back(H);
+      ca.mirrorHashes.push_back(0); cb.mirrorHashes.push_back(0);
+    }
+    ca.thumb48.assign(4 * kPxC, 0x7F);
+    std::uint32_t lcg = 12345u;
+    cb.thumb48.resize(4 * kPxC);
+    for (auto& v : cb.thumb48) { lcg = lcg * 1664525u + 1013904223u; v = (std::uint8_t)(1 + (lcg >> 24) % 254); }
+    msf::VideoSimilarityOptions co;
+    co.thresholdPercent = 50.0;
+    msf::VideoSimilarityStats cst;
+    co.stats = &cst;
+    const double sc = msf::video_similarity(ca, cb, co);
+    if (cst.rawCovShort != 1.0 || cst.rawCovLong != 1.0) { std::cerr << "raw coverage should be saturated\n"; return 8; }
+    if (cst.covShort != 0.0 || cst.covLong != 0.0 || cst.covSegments != 0) { std::cerr << "verified coverage counted SSIM-rejected cells\n"; return 8; }
+    if (sc != 0.0) { std::cerr << "SSIM-rejected pair should score 0\n"; return 8; }
+    // coverageGate may raise the coverage bar but never lowers it below the
+    // pair threshold, and never changes the score.
+    msf::VideoSimilarityOptions lo = co; lo.coverageGate = 10.0; msf::VideoSimilarityStats lst; lo.stats = &lst;
+    if (msf::video_similarity(ca, cb, lo) != sc || lst.covShort != 0.0) { std::cerr << "coverageGate lowered below threshold\n"; return 8; }
+    std::cout << "  [ok] post-SSIM coverage raw=1/1 verified=0/0 score=0\n";
+  }
+
   // Timed workload: same pair, fixed iteration count.
   constexpr int kIters = 400;
   {
