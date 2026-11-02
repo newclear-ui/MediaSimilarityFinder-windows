@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.169 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.170 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -539,6 +539,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_timestamp_basis_test tests/video_timestamp_basis_test.cpp)
     target_link_libraries(msf_video_timestamp_basis_test PRIVATE msf_core)
     add_test(NAME video_timestamp_basis_test COMMAND msf_video_timestamp_basis_test)
+    # 0.9.4.170 (F-2): HW decode must match SW exactly (or SW determinism when
+    # no HW device exists).
+    add_executable(msf_video_hw_decode_test tests/video_hw_decode_test.cpp)
+    target_link_libraries(msf_video_hw_decode_test PRIVATE msf_core)
+    add_test(NAME video_hw_decode_test COMMAND msf_video_hw_decode_test)
     # 0.9.4.167 V2: structure probe unit test (hand-built frames, no fixtures).
     add_executable(msf_video_structure_test tests/video_structure_test.cpp)
     target_link_libraries(msf_video_structure_test PRIVATE msf_core)

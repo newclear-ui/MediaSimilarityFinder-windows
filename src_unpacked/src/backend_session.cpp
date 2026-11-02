@@ -408,6 +408,11 @@ void BackendSession::pushStatusSnapshot() {
     lastStatus_.gpuActive = engine.gpuActive();
     lastStatus_.gpuAvailable = worker_->gpuAvailable();
     lastStatus_.gpuDone = worker_->gpuDone();
+    // 0.9.4.170 (F-2): hardware decode state for the GUI status bar.
+    lastStatus_.hwAvailable = engine.hwAvailable();
+    lastStatus_.hwBackend = QString::fromStdString(engine.hwBackend());
+    lastStatus_.hwUsed = (qulonglong)engine.hwFilesDecoded();
+    lastStatus_.hwCodecs = QString::fromStdString(engine.hwCodecs());
     emit statusSnapshot(lastStatus_);
 }
 

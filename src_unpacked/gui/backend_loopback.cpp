@@ -3,6 +3,8 @@
 // types. No engine logic lives here.
 #include "backend_loopback.h"
 
+#include <QSettings>
+
 #include "backend_sysinfo.h"
 
 LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(parent) {
@@ -96,6 +98,12 @@ LoopbackBackendClient::LoopbackBackendClient(QObject* parent) : BackendClient(pa
 }
 
 void LoopbackBackendClient::startScan(const BackendScanConfig& cfg) {
+    // 0.9.4.170 (F-2): in-process backend honors the same ui/hwDecode switch
+    // as the spawned backend's environment (set below from QSettings).
+    if (QSettings().value(QStringLiteral("ui/hwDecode"), true).toBool())
+        qunsetenv("MSF_VIDEO_HW");
+    else
+        qputenv("MSF_VIDEO_HW", "off");
     session_->startScan(cfg.root, cfg.appDir, cfg.distance, cfg.cpu, cfg.gpuPercent,
                         cfg.gpuEnabled, cfg.scanImages, cfg.scanVideos,
                         cfg.ignored, cfg.detailedLog,
@@ -189,6 +197,11 @@ BackendStatus LoopbackBackendClient::lastStatus() const {
     out.gpuActive = s.gpuActive;
     out.gpuAvailable = s.gpuAvailable;
     out.gpuDone = s.gpuDone;
+    // 0.9.4.170 (F-2): hardware decode state mirrors the supervisor path.
+    out.hwAvailable = s.hwAvailable;
+    out.hwBackend = s.hwBackend;
+    out.hwUsed = s.hwUsed;
+    out.hwCodecs = s.hwCodecs;
     msf::sampleOwnProcess(out.backendCpu, out.backendRssMB);
     return out;
 }

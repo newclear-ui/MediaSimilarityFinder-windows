@@ -207,6 +207,12 @@ if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"gpuOn")) return S("GPU 가동","GPU on");
   if (!std::strcmp(key,"gpuOff")) return S("GPU 꺼짐","GPU off");
   if (!std::strcmp(key,"gpuLive")) return S("GPU 처리 %1","GPU processing %1");
+  // 0.9.4.170 (F-2): hardware decode status (bottom bar) + setting.
+  if (!std::strcmp(key,"hwOn")) return S("HW 디코드","HW decode");
+  if (!std::strcmp(key,"hwOff")) return S("SW 디코드","SW decode");
+  if (!std::strcmp(key,"hwLive")) return S("HW 처리 %1","HW processing %1");
+  if (!std::strcmp(key,"hwDecode")) return S("하드웨어 디코드","Hardware decode");
+  if (!std::strcmp(key,"hwDecodeTip")) return S("가능하면 GPU/하드웨어로 영상 디코드 (끄면 CPU 소프트웨어 디코드)","Decode video with GPU/hardware when available (off = CPU software decode)");
   if (!std::strcmp(key,"gpuAccel")) return S("가속 중","Accelerating");
   if (!std::strcmp(key,"gpuStop")) return S("정지","Stopped");
   if (!std::strcmp(key,"gpuWait")) return S("대기","Idle");
@@ -950,7 +956,10 @@ void MainWindow::buildUi() {
   statusMsg_ = new QLabel(this); statusMsg_->setObjectName("statusMsg"); statusCount_ = new QLabel(this); statusProg_ = new QProgressBar(this);
   statusProg_->setRange(0, 100); statusProg_->setValue(0); statusProg_->setFixedWidth(220);
   gpuLbl_ = new QLabel(this);
+  hwLbl_ = new QLabel(this);
+  hwLbl_->setObjectName("hwDecodeLabel"); // automation hook
   statusBar_->addWidget(statusMsg_, 1); statusBar_->addWidget(statusCount_); statusBar_->addWidget(statusProg_);
+  statusBar_->addPermanentWidget(hwLbl_);
   statusBar_->addPermanentWidget(gpuLbl_);
   new QShortcut(QKeySequence(Qt::Key_Space), this, SLOT(toggleMarkSelected()));
   new QShortcut(QKeySequence::Delete, this, SLOT(deleteSelected()));
@@ -1045,6 +1054,11 @@ void MainWindow::buildToolbar() {
   cpu_->setValue(policy_.cpuPercent);
   // 0.9.4.96: GPU acceleration moved to Settings > General (ui/gpuEnabled).
   gpuOn_ = QSettings().value("ui/gpuEnabled", true).toBool();
+  // 0.9.4.170 (F-2): hardware decode default (ui/hwDecode, default on). The
+  // decoder reads MSF_VIDEO_HW per file; the spawned backend gets it at
+  // spawn time (see BackendSupervisor::spawn).
+  if (QSettings().value("ui/hwDecode", true).toBool()) qunsetenv("MSF_VIDEO_HW");
+  else qputenv("MSF_VIDEO_HW", "off");
   logTgl_ = new QCheckBox(toolBar_); logTgl_->setChecked(true);
   logTgl_->setObjectName("logTgl"); // automation hook, see folder_
   // Execution resource strategy: one dropdown choice of how this program uses
@@ -1711,7 +1725,7 @@ void MainWindow::setRunning(bool v) {
   // stops being useful only when the process exits; refreshStreaming() itself
   // has the pending-thumbnail condition and remains budgeted per tick.
   uiTimer_->start();
-  updateGpuLabel();
+  updateGpuLabel(); updateHwLabel();
   sumValGpu_->setText(gpuStateText());
   // A scan starting or ending changes the execution enable state, so the gate
   // is reapplied here rather than being duplicated at each call site.
@@ -2872,7 +2886,7 @@ void MainWindow::onUiTick() {
     statusMsg_->setText(scanStatusText(lastTotalN_, uiTotal, maxPctShown_, lastPath_, el));
     scanHeartbeat();
   }
-  updateGpuLabel();
+  updateGpuLabel(); updateHwLabel();
   updateSysLabels();
 }
 void MainWindow::refreshStreaming(bool force) {
@@ -5035,13 +5049,12 @@ void MainWindow::updateStatusCounts() {  qulonglong files = 0;
     sumValGroups_->setText(QString::number(groups_.size()));
     sumValDup_->setText(QString::number(files));
   }
-  updateGpuLabel();
+  updateGpuLabel(); updateHwLabel();
   sumValGpu_->setText(gpuStateText());
 }
 // Live GPU status for the status bar. During a scan this shows how many images
 // the CUDA backend already hashed; at rest it reports whether the backend is on.
-void MainWindow::updateGpuLabel() {
-  if (!gpuLbl_) return;
+void MainWindow::updateGpuLabel() {  if (!gpuLbl_) return;
   const UiLang l = lang();
   const bool avail = backend_ ? backendStatus_.gpuAvailable : false;
   const qulonglong n = backend_ ? backendStatus_.gpuDone : 0;
@@ -5052,6 +5065,24 @@ void MainWindow::updateGpuLabel() {
   gpuLbl_->setText("⚡ " + txt);
   gpuLbl_->setStyleSheet(gpuOn_ && avail
                               ? QStringLiteral("color:#2e7d32;") : QStringLiteral("color:#999;"));
+}
+// 0.9.4.170 (F-2): hardware decode status for the status bar. Shows the
+// backend device and HW-decoded file count while/after scanning; at rest,
+// HW when a device is usable, SW otherwise. The backend owns the
+// measurement; the GUI only presents backendStatus_.
+void MainWindow::updateHwLabel() {
+  if (!hwLbl_) return;
+  const UiLang l = lang();
+  const bool avail = backend_ ? backendStatus_.hwAvailable : false;
+  const qulonglong n = backend_ ? backendStatus_.hwUsed : 0;
+  QString txt;
+  if (n > 0 && !backendStatus_.hwBackend.isEmpty())
+    txt = trStr(l, "hwLive").arg(backendStatus_.hwBackend).append(QString::number(n).prepend(" x"));
+  else if (avail && !backendStatus_.hwBackend.isEmpty())
+    txt = trStr(l, "hwOn").append(":" + backendStatus_.hwBackend);
+  else txt = trStr(l, "hwOff");
+  hwLbl_->setText(QString::fromUtf8("\xf0\x9f\x8e\xac ") + txt);
+  hwLbl_->setStyleSheet(n > 0 ? QStringLiteral("color:#2e7d32;") : QStringLiteral("color:#999;"));
 }
   void MainWindow::showHelp() {
     QMessageBox::about(this, trStr(lang(), "help"), trStr(lang(), "about"));
@@ -5098,6 +5129,14 @@ void MainWindow::configureMonitor() {
   gpuAccel->setObjectName("gpuAccelBox"); // automation hook
   gpuAccel->setChecked(QSettings().value("ui/gpuEnabled", true).toBool());
   generalLay->addWidget(gpuAccel);
+  // 0.9.4.170 (F-2): hardware video decode. Auto-tries D3D11VA (NVDEC silicon
+  // on NVIDIA) per file with identical pixels or a clean software fallback;
+  // off forces CPU software decode everywhere. Persists like the rest.
+  auto* hwDecode = new QCheckBox(trStr(lang(), "hwDecode"), generalTab);
+  hwDecode->setObjectName("hwDecodeBox"); // automation hook
+  hwDecode->setChecked(QSettings().value("ui/hwDecode", true).toBool());
+  hwDecode->setToolTip(trStr(lang(), "hwDecodeTip"));
+  generalLay->addWidget(hwDecode);
   // Test-button visibility checkbox (0.9.4.98+): the far-right Test toggle
   // stays available without crowding the toolbar. Stored like the rest;
   // the toggle state itself (ui/testMode) is untouched.
@@ -5311,6 +5350,7 @@ void MainWindow::configureMonitor() {
   st.setValue("ui/showDetailLog", showLog->isChecked());
   st.setValue("ui/showCpuPercent", showCpu->isChecked());
   st.setValue("ui/gpuEnabled", gpuAccel->isChecked());
+  st.setValue("ui/hwDecode", hwDecode->isChecked());
   st.setValue("ui/showTestButton", showTest->isChecked());
   // 0.9.4.143: persist the recent-folder limit and trim the stored list now.
   st.setValue("ui/recentFolderLimit", recentSpin->value());
@@ -5321,6 +5361,17 @@ void MainWindow::configureMonitor() {
   }
   refreshFolders();
   gpuOn_ = gpuAccel->isChecked();
+  // 0.9.4.170 (F-2): hardware decode switch. The decoder reads MSF_VIDEO_HW
+  // per file (off = CPU software only). The spawned backend gets it at spawn
+  // time, so a flip restarts an idle backend; a running scan keeps its
+  // environment and picks the setting up at the next (re)start.
+  {
+    const bool hwOn = hwDecode->isChecked();
+    const bool flipped = (QSettings().value("ui/hwDecode", true).toBool() != hwOn);
+    st.setValue("ui/hwDecode", hwOn);
+    if (hwOn) qunsetenv("MSF_VIDEO_HW"); else qputenv("MSF_VIDEO_HW", "off");
+    if (flipped && backend_ && !scanning_) backend_->restartForConfigChange();
+  }
   applyDetailLogVisibility();
   applyCpuPercentVisibility();
   applyTestButtonVisibility();
@@ -5479,6 +5530,25 @@ void MainWindow::onStatusSnapshot(BackendStatus st) {
   const double combinedCpu = std::clamp(st.backendCpu + guiCpu_, 0.0, 100.0);
   sumValCpu_->setText(QString("%1%").arg(combinedCpu, 0, 'f', 0));
   sumValRam_->setText(fmtSize(st.backendRssMB * 1024ULL * 1024ULL));
+  // 0.9.4.170 (F-2): record hardware decode support + usage in the external
+  // settings file, and refresh the bottom-bar indicator. Written only when
+  // the observed values differ, so steady scans do not churn the INI.
+  {
+    QSettings qs;
+    if (qs.value("ui/hwAvailable", false).toBool() != st.hwAvailable)
+      qs.setValue("ui/hwAvailable", st.hwAvailable);
+    if (!st.hwBackend.isEmpty() && qs.value("ui/hwBackend").toString() != st.hwBackend)
+      qs.setValue("ui/hwBackend", st.hwBackend);
+    if (qs.value("ui/hwUsed", 0).toULongLong() != st.hwUsed)
+      qs.setValue("ui/hwUsed", st.hwUsed);
+    // Per-codec usage: ui/hwCodec/<name> = backend that decoded it.
+    for (const QString& c : st.hwCodecs.split(',', Qt::SkipEmptyParts)) {
+      const QString k = QStringLiteral("ui/hwCodec/") + c.trimmed();
+      if (qs.value(k).toString() != st.hwBackend)
+        qs.setValue(k, st.hwBackend);
+    }
+  }
+  updateHwLabel();
 }
 void MainWindow::onMonitorSnapshot(const BackendMonitorStatus& s) {
   backendMonStatus_ = s;

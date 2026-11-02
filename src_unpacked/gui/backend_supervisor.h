@@ -83,6 +83,10 @@ public:
 
     // Acceptance introspection (E2E tests): current supervisor phase.
     QString phase() const { return phase_; }
+    // 0.9.4.170 (F-2): restart the backend so a flipped ui/hwDecode setting
+    // takes effect (spawn-time MSF_VIDEO_HW is sticky otherwise). Safe only
+    // when idle: the caller must not invoke this mid-scan.
+    void restartForConfigChange() override;
 
 private slots:
     void onStarted();

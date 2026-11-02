@@ -17,7 +17,72 @@ extern "C" {
 #include <libavutil/error.h>
 }
 #endif
+#ifdef MSF_HAS_FFMPEG
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libswscale/swscale.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/error.h>
+#include <libavutil/hwcontext.h>
+}
+#include <mutex>
+#endif
 namespace msf {
+#ifdef MSF_HAS_FFMPEG
+// 0.9.4.170 (F-2 re-review): process-wide D3D11VA device. Created once on
+// first use; later calls are free. Windows only — other platforms decode in
+// software. Never throws.
+static AVBufferRef* hwDeviceCached(){
+#ifdef _WIN32
+    static AVBufferRef* dev=nullptr; static bool tried=false; static std::mutex mu;
+    std::lock_guard<std::mutex> lk(mu);
+    if(!tried){ tried=true; if(av_hwdevice_ctx_create(&dev,AV_HWDEVICE_TYPE_D3D11VA,nullptr,nullptr,0)<0) dev=nullptr; }
+    return dev;
+#else
+    return nullptr;
+#endif
+}
+static enum AVPixelFormat pickHwFormat(AVCodecContext*,const enum AVPixelFormat* fmts){
+    for(const enum AVPixelFormat* p=fmts;*p!=(enum AVPixelFormat)-1;++p)
+        if(*p==AV_PIX_FMT_D3D11) return *p;
+    return fmts[0];
+}
+static bool hwDecodeWanted(){
+    const char* v=std::getenv("MSF_VIDEO_HW");
+    return !(v&&std::string(v)=="off");
+}
+#endif
+bool VideoDecoder::hwUsed() const { return hwUsed_; }
+std::string VideoDecoder::hwBackend() const { return hwBackend_; }
+int VideoDecoder::hwFallbacks() const { return hwFallbacks_; }
+bool VideoDecoder::hwFailedPreEmit() const {
+#ifdef MSF_HAS_FFMPEG
+    return hwFailedPreEmit_;
+#else
+    return false;
+#endif
+}
+bool VideoDecoder::probeHwDevice() {
+#ifdef MSF_HAS_FFMPEG
+    return hwDeviceCached()!=nullptr;
+#else
+    return false;
+#endif
+}
+std::string VideoDecoder::probeHwBackend() {
+#ifdef MSF_HAS_FFMPEG
+    return hwDeviceCached() ? "d3d11va" : std::string();
+#else
+    return std::string();
+#endif
+}
+bool VideoDecoder::reopenSoftware(){
+    const std::string p=path_;
+    close();
+    hwForcedOff_=true;
+    return open(p);
+}
 bool VideoDecoder::open(const std::string&p){
 #ifdef MSF_HAS_FFMPEG
     AVFormatContext* fmt=nullptr;
@@ -30,7 +95,29 @@ bool VideoDecoder::open(const std::string&p){
     if(!c){avformat_close_input(&fmt);return false;}
     AVCodecContext* cc=avcodec_alloc_context3(c);
     if(!cc||avcodec_parameters_to_context(cc,st->codecpar)<0){if(cc)avcodec_free_context(&cc);avformat_close_input(&fmt);return false;}
-    if(avcodec_open2(cc,c,nullptr)<0){avcodec_free_context(&cc);avformat_close_input(&fmt);return false;}
+    // 0.9.4.170 (F-2 re-review): try hardware first, fall back to software.
+    // MSF_VIDEO_HW=off (or reopenSoftware) forces the software path.
+    hwUsed_=false; hwBackend_.clear(); hwFallbacks_=0; hwFailedPreEmit_=false;
+    hwActive_=false; hwDev_=nullptr;
+    if(!hwForcedOff_ && hwDecodeWanted()){
+        AVBufferRef* dev=hwDeviceCached();
+        if(dev){
+            cc->hw_device_ctx=av_buffer_ref(dev);
+            if(cc->hw_device_ctx){ cc->get_format=pickHwFormat; hwDev_=dev; hwActive_=true; hwBackend_="d3d11va"; }
+        }
+    }
+    bool opened=(avcodec_open2(cc,c,nullptr)>=0);
+    if(!opened && hwActive_){
+        // HW open failed (e.g. driver refused this codec): rebuild the
+        // context without hardware and try software before giving up.
+        avcodec_free_context(&cc);
+        cc=avcodec_alloc_context3(c);
+        if(cc && avcodec_parameters_to_context(cc,st->codecpar)>=0){
+            hwActive_=false; hwDev_=nullptr; hwBackend_.clear(); ++hwFallbacks_;
+            opened=(avcodec_open2(cc,c,nullptr)>=0);
+        }
+    }
+    if(!opened){ if(cc)avcodec_free_context(&cc); avformat_close_input(&fmt); return false; }
     fmt_=fmt;codec_=cc;stream_=si;path_=p;
     info_.width=cc->width;info_.height=cc->height;
     AVRational fr=av_guess_frame_rate(fmt,st,nullptr);
@@ -77,17 +164,29 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
     avcodec_flush_buffers(cc);
     AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
     if(!pkt||!fr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
+    AVFrame* xfr=av_frame_alloc();
+    if(!xfr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
     bool got=false;
     while(!got && av_read_frame(fmt,pkt)>=0){
         if(pkt->stream_index==stream_ && avcodec_send_packet(cc,pkt)>=0){
             while(avcodec_receive_frame(cc,fr)>=0){
                 double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?seconds:fr->best_effort_timestamp*av_q2d(st->time_base)-startOffC;
                 if(t+0.05<seconds) continue;
+                // 0.9.4.170 (F-2): download HW frames before conversion.
+                // A failed download fails this frame (display path has no
+                // retry; the next scan rebuilds it the same way).
+                AVFrame* src=fr;
+                if(hwActive_ && fr->format==AV_PIX_FMT_D3D11){
+                    av_frame_unref(xfr);
+                    if(av_hwframe_transfer_data(xfr,fr,0)<0) break;
+                    if(!hwUsed_) hwUsed_=true;
+                    src=xfr;
+                }
                 AVFrame* dst=av_frame_alloc(); if(!dst) break;
                 dst->format=AV_PIX_FMT_RGB24; dst->width=w; dst->height=h;
-                SwsContext* sws=sws_getContext(fr->width,fr->height,(AVPixelFormat)fr->format,w,h,AV_PIX_FMT_RGB24,SWS_BILINEAR,nullptr,nullptr,nullptr);
+                SwsContext* sws=sws_getContext(src->width,src->height,(AVPixelFormat)src->format,w,h,AV_PIX_FMT_RGB24,SWS_BILINEAR,nullptr,nullptr,nullptr);
                 if(sws && av_frame_get_buffer(dst,1)>=0){
-                    sws_scale(sws,fr->data,fr->linesize,0,fr->height,dst->data,dst->linesize);
+                    sws_scale(sws,src->data,src->linesize,0,src->height,dst->data,dst->linesize);
                     o.timestamp=t; o.width=w; o.height=h; o.rgb.resize((size_t)w*h*3);
                     for(int y=0;y<h;++y) std::copy(dst->data[0]+y*dst->linesize[0],dst->data[0]+y*dst->linesize[0]+w*3,o.rgb.begin()+size_t(y)*w*3);
                     got=true;
@@ -98,7 +197,7 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
         }
         av_packet_unref(pkt);
     }
-    av_packet_free(&pkt); av_frame_free(&fr);
+    av_packet_free(&pkt); av_frame_free(&fr); av_frame_free(&xfr);
     return got;
 #else
     (void)o; return false;
@@ -132,6 +231,26 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
     avcodec_flush_buffers(cc);
     AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
     if(!pkt||!fr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
+    // 0.9.4.170 (F-2): scratch surface for HW frame download. HW frames
+    // live on the GPU; sws_scale needs system memory, so D3D11 frames are
+    // transferred here before conversion. Allocated once per sweep.
+    AVFrame* xfr=av_frame_alloc();
+    if(!xfr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
+    // Resolve a received frame to convertible system memory. Returns null
+    // on HW download failure: pre-emit (out still empty) sets the retry
+    // flag so the caller can restart the sweep in software; post-emit the
+    // caller sees an ordinary sweep failure (existing contract).
+    auto resolveFrame=[&](AVFrame* f)->AVFrame*{
+        if(!hwActive_ || f->format!=AV_PIX_FMT_D3D11) return f;
+        av_frame_unref(xfr);
+        if(av_hwframe_transfer_data(xfr,f,0)<0){
+            if(out.empty()) hwFailedPreEmit_=true;
+            if(errorOut) ++(*errorOut);
+            return nullptr;
+        }
+        if(!hwUsed_) hwUsed_=true;
+        return xfr;
+    };
     std::size_t next=0;
     // 0.9.4.155: count every frame FFmpeg actually produces, not just the
     // ones matching a sample target. GPU-decode replacement and frame-
@@ -171,6 +290,8 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
             if(sent<0){ if(errorOut) ++(*errorOut); }
             else while(avcodec_receive_frame(cc,fr)>=0){
                 if(decodedOut) ++(*decodedOut);
+                AVFrame* src=resolveFrame(fr);
+                if(!src){ av_packet_unref(pkt); av_packet_free(&pkt); av_frame_free(&fr); av_frame_free(&xfr); out.clear(); return false; }
                 // 0.9.4.166 (P1): a NOPTS frame carries no measured time; the
         // requested target is substituted and counted. Such samples hold
         // assumed, not observed, timing.
@@ -183,7 +304,7 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
                     // Returning the frames gathered so far would let the
                     // caller fingerprint (and cache) an incomplete sample
                     // set as if it were complete.
-                    if(!emitFrame(fr,t)) { av_packet_unref(pkt); av_packet_free(&pkt); av_frame_free(&fr); out.clear(); return false; }
+                    if(!emitFrame(src,t)) { av_packet_unref(pkt); av_packet_free(&pkt); av_frame_free(&fr); av_frame_free(&xfr); out.clear(); return false; }
                     ++next;
                 }
                 if(next>=targets.size()) break;
@@ -206,6 +327,8 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         else {
             while(next<targets.size() && avcodec_receive_frame(cc,fr)>=0){
                 if(decodedOut) ++(*decodedOut);
+                AVFrame* src=resolveFrame(fr);
+                if(!src){ av_packet_free(&pkt); av_frame_free(&fr); av_frame_free(&xfr); out.clear(); return false; }
                 // 0.9.4.166 (P1): a NOPTS frame carries no measured time; the
         // requested target is substituted and counted. Such samples hold
         // assumed, not observed, timing.
@@ -214,13 +337,13 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         else t=fr->best_effort_timestamp*av_q2d(st->time_base)-startOff;
                 lastDecodedT=t; anyDecoded=true;
                 while(next<targets.size() && t+0.05>=targets[next]){
-                    if(!emitFrame(fr,t)) { av_packet_free(&pkt); av_frame_free(&fr); out.clear(); return false; }
+                    if(!emitFrame(src,t)) { av_packet_free(&pkt); av_frame_free(&fr); av_frame_free(&xfr); out.clear(); return false; }
                     ++next;
                 }
             }
         }
     }
-    av_packet_free(&pkt); av_frame_free(&fr);
+    av_packet_free(&pkt); av_frame_free(&fr); av_frame_free(&xfr);
     // 0.9.4.158 (P0/P1) completeness contract: success means every requested
     // sample was produced and no cancel landed mid-sweep, EXCEPT trailing
     // targets within endpoint-quantization slack of the last decoded frame.
@@ -331,6 +454,9 @@ bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& second
     SparseSeekStats local;
     AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
     if(!pkt||!fr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
+    // 0.9.4.170 (F-2): scratch surface for HW frame download (as in framesAt).
+    AVFrame* xfr=av_frame_alloc();
+    if(!xfr){av_packet_free(&pkt);av_frame_free(&fr);return false;}
 
     for(double target:seconds){
         // Seek to target - 0.05, not target. The predicate admits a frame up to
@@ -372,13 +498,23 @@ bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& second
                 // content as zero-start ones. NOPTS falls back to the target.
                 const double ft=fr->best_effort_timestamp==AV_NOPTS_VALUE?target:fr->best_effort_timestamp*tbSec-offSec;
                 if(ft+0.05>=target){
+                    // 0.9.4.170 (F-2): download HW frames before conversion.
+                    // A failed download rejects the candidate (the planner
+                    // then uses the sequential path), never a partial sample.
+                    AVFrame* src=fr;
+                    if(hwActive_ && fr->format==AV_PIX_FMT_D3D11){
+                        av_frame_unref(xfr);
+                        if(av_hwframe_transfer_data(xfr,fr,0)<0) break;
+                        if(!hwUsed_) hwUsed_=true;
+                        src=xfr;
+                    }
                     const auto tc0=std::chrono::steady_clock::now();
                     AVFrame* dst=av_frame_alloc();
                     if(dst){
                         dst->format=AV_PIX_FMT_GRAY8; dst->width=96; dst->height=96;
-                        SwsContext* sws=sws_getContext(fr->width,fr->height,(AVPixelFormat)fr->format,96,96,AV_PIX_FMT_GRAY8,SWS_BILINEAR,nullptr,nullptr,nullptr);
+                        SwsContext* sws=sws_getContext(src->width,src->height,(AVPixelFormat)src->format,96,96,AV_PIX_FMT_GRAY8,SWS_BILINEAR,nullptr,nullptr,nullptr);
                         if(sws&&av_frame_get_buffer(dst,1)>=0){
-                            sws_scale(sws,fr->data,fr->linesize,0,fr->height,dst->data,dst->linesize);
+                            sws_scale(sws,src->data,src->linesize,0,src->height,dst->data,dst->linesize);
                             vf.width=96; vf.height=96; vf.gray.resize((size_t)96*96);
                             for(int y=0;y<96;++y) std::copy(dst->data[0]+y*dst->linesize[0],dst->data[0]+y*dst->linesize[0]+96,vf.gray.begin()+size_t(y)*96);
                         }
@@ -390,7 +526,7 @@ bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& second
             }
         }
     }
-    av_packet_free(&pkt); av_frame_free(&fr);
+    av_packet_free(&pkt); av_frame_free(&fr); av_frame_free(&xfr);
     local.totalMs=msSince(tAll);
     if(st)*st=local;
     // The executor contract. A candidate is usable only when it is COMPLETE and
@@ -463,6 +599,8 @@ void VideoDecoder::close(){
 #ifdef MSF_HAS_FFMPEG
     if(codec_){auto*p=reinterpret_cast<AVCodecContext*>(codec_);avcodec_free_context(&p);codec_=nullptr;}
     if(fmt_){auto*p=reinterpret_cast<AVFormatContext*>(fmt_);avformat_close_input(&p);fmt_=nullptr;}
+    // 0.9.4.170: hwDev_ borrows the process device (never freed here).
+    hwDev_=nullptr; hwActive_=false;
 #endif
     path_.clear();info_={};
 }

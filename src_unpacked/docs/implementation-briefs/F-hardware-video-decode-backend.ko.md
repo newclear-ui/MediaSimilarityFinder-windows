@@ -1,6 +1,6 @@
 # Implementation Brief — Node F Hardware Video Decode Backend (Pre-register)
 
-Status: **PRE-REGISTERED** — 이 문서는 brief 만 포함하며, probe/구현 코드가 이 커밋보다 앞서면 안 된다.
+Status: **PARTIALLY ADOPTED (0.9.4.170: D3D11VA try-HW-fallback-SW in VideoDecoder; drives NVDEC silicon on NVIDIA PCs. Native CUDA/NVDEC API + non-NVIDIA backends stay suspended per F-1; DirectX-native review is the next build)** — 이 문서는 brief 만 포함하며, probe/구현 코드가 이 커밋보다 앞서면 안 된다.
 Version 기준: v0.9.4.42 (`395ae57`)
 
 ---

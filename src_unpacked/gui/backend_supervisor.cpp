@@ -345,6 +345,11 @@ void BackendSupervisor::spawn() {
     env.insert(QStringLiteral("MSF_BACKEND_LAUNCHED_BY_GUI"), QStringLiteral("1"));
     env.insert(QStringLiteral("MSF_BACKEND_PARENT_PID"),
                QString::number(QCoreApplication::applicationPid()));
+    // 0.9.4.170 (F-2): hardware decode switch. The backend reads
+    // MSF_VIDEO_HW per file (off = CPU software only); a flipped setting
+    // takes effect at the next backend (re)start.
+    if (!QSettings().value(QStringLiteral("ui/hwDecode"), true).toBool())
+        env.insert(QStringLiteral("MSF_VIDEO_HW"), QStringLiteral("off"));
     proc_->setProcessEnvironment(env);
     proc_->setProgram(program);
     proc_->setArguments(args);
@@ -642,6 +647,11 @@ void BackendSupervisor::dispatchEvent(const QString& type, const QJsonObject& pa
         st.gpuActive = payload.value("gpuActive").toBool(false);
         st.gpuAvailable = payload.value("gpuAvailable").toBool(false);
         st.gpuDone = payload.value("gpuDone").toString().toULongLong();
+        // 0.9.4.170 (F-2): hardware decode state (absent keys = SW-only backend).
+        st.hwAvailable = payload.value("hwAvailable").toBool(false);
+        st.hwBackend = payload.value("hwBackend").toString();
+        st.hwUsed = payload.value("hwUsed").toString().toULongLong();
+        st.hwCodecs = payload.value("hwCodecs").toString();
         lastStatus_ = st;
         emit statusSnapshot(st);
         return;
@@ -741,6 +751,20 @@ void BackendSupervisor::enterUnexpectedExit(const QString& reason, int exitCode)
         QString message = QStringLiteral("backend process exited unexpectedly — scan aborted");
         if (exitCode != -1) message += QStringLiteral(" (exit code %1)").arg(exitCode);
         emit failed(message);
+    }
+}
+
+// 0.9.4.170 (F-2): deliberate restart for the ui/hwDecode flip. Unlike the
+// failure path, this resets the restart budget: a settings change is not a
+// crash. The unexpected-exit path below respawns with the fresh spawn-time
+// environment (which carries the new MSF_VIDEO_HW value).
+void BackendSupervisor::restartForConfigChange() {
+    attempts_ = 0;
+    emit backendLogLine(QStringLiteral("backend restart for hardware-decode setting change"));
+    if (processAlive()) {
+        proc_->kill();
+    } else {
+        spawn();
     }
 }
 

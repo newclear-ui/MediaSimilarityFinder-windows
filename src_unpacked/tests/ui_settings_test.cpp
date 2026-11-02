@@ -863,6 +863,8 @@ int main(int argc, char** argv) {
       "videoLongPendingNote", "videoAnchorNote",
       "videoBoost", "videoBoostCount", "videoBoostPendingNote",
       "videoPartial", "videoPartialNote", "videoHonestNote",
+      // 0.9.4.170 (F-2): hardware decode status + setting keys.
+      "hwOn", "hwOff", "hwLive", "hwDecode", "hwDecodeTip",
     };
     int missing = 0;
     for (const char* k : kKeys) {

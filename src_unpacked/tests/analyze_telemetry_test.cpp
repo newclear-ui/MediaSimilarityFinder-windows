@@ -334,6 +334,8 @@ int main() {
     rec.addVideoStages(40.0, 5.0);
     rec.addVideoDecodeErrors(2);
     rec.addVideoNopts(1);
+    // 0.9.4.170 (F-2): hardware decode usage.
+    rec.addVideoHw(true, 1);
     const std::string js = rec.toJson();
     expect(objNum(js, "videos", "decodeMs") == 40.0, "V: decodeMs recorded");
     expect(objStr(js, "videos", "decodeMsState") == "measured", "V: decodeMsState measured");
@@ -343,6 +345,10 @@ int main() {
     expect(objStr(js, "videos", "decodeErrorsState") == "measured", "V: decodeErrorsState measured");
     expect(objNum(js, "videos", "noptsFrames") == 1.0, "V: noptsFrames recorded");
     expect(objStr(js, "videos", "noptsFramesState") == "measured", "V: noptsFramesState measured");
+    expect(objNum(js, "videos", "hwFiles") == 1.0, "V: hwFiles recorded");
+    expect(objStr(js, "videos", "hwFilesState") == "measured", "V: hwFilesState measured");
+    expect(objNum(js, "videos", "hwFallbacks") == 1.0, "V: hwFallbacks recorded");
+    expect(objStr(js, "videos", "hwFallbacksState") == "measured", "V: hwFallbacksState measured");
   }
   {
     // No stage calls: null + not_measured, never 0.
@@ -361,6 +367,10 @@ int main() {
     expect(objStr(js, "videos", "decodeErrorsState") == "not_measured", "V: decodeErrorsState not_measured");
     expect(hasIn(js, "videos", "\"noptsFrames\":null"), "V: noptsFrames null without nopts calls");
     expect(objStr(js, "videos", "noptsFramesState") == "not_measured", "V: noptsFramesState not_measured");
+    expect(hasIn(js, "videos", "\"hwFiles\":null"), "V: hwFiles null without hw calls");
+    expect(objStr(js, "videos", "hwFilesState") == "not_measured", "V: hwFilesState not_measured");
+    expect(hasIn(js, "videos", "\"hwFallbacks\":null"), "V: hwFallbacks null without hw calls");
+    expect(objStr(js, "videos", "hwFallbacksState") == "not_measured", "V: hwFallbacksState not_measured");
   }
   if (!firstFailure.empty()) { std::cout << "recorder section: " << firstFailure << "\n"; return 4; }
 
@@ -371,10 +381,13 @@ int main() {
     a.videoMatchSubmitted = 10; a.videoMatchCompleted = 8;
     a.videoMatchSmallBatch = 4; a.videoMatchBatchFailed = 1;
     a.videoMatchCovShort = 0.5; a.videoMatchCovLong = 0.25; a.videoMatchScored = 2;
+    // 0.9.4.170 (F-2): hardware decode sums fold additively too.
+    a.videoHwFiles = 3; a.videoHwFallbacks = 1;
     b.videoMatchGpuMs = 2.5; b.videoMatchCpuMs = 0.25;
     b.videoMatchSubmitted = 6; b.videoMatchCompleted = 6;
     b.videoMatchSmallBatch = 2; b.videoMatchBatchFailed = 0;
     b.videoMatchCovShort = 1.0; b.videoMatchCovLong = 0.5; b.videoMatchScored = 1;
+    b.videoHwFiles = 5; b.videoHwFallbacks = 0;
     msf::AnalyzeTelemetry m;
     msf::addAnalyzeTelemetry(m, a);
     msf::addAnalyzeTelemetry(m, b);
@@ -387,6 +400,8 @@ int main() {
     expect(m.videoMatchCovShort == 1.5, "V: match covShort adds");
     expect(m.videoMatchCovLong == 0.75, "V: match covLong adds");
     expect(m.videoMatchScored == 3, "V: match scored adds");
+    expect(m.videoHwFiles == 8, "V: hwFiles adds");
+    expect(m.videoHwFallbacks == 1, "V: hwFallbacks adds");
     msf::TelemetryRecorder rec2;
     msf::TelemetryConfig cfg2;
     cfg2.root = "C:/media"; cfg2.build = "0.9.4.164"; cfg2.engine = "1.5.1"; cfg2.db = "1.0.6";

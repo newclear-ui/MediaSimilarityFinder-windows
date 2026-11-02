@@ -232,6 +232,10 @@ public:
   // 0.9.4.166 (P1): NOPTS fallback count (assumed-timing samples).
   // Additive; a cache hit contributes a measured 0, like decodeErrors.
   void addVideoNopts(std::uint64_t n);
+  // 0.9.4.170 (F-2): per-file hardware decode usage. files = builds with >=1
+  // HW frame; fallbacks = pre-emit HW failures recovered in software.
+  // Additive; a cache hit contributes measured 0 (no decode ran at all).
+  void addVideoHw(bool used, std::uint64_t fallbacks);
 // E-3B: records one planner decision for one video file. Called for every
 // analysed file, including cache hits, because the decision is cheap input
 // analysis and is exactly what a reader needs to see when a scan looks odd.
@@ -331,6 +335,9 @@ private:
   bool vidDecodeErrorsRecorded_ = false;
   std::atomic<std::uint64_t> vidNopts_{0};
   bool vidNoptsRecorded_ = false;
+  // 0.9.4.170 (F-2): HW-decoded files and SW-recovered HW failures.
+  std::atomic<std::uint64_t> vidHwFiles_{0}, vidHwFallbacks_{0};
+  bool vidHwRecorded_ = false;
   std::atomic<std::uint64_t> vidGpu_{0}, vidGpuFallback_{0};
   std::atomic<long long> vidGpuNs_{0};
   // E-3B adaptive sampling planner. A fallback must never be silent, so the

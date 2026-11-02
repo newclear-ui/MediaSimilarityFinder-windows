@@ -337,7 +337,7 @@ backend 의 실제 조사와 검증은 이번 F 범위에 포함하지 않습니
 향후 Intel/AMD 등 hardware decode backend 를 추가할 수 있는 방향을 고려합니다.
 그 구현·검증은 **이번 F 의 범위가 아닙니다.**
 
-**2026-10-25 순서 확정:** F-2 본통합(NVDEC production 포함 모든 HW 디코드 본통합)은 Vulkan 지원 완료 이후(1.0 이후)로 이동한다. F-1 계약(CONDITIONAL)과 F-2 금지는 그대로 유지된다.
+**2026-10-25 순서 확정:** F-2 본통합(NVDEC production 포함 모든 HW 디코드 본통합)은 Vulkan 지원 완료 이후(1.0 이후)로 이동한다. F-1 계약(CONDITIONAL)과 F-2 금지는 그대로 유지된다. **2026-11-03 사용자 결정으로 일부 재개:** D3D11VA try-HW-fallback-SW를 0.9.4.170에서 채택 (이 PC의 NVDEC 실리콘을 그대로 구동; F-2 전체 본통합이 아니라 D3D11VA 경로에 한함). 네이티브 CUDA/NVDEC API와 비-NVIDIA 백엔드는 F-1 중단 유지. DirectX 네이티브(D3D12VA/MediaFoundation) 검토는 다음 빌드.
 
 ### F 진행 상태 (0.9.4.44 기준, F-1 결과는 0.9.4.43에서 확정)
 

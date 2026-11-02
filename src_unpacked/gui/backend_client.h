@@ -148,6 +148,12 @@ struct BackendStatus {
     bool gpuActive = false;
     bool gpuAvailable = false;
     qulonglong gpuDone = 0;
+    // 0.9.4.170 (F-2): hardware decode state for the status bar.
+    bool hwAvailable = false;
+    QString hwBackend;
+    qulonglong hwUsed = 0;
+    // 0.9.4.170 (F-2): comma-joined codec names confirmed on HW this scan.
+    QString hwCodecs;
     double backendCpu = 0.0;
     qulonglong backendRssMB = 0;
 };
@@ -233,6 +239,10 @@ public:
     // through the session policyApplied report (surfaced as a backend log
     // line: never silent, explicit partial flag).
     virtual void updateResourcePolicy(const ExecutionPolicy& exec) = 0;
+    // 0.9.4.170 (F-2): restart the backend so a flipped ui/hwDecode setting
+    // takes effect (spawn-time MSF_VIDEO_HW is sticky otherwise). Default
+    // no-op: the loopback applies the setting per scan from QSettings.
+    virtual void restartForConfigChange() {}
     // Hint to push a fresh monitor snapshot (fire-and-forget; the snapshot
     // arrives via monitorSnapshot). Lets the GUI tick stay pull-free.
     virtual void refreshMonitor() = 0;

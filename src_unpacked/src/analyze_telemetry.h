@@ -53,6 +53,11 @@ struct AnalyzeTelemetry {
     double videoMatchCovShort = 0;
     double videoMatchCovLong = 0;
     std::uint64_t videoMatchScored = 0;
+    // 0.9.4.170 (F-2): hardware decode usage. Files with >=1 HW frame and
+    // pre-emit HW failures recovered in software. Plain sums; absence of
+    // video work reads 0 alongside videoStageEntered=false.
+    std::uint64_t videoHwFiles = 0;
+    std::uint64_t videoHwFallbacks = 0;
 
     // Code-path entry flags. A stage that never ran is not "0 ms measured".
     bool analyzeRan = false;
@@ -148,6 +153,7 @@ inline void addAnalyzeTelemetry(AnalyzeTelemetry& d, const AnalyzeTelemetry& s) 
     d.videoMatchSmallBatch += s.videoMatchSmallBatch; d.videoMatchBatchFailed += s.videoMatchBatchFailed;
     d.videoMatchCovShort += s.videoMatchCovShort; d.videoMatchCovLong += s.videoMatchCovLong;
     d.videoMatchScored += s.videoMatchScored;
+    d.videoHwFiles += s.videoHwFiles; d.videoHwFallbacks += s.videoHwFallbacks;
     d.analyzeRan = d.analyzeRan || s.analyzeRan;
     d.videoStageEntered = d.videoStageEntered || s.videoStageEntered;
     d.verifyKeyMs += s.verifyKeyMs; d.verifyDecodeMs += s.verifyDecodeMs;

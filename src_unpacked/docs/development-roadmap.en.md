@@ -334,7 +334,7 @@ The **architecture is not fixed to NVIDIA**, however. The backend abstraction is
 expected to accommodate additional hardware decode backends such as Intel/AMD in
 future. Their implementation and verification are **out of scope for this F**.
 
-**Order fixed 2026-10-25:** F-2 production integration (all HW decode production, incl. NVDEC) moves to after Vulkan support (post-1.0). The F-1 contract (CONDITIONAL) and the F-2 prohibition stay in force.
+**Order fixed 2026-10-25:** F-2 production integration (all HW decode production, incl. NVDEC) moves to after Vulkan support (post-1.0). **Partially resumed by user decision 2026-11-03:** D3D11VA try-HW-fallback-SW adopted in 0.9.4.170 (drives this PC's NVDEC silicon; D3D11VA path only, not full F-2 integration). Native CUDA/NVDEC API and non-NVIDIA backends stay suspended per F-1. DirectX-native (D3D12VA/MediaFoundation) review is the next build. The F-1 contract (CONDITIONAL) and the F-2 prohibition stay in force.
 
 ### F progress (0.9.4.43)
 

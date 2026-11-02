@@ -446,7 +446,18 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // 0.9.4.161 (P1): time the sweep itself (decode + grayscale convert).
   const auto sweepT0=std::chrono::steady_clock::now();
   if(sparseUsed){ decodedCount=(std::size_t)sparseDecoded; }
-  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){d.close();return false;}
+  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){
+    // 0.9.4.170 (F-2): a pre-emit HW download failure restarts the sweep in
+    // software once. Identical pixels or a clean failure — never a mixed
+    // HW/SW sample set.
+    if(d.hwFailedPreEmit() && !(cancel && cancel->load(std::memory_order_relaxed))){
+      if(stats) ++stats->hwFallbacks;
+      decodedCount=0; sweepErrors=0; sweepNopts=0;
+      if(d.reopenSoftware() && d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){
+        // recovered in software below
+      } else { d.close(); return false; }
+    } else { d.close(); return false; }
+  }
   const double sweepMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sweepT0).count();
   // 0.9.4.158 (P0/P1): the decoder owns the completeness contract (cancel,
   // truncation, decode errors, EOF flush/drain, endpoint tail tolerance),
@@ -467,7 +478,11 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   }
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
-    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; stats->noptsFrames=sweepNopts; }
+    stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; stats->noptsFrames=sweepNopts;
+    // 0.9.4.170 (F-2): hwFallbacks was already bumped on the retry path
+    // above; hwCodec names the codec only for real HW use (usage record).
+    stats->hwUsed=d.hwUsed(); stats->hwBackend=d.hwBackend();
+    if(d.hwUsed()) stats->hwCodec=d.codecName(); }
   d.close();if(built.hashes.empty())return false;
   // 0.9.4.158 (P0): re-check cancel immediately before persisting. The sweep
   // above can take minutes on long files; a Stop in this window must leave

@@ -84,13 +84,46 @@ public:
     // which the planner treats as GopUnavailable and therefore as sequential.
     std::string codecName() const;
     double gopFramesFromIndex() const;
+    // 0.9.4.170 (F-2 re-review): hardware decode state for this file.
+    // hwUsed() = at least one frame arrived via the HW path; hwBackend()
+    // names the AVHWDeviceType that delivered it ("d3d11va"); hwFallbacks()
+    // counts HW attempts abandoned back to software mid-sweep (0 common).
+    // Software remains the default: HW is attempted first (MSF_VIDEO_HW=off
+    // forces software), and any pre-emit HW failure restarts the sweep in
+    // software, so HW can never produce a different fingerprint — only an
+    // identical one, or a clean sweep failure like any decode error.
+    bool hwUsed() const;
+    std::string hwBackend() const;
+    int hwFallbacks() const;
+    // True when the current open decoder failed on a HW frame before any
+    // frame was emitted (clean software-retry signal for the caller).
+    bool hwFailedPreEmit() const;
+    // Close + reopen the same path with hardware unconditionally disabled.
+    // Used for the one software retry after a pre-emit HW failure.
+    bool reopenSoftware();
+    // Process-wide D3D11VA device probe (Windows + FFmpeg only). Creates the
+    // device once; later calls are free. Returns true when a HW device is
+    // usable. Never throws, never decodes.
+    static bool probeHwDevice();
+    // Backend name of the probed device ("d3d11va") or empty when unusable.
+    static std::string probeHwBackend();
     void close();
 private:
 #ifdef MSF_HAS_FFMPEG
     void* fmt_=nullptr; void* codec_=nullptr; void* frame_=nullptr; void* sws_=nullptr;
     int stream_=-1;
+    // 0.9.4.170 (F-2): per-file HW state. hwDev_ borrows the process-wide
+    // D3D11VA device (never owned here); hwActive_ = this file decodes via
+    // HW until proven otherwise.
+    void* hwDev_=nullptr; bool hwActive_=false;
 #endif
     std::string path_;
     VideoInfo info_;
+    // 0.9.4.170 (F-2): set on the first transferred HW frame; sticky.
+    bool hwUsed_=false; std::string hwBackend_; int hwFallbacks_=0;
+    // Set when a HW frame failed to transfer before any frame was emitted.
+    bool hwFailedPreEmit_=false;
+    // MSF_VIDEO_HW=off forces software. Anything else tries hardware first.
+    bool hwForcedOff_=false;
 };
 }

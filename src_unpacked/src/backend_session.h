@@ -36,6 +36,14 @@ struct SessionStatus {
     bool gpuActive = false;
     bool gpuAvailable = false;
     qulonglong gpuDone = 0;
+    // 0.9.4.170 (F-2): hardware decode state. hwAvailable = a HW device
+    // could be created on the backend machine; hwBackend names it;
+    // hwUsed counts HW-decoded video files this scan (0 = all software).
+    bool hwAvailable = false;
+    QString hwBackend;
+    qulonglong hwUsed = 0;
+    // 0.9.4.170 (F-2): comma-joined codec names confirmed on HW this scan.
+    QString hwCodecs;
 };
 
 // Pushed monitor snapshot (Type C). Subset of msf::MonitorStatus actually

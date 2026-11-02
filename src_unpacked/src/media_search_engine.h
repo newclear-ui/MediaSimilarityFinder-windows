@@ -13,6 +13,8 @@
 #include "candidate_index.h"
 #include "benchmark.h"
 #include <atomic>
+#include <mutex>
+#include <string>
 #include <functional>
 #include <list>
 #include <mutex>
@@ -221,6 +223,14 @@ const std::vector<MediaFile>& files() const { return files_; }
   bool gpuActive() const { return gpuActive_.load(std::memory_order_relaxed); }
   bool hasTelemetry() const { return telemetry_.hasData(); }
   std::string telemetryJson() const { return telemetry_.toJson(); }
+  // 0.9.4.170 (F-2): live hardware-decode counters for the GUI status bar.
+  // Incremented exactly where the per-file video stats are harvested, so
+  // the label and the telemetry agree by construction. Reset at scan start.
+  std::uint64_t hwFilesDecoded() const { return hwFiles_.load(); }
+  std::uint64_t hwFallbacks() const { return hwFallbacks_.load(); }
+  bool hwAvailable() const { return VideoDecoder::probeHwDevice(); }
+  std::string hwBackend() const { std::lock_guard<std::mutex> lk(hwMutex_); return hwBackend_; }
+  std::string hwCodecs() const { std::lock_guard<std::mutex> lk(hwMutex_); return hwCodecs_; }
   // 0.9.4.131: GUI worker hook -- replace the record's match counters with the
   // displayed result set (stored quick-load + this scan's emissions) before
   // telemetryJson() is read, so the detailed log agrees with the visible list.
@@ -255,6 +265,11 @@ const std::vector<MediaFile>& files() const { return files_; }
   std::atomic<std::uint64_t> unchangedCount_{0};
   mutable std::atomic<bool> gpuActive_{false};
   TelemetryRecorder telemetry_;
+  // 0.9.4.170 (F-2): HW decode accounting (see accessors above).
+  std::atomic<std::uint64_t> hwFiles_{0}, hwFallbacks_{0};
+  mutable std::mutex hwMutex_;
+  std::string hwBackend_;   // first non-empty backend name seen this scan
+  std::string hwCodecs_;    // comma-joined codec names confirmed on HW
   // B1 Minimal Adaptive Allocation: decided per scan, re-evaluated at
   // existing phase points. Gates backend use; never touches workers/queues.
   // B2: image-path recent-throughput windows feed observed rates in.

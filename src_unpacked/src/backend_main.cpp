@@ -575,6 +575,11 @@ private:
         m.payload[QStringLiteral("gpuActive")] = st.gpuActive;
         m.payload[QStringLiteral("gpuAvailable")] = st.gpuAvailable;
         m.payload[QStringLiteral("gpuDone")] = QString::number(st.gpuDone);
+        // 0.9.4.170 (F-2): hardware decode state for the GUI status bar.
+        m.payload[QStringLiteral("hwAvailable")] = st.hwAvailable;
+        m.payload[QStringLiteral("hwBackend")] = st.hwBackend;
+        m.payload[QStringLiteral("hwUsed")] = QString::number(st.hwUsed);
+        m.payload[QStringLiteral("hwCodecs")] = st.hwCodecs;
         send(m);
     }
     void onMonitorEvent(const msf::MonitorEvent& e) {

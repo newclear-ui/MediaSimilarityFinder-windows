@@ -307,6 +307,8 @@ private:
   bool saveDetailedLogTo(const QString& path, const QString& json);
   void refreshSummary(const msf::SearchReport* r=nullptr);
   void updateGpuLabel();
+  // 0.9.4.170 (F-2): hardware decode status label (HW:d3d11va / SW).
+  void updateHwLabel();
   QString gpuStateText() const;
   void updateStatusCounts();
   void updateSysLabels(); // GPU state row (P4: CPU/RAM rows come from the status snapshot)
@@ -601,6 +603,8 @@ private:
   // status
   QStatusBar* statusBar_=nullptr; QLabel* statusMsg_=nullptr; QLabel* statusCount_=nullptr;
   QLabel* gpuLbl_=nullptr;
+  // 0.9.4.170 (F-2): hardware decode status label (HW:d3d11va / SW).
+  QLabel* hwLbl_=nullptr;
   QProgressBar* statusProg_=nullptr;
   // monitor (P2: owned by the backend; GUI keeps presentation + snapshot cache)
   QSystemTrayIcon* tray_=nullptr; QTimer* monitorTimer_=nullptr;

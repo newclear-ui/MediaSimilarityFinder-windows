@@ -266,6 +266,8 @@ void TelemetryRecorder::start(const TelemetryConfig& cfg) {
   vidDecodeErrorsRecorded_ = false;
   vidNopts_.store(0, std::memory_order_relaxed);
   vidNoptsRecorded_ = false;
+  vidHwFiles_.store(0, std::memory_order_relaxed); vidHwFallbacks_.store(0, std::memory_order_relaxed);
+  vidHwRecorded_ = false;
   completed_ = false;
   cancelled_ = paused_ = failed_ = false;
   failedStage_.clear(); completionReason_.clear();
@@ -437,6 +439,11 @@ void TelemetryRecorder::addVideoDecodeErrors(std::uint64_t errors) {
 void TelemetryRecorder::addVideoNopts(std::uint64_t n) {
   vidNopts_.fetch_add(n, std::memory_order_relaxed);
   vidNoptsRecorded_ = true;
+}
+void TelemetryRecorder::addVideoHw(bool used, std::uint64_t fallbacks) {
+  if (used) vidHwFiles_.fetch_add(1, std::memory_order_relaxed);
+  vidHwFallbacks_.fetch_add(fallbacks, std::memory_order_relaxed);
+  vidHwRecorded_ = true;
 }
 void TelemetryRecorder::sampleOnce(double tMs) {
   ResourceSample s;
@@ -753,6 +760,12 @@ std::string TelemetryRecorder::toJson() const {
      // read null (not a structural zero).
      << ",\"noptsFrames\":" << (vidNoptsRecorded_ ? std::to_string(vidNopts_.load()) : std::string("null"))
      << ",\"noptsFramesState\":\"" << measureStateName(vidNoptsRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+      // 0.9.4.170 (F-2): hardware decode usage. Additive; unscanned
+      // corpora read null (not a structural zero).
+      << ",\"hwFiles\":" << (vidHwRecorded_ ? std::to_string(vidHwFiles_.load()) : std::string("null"))
+      << ",\"hwFilesState\":\"" << measureStateName(vidHwRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
+      << ",\"hwFallbacks\":" << (vidHwRecorded_ ? std::to_string(vidHwFallbacks_.load()) : std::string("null"))
+      << ",\"hwFallbacksState\":\"" << measureStateName(vidHwRecorded_ ? MeasureState::Measured : MeasureState::NotMeasured) << "\""
     // E-3B: the sampling planner. `sparseRejected` is reported next to
     // `sparseAccepted` so a fallback is never invisible, and the landing
     // violation count explains rejections rather than leaving them unexplained.
