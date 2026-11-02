@@ -36,6 +36,15 @@ bool VideoDecoder::open(const std::string&p){
     AVRational fr=av_guess_frame_rate(fmt,st,nullptr);
     info_.fps=fr.den?av_q2d(fr):0;
     info_.duration=st->duration>0?st->duration*av_q2d(st->time_base):(fmt->duration>0?fmt->duration/(double)AV_TIME_BASE:0);
+    // 0.9.4.167 (P1): normalize the stream-time origin. Sampling targets
+    // are video-time (0-based); without this offset a nonzero start_time
+    // shifts every selected sample (verified 2.5 s shift on an
+    // output_ts_offset fixture in 0.9.4.166).
+    info_.startOffsetSec=0;
+    if(st->start_time!=AV_NOPTS_VALUE){
+      const double off=st->start_time*av_q2d(st->time_base);
+      if(std::isfinite(off)) info_.startOffsetSec=off;
+    }
     return true;
 #else
     std::ifstream f(path_from_utf8(p),std::ios::binary);if(!f)return false;
@@ -62,7 +71,8 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
     AVFormatContext* fmt=reinterpret_cast<AVFormatContext*>(fmt_);
     AVCodecContext* cc=reinterpret_cast<AVCodecContext*>(codec_);
     AVStream* st=fmt->streams[stream_];
-    int64_t ts=av_rescale_q((int64_t)(seconds*1000000.0),AV_TIME_BASE_Q,st->time_base);
+    const double startOffC=info_.startOffsetSec;
+    int64_t ts=av_rescale_q((int64_t)((seconds+startOffC)*1000000.0),AV_TIME_BASE_Q,st->time_base);
     if(av_seek_frame(fmt,stream_,ts,AVSEEK_FLAG_BACKWARD)<0) return false;
     avcodec_flush_buffers(cc);
     AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
@@ -71,7 +81,7 @@ bool VideoDecoder::frameAtColor(double seconds,int w,int h,ColorFrame&o){
     while(!got && av_read_frame(fmt,pkt)>=0){
         if(pkt->stream_index==stream_ && avcodec_send_packet(cc,pkt)>=0){
             while(avcodec_receive_frame(cc,fr)>=0){
-                double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?seconds:fr->best_effort_timestamp*av_q2d(st->time_base);
+                double t=fr->best_effort_timestamp==AV_NOPTS_VALUE?seconds:fr->best_effort_timestamp*av_q2d(st->time_base)-startOffC;
                 if(t+0.05<seconds) continue;
                 AVFrame* dst=av_frame_alloc(); if(!dst) break;
                 dst->format=AV_PIX_FMT_RGB24; dst->width=w; dst->height=h;
@@ -100,7 +110,6 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
     out.clear();
     if(errorOut) *errorOut=0;
     if(noptsOut) *noptsOut=0;
-    if(noptsOut) *noptsOut=0;
     if(path_.empty() || w<=0 || h<=0 || seconds.empty()) return false;
     if(cancel && cancel->load(std::memory_order_relaxed)) return false;
 #ifdef MSF_HAS_FFMPEG
@@ -113,7 +122,12 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
     AVFormatContext* fmt=reinterpret_cast<AVFormatContext*>(fmt_);
     AVCodecContext* cc=reinterpret_cast<AVCodecContext*>(codec_);
     AVStream* st=fmt->streams[stream_];
-    int64_t ts=av_rescale_q((int64_t)(targets.front()*1000000.0),AV_TIME_BASE_Q,st->time_base);
+    // 0.9.4.167 (P1): normalize the stream-time origin. Targets are
+    // video-time (0-based); seeking and frame times translate by the
+    // recorded offset so containers with nonzero start_time sample the
+    // same content as zero-start ones.
+    const double startOff=info_.startOffsetSec;
+    int64_t ts=av_rescale_q((int64_t)((targets.front()+startOff)*1000000.0),AV_TIME_BASE_Q,st->time_base);
     if(av_seek_frame(fmt,stream_,ts,AVSEEK_FLAG_BACKWARD)<0) return false;
     avcodec_flush_buffers(cc);
     AVPacket* pkt=av_packet_alloc(); AVFrame* fr=av_frame_alloc();
@@ -162,7 +176,7 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         // assumed, not observed, timing.
         double t=0; const bool nopts=fr->best_effort_timestamp==AV_NOPTS_VALUE;
         if(nopts){ t=targets[next]; if(noptsOut) ++(*noptsOut); }
-        else t=fr->best_effort_timestamp*av_q2d(st->time_base);
+        else t=fr->best_effort_timestamp*av_q2d(st->time_base)-startOff;
                 lastDecodedT=t; anyDecoded=true;
                 while(next<targets.size() && t+0.05>=targets[next]){
                     // 0.9.4.158 (P0): an emit failure is a sweep failure.
@@ -197,7 +211,7 @@ bool VideoDecoder::framesAt(const std::vector<double>& seconds,int w,int h,std::
         // assumed, not observed, timing.
         double t=0; const bool nopts=fr->best_effort_timestamp==AV_NOPTS_VALUE;
         if(nopts){ t=targets[next]; if(noptsOut) ++(*noptsOut); }
-        else t=fr->best_effort_timestamp*av_q2d(st->time_base);
+        else t=fr->best_effort_timestamp*av_q2d(st->time_base)-startOff;
                 lastDecodedT=t; anyDecoded=true;
                 while(next<targets.size() && t+0.05>=targets[next]){
                     if(!emitFrame(fr,t)) { av_packet_free(&pkt); av_frame_free(&fr); out.clear(); return false; }
@@ -324,8 +338,10 @@ bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& second
         // target is not enough to reach the frame production would pick. Landing
         // at or before target-0.05 guarantees it is reachable. This is the E-2B
         // fix; the predicate, tolerance and target are all unchanged.
+        // 0.9.4.167 (P1): seek in stream time (video-time target + offset).
+        const double offSec=info_.startOffsetSec;
         const int64_t backPts=av_rescale_q(
-            (int64_t)(std::max(0.0,target-0.05)*1000000.0),AV_TIME_BASE_Q,strm->time_base);
+            (int64_t)((std::max(0.0,target-0.05)+offSec)*1000000.0),AV_TIME_BASE_Q,strm->time_base);
         const auto ts0=std::chrono::steady_clock::now();
         if(av_seek_frame(fmt,stream_,backPts,AVSEEK_FLAG_BACKWARD)<0){++local.seekFailures;break;}
         avcodec_flush_buffers(cc);
@@ -351,7 +367,10 @@ bool VideoDecoder::framesAt96Plus32ExactSparse(const std::vector<double>& second
                     // unreachable and the whole result is untrustworthy.
                     if(fr->best_effort_timestamp>backPts) ++local.landingViolations;
                 }
-                const double ft=fr->best_effort_timestamp==AV_NOPTS_VALUE?target:fr->best_effort_timestamp*tbSec;
+                // 0.9.4.167 (P1): compare in video time (stream PTS minus the
+                // recorded offset), so offset containers select the same
+                // content as zero-start ones. NOPTS falls back to the target.
+                const double ft=fr->best_effort_timestamp==AV_NOPTS_VALUE?target:fr->best_effort_timestamp*tbSec-offSec;
                 if(ft+0.05>=target){
                     const auto tc0=std::chrono::steady_clock::now();
                     AVFrame* dst=av_frame_alloc();

@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.166 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.167 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -91,6 +91,8 @@ add_library(msf_core STATIC
     src/incremental_index.cpp
     src/media_analyzer.cpp
     src/video_sampling.cpp
+    # V2: structure probe (measurement-only, scratch records for V-gate validation).
+    src/video_structure.cpp
   # E-3B: the adaptive sampling planner. Classification only — no decode, no
   # FFmpeg calls, no I/O — so the correctness gates are provably independent of
   # whatever the decoder does afterwards.
@@ -537,6 +539,17 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_timestamp_basis_test tests/video_timestamp_basis_test.cpp)
     target_link_libraries(msf_video_timestamp_basis_test PRIVATE msf_core)
     add_test(NAME video_timestamp_basis_test COMMAND msf_video_timestamp_basis_test)
+    # 0.9.4.167 V2: structure probe unit test (hand-built frames, no fixtures).
+    add_executable(msf_video_structure_test tests/video_structure_test.cpp)
+    target_link_libraries(msf_video_structure_test PRIVATE msf_core)
+    add_test(NAME video_structure_test COMMAND msf_video_structure_test)
+    add_executable(msf_video_structure_e2e_test tests/video_structure_e2e_test.cpp)
+    target_link_libraries(msf_video_structure_e2e_test PRIVATE msf_core)
+    add_test(NAME video_structure_e2e_test COMMAND msf_video_structure_e2e_test)
+    # 0.9.4.167 V3: segmented kept selection vs legacy (two-half fixture).
+    add_executable(msf_video_kept_select_test tests/video_kept_select_test.cpp)
+    target_link_libraries(msf_video_kept_select_test PRIVATE msf_core)
+    add_test(NAME video_kept_select_test COMMAND msf_video_kept_select_test)
     add_executable(msf_video_gpu_benchmark_test tests/video_gpu_benchmark_test.cpp)
     target_link_libraries(msf_video_gpu_benchmark_test PRIVATE msf_core)
     add_test(NAME video_gpu_benchmark_test COMMAND msf_video_gpu_benchmark_test)

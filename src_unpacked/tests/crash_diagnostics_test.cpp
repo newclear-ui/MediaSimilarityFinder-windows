@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
         }
         const QString dbC = indexDbFile(d, mdir);
         check(!dbC.isEmpty(), "cancel index resolved");
-        check(dbBaseline(dbC) == QStringLiteral("1.5.1"), "cancel baseline stamped");
+        check(dbBaseline(dbC) == QStringLiteral("1.5.2"), "cancel baseline stamped");
         // Change one member, then cancel right after the change is approved
         // (deterministic: poll the worker instead of racing a sleep).
         {
@@ -283,7 +283,7 @@ int main(int argc, char** argv) {
             }
         }
         check(fullPass, "post-cancel scan forced full verification");
-        check(dbBaseline(dbC) == QStringLiteral("1.5.1"), "post-cancel baseline restamped");
+        check(dbBaseline(dbC) == QStringLiteral("1.5.2"), "post-cancel baseline restamped");
         {
             msf::Database b;
             check(b.open(dbC.toStdString()) && b.initialize(), "post-cancel index open");
@@ -322,7 +322,7 @@ int main(int argc, char** argv) {
         }
         const QString dbT = indexDbFile(d, mdir);
         check(!dbT.isEmpty(), "throw index resolved");
-        check(dbBaseline(dbT) == QStringLiteral("1.5.1"), "throw baseline stamped");
+        check(dbBaseline(dbT) == QStringLiteral("1.5.2"), "throw baseline stamped");
         // Change the pair, then fail the final persist with a throw.
         if (!writeBmp(mdir / "t_a.bmp", 32)) check(false, "throw change write");
         fs::last_write_time(mdir / "t_a.bmp", fs::file_time_type::clock::now(), ec);
@@ -371,7 +371,7 @@ int main(int argc, char** argv) {
         }
         const QString dbD = indexDbFile(d, mdir);
         check(!dbD.isEmpty(), "dirty index resolved");
-        check(dbBaseline(dbD) == QStringLiteral("1.5.1"), "dirty baseline stamped");
+        check(dbBaseline(dbD) == QStringLiteral("1.5.2"), "dirty baseline stamped");
         {
             msf::Database b;
             check(b.open(dbD.toStdString()) && b.initialize(), "dirty index open");
@@ -411,7 +411,7 @@ int main(int argc, char** argv) {
             }
         }
         check(fullPass, "crash marker forced full verification");
-        check(dbBaseline(dbD) == QStringLiteral("1.5.1"), "baseline restamped after crash recovery");
+        check(dbBaseline(dbD) == QStringLiteral("1.5.2"), "baseline restamped after crash recovery");
         {
             msf::Database b;
             check(b.open(dbD.toStdString()) && b.initialize(), "dirty index reopened");

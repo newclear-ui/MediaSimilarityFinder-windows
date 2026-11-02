@@ -10,8 +10,10 @@
 #include "gpu_backend.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -110,6 +112,52 @@ int main() {
     if (!(sst.cpuMs > 0.0)) { std::cerr << "small-batch cpu time missing\n"; return 5; }
     if (sst.gpuMs != 0.0) { std::cerr << "gpu time without gpu call\n"; return 5; }
     std::cout << "  [ok] small-batch accounting submitted=4 completed=0\n";
+  }
+
+  // 0.9.4.167 (V4): coverage accounting + strict gate (diagnostic).
+  // Long side 12 frames, only the first 2 gate at threshold 60:
+  // covShort=1, covLong=2/12, segs=1. Non-strict scores the DTW;
+  // MSF_VIDEO_STRICT_COVERAGE=1 rejects (untuned placeholder gate).
+  {
+    msf::VideoFingerprint la, lb;
+    const std::uint64_t H = 0x0101010101010101ULL;
+    const std::uint64_t Z = ~H;
+    for (int j = 0; j < 12; ++j) {
+      la.timestamps.push_back((double)j);
+      la.hashes.push_back(j < 2 ? H : Z);
+      la.mirrorHashes.push_back(0);
+    }
+    for (int i = 0; i < 2; ++i) {
+      lb.timestamps.push_back((double)i);
+      lb.hashes.push_back(H);
+      lb.mirrorHashes.push_back(0);
+    }
+    msf::VideoSimilarityOptions so;
+    so.thresholdPercent = 60.0;
+    msf::VideoSimilarityStats st;
+    so.stats = &st;
+    const double loose = msf::video_similarity(la, lb, so);
+    if (!(loose > 50.0)) { std::cerr << "partial pair scores too low\n"; return 6; }
+    if (st.covShort != 1.0) { std::cerr << "short coverage wrong\n"; return 6; }
+    if (std::abs(st.covLong - 2.0 / 12.0) > 1e-9) { std::cerr << "long coverage wrong\n"; return 6; }
+    if (st.covSegments != 1) { std::cerr << "segments wrong\n"; return 6; }
+    if (st.scoredPairs != 1) { std::cerr << "scored count wrong\n"; return 6; }
+    std::cout << "  [ok] coverage short=1 long=" << st.covLong << " segs=1\n";
+#if defined(_WIN32)
+    _putenv_s("MSF_VIDEO_STRICT_COVERAGE", "1");
+#else
+    setenv("MSF_VIDEO_STRICT_COVERAGE", "1", 1);
+#endif
+    msf::VideoSimilarityStats st2;
+    auto go2 = so; go2.stats = &st2;
+    const double strict = msf::video_similarity(la, lb, go2);
+#if defined(_WIN32)
+    _putenv_s("MSF_VIDEO_STRICT_COVERAGE", "");
+#else
+    unsetenv("MSF_VIDEO_STRICT_COVERAGE");
+#endif
+    if (strict != 0.0) { std::cerr << "strict gate did not reject\n"; return 7; }
+    std::cout << "  [ok] strict gate rejects partial coverage\n";
   }
 
   // Timed workload: same pair, fixed iteration count.

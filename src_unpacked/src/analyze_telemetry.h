@@ -47,6 +47,12 @@ struct AnalyzeTelemetry {
     // batches reached it and fell back to CPU.
     std::uint64_t videoMatchSmallBatch = 0;
     std::uint64_t videoMatchBatchFailed = 0;
+    // 0.9.4.167 (V4): match coverage sums + scored-pair count (means are
+    // sum/count, computed by the reader). Plain sums like the counters
+    // above; absence of video work reads 0 alongside videoStageEntered=false.
+    double videoMatchCovShort = 0;
+    double videoMatchCovLong = 0;
+    std::uint64_t videoMatchScored = 0;
 
     // Code-path entry flags. A stage that never ran is not "0 ms measured".
     bool analyzeRan = false;
@@ -140,6 +146,8 @@ inline void addAnalyzeTelemetry(AnalyzeTelemetry& d, const AnalyzeTelemetry& s) 
     d.videoMatchGpuMs += s.videoMatchGpuMs; d.videoMatchCpuMs += s.videoMatchCpuMs;
     d.videoMatchSubmitted += s.videoMatchSubmitted; d.videoMatchCompleted += s.videoMatchCompleted;
     d.videoMatchSmallBatch += s.videoMatchSmallBatch; d.videoMatchBatchFailed += s.videoMatchBatchFailed;
+    d.videoMatchCovShort += s.videoMatchCovShort; d.videoMatchCovLong += s.videoMatchCovLong;
+    d.videoMatchScored += s.videoMatchScored;
     d.analyzeRan = d.analyzeRan || s.analyzeRan;
     d.videoStageEntered = d.videoStageEntered || s.videoStageEntered;
     d.verifyKeyMs += s.verifyKeyMs; d.verifyDecodeMs += s.verifyDecodeMs;

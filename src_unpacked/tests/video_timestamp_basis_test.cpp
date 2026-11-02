@@ -1,15 +1,11 @@
-// 0.9.4.166 (P1): timestamp-basis investigation probe.
-//
-// Compares an 8s testsrc clip (stream start_time==0) against the same clip
-// muxed with +2.5 s output timestamp offset (start_time>0).
-// Structural invariants (must hold regardless of basis; regressions here
-// fail the test): build succeeds, sample set complete, kept timestamps
-// monotonic and inside the file range, no NOPTS fallbacks on clean files.
-// Recorded observations (printed, pinned in build-history, NOT asserted:
-// a shift here is the suspected start_time bug, not the contract): first/
-// last kept timestamps of each file and whether the two fingerprints match.
-// A production basis fix would change stored values and stays gated on
-// this evidence plus explicit approval.
+// 0.9.4.166 (P1): timestamp-basis investigation probe. Compares an 8s
+// testsrc clip (stream start_time==0) against the same clip muxed with
+// +2.5 s output timestamp offset (start_time>0).
+// 0.9.4.167 (P1): the basis is now normalized in the decoder, so this test
+// pins the fixed behavior: identical visual content at identical video
+// times must yield identical kept timestamps and hashes, regardless of
+// the container offset. Structural invariants hold in both builds;
+// equality holds only with the fix (pre-fix: first-shift=2.5, kept 2 vs 3).
 #include "video_fingerprint.h"
 #include "video_decoder.h"
 
@@ -112,6 +108,25 @@ int main() {
   if (int r = checkFile(e, clip0, "base ", f0, l0, k0)) return r + 10;
   msf::VideoFingerprintEngine e2;
   if (int r = checkFile(e2, clipOff, "offset", f1, l1, k1)) return r + 20;
+  // 0.9.4.167: normalized basis. The offset clip must fingerprint
+  // identically to the zero-start original (same visuals at same times).
+  if (k1 != k0) { std::cerr << "kept count differs by basis\n"; return 30; }
+  if (!(std::abs(f1 - f0) <= 1e-3) || !(std::abs(l1 - l0) <= 1e-3)) {
+    std::cerr << "kept grid shifted by start_time\n"; return 31;
+  }
+  {
+    msf::VideoFingerprint va, vb;
+    msf::VideoFingerprintEngine ea, eb;
+    if (!ea.build(clip0, va) || !eb.build(clipOff, vb)) return 32;
+    if (va.hashes != vb.hashes) { std::cerr << "same content, different hashes\n"; return 33; }
+    if (va.timestamps != vb.timestamps) {
+      bool close = va.timestamps.size() == vb.timestamps.size();
+      for (std::size_t i = 0; close && i < va.timestamps.size(); ++i)
+        close = std::abs(va.timestamps[i] - vb.timestamps[i]) <= 1e-3;
+      if (!close) { std::cerr << "same content, different timestamps\n"; return 34; }
+    }
+    std::cout << "  [ok] offset-independent fingerprint\n";
+  }
   // Observation only (see header): does the whole kept grid ride with the
   // stream-time shift, or does sampling follow request time?
   std::cout << "  [info] first-shift=" << (f1 - f0) << " last-shift=" << (l1 - l0)

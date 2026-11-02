@@ -1,5 +1,6 @@
 #include "video_fingerprint.h"
 #include "video_sampling.h"
+#include "video_structure.h"
 #include "video_sampling_planner.h"
 #include "fingerprint.h"
 #include "similarity.h"
@@ -192,12 +193,70 @@ void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz
 sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(s,5,f.duration);sqlite3_bind_int(s,6,(int)count);sqlite3_bind_int(s,7,kCacheFormatVersion);sqlite3_bind_text(s,8,polSave.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_blob(s,9,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
 }
 VideoFingerprintEngine::~VideoFingerprintEngine(){closePersistentCache();}
+// 0.9.4.167 (V3): segmented kept-frame selection, diagnostic only.
+// Default behavior stays on the legacy variance-ranked path below;
+// this runs only with MSF_VIDEO_KEPT=segmented. Uniform time segments
+// (not V2 structure windows yet -- that wiring is a V-gate follow-up);
+// each non-empty segment keeps its highest-variance frame first, then the
+// global variance order fills the remainder, chronologically ordered at
+// the end like the legacy path. Deterministic: strict-greater argmax
+// with index tiebreak, fixed segment order.
+static bool videoKeptSegmented(){
+  const char* v=std::getenv("MSF_VIDEO_KEPT");
+  return v && std::string(v)=="segmented";
+}
+static std::vector<char> selectKeptSegmented(const std::vector<VideoFrame>& frames32,
+                                             const std::vector<double>& frameSd,
+                                             std::size_t keptTarget){
+  std::vector<char> keep(frames32.size(),0);
+  if(frames32.empty()||keptTarget==0) return keep;
+  // Segments cover [first,last] sample times (not the file duration), so
+  // every sample belongs to exactly one segment even when the tail target
+  // was excused by the endpoint tolerance.
+  std::size_t nSeg=std::min<std::size_t>(4,keptTarget);
+  const double t0=frames32.front().timestamp;
+  const double t1=frames32.back().timestamp;
+  auto segOf=[&](std::size_t i)->std::size_t{
+    if(t1<=t0||nSeg<=1) return 0;
+    double f=(frames32[i].timestamp-t0)/(t1-t0);
+    std::size_t s=(std::size_t)(f*(double)nSeg);
+    return s<nSeg?s:nSeg-1;
+  };
+  std::size_t kept=0;
+  for(std::size_t s=0;s<nSeg&&kept<keptTarget;++s){
+    std::size_t best=frames32.size(); double bestSd=-1.0;
+    for(std::size_t i=0;i<frames32.size();++i){
+      if(keep[i]||segOf(i)!=s) continue;
+      if(frames32[i].gray.size()!=1024) continue;
+      const double sd=(i<frameSd.size())?frameSd[i]:0.0;
+      if(sd>bestSd){bestSd=sd;best=i;}
+    }
+    if(best<frames32.size()){keep[best]=1;++kept;}
+  }
+  if(kept<keptTarget){
+    std::vector<std::size_t> rest;
+    for(std::size_t i=0;i<frames32.size();++i)
+      if(!keep[i]&&frames32[i].gray.size()==1024) rest.push_back(i);
+    std::sort(rest.begin(),rest.end(),[&](std::size_t a,std::size_t b){
+      const double sa=(a<frameSd.size())?frameSd[a]:0.0;
+      const double sb=(b<frameSd.size())?frameSd[b]:0.0;
+      if(sa!=sb) return sa>sb; return a<b; });
+    for(std::size_t i:rest){ if(kept>=keptTarget) break; keep[i]=1; ++kept; }
+  }
+  return keep;
+}
 static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops, GpuBackend* gpu, std::atomic<bool>* gpuActivity, VideoBuildStats* stats, std::size_t keptTarget){
   built.duration=duration;
   constexpr double kMinVariance=6.0; constexpr std::size_t kFloorRatio=30;
   std::vector<char> keep(frames32.size(),1);
   std::vector<double> frameSd(frames32.size(),0.0);
   std::size_t nVar=0;for(const auto&f:frames32){double s=0;for(unsigned char v:f.gray)s+=v;const double m=s/(f.gray.empty()?1:(double)f.gray.size());double sq=0;for(unsigned char v:f.gray){double dv=(double)v-m;sq+=dv*dv;}const double sd=f.gray.empty()?0.0:std::sqrt(sq/f.gray.size());frameSd[nVar]=sd;if(sd<kMinVariance)keep[nVar]=0;++nVar;}
+  // 0.9.4.167 (V3): experimental segmented selection. Gated on
+  // MSF_VIDEO_KEPT=segmented; the legacy path below is byte-identical to
+  // 0.9.4.156 behavior and stays the production default.
+  if(videoKeptSegmented() && keptTarget>0 && !frames32.empty()){
+   keep=selectKeptSegmented(frames32,frameSd,keptTarget);
+  } else {
   std::size_t kept=0;for(char k:keep)if(k)++kept;
   if(frames32.size()&&kept*100/frames32.size()<kFloorRatio) keep.assign(frames32.size(),1);
   // 0.9.4.156: kept-frame soft target (V workstream). Trim only when the
@@ -217,6 +276,7 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
     keep.swap(trimmed);
    }
   }
+  } // end legacy variance path (0.9.4.156 behavior, production default)
    std::vector<double> ts; std::vector<std::uint64_t> hs, mhs; std::vector<std::uint8_t> thumbs;
    std::vector<PerceptualHashPair> pairs(frames32.size()); std::vector<char> pairReady(frames32.size(),0);
    const bool gpuRequested=gpu!=nullptr;
@@ -392,6 +452,14 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
   // full-file sweep cost ~50% of build time on decode-bound files (each sweep
   // is a single sequential decode, never one seek per timestamp).
+  // 0.9.4.167 (V2): structure probe, diagnostic only (MSF_VIDEO_STRUCTURE=1).
+  // Runs on the already-decoded 96x96 frames: no extra decode. Scratch only.
+  if(videoStructureProbeEnabled() && stats){
+    const VideoStructure vs=probeVideoStructure(frames96,i.duration);
+    stats->structProbed=vs.probed;
+    stats->structSegments=(int)vs.segments.size();
+    stats->structConfidence=vs.confidence;
+  }
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
     stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; stats->noptsFrames=sweepNopts; }
@@ -573,6 +641,7 @@ double frame_ssim(const std::uint8_t* a, const std::uint8_t* b, int w, int h){
 }
 double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const VideoSimilarityOptions& options){
   if(a.hashes.empty()||b.hashes.empty())return 0;const double threshold=std::clamp(options.thresholdPercent,0.0,100.0),gap=std::max(0.0,options.gapPenalty),tol=std::max(0.0,options.timeToleranceSeconds),bonus=std::max(0.0,options.sceneBonus);
+  if(options.stats) ++options.stats->scoredPairs;
   ThinPlan tp=planGridThin(a,b);
   VideoFingerprint a2,b2; const VideoFingerprint *pa=&a,*pb=&b;
   if(tp.active){ a2=thinVideo(a,tp.keepA); b2=thinVideo(b,tp.keepB); pa=&a2; pb=&b2; }
@@ -595,6 +664,11 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
   // 0.9.4.159 (P2): DTW-row buffers come from the thread_local workspace
   // instead of fresh per-row allocations. Same values in the same order,
   // so scores are unchanged; only the heap churn is gone.
+  // 0.9.4.167 (V4): match coverage accounting. Runs on the Hamming gate
+  // (already computed per cell above), so it costs no extra scoring.
+  // Reported per pair via stats; strict gating below is diagnostic-only.
+  std::vector<char> colCovered(m,0);
+  std::vector<char> rowCovered(n,0);
   VideoSimWorkspace& ws=simWorkspace();
   for(std::size_t i=1;i<=n;++i){
    cur[0]=0;
@@ -608,6 +682,7 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
     if(ym) sim=std::max(sim,hash_similarity(x.hashes[i-1],ym));
     if(xm&&ym) sim=std::max(sim,hash_similarity(xm,ym));
     hamming[j-1]=sim;
+    if(sim>=threshold){ rowCovered[i-1]=1; colCovered[j-1]=1; }
    }
    if(useSsim&&options.gpu){
     ws.map.clear(); ws.pa.clear(); ws.pb.clear();
@@ -663,7 +738,30 @@ double video_similarity(const VideoFingerprint&a,const VideoFingerprint&b,const 
    }
    std::swap(prev,cur);
   }
- return std::clamp(100.0*best/(100.0*n),0.0,100.0);
+  // 0.9.4.167 (V4): coverage accounting (report-only by default). Short- and
+  // long-side gated fractions plus the count of independent covered runs on
+  // the short side (gap<=1 merged). Strict mode (MSF_VIDEO_STRICT_COVERAGE=1,
+  // diagnostic: thresholds are uncalibrated placeholders, V-gate pending)
+  // rejects pairs below coverage instead of scoring them.
+  double covShort=0, covLong=0; std::size_t covSegs=0;
+  {
+    std::size_t rc=0, cc=0;
+    for(char c:rowCovered) if(c) ++rc;
+    for(char c:colCovered) if(c) ++cc;
+    covShort=n?(double)rc/(double)n:0.0;
+    covLong=m?(double)cc/(double)m:0.0;
+    std::size_t gap=2;
+    for(std::size_t i=0;i<n;++i){
+      if(rowCovered[i]){ if(gap>1) ++covSegs; gap=0; }
+      else if(gap<=1) ++gap;
+    }
+  }
+  if(options.stats){ options.stats->covShort=covShort; options.stats->covLong=covLong; options.stats->covSegments=covSegs; }
+  {
+    const char* strict=getenv("MSF_VIDEO_STRICT_COVERAGE");
+    if(strict && std::string(strict)=="1" && (covShort<0.5 || covLong<0.2 || covSegs<1)) return 0.0;
+  }
+  return std::clamp(100.0*best/(100.0*n),0.0,100.0);
 }
 
 static double crop_temporal_score(const VideoFingerprint& baseA, const VideoCropFingerprint& cropA,

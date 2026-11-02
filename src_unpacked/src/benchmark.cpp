@@ -912,8 +912,13 @@ std::string TelemetryRecorder::toJson() const {
       << ",\"videoMatchSubmitted\":" << analyzeTel_.videoMatchSubmitted
       << ",\"videoMatchCompleted\":" << analyzeTel_.videoMatchCompleted
       // 0.9.4.164 (P2): fallback attribution (additive, same contract).
+       // 0.9.4.167 (V4): coverage-sum keys. Means are sum/scored, computed
+       // by the reader; the fields stay plain sums for additivity.
       << ",\"videoMatchSmallBatch\":" << analyzeTel_.videoMatchSmallBatch
-      << ",\"videoMatchBatchFailed\":" << analyzeTel_.videoMatchBatchFailed;
+      << ",\"videoMatchBatchFailed\":" << analyzeTel_.videoMatchBatchFailed
+       << ",\"videoMatchCovShort\":" << analyzeTel_.videoMatchCovShort
+       << ",\"videoMatchCovLong\":" << analyzeTel_.videoMatchCovLong
+       << ",\"videoMatchScored\":" << analyzeTel_.videoMatchScored;
     // D9c: exclusive breakdown of verifyMs. Each field is a disjoint code
     // region and verifyOtherMs is the remainder, so the seven times plus other
     // reconstruct verifyMs without double counting. verifySumMs is published

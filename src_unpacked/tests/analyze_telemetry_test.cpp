@@ -370,9 +370,11 @@ int main() {
     a.videoMatchGpuMs = 1.5; a.videoMatchCpuMs = 0.5;
     a.videoMatchSubmitted = 10; a.videoMatchCompleted = 8;
     a.videoMatchSmallBatch = 4; a.videoMatchBatchFailed = 1;
+    a.videoMatchCovShort = 0.5; a.videoMatchCovLong = 0.25; a.videoMatchScored = 2;
     b.videoMatchGpuMs = 2.5; b.videoMatchCpuMs = 0.25;
     b.videoMatchSubmitted = 6; b.videoMatchCompleted = 6;
     b.videoMatchSmallBatch = 2; b.videoMatchBatchFailed = 0;
+    b.videoMatchCovShort = 1.0; b.videoMatchCovLong = 0.5; b.videoMatchScored = 1;
     msf::AnalyzeTelemetry m;
     msf::addAnalyzeTelemetry(m, a);
     msf::addAnalyzeTelemetry(m, b);
@@ -382,6 +384,9 @@ int main() {
     expect(m.videoMatchCompleted == 14, "V: match completed adds");
     expect(m.videoMatchSmallBatch == 6, "V: match small-batch adds");
     expect(m.videoMatchBatchFailed == 1, "V: match batch-failed adds");
+    expect(m.videoMatchCovShort == 1.5, "V: match covShort adds");
+    expect(m.videoMatchCovLong == 0.75, "V: match covLong adds");
+    expect(m.videoMatchScored == 3, "V: match scored adds");
     msf::TelemetryRecorder rec2;
     msf::TelemetryConfig cfg2;
     cfg2.root = "C:/media"; cfg2.build = "0.9.4.164"; cfg2.engine = "1.5.1"; cfg2.db = "1.0.6";
@@ -391,6 +396,9 @@ int main() {
     expect(hasIn(js3, "analyze", "\"videoMatchGpuMs\":"), "V: match gpu ms key present");
     expect(hasIn(js3, "analyze", "\"videoMatchSmallBatch\":"), "V: match small-batch key present");
     expect(hasIn(js3, "analyze", "\"videoMatchBatchFailed\":"), "V: match batch-failed key present");
+    expect(hasIn(js3, "analyze", "\"videoMatchCovShort\":"), "V: match covShort key present");
+    expect(hasIn(js3, "analyze", "\"videoMatchCovLong\":"), "V: match covLong key present");
+    expect(hasIn(js3, "analyze", "\"videoMatchScored\":"), "V: match scored key present");
   }
   if (!firstFailure.empty()) { std::cout << "match-split section: " << firstFailure << "\n"; return 5; }
 

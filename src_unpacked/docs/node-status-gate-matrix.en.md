@@ -1,6 +1,6 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
-Baseline: `0.9.4.166` (timestamp trust P1) - CPU CTest 135/135 - GPU CTest 136/136
+Baseline: `0.9.4.167` (start-time fix + V2/V3/V4 diagnostics) - CPU CTest 138/138 - GPU CTest 139/139
 Last updated: 2026-10-25
 
 ## Role of this document
@@ -109,7 +109,7 @@ Dependency chain: `S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8`
 ## Current focus
 
 ```text
-baseline          0.9.4.166 (CPU CTest 135/135, GPU CTest 136/136)
+baseline          0.9.4.167 (CPU CTest 138/138, GPU CTest 139/139)
 active status     Process split P1-P4 complete + G4/G6 verified (.111) + S4 save/exit acceptance done (.112) + independent-audit items B1-B3/B7 applied (.113) + crash hotfixes (.114/.115) + phantom-group auto-repair (.116) + bulk-apply stall removed (.117) + churn removed (.118) + throughput labels clarified (.119) + GUI-less restore + runbook (.120) + detail-pane widening (.121) + right-click-path I/O removal (.122) + view-flake fix + PDBs + dumps (.123) + comment correction (.124) + pipe loss-proofing + color_thumb keep-as-is (.125) + recover CLI (.126) + Test Mode XMP regression (.127) + shared decode source (.128) + Auto(AB) live-match fix (.129) + match-baseline self-heal (.130) + displayed-set counters (.131) + Load summary fill (.132) + CPU metric fix (.133) + fast-rescan + forced re-verify (.134) + Test Mode diff/adopt (.135) + preview gauge (.136/.137) + cell-width text (.138) + EXE icons + sort overhaul (.139) + scan-start thumb keep (.140) + list/selection keep (.141) + view freeze (.142) + stale-pair prune + silent re-apply (.143) + failed-file reasons (.144) + total failed count (.145) + sort agreement + single instance (.146) + None order memory (.147) + reverify placement fix (.148) + Load/Re-verify single slot (.149) + Date sort (.150) + audit finding fixes (.151) + directed re-review fixes (.152) + P1-A/P1-B exit-path fixes (.153) + kill-durability D1 crash marker (.154) + honest decodedFrames (.155) + V video tab round 1 (.156) + thumbnail fix and AV1 (.157); product acceptance ACCEPTED (18/18, 2026-10-18) -> S4 final CLOSED -> S5 GATE OPEN
 next              remaining field GUI acceptance (manual check) -> XMP full-corpus coverage -> S5 repeated measurement + threshold decision -> S6 gate
 G4/G6 verified    G4: stress PASS — a 3 s consumer stall stays lossless (0 gaps, 600 delivered), no deadlock, bounded RSS (20/20/21 MB). No defect confirmed (design review: GUI->Backend bounded by pending cap; Backend->GUI backlog = output size).
@@ -162,12 +162,12 @@ stay in the origin documents.
 | `color_thumb` no-FFmpeg classification | R1 done (0.9.4.113) — keep-as-is confirmed (user decision) | `implementation-briefs/I-color-thumb-no-ffmpeg-classification.*`, `build-history/0.9.4.113.*` |
 | Register nvcc warnings in the release gate | undecided | `worklog/0.9.4.*` |
 | Dedicated console-output regression test | not added | `worklog/0.9.4.*` |
-| V — Video Content Matching | **PROPOSED / DEFERRED** — includes a designed Video tab (Automatic recommended / Custom) with short-/long-form intervals and frame budgets; V5 UI follows V0–V4 accuracy/cost gates. Not implemented/measured; outside the Active Build Queue | development-roadmap.{ko,en}.md, implementation-briefs/V-video-content-matching.*, architecture/video-similarity-search.* |
+| V — Video Content Matching | **PROPOSED / DEFERRED** — includes a designed Video tab (Automatic recommended / Custom) with short-/long-form intervals and frame budgets; V5 UI follows V0–V4 accuracy/cost gates. V2 structure probe, V3 segmented selection, and V4 coverage landed as diagnostics in 0.9.4.167 (default behavior unchanged, environment-variable opt-in; validation awaits user datasets); outside the Active Build Queue | development-roadmap.{ko,en}.md, implementation-briefs/V-video-content-matching.*, architecture/video-similarity-search.* |
 
 ## Version invariance check
 
-`kEngineVersion 1.5.1` - `kDatabaseVersion 1.0.6` - `kBenchmarkSchemaVersion 9` -
-`kCacheFormatVersion 9`. 0.9.4.82 bumped `kEngineVersion` 1.5.0 -> 1.5.1 because EXIF-rotated image fingerprints change by up to +/-1 LSB, so stored pairs revalidate. DB/schema/cache unchanged.
+`kEngineVersion 1.5.2` - `kDatabaseVersion 1.0.6` - `kBenchmarkSchemaVersion 9` -
+`kCacheFormatVersion 11`. 0.9.4.82 bumped `kEngineVersion` 1.5.0 -> 1.5.1 because EXIF-rotated image fingerprints change by up to +/-1 LSB, so stored pairs revalidate. DB/schema/cache unchanged. 0.9.4.167: start_time normalization changes offset-file fingerprints, so engine 1.5.1->1.5.2 (pair re-verify) and cache 10->11 (one rebuild).
 
 
 

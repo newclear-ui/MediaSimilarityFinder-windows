@@ -6,7 +6,11 @@
 namespace msf {
 struct VideoFrame { double timestamp=0; int width=0,height=0; std::vector<std::uint8_t> gray; };
 struct ColorFrame { double timestamp=0; int width=0,height=0; std::vector<std::uint8_t> rgb; }; // 3 bytes/px, R,G,B order
-struct VideoInfo { double duration=0; int width=0,height=0; double fps=0; };
+struct VideoInfo { double duration=0; int width=0,height=0; double fps=0;
+  // 0.9.4.167 (P1): stream start_time in seconds (0 when the stream starts
+  // at zero or the value is unknown). Sampling targets are video-time
+  // (0-based); the decoder converts to/from stream time with this offset.
+  double startOffsetSec=0; };
 // E-3B: executor-side counters. Kept separate from planner reasoning so the two
 // can be reported independently, and so a rejected candidate is visible.
 struct SparseSeekStats {

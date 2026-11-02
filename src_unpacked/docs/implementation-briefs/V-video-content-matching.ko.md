@@ -2,8 +2,8 @@
 
 Status: **PROPOSED / PRE-REGISTERED / DEFERRED**  
 Workstream: **V — Video Content Matching** (A→B→C→D→I→E→F→G→H 본선 밖 별도 제품 기능)  
-Product baseline: **0.9.4.155** · Build version: **0.9.4.156 (V tab 1차: 설정+전파+간격/예산+캐시 분리; V2/V3/V4/V6 + V-gates pending)**  
-Production code change: **NONE** — 구현 계약과 검증 Gate의 사전등록만 수행한다.
+Product baseline: **0.9.4.167** · Build version: **0.9.4.167 (V2 구조 프로브 + V3 대표 선택 + V4 커버리지, 모두 진단용 게이트, 기본 동작 불변; V-gate 검증 대기)**  
+Production code change: **V2/V3/V4 진단 경로에 한함** (환경 변수 opt-in, 기본 동작은 0.9.4.156과 동일). 구현 계약과 검증 Gate의 사전등록을 유지한다.
 
 ## 1. 목적
 
@@ -141,4 +141,4 @@ NVDEC/D3D11VA/Vulkan 구현, Node E sparse seek production 재도입, vertical f
 
 ## 10. 현재 상태
 
-이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭의 V5 UI 1차(설정+전파+간격/예산+캐시 분리)는 0.9.4.156에 구현되었다. V0~V4 정확도·비용 Gate와 V2/V3/V4/V6 본 구현은 여전히 pending이다. XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 지시 폴더의 별도 착수 지시에 따라 V5 UI 1차 범위에 한해 구현되었다. 범위 외 source/test/DB/engine 변경은 여전히 별도 지시가 필요하다.
+이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭의 V5 UI 1차(설정+전파+간격/예산+캐시 분리)는 0.9.4.156에 구현되었다. V0~V4 정확도·비용 Gate는 여전히 pending이며, V2 구조 프로브·V3 대표 선택·V4 커버리지는 0.9.4.167에서 진단용으로 본구현됐다(기본 동작 불변, 환경 변수 opt-in; 검증은 사용자 데이터셋 대기). XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 지시 폴더의 별도 착수 지시에 따라 V5 UI 1차 범위에 한해 구현되었다. 범위 외 source/test/DB/engine 변경은 여전히 별도 지시가 필요하다.

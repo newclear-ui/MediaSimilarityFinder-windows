@@ -2,8 +2,8 @@
 
 Status: **PROPOSED / PRE-REGISTERED / DEFERRED**  
 Workstream: **V — Video Content Matching** (separate product feature outside the A→B→C→D→I→E→F→G→H mainline)  
-Product baseline: **0.9.4.155** · Build version: **0.9.4.156 (V tab round 1: settings + propagation + interval/budget + cache split; V2/V3/V4/V6 + V-gates pending)**  
-Production code change: **NONE** — this document pre-registers engineering and validation gates only.
+Product baseline: **0.9.4.167** · Build version: **0.9.4.167 (V2 structure probe + V3 segmented select + V4 coverage, all diagnostic-gated, default behavior unchanged; V-gate validation pending)**  
+Production code change: **V2/V3/V4 diagnostic paths only** (environment-variable opt-in, default behavior identical to 0.9.4.156). Engineering and validation gates stay pre-registered.
 
 ## 1. Purpose
 
@@ -141,4 +141,4 @@ Hardware decoder implementation, production sparse seek reintroduction, vertical
 
 ## 10. Current Status
 
-This is a plan/pre-registration and is not added to the Active Build Queue. The V5 UI round 1 of the Video settings tab (settings + propagation + interval/budget + cache split) is implemented in 0.9.4.156. The V0–V4 accuracy/cost gates and the V2/V3/V4/V6 core implementations are still pending. It does not replace XMP acceptance or the S5 real-dataset benchmark. No build version, schedule, or production adoption is assigned. A separate start instruction (instruction folder) authorized the V5 UI round-1 scope only; out-of-scope source/tests/DB/engine changes still require a separate instruction.
+This is a plan/pre-registration and is not added to the Active Build Queue. The V5 UI round 1 of the Video settings tab (settings + propagation + interval/budget + cache split) is implemented in 0.9.4.156. The V0–V4 accuracy/cost gates are still pending, while the V2 structure probe, V3 segmented selection, and V4 coverage landed as diagnostics in 0.9.4.167 (default behavior unchanged, environment-variable opt-in; validation awaits user datasets). It does not replace XMP acceptance or the S5 real-dataset benchmark. No build version, schedule, or production adoption is assigned. A separate start instruction (instruction folder) authorized the V5 UI round-1 scope only; out-of-scope source/tests/DB/engine changes still require a separate instruction.

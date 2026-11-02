@@ -30,6 +30,13 @@ struct VideoBuildStats {
   // 0.9.4.166 (P1): noptsFrames counts NOPTS fallbacks (assumed timing).
   std::size_t decodeErrors=0, noptsFrames=0;
   double decodeMs=0, phashCpuMs=0;
+  // 0.9.4.167 (V2): structure-probe summary (measurement-only, diagnostic).
+  // Populated only when MSF_VIDEO_STRUCTURE=1; otherwise probed stays
+  // false. No telemetry aggregation yet (field observability ships with
+  // the V-gate validation); unit + e2e pins cover the probe itself.
+  bool structProbed=false;
+  int structSegments=0;
+  double structConfidence=0;
   // E-3B: sampling-planner telemetry. Reported so a decision can be explained
   // and so a fallback is never silent. strategy is a samplingDecisionName(); a
   // non-nullptr value is recorded even on a cache hit, because the decision is
@@ -52,7 +59,13 @@ struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double
   // 0.9.4.162 (P1): CPU-fallback MSSIM time (frame_ssim when the GPU batch
   // does not run). GPU time is gpuMs; together with submitted/completed
   // they show where match-stage MSSIM actually ran.
-  double cpuMs=0; };
+  // 0.9.4.167 (V4): match coverage, always computed (report-only).
+  // Strict gating (env) may zero the score; these describe why.
+  double cpuMs=0;
+  double covShort=0, covLong=0;
+  std::size_t covSegments=0;
+  // Scored-pair count for the AnalyzeTelemetry mean denominator.
+  std::size_t scoredPairs=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;
  std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0;
@@ -103,7 +116,7 @@ private:
    mutable VideoPolicy videoPolicy_;
  mutable void* saveStmt_=nullptr;
  mutable std::mutex dbMutex_;
-   static constexpr int kCacheFormatVersion=10;
+   static constexpr int kCacheFormatVersion=11;
  bool preparePersistentStatements() const;
  void finalizePersistentStatements() const;
   void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
