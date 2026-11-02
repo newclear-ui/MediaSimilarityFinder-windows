@@ -32,6 +32,17 @@ struct VideoSimWorkspace{
   std::vector<std::uint8_t> pa, pb;
 };
 static VideoSimWorkspace& simWorkspace(){ thread_local VideoSimWorkspace ws; return ws; }
+// 0.9.4.168 (decision: V3 adopted, legacy behind MSF_VIDEO_KEPT=legacy).
+// The kept-selection method joins the cache identity, so rows built under
+// the other method miss and rebuild once (same mechanism as the 0.9.4.156
+// policy column; no format/engine bump for the switch).
+static bool videoKeptLegacy(){
+  const char* v=std::getenv("MSF_VIDEO_KEPT");
+  return v && std::string(v)=="legacy";
+}
+static std::string keptPolicyId(const VideoPolicy& p){
+  return p.policyId() + (videoKeptLegacy() ? "+var" : "+seg");
+}
 bool VideoFingerprintEngine::preparePersistentStatements() const{
  sqlite3* db=VDB(cacheDb_); if(!db)return false;
   const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND quick_hash=? AND cache_version=? AND policy=?";
@@ -95,7 +106,7 @@ bool VideoFingerprintEngine::loadPersistent(const std::string&p,std::uint64_t sz
    const std::string quick=quickIdentity(p); std::lock_guard<std::mutex> lock(dbMutex_); if(!cacheDb_)return false;
   sqlite3_stmt* s=reinterpret_cast<sqlite3_stmt*>(loadStmt_); if(!s)return false;
   sqlite3_reset(s); sqlite3_clear_bindings(s);
-   const std::string polLoad=videoPolicy_.policyId();
+   const std::string polLoad=keptPolicyId(videoPolicy_);
  sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int(s,5,kCacheFormatVersion);sqlite3_bind_text(s,6,polLoad.c_str(),-1,SQLITE_TRANSIENT);
   bool ok=false;
   if(sqlite3_step(s)==SQLITE_ROW){
@@ -189,22 +200,15 @@ void VideoFingerprintEngine::savePersistent(const std::string&p,std::uint64_t sz
   const std::uint32_t cropTsCount=cropCount;
   std::memcpy(cur,&cropTsCount,sizeof(cropTsCount));cur+=sizeof(cropTsCount);
   for(std::uint32_t i=0;i<cropCount;++i){std::memcpy(cur,&crop->timestamps[i],sizeof(double));cur+=sizeof(double);}
-  sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);const std::string polSave=videoPolicy_.policyId();
+  sqlite3_stmt*s=reinterpret_cast<sqlite3_stmt*>(saveStmt_);if(!s)return;sqlite3_reset(s);sqlite3_clear_bindings(s);sqlite3_bind_text(s,1,p.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(s,2,(sqlite3_int64)sz);sqlite3_bind_int64(s,3,(sqlite3_int64)mt);const std::string polSave=keptPolicyId(videoPolicy_);
 sqlite3_bind_text(s,4,quick.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_double(s,5,f.duration);sqlite3_bind_int(s,6,(int)count);sqlite3_bind_int(s,7,kCacheFormatVersion);sqlite3_bind_text(s,8,polSave.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_blob(s,9,blob.data(),(int)blob.size(),SQLITE_TRANSIENT);sqlite3_step(s);sqlite3_reset(s);sqlite3_clear_bindings(s);
 }
 VideoFingerprintEngine::~VideoFingerprintEngine(){closePersistentCache();}
-// 0.9.4.167 (V3): segmented kept-frame selection, diagnostic only.
-// Default behavior stays on the legacy variance-ranked path below;
-// this runs only with MSF_VIDEO_KEPT=segmented. Uniform time segments
-// (not V2 structure windows yet -- that wiring is a V-gate follow-up);
-// each non-empty segment keeps its highest-variance frame first, then the
-// global variance order fills the remainder, chronologically ordered at
-// the end like the legacy path. Deterministic: strict-greater argmax
-// with index tiebreak, fixed segment order.
-static bool videoKeptSegmented(){
-  const char* v=std::getenv("MSF_VIDEO_KEPT");
-  return v && std::string(v)=="segmented";
-}
+// 0.9.4.167 (V3): segmented kept-frame selection.
+// 0.9.4.168 (decision): segmented is the production default; the legacy
+// variance-ranked path stays only behind MSF_VIDEO_KEPT=legacy (rollback).
+// See videoKeptLegacy()/keptPolicyId() above: the method joins the cache
+// identity, so switching methods rebuilds once instead of mixing rows.
 static std::vector<char> selectKeptSegmented(const std::vector<VideoFrame>& frames32,
                                              const std::vector<double>& frameSd,
                                              std::size_t keptTarget){
@@ -251,10 +255,11 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
   std::vector<char> keep(frames32.size(),1);
   std::vector<double> frameSd(frames32.size(),0.0);
   std::size_t nVar=0;for(const auto&f:frames32){double s=0;for(unsigned char v:f.gray)s+=v;const double m=s/(f.gray.empty()?1:(double)f.gray.size());double sq=0;for(unsigned char v:f.gray){double dv=(double)v-m;sq+=dv*dv;}const double sd=f.gray.empty()?0.0:std::sqrt(sq/f.gray.size());frameSd[nVar]=sd;if(sd<kMinVariance)keep[nVar]=0;++nVar;}
-  // 0.9.4.167 (V3): experimental segmented selection. Gated on
-  // MSF_VIDEO_KEPT=segmented; the legacy path below is byte-identical to
-  // 0.9.4.156 behavior and stays the production default.
-  if(videoKeptSegmented() && keptTarget>0 && !frames32.empty()){
+  // 0.9.4.167 (V3): experimental segmented selection.
+  // 0.9.4.168 (decision): segmented is the production default; legacy runs
+  // only under MSF_VIDEO_KEPT=legacy. The legacy path below stays
+  // byte-identical to 0.9.4.156 behavior for rollback.
+  if(!videoKeptLegacy() && keptTarget>0 && !frames32.empty()){
    keep=selectKeptSegmented(frames32,frameSd,keptTarget);
   } else {
   std::size_t kept=0;for(char k:keep)if(k)++kept;
@@ -532,7 +537,7 @@ bool VideoFingerprintEngine::memoryLookup(const std::string&p,std::uint64_t sz,s
   if(it==cacheMap_.end()) return false;
   CacheEntry& e=it->second->second;
   if(e.size!=sz||e.modified!=mt||e.quickHash!=quick) return false;
-  if(e.policyId!=videoPolicy_.policyId()) return false;
+  if(e.policyId!=keptPolicyId(videoPolicy_)) return false;
   if(needCrop&&!e.hasCrop) return false;
   cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
   o=e.fingerprint;
@@ -553,7 +558,7 @@ void VideoFingerprintEngine::memoryStore(const std::string&p,std::uint64_t sz,st
     cacheMap_.erase(cacheList_.back().first);
     cacheList_.pop_back();
   }
-  CacheEntry e; e.size=sz; e.modified=mt; e.quickHash=quick; e.fingerprint=f; e.policyId=videoPolicy_.policyId();
+  CacheEntry e; e.size=sz; e.modified=mt; e.quickHash=quick; e.fingerprint=f; e.policyId=keptPolicyId(videoPolicy_);
   if(crop){ e.crop=*crop; e.hasCrop=true; }
   cacheList_.emplace_front(p,std::move(e));
   cacheMap_[p]=cacheList_.begin();

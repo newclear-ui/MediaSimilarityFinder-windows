@@ -1,8 +1,9 @@
 // 0.9.4.167 V3: segmented kept-frame selection vs legacy variance ranking.
-// 20 s clip (6 s textured + 14 s flat): with keptTarget=2,
-// - legacy keeps only textured frames (flat half has nothing above the
-//   variance floor, so trimming never reaches it);
-// - MSF_VIDEO_KEPT=segmented keeps one per half (time-axis coverage).
+// 0.9.4.168 (decision): segmented is the production default; legacy runs
+// only under MSF_VIDEO_KEPT=legacy. This test pins both sides:
+// - default (no env) keeps one per half (time-axis coverage);
+// - legacy keeps only textured frames (flat half floored out).
+// Fixture: 20 s clip (6 s textured + 14 s flat), keptTarget=2.
 // Deterministic: same fixture, fixed thresholds, first-max-wins ties.
 #include "video_fingerprint.h"
 #include "video_policy.h"
@@ -49,28 +50,28 @@ int main() {
   // so the test does not depend on container duration rounding.
   custom.keptTarget[0] = 2; custom.keptTarget[1] = 2;
 
-  // Baseline (legacy variance ranking).
+  // Default (0.9.4.168: segmented) — must cover the flat half.
   msf::VideoFingerprintEngine e1;
   if (!e1.openPersistentCache((d / "db1.sqlite").string())) return 3;
   e1.setVideoPolicy(custom);
   msf::VideoFingerprint v1;
-  if (!e1.build(clip, v1)) { std::cerr << "legacy build failed\n"; return 4; }
-  if (v1.hashes.size() != 2) { std::cerr << "legacy kept != 2\n"; return 4; }
-  const int flatLegacy = countFlat(v1);
+  if (!e1.build(clip, v1)) { std::cerr << "default build failed\n"; return 4; }
+  if (v1.hashes.size() != 2) { std::cerr << "default kept != 2\n"; return 4; }
+  const int flatDefault = countFlat(v1);
   e1.closePersistentCache();
 
-  // Segmented selection via diagnostic switch.
+  // Legacy variance ranking via rollback switch.
 #if defined(_WIN32)
-  _putenv_s("MSF_VIDEO_KEPT", "segmented");
+  _putenv_s("MSF_VIDEO_KEPT", "legacy");
 #else
-  setenv("MSF_VIDEO_KEPT", "segmented", 1);
+  setenv("MSF_VIDEO_KEPT", "legacy", 1);
 #endif
   msf::VideoFingerprintEngine e2;
   if (!e2.openPersistentCache((d / "db2.sqlite").string())) return 5;
   e2.setVideoPolicy(custom);
   msf::VideoFingerprint v2;
-  if (!e2.build(clip, v2)) { std::cerr << "segmented build failed\n"; return 6; }
-  const int flatSeg = countFlat(v2);
+  if (!e2.build(clip, v2)) { std::cerr << "legacy build failed\n"; return 6; }
+  const int flatLegacy = countFlat(v2);
 #if defined(_WIN32)
   _putenv_s("MSF_VIDEO_KEPT", "");
 #else
@@ -78,11 +79,11 @@ int main() {
 #endif
   e2.closePersistentCache();
 
-  std::cout << "  [info] legacy flat=" << flatLegacy << " segmented flat=" << flatSeg
-            << " kept=" << v2.hashes.size() << "\n";
-  if (v2.hashes.size() != 2) { std::cerr << "segmented kept != 2\n"; return 7; }
-  if (flatLegacy != 0) { std::cerr << "legacy unexpectedly covers flat half\n"; return 8; }
-  if (flatSeg < 1) { std::cerr << "segmented misses flat half\n"; return 9; }
+  std::cout << "  [info] default flat=" << flatDefault << " legacy flat=" << flatLegacy
+            << " kept=" << v1.hashes.size() << "\n";
+  if (v1.hashes.size() != 2) { std::cerr << "default kept != 2\n"; return 7; }
+  if (flatDefault < 1) { std::cerr << "default misses flat half\n"; return 8; }
+  if (flatLegacy != 0) { std::cerr << "legacy unexpectedly covers flat half\n"; return 9; }
   fs::remove_all(d, ec);
   std::cout << "video_kept_select=ok\n";
   return 0;

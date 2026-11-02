@@ -1,8 +1,13 @@
 // V2 structure probe (measurement-only, 0.9.4.167).
 //
-// Observes per-sample brightness, dark ratio, edge density and inter-frame
-// change on already-decoded 96x96 gray frames (no extra decoding) and
-// segments the timeline into intro / main / credits candidates.
+// 0.9.4.168 (decision: V3 adopted, V2 retained as runner-up). V2 stays
+// diagnostic (MSF_VIDEO_STRUCTURE=1) and is NOT removed, for two recorded
+// reasons: (1) it is the only time-structure observer in the tree, and the
+// planned structure-windowed kept selection (V-gate follow-up) consumes
+// exactly this record — deleting it would force a rewrite; (2) intro/main/
+// credits segmentation has no other implementation. Reuse entry point:
+// probeVideoStructure() output feeds a future selectKept* variant; see
+// docs/worklog/0.9.4.* "V-gate field evidence 1" (verdict V3>V2>V4).
 // Output is a scratch record for future V-gate validation: it is never
 // cached, never persisted, and never feeds judgement unless an explicit
 // diagnostic switch enables the experimental consumers (V3/V4).

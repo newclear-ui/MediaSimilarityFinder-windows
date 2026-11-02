@@ -141,4 +141,4 @@ NVDEC/D3D11VA/Vulkan 구현, Node E sparse seek production 재도입, vertical f
 
 ## 10. 현재 상태
 
-이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭의 V5 UI 1차(설정+전파+간격/예산+캐시 분리)는 0.9.4.156에 구현되었다. V0~V4 정확도·비용 Gate는 여전히 pending이며, V2 구조 프로브·V3 대표 선택·V4 커버리지는 0.9.4.167에서 진단용으로 본구현됐다(기본 동작 불변, 환경 변수 opt-in; 검증은 사용자 데이터셋 대기). XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 지시 폴더의 별도 착수 지시에 따라 V5 UI 1차 범위에 한해 구현되었다. 범위 외 source/test/DB/engine 변경은 여전히 별도 지시가 필요하다.
+이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭의 V5 UI 1차(설정+전파+간격/예산+캐시 분리)는 0.9.4.156에 구현되었다. V0~V4 정확도·비용 Gate는 여전히 pending이다. V3 구간기반 선택은 0.9.4.168에서 production 기본값으로 채택됐다(legacy는 MSF_VIDEO_KEPT=legacy 롤백; 선택방식 캐시 식별 +seg/+var로 1회 재구축; 현장 근거 1에서 49/50 동일). V2 구조 프로브는 차선으로 진단 유지한다 — 구조-윈도우 선택의 재사용 진입점이며 보존 사유와 재사용 방법은 video_structure.h와 worklog 현장 근거 1에 기록했다. V4 커버리지는 진단 유지(strict 임계값 미검증). 검증은 사용자 데이터셋 대기. XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 빌드 버전·일정·production 채택은 미정이다. 지시 폴더의 별도 착수 지시에 따라 V5 UI 1차 범위에 한해 구현되었다. 범위 외 source/test/DB/engine 변경은 여전히 별도 지시가 필요하다.

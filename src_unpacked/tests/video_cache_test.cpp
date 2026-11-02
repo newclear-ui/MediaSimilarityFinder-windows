@@ -43,22 +43,31 @@ int main(){
  auto media=(d/"x.mp4").string(); std::ofstream(d/"x.mp4")<<"not a video";
  sqlite3* raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 2;
  sqlite3_stmt* info=nullptr; bool hasVersion=false; if(sqlite3_prepare_v2(raw,"PRAGMA table_info(video_fingerprint_cache)",-1,&info,nullptr)!=SQLITE_OK)return 3; while(sqlite3_step(info)==SQLITE_ROW){const unsigned char*n=sqlite3_column_text(info,1);if(n&&std::string(reinterpret_cast<const char*>(n))=="cache_version")hasVersion=true;}sqlite3_finalize(info);if(!hasVersion)return 4;
-   if(!insert_seed(raw,media,11))return 5; sqlite3_close(raw);
-  msf::VideoFingerprint out; if(!e.build(media,out)||out.hashes.size()!=3||out.mirrorHashes.size()!=3||out.crop4x3!=11||out.crop1x1!=22||out.crop9x16!=33||out.mirrorCrop4x3!=44||out.mirrorCrop1x1!=55||out.mirrorCrop9x16!=66)return 6;
-  if(out.thumb48.size()!=3*(std::size_t)48*48||out.thumb48[0]!=0||out.thumb48[48*48]!=64)return 6;
+  // 0.9.4.168: the kept-selection method joins the cache identity
+  // ("v1+seg" default, "v1+var" legacy). A legacy "v1" row must MISS and
+  // fall through to decode (which fails on the undecodable file) -- this
+  // pins the one-time rebuild on the .167->.168 switch.
+  if(!insert_seed(raw,media,11,"v1"))return 5; sqlite3_close(raw);
+  msf::VideoFingerprint legacyMiss; if(e.build(media,legacyMiss))return 6;
+  e.clearCache(); e.closePersistentCache();
+  if(!e.openPersistentCache(db))return 7;
+  raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 8;
+  if(!insert_seed(raw,media,11,"v1+seg"))return 9; sqlite3_close(raw);
+  msf::VideoFingerprint out; if(!e.build(media,out)||out.hashes.size()!=3||out.mirrorHashes.size()!=3||out.crop4x3!=11||out.crop1x1!=22||out.crop9x16!=33||out.mirrorCrop4x3!=44||out.mirrorCrop1x1!=55||out.mirrorCrop9x16!=66)return 16;
+  if(out.thumb48.size()!=3*(std::size_t)48*48||out.thumb48[0]!=0||out.thumb48[48*48]!=64)return 16;
   msf::VideoFingerprint fb; msf::VideoCropFingerprint fc;
   if(!e.buildFull(media,fb,fc,96))return 11;
   if(fc.a4x3.size()!=3||fc.a4x3[1]!=102||fc.mirrorA9x16[2]!=603||fc.timestamps.size()!=3||fc.timestamps[2]!=4.0)return 12;
  // A stale algorithm-version entry must be rejected before a build can reuse it.
  e.clearCache(); e.closePersistentCache();
- if(!e.openPersistentCache(db))return 7;
-  raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 8; if(!insert_seed(raw,media,6))return 9; sqlite3_close(raw);
-   msf::VideoFingerprint stale; if(e.build(media,stale))return 10; // no valid v6 row remains, and x.mp4 is intentionally not decodable
+ if(!e.openPersistentCache(db))return 17;
+  raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 18; if(!insert_seed(raw,media,6))return 19; sqlite3_close(raw);
+   msf::VideoFingerprint stale; if(e.build(media,stale))return 20; // no valid v6 row remains, and x.mp4 is intentionally not decodable
  // 0.9.4.156 (V workstream): a row stored under another policy must not match. Same undecodable file, same version, foreign policy -> fall through to decode and fail.
  e.closePersistentCache();
- if(!e.openPersistentCache(db))return 12;
- raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 13;
- if(!insert_seed(raw,media,11,"other-policy"))return 14; sqlite3_close(raw);
- msf::VideoFingerprint foreign; if(e.build(media,foreign))return 15;
+ if(!e.openPersistentCache(db))return 21;
+ raw=nullptr; if(sqlite3_open(db.c_str(),&raw)!=SQLITE_OK)return 22;
+ if(!insert_seed(raw,media,11,"other-policy"))return 23; sqlite3_close(raw);
+ msf::VideoFingerprint foreign; if(e.build(media,foreign))return 24;
  e.closePersistentCache(); std::filesystem::remove_all(d); std::cout<<"video_cache_api=ok\n";return 0;
 }
