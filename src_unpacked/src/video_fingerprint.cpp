@@ -40,9 +40,40 @@ static bool videoKeptLegacy(){
   const char* v=std::getenv("MSF_VIDEO_KEPT");
   return v && std::string(v)=="legacy";
 }
-static std::string keptPolicyId(const VideoPolicy& p){
-  return p.policyId() + (videoKeptLegacy() ? "+var" : "+seg");
+// 0.9.4.171 (V cohort sampling): structured sampling joins the cache
+// identity ONLY when it is actually consumed (opt-in). Default policy
+// without MSF_VIDEO_STRUCTURE=full returns the legacy string
+// byte-identically, so default caches never rebuild for this change.
+std::string videoKeptPolicyId(const VideoPolicy& p) {
+  if (videoKeptLegacy()) return p.policyId() + "+var";
+  if (!videoStructuredSamplingEnabled(p)) return p.policyId() + "+seg";
+  // Structured path: long-form window intervals change the probe plan, so
+  // they join the identity. FNV-1a over the same rendering policyId()
+  // uses, plus the two long intervals.
+  std::string s = p.policyId();
+  s += "|struct:";
+  s += std::to_string(p.longStructIntervalSec);
+  s += "|";
+  s += std::to_string(p.longPreciseIntervalSec);
+  std::uint64_t h = 1469598103934665603ULL;
+  for (unsigned char c : s) {
+    h ^= c;
+    h *= 1099511628211ULL;
+  }
+  char buf[32];
+  const char* hex = "0123456789abcdef";
+  buf[0] = 's';
+  buf[1] = 't';
+  buf[2] = 'r';
+  buf[3] = 'u';
+  buf[4] = 'c';
+  buf[5] = 't';
+  buf[6] = ':';
+  for (int i = 0; i < 8; ++i) buf[7 + i] = hex[(h >> (60 - i * 4)) & 0xF];
+  buf[15] = '\0';
+  return p.policyId() + "+" + std::string(buf);
 }
+static std::string keptPolicyId(const VideoPolicy& p) { return videoKeptPolicyId(p); }
 bool VideoFingerprintEngine::preparePersistentStatements() const{
  sqlite3* db=VDB(cacheDb_); if(!db)return false;
   const char* loadSql="SELECT duration,payload FROM video_fingerprint_cache WHERE path=? AND size=? AND modified=? AND quick_hash=? AND cache_version=? AND policy=?";
@@ -249,7 +280,7 @@ static std::vector<char> selectKeptSegmented(const std::vector<VideoFrame>& fram
   }
   return keep;
 }
-static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops, GpuBackend* gpu, std::atomic<bool>* gpuActivity, VideoBuildStats* stats, std::size_t keptTarget){
+static void processVideoFrames(const std::vector<VideoFrame>& frames32, const std::vector<VideoFrame>& frames96, double duration, VideoFingerprint& built, VideoCropFingerprint* crops, GpuBackend* gpu, std::atomic<bool>* gpuActivity, VideoBuildStats* stats, std::size_t keptTarget, const VideoStructure* structure = nullptr){
   built.duration=duration;
   constexpr double kMinVariance=6.0; constexpr std::size_t kFloorRatio=30;
   std::vector<char> keep(frames32.size(),1);
@@ -259,8 +290,26 @@ static void processVideoFrames(const std::vector<VideoFrame>& frames32, const st
   // 0.9.4.168 (decision): segmented is the production default; legacy runs
   // only under MSF_VIDEO_KEPT=legacy. The legacy path below stays
   // byte-identical to 0.9.4.156 behavior for rollback.
+  // 0.9.4.171 (V cohort sampling): when the caller supplies a usable
+  // structure (structured opt-in with confidence >= floor), windows
+  // follow detected boundaries with a variance floor on fill and a soft
+  // target (fewer than keptTarget is valid). Otherwise fall back to the
+  // uniform segmented path byte-identically (directive §6/§8).
   if(!videoKeptLegacy() && keptTarget>0 && !frames32.empty()){
-   keep=selectKeptSegmented(frames32,frameSd,keptTarget);
+   bool usedWindows=false;
+   if(structure && structure->probed){
+     std::vector<char> sk=selectKeptStructured(frames32,frameSd,keptTarget,*structure,&usedWindows);
+     if(usedWindows){
+       keep=std::move(sk);
+       if(stats) stats->structWindows=(int)structure->segments.size();
+     } else {
+       keep=selectKeptSegmented(frames32,frameSd,keptTarget);
+       if(stats) stats->structWindows=0;
+     }
+   } else {
+     keep=selectKeptSegmented(frames32,frameSd,keptTarget);
+     if(stats && structure) stats->structWindows=0;
+   }
   } else {
   std::size_t kept=0;for(char k:keep)if(k)++kept;
   if(frames32.size()&&kept*100/frames32.size()<kFloorRatio) keep.assign(frames32.size(),1);
@@ -374,12 +423,16 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
   VideoFingerprint built;
   // 0.9.4.156 (V workstream): short-form interval rides the uniform sweep
-  // (<=60 s). Longer cohorts keep the legacy tier ladder: local-window
-  // refinement (V2/V3) does not exist yet, so stored long-form intervals
-  // stay unused (propagated + telemetry only).
-  const double shortIv=(i.duration<=60.0)?videoPolicy_.shortIntervalSec:0.0;
-  const std::size_t keptTarget=(std::size_t)videoPolicy_.keptTarget[msf::videoCohortForDuration(i.duration)];
-  auto plan=make_sample_plan(i.duration,shortIv);
+  // (<=60 s).
+  // 0.9.4.171 (V cohort sampling, directive §4-§5): structured probe plan
+  // is opt-in (MSF_VIDEO_STRUCTURE=full or non-default long-form GUI
+  // intervals). Default stays byte-identical to the legacy tier ladder;
+  // stored long-form intervals were previously propagated + telemetry
+  // only and are now consumed on the structured path.
+  const bool cohortStructured = videoStructuredSamplingEnabled(videoPolicy_);
+  const int cohortId = msf::videoCohortForDuration(i.duration);
+  const std::size_t keptTarget=(std::size_t)videoPolicy_.keptTarget[(std::size_t)cohortId < 8 ? cohortId : 7];
+  auto plan=make_cohort_plan(i.duration,videoPolicy_,cohortStructured);
   std::vector<VideoFrame> frames32, frames96;
   // E-3B: adaptive sampling planner. The production default stays sequential;
   // the planner is enabled only by an explicit environment switch so that a
@@ -468,17 +521,26 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // Single-sweep decode: one 96x96 pass, 32x32 derived in software. The second
   // full-file sweep cost ~50% of build time on decode-bound files (each sweep
   // is a single sequential decode, never one seek per timestamp).
-  // 0.9.4.167 (V2): structure probe, diagnostic only (MSF_VIDEO_STRUCTURE=1).
-  // Runs on the already-decoded 96x96 frames: no extra decode. Scratch only.
-  if(videoStructureProbeEnabled() && stats){
-    const VideoStructure vs=probeVideoStructure(frames96,i.duration);
-    stats->structProbed=vs.probed;
-    stats->structSegments=(int)vs.segments.size();
-    stats->structConfidence=vs.confidence;
+  // 0.9.4.167 (V2): structure probe, diagnostic (MSF_VIDEO_STRUCTURE=1)
+  // and structured sampling input (MSF_VIDEO_STRUCTURE=full).
+  // Runs on the already-decoded 96x96 frames: no extra decode. The
+  // structured kept selection consumes it with a confidence fallback
+  // (directive §6); the report-only path never changes the fingerprint.
+  VideoStructure cohortStruct;
+  bool haveStruct=false;
+  if(videoStructureProbeEnabled()){
+    cohortStruct=probeVideoStructure(frames96,i.duration);
+    haveStruct=true;
+    if(stats){
+      stats->structProbed=cohortStruct.probed;
+      stats->structSegments=(int)cohortStruct.segments.size();
+      stats->structConfidence=cohortStruct.confidence;
+    }
   }
-   processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget);
+   processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget,haveStruct?&cohortStruct:nullptr);
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
     stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; stats->noptsFrames=sweepNopts;
+    stats->cohortId=cohortId; stats->cohortStructured=cohortStructured;
     // 0.9.4.170 (F-2): hwFallbacks was already bumped on the retry path
     // above; hwCodec names the codec only for real HW use (usage record).
     stats->hwUsed=d.hwUsed(); stats->hwBackend=d.hwBackend();
@@ -498,9 +560,12 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
   if(loadPersistent(p,sz2,mt2,b,&c)){memoryStore(p,sz2,mt2,b,&c);base=std::move(b);crop=std::move(c);return true;}
   VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
   const int size=std::max(32,std::min(192,decodeSize));
-  const double shortIvFull=(i.duration<=60.0)?videoPolicy_.shortIntervalSec:0.0;
-  const std::size_t keptTargetFull=(std::size_t)videoPolicy_.keptTarget[msf::videoCohortForDuration(i.duration)];
-  auto plan=make_sample_plan(i.duration,shortIvFull);
+  // 0.9.4.171: buildFull follows the same cohort plan as build() so crop
+  // fingerprints and base fingerprints never disagree on samples.
+  const bool cohortStructuredFull=videoStructuredSamplingEnabled(videoPolicy_);
+  const int cohortIdFull=msf::videoCohortForDuration(i.duration);
+  const std::size_t keptTargetFull=(std::size_t)videoPolicy_.keptTarget[(std::size_t)cohortIdFull < 8 ? cohortIdFull : 7];
+  auto plan=make_cohort_plan(i.duration,videoPolicy_,cohortStructuredFull);
   std::vector<VideoFrame> frames32, framesHi;
   if(size==96){
    if(!d.framesAt96Plus32(plan.timestamps,framesHi,frames32)){d.close();return false;}
@@ -510,7 +575,16 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
   }
   d.close();
   VideoCropFingerprint cHi;
-   processVideoFrames(frames32,size==96?framesHi:std::vector<VideoFrame>(),i.duration,b,size==96?&cHi:nullptr,nullptr,nullptr,nullptr,keptTargetFull);
+  // 0.9.4.171: structure windows apply to buildFull on the same terms as
+  // build() (confidence-gated, fallback to uniform). Non-96 sizes carry
+  // no 96x96 frames here, so they keep the uniform path.
+  const VideoStructure* fullStruct=nullptr;
+  VideoStructure fullVs;
+  if(cohortStructuredFull && size==96 && videoStructureProbeEnabled()){
+    fullVs=probeVideoStructure(framesHi,i.duration);
+    fullStruct=&fullVs;
+  }
+   processVideoFrames(frames32,size==96?framesHi:std::vector<VideoFrame>(),i.duration,b,size==96?&cHi:nullptr,nullptr,nullptr,nullptr,keptTargetFull,fullStruct);
   if(size!=96){
     VideoDecoder d2;
     if(d2.open(p)){ std::vector<VideoFrame> frames96; d2.framesAt(plan.timestamps,96,96,frames96); d2.close();

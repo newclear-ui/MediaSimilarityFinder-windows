@@ -37,9 +37,12 @@ struct VideoPolicy {
   // Short-form (<=60 s) whole-timeline probe interval, seconds. Applied to the
   // sweep. UI range 1..60, recommended default 5.
   double shortIntervalSec = kVideoShortIntervalDefault;
-  // Long-form (>25 min) intervals: stored and propagated, but the current
-  // engine has no local-window refinement, so they are NOT applied to the
-  // uniform sweep (pending V2/V3 structure detection). Telemetry records them.
+  // Long-form (>25 min) intervals: consumed ONLY on the structured
+  // sampling path (0.9.4.171 opt-in: MSF_VIDEO_STRUCTURE=full or
+  // non-default long intervals). longStructIntervalSec sets the
+  // opening/boundary-window detail; longPreciseIntervalSec sets the
+  // last-60 s ending refinement. Default path stays byte-identical;
+  // telemetry records the stored values either way.
   double longStructIntervalSec = kVideoLongStructIntervalDefault;   // boundary-window detail interval
   double longPreciseIntervalSec = kVideoLongPreciseIntervalDefault;  // uncertain-section precise interval
   // Kept-frame soft targets per cohort (not quotas; fewer when low-info).
@@ -54,11 +57,13 @@ struct VideoPolicy {
   // Stored; the engine keeps using the whole-video path and logs it.
   bool partialClip = false;
   // Stable cache/generation identity. Covers ONLY the settings that change the
-  // fingerprint (short-form interval + kept targets). Pending/no-op settings
-  // (long-form intervals, uncertain boost, partial clip) are deliberately
-  // excluded: toggling them must not invalidate caches. If a future engine
-  // starts consuming them, they must join this identity. "v1" = all
-  // recommended defaults; anything else => "custom:<hash>".
+  // fingerprint on the path that consumes them (short-form interval +
+  // kept targets; long-form intervals join via videoKeptPolicyId() when
+  // the structured path is active). Pending/no-op settings
+  // (uncertain boost, partial clip) are deliberately excluded: toggling
+  // them must not invalidate caches. If a future engine starts consuming
+  // them, they must join this identity. "v1" = all recommended
+  // defaults; anything else => "custom:<hash>".
   std::string policyId() const {
     bool defKept = true;
     for (int i = 0; i < 8; ++i)

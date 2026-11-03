@@ -11,6 +11,12 @@
 #include <atomic>
 namespace msf {
 class GpuBackend;
+// 0.9.4.171: cache-identity for the kept-selection method + structured
+// sampling state (test-visible; VideoFingerprintEngine::keptPolicyId wraps
+// it with the memory-cache lookup). Default policy without structured
+// returns the legacy string byte-identically ("v1+seg" / "custom:…+seg",
+// "+var" under MSF_VIDEO_KEPT=legacy) so default caches do not rebuild.
+std::string videoKeptPolicyId(const VideoPolicy& policy);
 struct VideoBuildStats {
   bool gpuUsed=false; bool gpuFallback=false; double gpuMs=0;
   // Node A: decoded vs sampled stay separate. decodedFrames = frames actually
@@ -37,12 +43,23 @@ struct VideoBuildStats {
   // the default: see VideoDecoder::hwFailedPreEmit/reopenSoftware.
   bool hwUsed=false; std::string hwBackend, hwCodec; int hwFallbacks=0;
   // 0.9.4.167 (V2): structure-probe summary (measurement-only, diagnostic).
-  // Populated only when MSF_VIDEO_STRUCTURE=1; otherwise probed stays
+  // Populated when MSF_VIDEO_STRUCTURE=1; otherwise probed stays
   // false. No telemetry aggregation yet (field observability ships with
   // the V-gate validation); unit + e2e pins cover the probe itself.
+  // 0.9.4.171 (V cohort sampling): the same fields are populated when
+  // MSF_VIDEO_STRUCTURE=full (structured sampling validation opt-in).
+  // structWindows counts the structure segments consumed by
+  // selectKeptStructured (0 on fallback to uniform segmented).
   bool structProbed=false;
   int structSegments=0;
   double structConfidence=0;
+  // 0.9.4.171: cohort sampling telemetry (additive, report-only).
+  // cohort = G-index 0..7 for this build; cohortStructured = the
+  // structured probe plan was used (opt-in); structWindows = windows
+  // consumed by the kept selection (0 = uniform fallback).
+  int cohortId=0;
+  bool cohortStructured=false;
+  int structWindows=0;
   // E-3B: sampling-planner telemetry. Reported so a decision can be explained
   // and so a fallback is never silent. strategy is a samplingDecisionName(); a
   // non-nullptr value is recorded even on a cache hit, because the decision is

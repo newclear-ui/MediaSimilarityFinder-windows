@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.170 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.171 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -555,6 +555,10 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_kept_select_test tests/video_kept_select_test.cpp)
     target_link_libraries(msf_video_kept_select_test PRIVATE msf_core)
     add_test(NAME video_kept_select_test COMMAND msf_video_kept_select_test)
+    # 0.9.4.171 V cohort sampling: plan/kept/identity pins (synthetic only).
+    add_executable(msf_video_cohort_sampling_test tests/video_cohort_sampling_test.cpp)
+    target_link_libraries(msf_video_cohort_sampling_test PRIVATE msf_core)
+    add_test(NAME video_cohort_sampling_test COMMAND msf_video_cohort_sampling_test)
     add_executable(msf_video_gpu_benchmark_test tests/video_gpu_benchmark_test.cpp)
     target_link_libraries(msf_video_gpu_benchmark_test PRIVATE msf_core)
     add_test(NAME video_gpu_benchmark_test COMMAND msf_video_gpu_benchmark_test)

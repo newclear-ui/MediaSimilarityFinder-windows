@@ -125,10 +125,91 @@ VideoStructure probeVideoStructure(const std::vector<VideoFrame>& frames, double
 }
 
 bool videoStructureProbeEnabled() {
+  static const bool any = [] {
+    const char* v = std::getenv("MSF_VIDEO_STRUCTURE");
+    return v && (std::string(v) == "1" || std::string(v) == "full");
+  }();
+  return any;
+}
+bool videoStructuredFullEnabled() {
   static const bool on = [] {
     const char* v = std::getenv("MSF_VIDEO_STRUCTURE");
-    return v && std::string(v) == "1";
+    return v && std::string(v) == "full";
   }();
   return on;
+}
+// 0.9.4.171: structure-windowed kept selection. One best-variance frame
+// per structure segment first (time-axis coverage follows detected
+// boundaries, not uniform quarters), then global-rank fill that never
+// forces frames below the variance floor. Fewer than keptTarget is a
+// valid outcome (soft target); the caller falls back to uniform
+// segmented only when the structure itself is unusable.
+std::vector<char> selectKeptStructured(const std::vector<VideoFrame>& frames32,
+                                       const std::vector<double>& frameSd,
+                                       std::size_t keptTarget,
+                                       const VideoStructure& structure,
+                                       bool* usedWindows) {
+  std::vector<char> keep(frames32.size(), 0);
+  if (usedWindows) *usedWindows = false;
+  if (frames32.empty() || keptTarget == 0) return keep;
+  if (!structure.probed || structure.confidence < kVideoStructureMinConfidence) return keep;
+  if (structure.boundaries.empty() || structure.segments.empty()) return keep;
+  constexpr double kMinVariance = 6.0;
+  // Map each sample to its structure window (segment index).
+  const std::size_t n = frames32.size();
+  const std::vector<std::size_t>& b = structure.boundaries;
+  auto winOf = [&](std::size_t i) -> std::size_t {
+    std::size_t w = 0;
+    for (std::size_t k = 0; k < b.size(); ++k) {
+      if (b[k] <= i) w = k;
+    }
+    if (w >= structure.segments.size()) w = structure.segments.size() - 1;
+    return w;
+  };
+  const std::size_t nWin = structure.segments.size();
+  // One best-variance frame per window (windows compete, not samples).
+  std::size_t kept = 0;
+  const std::size_t winBudget = std::min(nWin, keptTarget);
+  for (std::size_t w = 0; w < winBudget; ++w) {
+    std::size_t best = n;
+    double bestSd = -1.0;
+    for (std::size_t i = 0; i < n; ++i) {
+      if (keep[i] || winOf(i) != w) continue;
+      if (frames32[i].gray.size() != 1024) continue;
+      const double sd = (i < frameSd.size()) ? frameSd[i] : 0.0;
+      if (sd < kMinVariance) continue;  // floor applies even to windows
+      if (sd > bestSd) {
+        bestSd = sd;
+        best = i;
+      }
+    }
+    if (best < n) {
+      keep[best] = 1;
+      ++kept;
+    }
+  }
+  // Fill the remainder by global variance rank, still honoring the floor.
+  if (kept < keptTarget) {
+    std::vector<std::size_t> rest;
+    for (std::size_t i = 0; i < n; ++i) {
+      if (!keep[i] && frames32[i].gray.size() == 1024) {
+        const double sd = (i < frameSd.size()) ? frameSd[i] : 0.0;
+        if (sd >= kMinVariance) rest.push_back(i);
+      }
+    }
+    std::sort(rest.begin(), rest.end(), [&](std::size_t a, std::size_t b) {
+      const double sa = (a < frameSd.size()) ? frameSd[a] : 0.0;
+      const double sb = (b < frameSd.size()) ? frameSd[b] : 0.0;
+      if (sa != sb) return sa > sb;
+      return a < b;
+    });
+    for (std::size_t i : rest) {
+      if (kept >= keptTarget) break;
+      keep[i] = 1;
+      ++kept;
+    }
+  }
+  if (usedWindows) *usedWindows = (kept > 0);
+  return keep;
 }
 }  // namespace msf

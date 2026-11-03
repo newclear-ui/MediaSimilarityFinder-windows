@@ -44,4 +44,26 @@ VideoStructure probeVideoStructure(const std::vector<VideoFrame>& frames96, doub
 // Diagnostic switch: MSF_VIDEO_STRUCTURE=1 runs the probe in build() and
 // reports it through VideoBuildStats + telemetry. Default off.
 bool videoStructureProbeEnabled();
+// 0.9.4.171 (V cohort sampling, directive §6): full structured sampling
+// switch (validation opt-in). MSF_VIDEO_STRUCTURE=full enables the cohort
+// probe plan + structure-windowed kept selection; =1 keeps the old
+// probe-only diagnostic. Default (unset/other) is the legacy path.
+bool videoStructuredFullEnabled();
+// Confidence floor for structure windows. Below this the kept selection
+// falls back to the uniform segmented path (directive §6/§8: never force
+// a structure decision when uncertain).
+constexpr double kVideoStructureMinConfidence = 0.30;
+// Structure-windowed kept selection (directive §6). Picks at most one
+// high-variance frame per structure segment, then fills the remainder by
+// global variance rank WITHOUT forcing low-information frames:
+// candidates below kMinVariance are never used as fill (soft target, not
+// quota). Returns a mask 1:1 with frames32. When the structure is
+// unusable (not probed, low confidence, no boundaries) the caller must
+// fall back to selectKeptSegmented; this function reports that via
+// *usedWindows=false with all-zero mask.
+std::vector<char> selectKeptStructured(const std::vector<VideoFrame>& frames32,
+                                       const std::vector<double>& frameSd,
+                                       std::size_t keptTarget,
+                                       const VideoStructure& structure,
+                                       bool* usedWindows);
 }  // namespace msf
