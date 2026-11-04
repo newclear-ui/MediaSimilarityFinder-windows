@@ -78,3 +78,12 @@ Originals 0.00; SDR derivatives (L02-reenc vs L03-reenc) 0.00/5.05 — not the s
 
 - `docs/worklog/0.9.4.en.md` — long-form field evaluation 1, leading-blank discrimination, 50 short leaders, leader-vs-original/flip false-alarm check.
 - Measurement TSVs/DBs/logs: `D:\Temp\OpenCodeWork\msf_video_long/` (lead_default/full, lead50_default/full, leadflip_default/full).
+
+## 10. Appendix: why a miss differs from a false alarm
+
+Superficially both "drop out of the duplicate verdict", but in a duplicate-cleanup product the harm points in opposite directions.
+
+- **Miss (False Negative, not found)**: same content stays out of the group. Files remain intact and listed. Harm is manual effort; **data is safe**.
+- **False alarm (False Positive, wrongly merged)**: different content gets grouped as duplicates. Since cleanup means deletion, the user may delete a unique file believing it a duplicate. **Unique-data deletion = irrecoverable**.
+
+That is why the production threshold 87.5 is precision-first (conservative). This evaluation matches the design: zero false alarms @87.5, many misses. Lowering to 50 converts misses into false alarms (52 ordered leader-sharing FPs). One line: **a miss leaves trash behind; a false alarm throws away the original**.
