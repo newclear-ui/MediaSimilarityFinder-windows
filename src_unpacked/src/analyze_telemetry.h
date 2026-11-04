@@ -58,6 +58,15 @@ struct AnalyzeTelemetry {
     // video work reads 0 alongside videoStageEntered=false.
     std::uint64_t videoHwFiles = 0;
     std::uint64_t videoHwFallbacks = 0;
+    // 0.9.4.173 (TemporalAnchorV2, directive §6/§8): anchor comparison sums.
+    // Means are sum/count, computed by the reader. Plain sums; 0 when the
+    // anchor path is disarmed or indexes are unavailable (Not measured).
+    std::uint64_t videoAnchorPairs = 0;
+    double videoAnchorScoreSum = 0;
+    std::uint64_t videoAnchorValidSum = 0;
+    std::uint64_t videoAnchorDup = 0;
+    std::uint64_t videoAnchorUncertain = 0;
+    std::uint64_t videoAnchorDiff = 0;
 
     // Code-path entry flags. A stage that never ran is not "0 ms measured".
     bool analyzeRan = false;
@@ -154,6 +163,10 @@ inline void addAnalyzeTelemetry(AnalyzeTelemetry& d, const AnalyzeTelemetry& s) 
     d.videoMatchCovShort += s.videoMatchCovShort; d.videoMatchCovLong += s.videoMatchCovLong;
     d.videoMatchScored += s.videoMatchScored;
     d.videoHwFiles += s.videoHwFiles; d.videoHwFallbacks += s.videoHwFallbacks;
+    d.videoAnchorPairs += s.videoAnchorPairs; d.videoAnchorScoreSum += s.videoAnchorScoreSum;
+    d.videoAnchorValidSum += s.videoAnchorValidSum;
+    d.videoAnchorDup += s.videoAnchorDup; d.videoAnchorUncertain += s.videoAnchorUncertain;
+    d.videoAnchorDiff += s.videoAnchorDiff;
     d.analyzeRan = d.analyzeRan || s.analyzeRan;
     d.videoStageEntered = d.videoStageEntered || s.videoStageEntered;
     d.verifyKeyMs += s.verifyKeyMs; d.verifyDecodeMs += s.verifyDecodeMs;

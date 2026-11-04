@@ -931,7 +931,15 @@ std::string TelemetryRecorder::toJson() const {
       << ",\"videoMatchBatchFailed\":" << analyzeTel_.videoMatchBatchFailed
        << ",\"videoMatchCovShort\":" << analyzeTel_.videoMatchCovShort
        << ",\"videoMatchCovLong\":" << analyzeTel_.videoMatchCovLong
-       << ",\"videoMatchScored\":" << analyzeTel_.videoMatchScored;
+       << ",\"videoMatchScored\":" << analyzeTel_.videoMatchScored
+        // 0.9.4.173 (TemporalAnchorV2, directive S6/S8): anchor comparison
+        // sums (additive, same contract as coverage).
+        << ",\"videoAnchorPairs\":" << analyzeTel_.videoAnchorPairs
+        << ",\"videoAnchorScoreSum\":" << analyzeTel_.videoAnchorScoreSum
+        << ",\"videoAnchorValidSum\":" << analyzeTel_.videoAnchorValidSum
+        << ",\"videoAnchorDup\":" << analyzeTel_.videoAnchorDup
+        << ",\"videoAnchorUncertain\":" << analyzeTel_.videoAnchorUncertain
+        << ",\"videoAnchorDiff\":" << analyzeTel_.videoAnchorDiff;
     // D9c: exclusive breakdown of verifyMs. Each field is a disjoint code
     // region and verifyOtherMs is the remainder, so the seven times plus other
     // reconstruct verifyMs without double counting. verifySumMs is published

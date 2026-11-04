@@ -250,9 +250,11 @@ private:
         p.boostFrames = (bf >= 1 && bf <= 2) ? bf : 1;
         p.partialClip = v.value(QStringLiteral("partialClip")).toBool(false);
         // 0.9.4.172 (TemporalAnchorV1, directive §7): reading strategy, LegacyV3 default.
-        p.readStrategy = v.value(QStringLiteral("readStrategy")).toInt(0) == 1
-                             ? msf::VideoReadStrategy::TemporalAnchorV1
-                             : msf::VideoReadStrategy::LegacyV3;
+        // 0.9.4.173: TemporalAnchorV2 as index 2 (experimental opt-in).
+        { const int rs = v.value(QStringLiteral("readStrategy")).toInt(0);
+          p.readStrategy = (rs == 2) ? msf::VideoReadStrategy::TemporalAnchorV2
+                           : (rs == 1) ? msf::VideoReadStrategy::TemporalAnchorV1
+                                       : msf::VideoReadStrategy::LegacyV3; }
         return p;
     }
 

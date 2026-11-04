@@ -28,7 +28,7 @@ enum class VideoMode { Auto = 0, Custom = 1 };
 // travels end-to-end (settings/IPC/snapshot) but never changes V3
 // fingerprints: excluded from policyId() like other pending settings,
 // and anchor artifacts carry their own identity.
-enum class VideoReadStrategy { LegacyV3 = 0, TemporalAnchorV1 = 1 };
+enum class VideoReadStrategy { LegacyV3 = 0, TemporalAnchorV1 = 1, TemporalAnchorV2 = 2 };
 // 0.9.4.156: single source of truth for recommended defaults and UI ranges.
 // Short/long-form probe intervals (seconds); kept-frame soft targets and
 // their per-cohort UI ranges (directive table: G1 4-6, G2 6-10, G3 8-10,

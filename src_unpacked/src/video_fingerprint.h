@@ -2,6 +2,7 @@
 #include "video_decoder.h"
 #include "crop_fingerprint.h"
 #include "video_policy.h"
+#include "temporal_anchor.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -100,7 +101,16 @@ struct VideoSimilarityStats { bool gpuUsed=false; bool gpuFallback=false; double
   // any mirror variant) so the two can be compared per pair.
   double rawCovShort=0, rawCovLong=0;
   // Scored-pair count for the AnalyzeTelemetry mean denominator.
-  std::size_t scoredPairs=0; };
+  std::size_t scoredPairs=0;
+  // 0.9.4.173 (TemporalAnchorV2, directive §6/§8): anchor comparison
+  // telemetry (additive, report-only). Populated per pair when the anchor
+  // path is armed and both indexes are available from memory (no decode).
+  // Means are sum/count, computed by the reader.
+  std::size_t anchorPairs=0;
+  double anchorScoreSum=0;
+  std::size_t anchorValidSum=0;
+  std::size_t anchorDup=0, anchorUncertain=0, anchorDiff=0;
+  int anchorStrategy=0; };
 struct VideoFingerprint{double duration=0;std::vector<double> timestamps;std::vector<std::uint64_t> hashes;
  std::vector<std::uint64_t> mirrorHashes;
  std::uint64_t crop4x3=0,crop1x1=0,crop9x16=0;
@@ -147,8 +157,18 @@ public:
  // per-frame data (e.g. candidate anchors) without re-analyzing files.
   bool loadPersistent(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&,VideoCropFingerprint*) const;
   bool peekThumb48(const std::string&,std::vector<std::uint8_t>&) const;
+  // 0.9.4.173 (TemporalAnchorV2, directive S7/S8): memory-only anchor index
+  // lookup (no decode, no persistent cache - anchor artifacts never touch the
+  // video fingerprint cache format). Returns false on miss; the caller then
+  // reports Not measured instead of decoding.
+  bool peekAnchorIndex(const std::string&,std::uint64_t,std::uint64_t,struct TemporalAnchorIndex&) const;
+  // Whether the anchor comparison path is armed for this scan (strategy opt-in
+  // plus MSF_VIDEO_ANCHOR=1). When false the product path is byte-identical to
+  // LegacyV3: no extra sweep, no index, no comparison.
+  bool anchorComparisonArmed() const;
+  int anchorStrategyId() const; // 0=off/LegacyV3, 1=V1, 2=V2
 private:
-  struct CacheEntry { std::uint64_t size=0, modified=0; std::string quickHash; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; std::string policyId; };
+  struct CacheEntry { std::uint64_t size=0, modified=0; std::string quickHash; VideoFingerprint fingerprint; VideoCropFingerprint crop; bool hasCrop=false; std::string policyId; TemporalAnchorIndex anchorIndex; bool hasAnchor=false; };
   static constexpr std::size_t kMemoryCacheMax = 64;
   mutable std::list<std::pair<std::string,CacheEntry>> cacheList_;
   mutable std::unordered_map<std::string,std::list<std::pair<std::string,CacheEntry>>::iterator> cacheMap_;
@@ -165,7 +185,7 @@ private:
  void finalizePersistentStatements() const;
   void savePersistent(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
   bool memoryLookup(const std::string&,std::uint64_t,std::uint64_t,VideoFingerprint&,VideoCropFingerprint*,bool) const;
-  void memoryStore(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*) const;
+  void memoryStore(const std::string&,std::uint64_t,std::uint64_t,const VideoFingerprint&,const VideoCropFingerprint*,const TemporalAnchorIndex* anchor=nullptr) const;
 };
 double video_similarity(const VideoFingerprint&,const VideoFingerprint&,const VideoSimilarityOptions& options={});
 double video_crop_similarity(const VideoFingerprint&, const VideoCropFingerprint&, const VideoFingerprint&, const VideoCropFingerprint&, const VideoSimilarityOptions& options={});

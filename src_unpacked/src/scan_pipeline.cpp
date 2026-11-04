@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <future>
 #include <sstream>
 #include <thread>
@@ -285,6 +286,42 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
               VideoSimilarityOptions options{threshold,8,2,2.0}; options.gpu=videoGpu_; options.gpuActivity=videoGpuActivity_; options.stats=&vst;
               const double ts=video_crop_similarity(ai,ac,bi,bc,options);
               if(ts>=threshold){ vr.matched=true; vr.percent=ts; }
+              // 0.9.4.173 (TemporalAnchorV2, directive §6/§8): anchor
+              // comparison runs on the REAL product compare path when armed
+              // (strategy opt-in + MSF_VIDEO_ANCHOR=1) and both indexes are
+              // in memory from the analyze sweep (no decode, never a
+              // re-decode). Recorded only: the pair verdict stays V3's until
+              // accuracy gates pass, so no default behavior changes.
+              if(te.anchorComparisonArmed()){
+                TemporalAnchorIndex ia,ib;
+                auto anchorIdx=[&](const MediaFile& f, TemporalAnchorIndex& o)->bool{
+                  std::error_code ec; const auto fp=msf::path_from_utf8(f.path);
+                  if(!std::filesystem::exists(fp,ec)) return false;
+                  const auto sz=std::filesystem::file_size(fp,ec); if(ec) return false;
+                  const auto mt=(std::uint64_t)std::filesystem::last_write_time(fp,ec).time_since_epoch().count();
+                  if(ec) return false;
+                  return te.peekAnchorIndex(f.path,(std::uint64_t)sz,mt,o);
+                };
+                if(anchorIdx(files_[tk.i],ia)&&anchorIdx(files_[tk.j],ib)){
+                  const int strat=(int)te.anchorStrategyId();
+                  if(strat==2){
+                    TemporalAnchorV2Result ar;
+                    temporalAnchorSimilarityV2(ia,ib,ar);
+                    vst.anchorPairs++; vst.anchorScoreSum+=ar.score; vst.anchorValidSum+=(std::size_t)ar.validAnchorCount;
+                    if(ar.verdict==AnchorVerdictKind::Dup) ++vst.anchorDup;
+                    else if(ar.verdict==AnchorVerdictKind::Uncertain) ++vst.anchorUncertain;
+                    else ++vst.anchorDiff;
+                  } else {
+                    TemporalAnchorResult ar;
+                    temporalAnchorSimilarity(ia,ib,ar);
+                    vst.anchorPairs++; vst.anchorScoreSum+=ar.score; vst.anchorValidSum+=(std::size_t)ar.validAnchorCount;
+                    if(ar.verdict==AnchorVerdictKind::Dup) ++vst.anchorDup;
+                    else if(ar.verdict==AnchorVerdictKind::Uncertain) ++vst.anchorUncertain;
+                    else ++vst.anchorDiff;
+                  }
+                  vst.anchorStrategy=strat;
+                }
+              }
             }
             out.push_back(vr);
           }
@@ -296,7 +333,10 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
         tel.videoMatchSubmitted+=r.second.gpuSubmitted; tel.videoMatchCompleted+=r.second.gpuCompleted;
         tel.videoMatchSmallBatch+=r.second.smallBatchPairs; tel.videoMatchBatchFailed+=r.second.failedBatchPairs;
         tel.videoMatchCovShort+=r.second.covShort; tel.videoMatchCovLong+=r.second.covLong;
-        tel.videoMatchScored+=r.second.scoredPairs; }
+        tel.videoMatchScored+=r.second.scoredPairs;
+        tel.videoAnchorPairs+=r.second.anchorPairs; tel.videoAnchorScoreSum+=r.second.anchorScoreSum;
+        tel.videoAnchorValidSum+=r.second.anchorValidSum;
+        tel.videoAnchorDup+=r.second.anchorDup; tel.videoAnchorUncertain+=r.second.anchorUncertain; tel.videoAnchorDiff+=r.second.anchorDiff; }
     }
     pendingVideo.clear();
   };
@@ -595,6 +635,9 @@ if(isVideo){
   s.analyze.videoMatchCovShort=tel.videoMatchCovShort;
   s.analyze.videoMatchCovLong=tel.videoMatchCovLong;
   s.analyze.videoMatchScored=tel.videoMatchScored;
+s.analyze.videoAnchorPairs=tel.videoAnchorPairs; s.analyze.videoAnchorScoreSum=tel.videoAnchorScoreSum;
+s.analyze.videoAnchorValidSum=tel.videoAnchorValidSum;
+s.analyze.videoAnchorDup=tel.videoAnchorDup; s.analyze.videoAnchorUncertain=tel.videoAnchorUncertain; s.analyze.videoAnchorDiff=tel.videoAnchorDiff;
   // D9c: close out the verify breakdown the same way. The seven measured
   // stages are disjoint code regions, so "other" is the remainder of the
   // verify total after them. It absorbs the per-call control work the timers

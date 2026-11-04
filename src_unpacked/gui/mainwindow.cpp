@@ -185,6 +185,7 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"videoStrategyLabel")) return S("판독 방식","Reading strategy");
   if (!std::strcmp(key,"videoStrategyLegacy")) return S("LegacyV3 (현재 기본값)","LegacyV3 (current default)");
   if (!std::strcmp(key,"videoStrategyAnchor")) return S("TemporalAnchorV1 (실험, opt-in)","TemporalAnchorV1 (experimental, opt-in)");
+  if (!std::strcmp(key,"videoStrategyAnchorV2")) return S("TemporalAnchorV2 (실험, opt-in)","TemporalAnchorV2 (experimental, opt-in)");
   if (!std::strcmp(key,"videoStrategyNote")) return S("신규 방식은 검증 전까지 실험 실행만 하며 기본 판독을 바꾸지 않습니다. MSF_VIDEO_ANCHOR=1과 함께 사용합니다.","The new path runs experimentally until validated and never changes the default reading. Use together with MSF_VIDEO_ANCHOR=1.");
 if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
@@ -5266,8 +5267,9 @@ void MainWindow::configureMonitor() {
   videoStrategyBox->setObjectName("videoStrategyBox");
   videoStrategyBox->addItem(trStr(lang(), "videoStrategyLegacy"));   // index 0
   videoStrategyBox->addItem(trStr(lang(), "videoStrategyAnchor"));    // index 1
+  videoStrategyBox->addItem(trStr(lang(), "videoStrategyAnchorV2"));  // index 2
   { const int s = QSettings().value("video/readStrategy", 0).toInt();
-    videoStrategyBox->setCurrentIndex(s == 1 ? 1 : 0); }
+    videoStrategyBox->setCurrentIndex(s == 2 ? 2 : (s == 1 ? 1 : 0)); }
   videoStrategyRow->addWidget(videoStrategyLabel); videoStrategyRow->addWidget(videoStrategyBox); videoStrategyRow->addStretch(1);
   videoLay->addLayout(videoStrategyRow);
   auto* videoStrategyNote = new QLabel(trStr(lang(), "videoStrategyNote"), videoTab);
@@ -5403,7 +5405,8 @@ void MainWindow::configureMonitor() {
   // their ranges, so stored values are always valid on the next read.
   st.setValue("video/mode", videoModeBox->currentIndex());
   // 0.9.4.172 (TemporalAnchorV1): reading strategy, LegacyV3 default.
-  st.setValue("video/readStrategy", videoStrategyBox->currentIndex() == 1 ? 1 : 0);
+  // 0.9.4.173: TemporalAnchorV2 added as index 2 (experimental opt-in).
+  st.setValue("video/readStrategy", videoStrategyBox->currentIndex() == 2 ? 2 : (videoStrategyBox->currentIndex() == 1 ? 1 : 0));
   st.setValue("video/shortInterval", shortIntSpin->value());
   st.setValue("video/longStructInterval", longStructSpin->value());
   st.setValue("video/longPreciseInterval", longPreciseSpin->value());

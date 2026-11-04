@@ -25,6 +25,7 @@ struct AnchorFrame {
   double mean = 0;          // mean gray 0..255
   double sd = 0;            // stddev gray (low-info screen, same floor as V3)
   double delta = 0;         // mean-abs change vs previous index frame
+  double edge = 0;          // mean abs horizontal diff (text/texture proxy)
   bool lowInfo = false;     // sd < kAnchorMinVariance (never forced evidence)
 };
 // Compact temporal index: the only thing TemporalAnchorV1 compares.
@@ -81,6 +82,15 @@ struct TemporalAnchorResult {
   bool cacheHit = false;  // .172: no persistent anchor cache (always false)
   std::string cacheIdentity = "anchor-v1";
 };
+// One timeline piece with its own offset (mid-roll/insert handling, §4).
+// Simple and bounded: at most 2 segments. A partial segment match alone
+// never confirms DUP.
+struct AnchorSegment {
+  double startA = 0, endA = 0;  // reference-side interval (video seconds)
+  double startB = 0, endB = 0;  // candidate-side interval
+  double offset = 0;            // tB - tA inside the segment
+  int validAnchors = 0;         // independent valid anchors in the segment
+};
 // (VideoReadStrategy is defined once in video_policy.h.)
 // Diagnostic switch: MSF_VIDEO_ANCHOR=1 enables anchor index builds in the
 // engine and the validation harness. Default off.
@@ -94,8 +104,8 @@ bool temporalAnchorEnabled();
 // lands in a plan desert). Pure function of duration; sorted ascending.
 std::vector<double> buildTemporalAnchorPlan(double durationSec);
 // Convert decoded 32x32 frames (timestamp-ordered) into the compact index.
-// pHash/mirror come from the existing perceptual hash; mean/sd/delta from
-// the gray pixels (delta = mean-abs change vs previous frame).
+// pHash/mirror come from the existing perceptual hash; mean/sd/delta/edge
+// from the gray pixels (delta = mean-abs change vs previous frame).
 struct VideoFrame;
 TemporalAnchorIndex makeTemporalAnchorIndex(const std::vector<VideoFrame>& frames32,
                                             double durationSec);
@@ -107,9 +117,54 @@ TemporalAnchorIndex makeTemporalAnchorIndex(const std::vector<VideoFrame>& frame
 std::vector<StartCandidate> findLeadingOffset(const TemporalAnchorIndex& ref,
                                               const TemporalAnchorIndex& cand,
                                               double probeLenSec, double windowSec);
+// V2 leading search: same contract, plus non-flat frames only and a lenient
+// first-hit reach (window edge). Kept separate so V1 behavior is frozen.
+std::vector<StartCandidate> findLeadingOffsetV2(const TemporalAnchorIndex& ref,
+                                                const TemporalAnchorIndex& cand,
+                                                double probeLenSec, double windowSec);
 // Full comparison (§3.2-§3.6 + §5 verdict policy). Pure function of indexes.
 double temporalAnchorSimilarity(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
                                 TemporalAnchorResult& out);
+// ---- TemporalAnchorV2 (bidirectional, 0.9.4.173) ----
+// V1 entry points above are preserved byte-for-byte in behavior; V2 is a
+// separate orchestration over the same index type so V1 results stay
+// comparable. Differences: bidirectional ends (reverse ending search with
+// credits detection), length-policy anchor placement, per-segment offsets,
+// unified score/verdict mapping, dark-content and content-ratio guards.
+struct TemporalAnchorV2Result : TemporalAnchorResult {
+  static constexpr const char* kV2StrategyId = "TemporalAnchorV2";
+  std::vector<AnchorSegment> segments;  // >=1 when evidence was compared
+  double contentRatio = 1.0;            // max(estA,estB)/min (auxiliary only)
+  bool contentRatioFlag = false;        // extreme ratio with thin evidence
+  double reverseOffset = 0;             // offset confirmed from the ending side
+  bool reverseConsistent = false;       // forward and reverse offsets agree
+  int reverseValidAnchors = 0;          // valid anchors from the ending side
+};
+// Length-policy anchor centers (video seconds, content-relative) for §5
+// classes. Returns triple centers; the caller samples ±3 s around each.
+std::vector<double> anchorCentersForDuration(double contentStart, double contentEnd);
+// Reverse ending search (§3.2): locate credits start and the last main
+// scene before it. Never judges credits by blackness alone; never mistakes
+// dark main content or fade-outs; HDR night needs edge/texture counter
+// evidence to avoid a credits call. Returns mainEnd time + mode.
+struct EndingProbe {
+  double mainEndSec = 0;      // last-main-scene reference time
+  double creditsStartSec = -1;  // <0 when no credits detected
+  EndingMode mode = EndingMode::Uncertain;
+  double confidence = 0;
+};
+EndingProbe findEndingProbe(const TemporalAnchorIndex& idx);
+// Score/verdict mapping (§6.8, single definition shared by tests and docs):
+// score = 40*min(validMain,2) + 10*consistent + 10*endingSupport, capped.
+// DUP requires validMain>=2, consistent offsets, no covered-failed main,
+// no drift, no content-ratio flag, and score>=87.5.
+double anchorVerdictScore(int validMain, bool consistent, bool endingSupport);
+AnchorVerdictKind anchorVerdictFor(int validMain, bool consistent, bool coveredFailed,
+                                   bool drifted, bool thin, bool ratioFlag, double score);
+// Full V2 comparison: bidirectional ends, per-segment offsets (§4),
+// length-policy anchors (§5), unified verdict (§6). Pure function.
+double temporalAnchorSimilarityV2(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
+                                  TemporalAnchorV2Result& out);
 // Test-visible thresholds.
 constexpr double kAnchorMinVariance = 6.0;   // low-info floor (same as V3)
 constexpr double kAnchorFramePass = 87.5;    // per-frame pass mark

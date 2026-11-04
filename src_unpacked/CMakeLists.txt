@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.172 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.173 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -565,6 +565,15 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_temporal_anchor_test tests/video_temporal_anchor_test.cpp)
     target_link_libraries(msf_video_temporal_anchor_test PRIVATE msf_core)
     add_test(NAME video_temporal_anchor_test COMMAND msf_video_temporal_anchor_test)
+    # 0.9.4.173 TemporalAnchorV2: bidirectional/ending/length/drift/mapping pins (synthetic only).
+    add_executable(msf_video_temporal_anchor_v2_test tests/video_temporal_anchor_v2_test.cpp)
+    target_link_libraries(msf_video_temporal_anchor_v2_test PRIVATE msf_core)
+    add_test(NAME video_temporal_anchor_v2_test COMMAND msf_video_temporal_anchor_v2_test)
+    # 0.9.4.173: anchor file-based test (real FFmpeg decode; union-vs-separate
+    # equivalence proves the product sweep matches the validation harness).
+    add_executable(msf_video_anchor_file_test tests/video_anchor_file_test.cpp)
+    target_link_libraries(msf_video_anchor_file_test PRIVATE msf_core)
+    add_test(NAME video_anchor_file_test COMMAND msf_video_anchor_file_test)
     add_executable(msf_video_gpu_benchmark_test tests/video_gpu_benchmark_test.cpp)
     target_link_libraries(msf_video_gpu_benchmark_test PRIVATE msf_core)
     add_test(NAME video_gpu_benchmark_test COMMAND msf_video_gpu_benchmark_test)
@@ -900,6 +909,13 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_video_scan_e2e_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_video_scan_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME video_scan_e2e_test COMMAND msf_video_scan_e2e_test)
+      # 0.9.4.173: anchor scan-path test (directive §8, real product path):
+      # the same product scan runs with LegacyV3 and with TemporalAnchorV2
+      # armed and must yield the IDENTICAL match set (report-only until gates).
+      add_executable(msf_video_anchor_scan_test tests/video_anchor_scan_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
+      target_link_libraries(msf_video_anchor_scan_test PRIVATE msf_core Qt6::Widgets)
+      target_include_directories(msf_video_anchor_scan_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+      add_test(NAME video_anchor_scan_test COMMAND msf_video_anchor_scan_test)
   # 0.9.4.157: video thumbnails must be served end-to-end (engine art +
   # store fetch + disk round-trip), the same path BackendSession uses.
   add_executable(msf_video_thumb_e2e_test tests/video_thumb_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
@@ -953,7 +969,7 @@ if(MSF_BUILD_GUI)
         add_test(NAME backend_e2e_test COMMAND msf_backend_e2e_test)
         set_tests_properties(backend_e2e_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
       endif()
-      set_tests_properties(ui_settings_write ui_settings_verify ui_reference_order_test ui_settings_migrate_plant ui_settings_migrate_verify ui_settings_migrate_both_plant ui_settings_migrate_both_verify ui_settings_migrate_none_verify scan_streaming_test scan_workflow_test walker_queue_test video_scan_e2e_test view_mode_probe thumb_layout_test quicklook_pipe_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
+      set_tests_properties(ui_settings_write ui_settings_verify ui_reference_order_test ui_settings_migrate_plant ui_settings_migrate_verify ui_settings_migrate_both_plant ui_settings_migrate_both_verify ui_settings_migrate_none_verify scan_streaming_test scan_workflow_test walker_queue_test video_scan_e2e_test video_anchor_scan_test view_mode_probe thumb_layout_test quicklook_pipe_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
     endif()
   else()
     message(STATUS "Qt6 not found; GUI target skipped")

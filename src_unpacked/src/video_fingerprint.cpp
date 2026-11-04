@@ -434,6 +434,39 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   const int cohortId = msf::videoCohortForDuration(i.duration);
   const std::size_t keptTarget=(std::size_t)videoPolicy_.keptTarget[(std::size_t)cohortId < 8 ? cohortId : 7];
   auto plan=make_cohort_plan(i.duration,videoPolicy_,cohortStructured);
+  // 0.9.4.173 (TemporalAnchorV2, directive §7): a single sequential sweep
+  // serves the V3 fingerprint and the anchor index together. The anchor plan
+  // merges into the sweep ONLY when armed (non-LegacyV3 strategy plus
+  // MSF_VIDEO_ANCHOR=1). V3 consumes exactly its own plan timestamps
+  // afterwards, so an unarmed build is byte-identical and an armed build
+  // keeps the V3 fingerprint identical too: the sweep is sequential and
+  // deterministic, so the same target sees the same frame either way.
+  const bool anchorArmed = videoPolicy_.readStrategy != VideoReadStrategy::LegacyV3 &&
+                           temporalAnchorEnabled();
+  std::vector<double> sweepTs = plan.timestamps;
+  // Bitmask parallel to sweepTs: 1 = V3 sample, 2 = anchor sample.
+  // Coinciding timestamps serve BOTH (identical frame copied to each side),
+  // so the union anchor index is exactly the separate-sweep anchor index.
+  std::vector<char> sweepIsAnchor;
+  if (anchorArmed && !plan.timestamps.empty()) {
+    const auto ap = buildTemporalAnchorPlan(i.duration);
+    std::vector<double> merged; std::vector<char> isA;
+    merged.reserve(plan.timestamps.size() + ap.size());
+    isA.reserve(plan.timestamps.size() + ap.size());
+    std::size_t a = 0, b = 0;
+    while (a < plan.timestamps.size() || b < ap.size()) {
+      const double ta = a < plan.timestamps.size() ? plan.timestamps[a] : 1e18;
+      const double tb = b < ap.size() ? ap[b] : 1e18;
+      if (std::abs(tb - ta) < 1e-3) {
+        merged.push_back(ta); isA.push_back(3); ++a; ++b;
+      } else if (ta < tb) {
+        merged.push_back(ta); isA.push_back(1); ++a;
+      } else {
+        merged.push_back(tb); isA.push_back(2); ++b;
+      }
+    }
+    sweepTs.swap(merged); sweepIsAnchor.swap(isA);
+  }
   std::vector<VideoFrame> frames32, frames96;
   // E-3B: adaptive sampling planner. The production default stays sequential;
   // the planner is enabled only by an explicit environment switch so that a
@@ -500,17 +533,37 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
   // 0.9.4.161 (P1): time the sweep itself (decode + grayscale convert).
   const auto sweepT0=std::chrono::steady_clock::now();
   if(sparseUsed){ decodedCount=(std::size_t)sparseDecoded; }
-  else if(!d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){
+  else if(!d.framesAt96Plus32(sweepTs,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){
     // 0.9.4.170 (F-2): a pre-emit HW download failure restarts the sweep in
     // software once. Identical pixels or a clean failure — never a mixed
     // HW/SW sample set.
     if(d.hwFailedPreEmit() && !(cancel && cancel->load(std::memory_order_relaxed))){
       if(stats) ++stats->hwFallbacks;
       decodedCount=0; sweepErrors=0; sweepNopts=0;
-      if(d.reopenSoftware() && d.framesAt96Plus32(plan.timestamps,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){
+      if(d.reopenSoftware() && d.framesAt96Plus32(sweepTs,frames96,frames32,cancel,&decodedCount,&sweepErrors,&sweepNopts)){
         // recovered in software below
       } else { d.close(); return false; }
     } else { d.close(); return false; }
+  }
+  // 0.9.4.173: split the merged sweep back into V3 frames (consumed below,
+  // byte-identical to the unmerged sweep) and anchor frames (V2 input).
+  // Sparse-planner runs never merge, so anchor stays off there.
+  // Emission is prefix-preserving: every non-excused target (in order) gets
+  // exactly one frame, and only trailing endpoint-tolerance targets may be
+  // excused (framesAt fails loudly otherwise). So emitted[0..m) maps to
+  // sweepTs[0..m) — never by raw index over the full plan.
+  std::vector<VideoFrame> anchor32;
+  if(anchorArmed && !sparseUsed && !sweepIsAnchor.empty()){
+    if(frames32.size() > sweepTs.size() || frames96.size() != frames32.size()){ d.close(); return false; }
+    std::vector<VideoFrame> v96, v32;
+    v96.reserve(plan.timestamps.size()); v32.reserve(plan.timestamps.size());
+    for(std::size_t k=0;k<frames32.size();++k){
+      // Bit 2 (anchor) copies; bit 1 (V3) moves. Coinciding timestamps (3)
+      // feed both sides with the identical frame.
+      if(sweepIsAnchor[k] & 2) anchor32.push_back(frames32[k]);
+      if(sweepIsAnchor[k] & 1){ v96.push_back(std::move(frames96[k])); v32.push_back(std::move(frames32[k])); }
+    }
+    frames96.swap(v96); frames32.swap(v32);
   }
   const double sweepMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sweepT0).count();
   // 0.9.4.158 (P0/P1): the decoder owns the completeness contract (cancel,
@@ -539,6 +592,18 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
     }
   }
    processVideoFrames(frames32,frames96,i.duration,built,nullptr,gpu,gpuActivity,stats,keptTarget,haveStruct?&cohortStruct:nullptr);
+  // 0.9.4.173 (TemporalAnchorV2, directive §7): the anchor index is built
+  // from the SAME sweep's frames (no second decode). Only when armed; the
+  // V3 fingerprint above is already final and untouched.
+  TemporalAnchorIndex anchorIdx;
+  bool haveAnchor=false;
+  if(anchorArmed && !sparseUsed && !anchor32.empty()){
+    const auto at0=std::chrono::steady_clock::now();
+    anchorIdx=makeTemporalAnchorIndex(anchor32,i.duration);
+    haveAnchor=anchorIdx.built;
+    if(stats && haveAnchor){ stats->anchorBuilt=true; stats->anchorFrames=(int)anchorIdx.seq.size();
+      stats->anchorMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-at0).count(); }
+  }
   if(stats){ stats->cacheHit=false; stats->decodedFrames=decodedCount;
     stats->sampledFrames=plan.timestamps.size(); stats->keptFrames=built.hashes.size(); stats->decodeMs=sweepMs; stats->decodeErrors=sweepErrors; stats->noptsFrames=sweepNopts;
     stats->cohortId=cohortId; stats->cohortStructured=cohortStructured;
@@ -546,24 +611,17 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
     // above; hwCodec names the codec only for real HW use (usage record).
     stats->hwUsed=d.hwUsed(); stats->hwBackend=d.hwBackend();
     if(d.hwUsed()) stats->hwCodec=d.codecName();
-    // 0.9.4.172 (TemporalAnchorV1, directive §2/§4/§7): independent anchor
-    // sweep, gated on BOTH the GUI strategy and MSF_VIDEO_ANCHOR=1.
-    // Default (LegacyV3, env unset) skips this entirely: zero behavior,
-    // cost, or cache change. When on, the V3 fingerprint above is already
-    // final; the anchor index is measured here for cost accounting (the
-    // validation harness keeps its own copy for comparisons).
-    if(videoPolicy_.readStrategy==VideoReadStrategy::TemporalAnchorV1 && temporalAnchorEnabled()){
-      TemporalAnchorIndex anchorProbe; VideoBuildStats anchorStats;
-      if(buildAnchorIndex(p,anchorProbe,&anchorStats,cancel)){
-        stats->anchorBuilt=true; stats->anchorFrames=anchorStats.anchorFrames; stats->anchorMs=anchorStats.anchorMs;
-      }
-    } }
+    // 0.9.4.173: the anchor index above came from the SAME sweep (no second
+    // decode). Stats report it; the memory store below carries it.
+    if(haveAnchor){ stats->anchorBuilt=true; stats->anchorFrames=(int)anchorIdx.seq.size(); }
+  }
   d.close();if(built.hashes.empty())return false;
   // 0.9.4.158 (P0): re-check cancel immediately before persisting. The sweep
   // above can take minutes on long files; a Stop in this window must leave
   // no memory or disk trace of the abandoned build.
   if(cancel && cancel->load(std::memory_order_relaxed))return false;
-  memoryStore(p,sz,mt,built,nullptr);savePersistent(p,sz,mt,built,nullptr);o=std::move(built);return true;
+  memoryStore(p,sz,mt,built,nullptr,haveAnchor?&anchorIdx:nullptr);savePersistent(p,sz,mt,built,nullptr);o=std::move(built);
+  return true;
 }
 bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& base,VideoCropFingerprint& crop,int decodeSize) const{
   std::error_code ec2; const fs::path fp2=path_from_utf8(p);
@@ -632,6 +690,25 @@ bool VideoFingerprintEngine::buildAnchorIndex(const std::string& p,TemporalAncho
     stats->anchorMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); }
   return o.built;
 }
+bool VideoFingerprintEngine::anchorComparisonArmed() const{
+  return videoPolicy_.readStrategy != VideoReadStrategy::LegacyV3 && temporalAnchorEnabled();
+}
+int VideoFingerprintEngine::anchorStrategyId() const{
+  if(!temporalAnchorEnabled()) return 0;
+  if(videoPolicy_.readStrategy==VideoReadStrategy::TemporalAnchorV1) return 1;
+  if(videoPolicy_.readStrategy==VideoReadStrategy::TemporalAnchorV2) return 2;
+  return 0;
+}
+bool VideoFingerprintEngine::peekAnchorIndex(const std::string& p,std::uint64_t sz,std::uint64_t mt,TemporalAnchorIndex& o) const{
+  const std::string quick=quickIdentity(p); std::lock_guard<std::mutex> lock(cacheMutex_);
+  auto it=cacheMap_.find(p);
+  if(it==cacheMap_.end()) return false;
+  const CacheEntry& e=it->second->second;
+  if(e.size!=sz||e.modified!=mt||e.quickHash!=quick||!e.hasAnchor) return false;
+  cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
+  o=e.anchorIndex;
+  return o.built;
+}
 
 void VideoFingerprintEngine::clearCache()const{std::lock_guard<std::mutex>lock(cacheMutex_);cacheMap_.clear();cacheList_.clear();}
 bool VideoFingerprintEngine::peekThumb48(const std::string& p,std::vector<std::uint8_t>& gray48) const{
@@ -671,13 +748,14 @@ bool VideoFingerprintEngine::memoryLookup(const std::string&p,std::uint64_t sz,s
   if(crop&&e.hasCrop) *crop=e.crop;
   return !o.hashes.empty();
 }
-void VideoFingerprintEngine::memoryStore(const std::string&p,std::uint64_t sz,std::uint64_t mt,const VideoFingerprint&f,const VideoCropFingerprint* crop) const{
+void VideoFingerprintEngine::memoryStore(const std::string&p,std::uint64_t sz,std::uint64_t mt,const VideoFingerprint&f,const VideoCropFingerprint* crop,const TemporalAnchorIndex* anchor) const{
   const std::string quick=quickIdentity(p); std::lock_guard<std::mutex> lock(cacheMutex_);
   auto it=cacheMap_.find(p);
   if(it!=cacheMap_.end()){
     it->second->second.size=sz; it->second->second.modified=mt; it->second->second.quickHash=quick;
     it->second->second.fingerprint=f;
     if(crop){ it->second->second.crop=*crop; it->second->second.hasCrop=true; }
+    if(anchor&&anchor->built){ it->second->second.anchorIndex=*anchor; it->second->second.hasAnchor=true; }
     cacheList_.splice(cacheList_.begin(),cacheList_,it->second);
     return;
   }
@@ -687,6 +765,7 @@ void VideoFingerprintEngine::memoryStore(const std::string&p,std::uint64_t sz,st
   }
   CacheEntry e; e.size=sz; e.modified=mt; e.quickHash=quick; e.fingerprint=f; e.policyId=keptPolicyId(videoPolicy_);
   if(crop){ e.crop=*crop; e.hasCrop=true; }
+  if(anchor&&anchor->built){ e.anchorIndex=*anchor; e.hasAnchor=true; }
   cacheList_.emplace_front(p,std::move(e));
   cacheMap_[p]=cacheList_.begin();
 }
