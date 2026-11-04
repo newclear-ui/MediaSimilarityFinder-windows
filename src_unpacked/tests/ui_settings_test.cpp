@@ -692,7 +692,7 @@ int main(int argc, char** argv) {
         {"video/g5Target", 10}, {"video/g6Target", 11},
         {"video/g7Target", 12}, {"video/g8Target", 14},
         {"video/longStructInterval", 5}, {"video/longPreciseInterval", 5},
-        {"video/boostFrames", 2},
+        {"video/boostFrames", 2}, {"video/readStrategy", 1},
       };
       for (const auto& e : ex)
         if (QSettings().value(QString::fromLatin1(e.k), -1).toInt() != e.v) {
@@ -754,6 +754,9 @@ int main(int argc, char** argv) {
       QCheckBox* boost = vt->findChild<QCheckBox*>("videoBoostBox");
       QCheckBox* partial = vt->findChild<QCheckBox*>("videoPartialBox");
       if (!boost || !boost->isChecked() || !partial || partial->isChecked()) { failWith("boost/partial defaults"); return; }
+      // 0.9.4.172: strategy selector defaults to LegacyV3.
+      auto* strategy = vt->findChild<QComboBox*>("videoStrategyBox");
+      if (!strategy || strategy->currentIndex() != 0) { failWith("strategy default"); return; }
       // Invalid inputs clamp in-widget; the clamped values are what persist.
       shortSpin->setValue(999);
       if (shortSpin->value() != 60) { failWith("short interval not clamped"); return; }
@@ -764,6 +767,7 @@ int main(int argc, char** argv) {
       g3->setValue(10); g4->setValue(13); g5->setValue(10);
       g6->setValue(11); g7->setValue(12); g8->setValue(14);
       boost->setChecked(false); boostCount->setValue(2); partial->setChecked(true);
+      strategy->setCurrentIndex(1);
       done = true;
       if (auto* bb = dlg->findChild<QDialogButtonBox*>())
         if (auto* b = bb->button(QDialogButtonBox::Save)) b->click();
@@ -781,7 +785,8 @@ int main(int argc, char** argv) {
       if (vp.shortIntervalSec != 3.0) { std::cerr << "video interval not mapped\n"; return 1; }
       if (vp.keptTarget[0] != 6 || vp.keptTarget[4] != 10 || vp.keptTarget[7] != 14) { std::cerr << "video kept targets not mapped\n"; return 1; }
       if (vp.policyId() == "v1") { std::cerr << "custom policy misidentified as v1\n"; return 1; }
-      if (vp.uncertainBoost || vp.boostFrames != 2 || !vp.partialClip) { std::cerr << "video flags not mapped\n"; return 1; } }
+      if (vp.uncertainBoost || vp.boostFrames != 2 || !vp.partialClip) { std::cerr << "video flags not mapped\n"; return 1; }
+      if (vp.readStrategy != msf::VideoReadStrategy::TemporalAnchorV1) { std::cerr << "video strategy not mapped\n"; return 1; } }
     std::cout << "video_tab_write=ok\n"; return 0;
   }
   if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--tr-keys") {
@@ -863,6 +868,8 @@ int main(int argc, char** argv) {
       "videoLongPendingNote", "videoAnchorNote",
       "videoBoost", "videoBoostCount", "videoBoostPendingNote",
       "videoPartial", "videoPartialNote", "videoHonestNote",
+      // 0.9.4.172 (TemporalAnchorV1): reading-strategy selector keys.
+      "videoStrategyLabel", "videoStrategyLegacy", "videoStrategyAnchor", "videoStrategyNote",
       // 0.9.4.170 (F-2): hardware decode status + setting keys.
       "hwOn", "hwOff", "hwLive", "hwDecode", "hwDecodeTip",
     };

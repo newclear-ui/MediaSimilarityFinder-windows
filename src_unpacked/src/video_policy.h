@@ -22,6 +22,13 @@ inline int videoCohortForDuration(double seconds) {
   return 7;                         // G8
 }
 enum class VideoMode { Auto = 0, Custom = 1 };
+// Reading strategy (0.9.4.172, TemporalAnchorV1 directive §2/§7).
+// LegacyV3 is the production default; TemporalAnchorV1 is an independent
+// experimental path (opt-in until its accuracy gates pass). The strategy
+// travels end-to-end (settings/IPC/snapshot) but never changes V3
+// fingerprints: excluded from policyId() like other pending settings,
+// and anchor artifacts carry their own identity.
+enum class VideoReadStrategy { LegacyV3 = 0, TemporalAnchorV1 = 1 };
 // 0.9.4.156: single source of truth for recommended defaults and UI ranges.
 // Short/long-form probe intervals (seconds); kept-frame soft targets and
 // their per-cohort UI ranges (directive table: G1 4-6, G2 6-10, G3 8-10,
@@ -34,6 +41,8 @@ constexpr int kVideoKeptMax[8] = {6, 10, 10, 14, 13, 12, 14, 16};
 constexpr int kVideoKeptDefault[8] = {5, 8, 9, 12, 11, 10, 12, 14};
 struct VideoPolicy {
   VideoMode mode = VideoMode::Auto;
+  // Reading strategy for this scan (snapshot at scan start; see the enum).
+  VideoReadStrategy readStrategy = VideoReadStrategy::LegacyV3;
   // Short-form (<=60 s) whole-timeline probe interval, seconds. Applied to the
   // sweep. UI range 1..60, recommended default 5.
   double shortIntervalSec = kVideoShortIntervalDefault;

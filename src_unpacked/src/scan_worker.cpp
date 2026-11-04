@@ -66,6 +66,12 @@ void ScanWorker::run() {
       msf::backendLogLine("videoPolicy uncertainBoost requested: selective re-extraction not implemented (V4 scope); no-op");
     if (videoPolicy_.partialClip)
       msf::backendLogLine("videoPolicy partialClip requested: no partial-clip route (V6 scope); whole-video path used");
+    // 0.9.4.172 (TemporalAnchorV1, directive §2/§7): strategy snapshot.
+    // LegacyV3 default keeps production behavior; TemporalAnchorV1 runs the
+    // independent anchor sweep only with MSF_VIDEO_ANCHOR=1, and V3 results
+    // and caches are never affected either way.
+    if (videoPolicy_.readStrategy == msf::VideoReadStrategy::TemporalAnchorV1)
+      msf::backendLogLine("videoPolicy TemporalAnchorV1 selected: independent anchor path (experimental, V3 default preserved)");
     control_.scanImages = scanImages_; control_.scanVideos = scanVideos_;
     control_.analyzeMode = analyzeMode_;
     control_.fastRescan = fastRescan_;

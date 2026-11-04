@@ -60,6 +60,13 @@ struct VideoBuildStats {
   int cohortId=0;
   bool cohortStructured=false;
   int structWindows=0;
+  // 0.9.4.172 (TemporalAnchorV1, directive §4/§6): anchor-index build
+  // telemetry (additive, report-only). Populated only when the anchor
+  // path runs (VideoReadStrategy::TemporalAnchorV1 + MSF_VIDEO_ANCHOR=1);
+  // the V3 fingerprint above is built identically either way.
+  bool anchorBuilt=false;
+  int anchorFrames=0;
+  double anchorMs=0;
   // E-3B: sampling-planner telemetry. Reported so a decision can be explained
   // and so a fallback is never silent. strategy is a samplingDecisionName(); a
   // non-nullptr value is recorded even on a cache hit, because the decision is
@@ -124,6 +131,11 @@ public:
    bool build(const std::string&,VideoFingerprint&,GpuBackend* gpu=nullptr,std::atomic<bool>* gpuActivity=nullptr,VideoBuildStats* stats=nullptr,
               const std::atomic<bool>* cancel=nullptr) const;
   bool buildFull(const std::string&,VideoFingerprint&,VideoCropFingerprint&,int decodeSize=96) const;
+  // 0.9.4.172 (TemporalAnchorV1): independent anchor-index build (own
+  // sequential sweep with the anchor plan, no persistent cache, no V3
+  // fingerprint or cache touched). Returns false on cancel/failure.
+  bool buildAnchorIndex(const std::string&,struct TemporalAnchorIndex&,VideoBuildStats* stats=nullptr,
+                        const std::atomic<bool>* cancel=nullptr) const;
   // 0.9.4.156: video comparison policy (GUI Video tab). Stored per engine
   // and applied at build start (run snapshot). Default = Auto recommended.
   void setVideoPolicy(const VideoPolicy& p) const;

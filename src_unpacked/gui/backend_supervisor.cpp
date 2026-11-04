@@ -121,6 +121,8 @@ void BackendSupervisor::startScan(const BackendScanConfig& cfg) {
     video[QStringLiteral("uncertainBoost")] = cfg.videoPolicy.uncertainBoost;
     video[QStringLiteral("boostFrames")] = cfg.videoPolicy.boostFrames;
     video[QStringLiteral("partialClip")] = cfg.videoPolicy.partialClip;
+    // 0.9.4.172 (TemporalAnchorV1): reading strategy, LegacyV3 default.
+    video[QStringLiteral("readStrategy")] = static_cast<int>(cfg.videoPolicy.readStrategy);
     p[QStringLiteral("video")] = video;
     QJsonObject exec;
     exec[QStringLiteral("cpuMode")] = cfg.exec.cpuMode;

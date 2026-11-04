@@ -181,6 +181,11 @@ QString trStr(UiLang lang, const char* key) {
   if (!std::strcmp(key,"videoPartial")) return S("부분 클립 검색","Partial-clip search");
   if (!std::strcmp(key,"videoPartialNote")) return S("별도 경로가 없으므로 전체 영상 중복 검색을 수행합니다 (V6 범위).","No separate route yet; whole-video search is used (V6 scope).");
   if (!std::strcmp(key,"videoHonestNote")) return S("프레임 확인 간격은 Probe(관찰) 위치의 간격이며, 보관 프레임 수나 디코더 출력 프레임 수를 뜻하지 않습니다.","Probe interval sets observation positions only, not kept frames or decoder output frames.");
+  // 0.9.4.172 (TemporalAnchorV1, directive §7): reading-strategy selector.
+  if (!std::strcmp(key,"videoStrategyLabel")) return S("판독 방식","Reading strategy");
+  if (!std::strcmp(key,"videoStrategyLegacy")) return S("LegacyV3 (현재 기본값)","LegacyV3 (current default)");
+  if (!std::strcmp(key,"videoStrategyAnchor")) return S("TemporalAnchorV1 (실험, opt-in)","TemporalAnchorV1 (experimental, opt-in)");
+  if (!std::strcmp(key,"videoStrategyNote")) return S("신규 방식은 검증 전까지 실험 실행만 하며 기본 판독을 바꾸지 않습니다. MSF_VIDEO_ANCHOR=1과 함께 사용합니다.","The new path runs experimentally until validated and never changes the default reading. Use together with MSF_VIDEO_ANCHOR=1.");
 if (!std::strcmp(key,"help")) return S("도움말","Help");
   if (!std::strcmp(key,"language")) return S("언어:","Language:");
   if (!std::strcmp(key,"explorer")) return S("탐색기","Explorer");
@@ -5253,6 +5258,21 @@ void MainWindow::configureMonitor() {
     videoModeBox->setCurrentIndex(m == 1 ? 1 : 0); }
   videoModeRow->addWidget(videoModeLabel); videoModeRow->addWidget(videoModeBox); videoModeRow->addStretch(1);
   videoLay->addLayout(videoModeRow);
+  // 0.9.4.172 (TemporalAnchorV1, directive §7): reading-strategy selector.
+  // LegacyV3 default; TemporalAnchorV1 experimental opt-in (verified gates pending).
+  auto* videoStrategyRow = new QHBoxLayout;
+  auto* videoStrategyLabel = new QLabel(trStr(lang(), "videoStrategyLabel"), videoTab);
+  auto* videoStrategyBox = new QComboBox(videoTab);
+  videoStrategyBox->setObjectName("videoStrategyBox");
+  videoStrategyBox->addItem(trStr(lang(), "videoStrategyLegacy"));   // index 0
+  videoStrategyBox->addItem(trStr(lang(), "videoStrategyAnchor"));    // index 1
+  { const int s = QSettings().value("video/readStrategy", 0).toInt();
+    videoStrategyBox->setCurrentIndex(s == 1 ? 1 : 0); }
+  videoStrategyRow->addWidget(videoStrategyLabel); videoStrategyRow->addWidget(videoStrategyBox); videoStrategyRow->addStretch(1);
+  videoLay->addLayout(videoStrategyRow);
+  auto* videoStrategyNote = new QLabel(trStr(lang(), "videoStrategyNote"), videoTab);
+  videoStrategyNote->setWordWrap(true);
+  videoLay->addWidget(videoStrategyNote);
   auto* shortGroup = new QGroupBox(trStr(lang(), "videoShortGroup"), videoTab);
   auto* shortLay = new QGridLayout(shortGroup);
   auto* shortIntLabel = new QLabel(trStr(lang(), "videoShortInterval"), shortGroup);
@@ -5382,6 +5402,8 @@ void MainWindow::configureMonitor() {
   // 0.9.4.156 (V workstream): Video tab snapshot. Spin boxes self-clamp to
   // their ranges, so stored values are always valid on the next read.
   st.setValue("video/mode", videoModeBox->currentIndex());
+  // 0.9.4.172 (TemporalAnchorV1): reading strategy, LegacyV3 default.
+  st.setValue("video/readStrategy", videoStrategyBox->currentIndex() == 1 ? 1 : 0);
   st.setValue("video/shortInterval", shortIntSpin->value());
   st.setValue("video/longStructInterval", longStructSpin->value());
   st.setValue("video/longPreciseInterval", longPreciseSpin->value());

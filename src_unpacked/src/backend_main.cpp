@@ -249,6 +249,10 @@ private:
         const int bf = v.value(QStringLiteral("boostFrames")).toInt(1);
         p.boostFrames = (bf >= 1 && bf <= 2) ? bf : 1;
         p.partialClip = v.value(QStringLiteral("partialClip")).toBool(false);
+        // 0.9.4.172 (TemporalAnchorV1, directive §7): reading strategy, LegacyV3 default.
+        p.readStrategy = v.value(QStringLiteral("readStrategy")).toInt(0) == 1
+                             ? msf::VideoReadStrategy::TemporalAnchorV1
+                             : msf::VideoReadStrategy::LegacyV3;
         return p;
     }
 

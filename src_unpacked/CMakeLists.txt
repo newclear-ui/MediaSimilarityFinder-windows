@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.171 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.172 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -93,6 +93,8 @@ add_library(msf_core STATIC
     src/video_sampling.cpp
     # V2: structure probe (measurement-only, scratch records for V-gate validation).
     src/video_structure.cpp
+    # TemporalAnchorV1: independent leading-tolerant reading path (0.9.4.172).
+    src/temporal_anchor.cpp
   # E-3B: the adaptive sampling planner. Classification only — no decode, no
   # FFmpeg calls, no I/O — so the correctness gates are provably independent of
   # whatever the decoder does afterwards.
@@ -559,6 +561,10 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_cohort_sampling_test tests/video_cohort_sampling_test.cpp)
     target_link_libraries(msf_video_cohort_sampling_test PRIVATE msf_core)
     add_test(NAME video_cohort_sampling_test COMMAND msf_video_cohort_sampling_test)
+    # 0.9.4.172 TemporalAnchorV1: opening/leading/anchor/ending/verdict pins (synthetic only).
+    add_executable(msf_video_temporal_anchor_test tests/video_temporal_anchor_test.cpp)
+    target_link_libraries(msf_video_temporal_anchor_test PRIVATE msf_core)
+    add_test(NAME video_temporal_anchor_test COMMAND msf_video_temporal_anchor_test)
     add_executable(msf_video_gpu_benchmark_test tests/video_gpu_benchmark_test.cpp)
     target_link_libraries(msf_video_gpu_benchmark_test PRIVATE msf_core)
     add_test(NAME video_gpu_benchmark_test COMMAND msf_video_gpu_benchmark_test)

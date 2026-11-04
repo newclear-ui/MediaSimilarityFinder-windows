@@ -55,6 +55,10 @@ inline msf::VideoPolicy videoPolicyFromSettings() {
   const int bf = st.value(QStringLiteral("video/boostFrames"), 1).toInt();
   p.boostFrames = (bf >= 1 && bf <= 2) ? bf : 1;
   p.partialClip = st.value(QStringLiteral("video/partialClip"), false).toBool();
+  // 0.9.4.172 (TemporalAnchorV1, directive §7): reading strategy, LegacyV3 default.
+  p.readStrategy = (st.value(QStringLiteral("video/readStrategy"), 0).toInt() == 1)
+                        ? msf::VideoReadStrategy::TemporalAnchorV1
+                        : msf::VideoReadStrategy::LegacyV3;
   return p;
 }
 

@@ -142,3 +142,15 @@ NVDEC/D3D11VA/Vulkan 구현, Node E sparse seek production 재도입, vertical f
 ## 10. 현재 상태
 
 이 문서는 예정서/사전등록이며 Active Build Queue에 넣지 않는다. GUI 동영상 탭의 V5 UI 1차(설정+전파+간격/예산+캐시 분리)는 0.9.4.156에 구현되었다. V0~V4 정확도·비용 Gate는 여전히 pending이다. V3 구간기반 선택은 0.9.4.168에서 production 기본값으로 채택됐다(legacy는 MSF_VIDEO_KEPT=legacy 롤백; 선택방식 캐시 식별 +seg/+var로 1회 재구축; 현장 근거 1에서 49/50 동일). 알려진 한계: segmented 경로는 kMinVariance 하한을 적용하지 않아 저분산 프레임을 보관할 수 있다(P1 재검토 항목, 롤백 보류). V2 구조 프로브는 차선으로 진단 유지한다 — 구조-윈도우 선택의 재사용 진입점이며 보존 사유와 재사용 방법은 video_structure.h와 worklog 현장 근거 1에 기록했다. V4 커버리지는 0.9.4.169에서 post-SSIM 기준으로 재정의됐다(점수와 같은 근거 사용; rawCov*는 구 Hamming 전용값 보존; coverageGate 분리; strict 게이트는 여전히 diagnostic OFF·미검증). 검증은 사용자 데이터셋 대기. XMP acceptance 및 S5 real-dataset benchmark를 대체하지 않는다. 0.9.4.171에서 V 코호트 샘플링을 본구현했다(진단 opt-in, 기본 동작 불변): 코호트 프로브 계획(G1–G8, 역방향 엔드포인트 오름차순 단일 sweep), 구조 윈도우 kept 선택(floor+soft target+신뢰도 폴백), longStruct/longPrecise 소비, 캐시 `+struct` 격리, 엔진/포맷 불변. 기본 지문 바이트 동일(CPU 140/140·GPU 141/141). 장편 정확도 Gate 미측정 — 30분/1시간/1시간+ 사용자 경로 대기. 빌드 버전·일정·production 기본값 승격은 검증 후 별도 빌드에서 다룬다. 지시 폴더의 별도 착수 지시에 따라 V5 UI 1차 범위에 한해 구현되었다. 범위 외 source/test/DB/engine 변경은 여전히 별도 지시가 필요하다.
+
+### V8 — TemporalAnchorV1 (독립 판독 경로, 0.9.4.172 착수)
+
+선행 삽입(광고·인트로·블랙 리더)을 허용하는 별도 판독 방식. 현행 V3(DTW)는 LegacyV3로 보존하고 삭제·대체하지 않는다.
+
+- 판독 전략 식별자: `LegacyV3` (현행, production 기본값) / `TemporalAnchorV1` (신규, 실험 opt-in). 각각 독립 실행·비교 가능.
+- 처리 단계: Opening Sequence Probe (1~10초 연속 지문, 3/5/10초 비교, 단일 프레임 확정 금지, 평탄 과다사용 금지) → Leading Insertion Search (후보 선행 구간에서 순서 보존 탐색, 미러 허용·vertical flip 미지원, 양방향 A→B/B→A, 복수 후보 유지) → Start Offset 및 Content Duration (offset=startB-startA, 길이 보조지표) → Time Anchor Verification (시작 직후·5/10/15분·엔딩 직전, 앵커당 3프레임@~3초, 2/3 이상 일치+비평탄, quota 아님, 숏폼 별도) → Offset Consistency (일정=선행 삽입, 변화=중간 삽입·편집 신호, 강제 판정 금지, piecewise 분기) → Ending Anchor (크레디트/리더 구분 취급, 마지막 9초 3프레임, 크레디트만·엔딩만으로 DUP 확정 금지).
+- 판정 분리: Opening 일치는 후보 탐색일 뿐; 최종 DUP는 복수 본편 앵커의 독립 일치 + 오프셋 일관성 필요. 본편 부족·평탄 위주면 UNCERTAIN. 검은 화면·로고·인트로·크레디트만으로 DUP 금지. 50/87.5 임계 의미 유지, 점수 분포 별도 측정. miss(가역 손실) 대 오탐(비가역 삭제 위험) 비대칭 유지.
+- 디코딩: production sparse seek 재도입 없음 (E-3B RefuseAll 유지). 앵커 평면의 단일 sequential sweep (V3 sweep과 별도, 비용 분리 측정). 샘플 수 감소를 디코드 시간 감소로 주장하지 않는다.
+- 캐시·설정 격리: anchor 지문은 V3 캐시와 분리 (0.9.4.172는 영속 anchor 캐시 없음). `VideoPolicy.readStrategy` + GUI 동영상 탭 판독 방식 선택 + IPC/백엔드 전파 + 스캔 snapshot. 기본값 LegacyV3 불변, 신규 방식 검증 전 실험 실행만.
+- 테스트: lead-prefix-discrimination 데이터셋을 baseline으로 선행·오탐·시간축 변화·비교 평가 (본 Brief §8 목록). 기존 현장 수치와 혼합·덮어쓰기 금지.
+- 승격 조건: 선행 광고 삽입본 검출률, 공통 리더 오탐 억제, 복수 앵커 독립 증거, 숏폼/장편 정확도, V3 대비 비용, CPU/GPU 판정 일치, 캐시 격리+회귀. 코드+검증 보고 전 Gate PASS 선언 금지.

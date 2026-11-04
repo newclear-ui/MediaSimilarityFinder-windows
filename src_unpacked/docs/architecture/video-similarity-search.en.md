@@ -480,3 +480,14 @@ With the current VideoDecoder::framesAt() single-seek-then-sequential-decode pat
 - Verify the UI makes no decoder-savings claim and CPU/GPU/fallback paths preserve identical verdict semantics.
 
 Expose only policies that have passed V's algorithm/accuracy gates. This GUI scope is a design proposal; implementation, manual GUI acceptance, and performance measurements remain outstanding.
+
+## 18. TemporalAnchorV1 - leading-tolerant independent reading path (0.9.4.172)
+
+The current V3 (DTW) is preserved as LegacyV3, never deleted or replaced. The new path tolerates leading segments (ads/intros/black leaders) while verifying main-content time continuity with a few low-resolution frames.
+
+- Strategy IDs: `LegacyV3` (current, production default) / `TemporalAnchorV1` (new, experimental opt-in). Each runs and compares independently.
+- Stages: post-start, 5/10/15 min, and pre-ending anchors (3 frames at ~3 s per anchor) -> start-offset estimation -> per-anchor correspondence check -> offset consistency -> ending-mode classification.
+- Verdict split: candidate search and final DUP are separated. Final DUP requires multiple independent main-anchor matches plus consistent offset. Thin or flat-heavy evidence stays UNCERTAIN. Black/logo/intro/credits alone never confirm DUP.
+- Decoding: no production sparse-seek reintroduction. One single sequential sweep for the anchor plan (separate from the V3 sweep, cost measured separately).
+- Cache/config isolation: anchor prints stay out of the V3 cache. GUI video-tab strategy selector + IPC/backend propagation + scan snapshot. LegacyV3 default unchanged.
+- Promotion gates: leading-ad recall, shared-leader false-alarm suppression, independent multi-anchor evidence, short/long accuracy, cost vs V3, CPU/GPU verdict parity, cache isolation + regression. No Gate PASS before code + verification are reported.

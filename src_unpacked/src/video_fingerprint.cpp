@@ -1,6 +1,7 @@
 #include "video_fingerprint.h"
 #include "video_sampling.h"
 #include "video_structure.h"
+#include "temporal_anchor.h"
 #include "video_sampling_planner.h"
 #include "fingerprint.h"
 #include "similarity.h"
@@ -544,7 +545,19 @@ bool VideoFingerprintEngine::build(const std::string&p,VideoFingerprint&o,GpuBac
     // 0.9.4.170 (F-2): hwFallbacks was already bumped on the retry path
     // above; hwCodec names the codec only for real HW use (usage record).
     stats->hwUsed=d.hwUsed(); stats->hwBackend=d.hwBackend();
-    if(d.hwUsed()) stats->hwCodec=d.codecName(); }
+    if(d.hwUsed()) stats->hwCodec=d.codecName();
+    // 0.9.4.172 (TemporalAnchorV1, directive §2/§4/§7): independent anchor
+    // sweep, gated on BOTH the GUI strategy and MSF_VIDEO_ANCHOR=1.
+    // Default (LegacyV3, env unset) skips this entirely: zero behavior,
+    // cost, or cache change. When on, the V3 fingerprint above is already
+    // final; the anchor index is measured here for cost accounting (the
+    // validation harness keeps its own copy for comparisons).
+    if(videoPolicy_.readStrategy==VideoReadStrategy::TemporalAnchorV1 && temporalAnchorEnabled()){
+      TemporalAnchorIndex anchorProbe; VideoBuildStats anchorStats;
+      if(buildAnchorIndex(p,anchorProbe,&anchorStats,cancel)){
+        stats->anchorBuilt=true; stats->anchorFrames=anchorStats.anchorFrames; stats->anchorMs=anchorStats.anchorMs;
+      }
+    } }
   d.close();if(built.hashes.empty())return false;
   // 0.9.4.158 (P0): re-check cancel immediately before persisting. The sweep
   // above can take minutes on long files; a Stop in this window must leave
@@ -593,6 +606,31 @@ bool VideoFingerprintEngine::buildFull(const std::string&p,VideoFingerprint& bas
   }
   if(b.hashes.empty())return false;
   memoryStore(p,sz2,mt2,b,&cHi);savePersistent(p,sz2,mt2,b,&cHi);base=std::move(b);crop=std::move(cHi);return true;
+}
+// 0.9.4.172 (TemporalAnchorV1, directive §2/§4): independent anchor-index
+// build. Own sequential sweep with the anchor plan (E-3B RefuseAll stands:
+// no sparse seeks); no persistent cache, no V3 fingerprint/cache touched.
+// Cost is measured separately (decodeMs == full sweep here by
+// construction; see directive §4.186 — fewer samples never implies less
+// decode until measured).
+bool VideoFingerprintEngine::buildAnchorIndex(const std::string& p,TemporalAnchorIndex& o,VideoBuildStats* stats,
+                                             const std::atomic<bool>* cancel) const{
+  o=TemporalAnchorIndex();
+  if(cancel && cancel->load(std::memory_order_relaxed)) return false;
+  std::error_code ec; const fs::path fp=path_from_utf8(p);
+  if(!std::filesystem::exists(fp,ec))return false;
+  VideoDecoder d;if(!d.open(p))return false;VideoInfo i;if(!d.info(i)){d.close();return false;}
+  const auto plan=buildTemporalAnchorPlan(i.duration);
+  const auto t0=std::chrono::steady_clock::now();
+  std::vector<VideoFrame> frames96, frames32; std::size_t decoded=0;
+  const bool ok=d.framesAt96Plus32(plan,frames96,frames32,cancel,&decoded,nullptr,nullptr);
+  d.close();
+  if(!ok) return false;
+  if(cancel && cancel->load(std::memory_order_relaxed))return false;
+  o=makeTemporalAnchorIndex(frames32,i.duration);
+  if(stats){ stats->anchorBuilt=o.built; stats->anchorFrames=(int)o.seq.size();
+    stats->anchorMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count(); }
+  return o.built;
 }
 
 void VideoFingerprintEngine::clearCache()const{std::lock_guard<std::mutex>lock(cacheMutex_);cacheMap_.clear();cacheList_.clear();}
