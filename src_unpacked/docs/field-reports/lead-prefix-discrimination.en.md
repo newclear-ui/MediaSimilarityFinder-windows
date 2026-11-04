@@ -87,3 +87,29 @@ Superficially both "drop out of the duplicate verdict", but in a duplicate-clean
 - **False alarm (False Positive, wrongly merged)**: different content gets grouped as duplicates. Since cleanup means deletion, the user may delete a unique file believing it a duplicate. **Unique-data deletion = irrecoverable**.
 
 That is why the production threshold 87.5 is precision-first (conservative). This evaluation matches the design: zero false alarms @87.5, many misses. Lowering to 50 converts misses into false alarms (52 ordered leader-sharing FPs). One line: **a miss leaves trash behind; a false alarm throws away the original**.
+
+## 11. Separated cause-effect record (miss vs false alarm)
+
+### Miss — cause -> effect
+
+- **Cause C1 (unabsorbed time shift)**: the 30-60 s leader shifts the whole timeline by +D. The matcher anchors the first kept correspondence and enforces monotonicity only, so it cannot absorb the start offset and alignment collapses. Evidence: same-pipeline L05 48.8 (45 s leader), L03 6.1 (60 s leader) — longer leader, lower score.
+- **Cause C2 (evidence dilution)**: kept frames are split-selected across the whole file timeline. With the leader occupying 80-95%, only 1-2 of 8-11 kept frames hold real content, so comparison evidence itself is scarce.
+- **Cause C3 (L02 only, format)**: HDR PQ 10-bit vs SDR tonemap conversion loss pre-exists the leader (L02-orig vs L02-reenc 53.9).
+- **Effect**: same-content miss (recall loss). Ad-inserted copy detection rate drops. Harm is effort and reversible.
+
+### False alarm — cause -> effect
+
+- **Cause C1 (identical values)**: every leader file starts with byte-identical black. Default kept selection (segmented, no variance floor) stores flat frames, so unrelated videos share many identical black hashes in their kept sets. Strong common-stretch alignment buries main-content differences and passes 50 (f02-f06 95.50).
+- **Cause C2 (threshold sensitivity)**: the common part inflates scores to roughly 70-95. It fires at 50 and is filtered at 87.5 (f lead-flip cross).
+- **Effect**: different-content merge (precision loss). Harm is unique-data deletion risk and irreversible.
+
+### Causal contrast
+
+| | Miss | False alarm |
+|---|---|---|
+| Input | same content + changed front | different content + identical front |
+| Trigger | time shift (offset) | identical values (black) |
+| Matcher failure | anchored start, no offset absorption | flat-frame storage + common-stretch alignment |
+| Score pattern | 99.9 -> 6-53 collapse | 0 -> 50-95 inflation |
+| Structured relief | none (fallback on all files) | FP@87.5 16 -> 0 (floor + dense plan) |
+| Harm | lost cleanup opportunity (reversible) | unique-data deletion risk (irreversible) |
