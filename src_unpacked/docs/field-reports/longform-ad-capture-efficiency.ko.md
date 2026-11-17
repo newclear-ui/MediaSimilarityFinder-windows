@@ -148,6 +148,14 @@ UNCERTAIN은 보류이며 탈락이 아니다.
   타작품 1쌍 miss (정상 기각).
 - 시작 탐색 실패가 DUP를 막던 기존 구조와 달리, **엔딩-우선은 시작 실패 쌍도 구제**한다 (끝이 멀쩡하면 뒤에서 푼다).
 
+보류 구제책 측정 결과 (개선판: 오프셋 정제 ±10 + 끝 비저정보 3장 + 숏폼 5구역 다수결, 20쌍 + 교차 216쌍):
+
+- 장편 20쌍: **DUP 15 / UNCERTAIN 0 / miss 5, 교차 FP 0**.
+  ECO 고정대표(13/2/5) 대비 +2 DUP (L01 90초·180초 구제), UNCERTAIN 해소.
+  miss 5는 동일 (L01 black·30초, L02 black, L03 black·30초 — 시작도 끝도 못 잡는 쌍).
+- RND(랜덤 100장): 2/1/17 → 기각. 순서 탐색에는 구조적 간격이 필요하다.
+- 숏폼 3쌍: 동일 2쌍 보류 유지, 타작품 1쌍 정상 기각. 합성 반복 패턴의 한계로, 실제 숏폼 검증은 후속 과제.
+
 ## 5.4 쌍 목록 — 같은 영상인지 다른 영상인지
 
 테스트한 쌍이 무슨 관계인지 한눈에 보이도록 정리한다.
@@ -241,6 +249,6 @@ sh60 vs 타작품 (다른 영상) → 정상 기각.
 - 삽입본 15개, 합계 약 22GB: L01_ad{30,90,180} 각 약 2.2GB, L02_ad* 약 1.0GB, L03_ad* 약 1.5GB, L04_ad* 약 0.5–0.6GB, L05_ad* 약 2.3GB + `ad_manifest.csv` (광고 길이·뱅크 기록).
 - 캡처 `adcap.tsv` 6.7MB (25파일 전체 3초 그리드 + 1초 밀집 구간, 프레임별 해시/밝기/분산/변화량/edge/저정보).
 - 분석 결과 `adeff.tsv` 0.2MB (쌍별 2704행 + 교차 240행).
-- 도구: `adcap.cpp` (캡처 하네스 소스) · `analyze_adcap.py` (대응/탐색/스위프 분석) · `summ_ad.py` · `mat_ad.py` · `nsw_ad.py` (집계) · `gen_ads.ps1` · `run_adexp.ps1` · `run_adcap.ps1` (단일 오케스트레이터).
+- 도구: `adcap.cpp` (캡처 하네스 소스) · `analyze_adcap.py` (대응/탐색/스위프 분석) · `summ_ad.py` · `mat_ad.py` · `nsw_ad.py` (집계) · `gen_ads.ps1` · `run_adexp.ps1` · `run_adcap.ps1` (단일 오케스트레이터) · `userspec_ad.py` (사용자 지정 알고리즘) · `rev_ad.py` · `diag_spec.py` · `ultra_ad.py` · `time_eco.py` · `imp_ad.py` (개선판 측정).
 - 원본 5종·black 리더 5종은 기존 필드 데이터셋(`msf_video_field/`)을 그대로 사용했다.
 - 숏폼 합성 5개(`sh60/sh600` 원본·리더·타작품, 1분·10분) 및 캡처(`adcap_s.tsv`) · 사용자 지정 알고리즘(`userspec_ad.py`, `rev_ad.py`, 진단 `diag_spec.py`, 집계 `ultra_ad.py`, 시간측정 `time_eco.py`)도 같은 외부 작업 디렉터리에 둔다. Git에는 넣지 않는다.
