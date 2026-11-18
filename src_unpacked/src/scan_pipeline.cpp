@@ -311,6 +311,13 @@ ScanStats ScanPipeline::analyze(unsigned maxDistance, const MatchCallback& onMat
                     if(ar.verdict==AnchorVerdictKind::Dup) ++vst.anchorDup;
                     else if(ar.verdict==AnchorVerdictKind::Uncertain) ++vst.anchorUncertain;
                     else ++vst.anchorDiff;
+                  } else if(strat==3){
+                    TemporalAnchorV3Result ar;
+                    temporalAnchorSimilarityV3(ia,ib,ar);
+                    vst.anchorPairs++; vst.anchorScoreSum+=ar.score; vst.anchorValidSum+=(std::size_t)ar.validAnchorCount;
+                    if(ar.verdict==AnchorVerdictKind::Dup) ++vst.anchorDup;
+                    else if(ar.verdict==AnchorVerdictKind::Uncertain) ++vst.anchorUncertain;
+                    else ++vst.anchorDiff;
                   } else {
                     TemporalAnchorResult ar;
                     temporalAnchorSimilarity(ia,ib,ar);

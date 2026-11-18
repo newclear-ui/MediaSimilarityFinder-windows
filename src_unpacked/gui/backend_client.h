@@ -56,9 +56,10 @@ inline msf::VideoPolicy videoPolicyFromSettings() {
   p.boostFrames = (bf >= 1 && bf <= 2) ? bf : 1;
   p.partialClip = st.value(QStringLiteral("video/partialClip"), false).toBool();
   // 0.9.4.172 (TemporalAnchorV1, directive §7): reading strategy, LegacyV3 default.
-  // 0.9.4.173: TemporalAnchorV2 as index 2 (experimental opt-in).
+  // 0.9.4.173: TemporalAnchorV2 as index 2; V3 as index 3 (both experimental opt-in).
   { const int rs = st.value(QStringLiteral("video/readStrategy"), 0).toInt();
-    p.readStrategy = (rs == 2) ? msf::VideoReadStrategy::TemporalAnchorV2
+    p.readStrategy = (rs == 3) ? msf::VideoReadStrategy::TemporalAnchorV3
+                     : (rs == 2) ? msf::VideoReadStrategy::TemporalAnchorV2
                      : (rs == 1) ? msf::VideoReadStrategy::TemporalAnchorV1
                                  : msf::VideoReadStrategy::LegacyV3; }
   return p;

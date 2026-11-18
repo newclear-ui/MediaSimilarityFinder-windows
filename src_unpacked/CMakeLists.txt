@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(MediaSimilarityFinder VERSION 0.9.4.173 LANGUAGES CXX)
+project(MediaSimilarityFinder VERSION 0.9.4.174 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -569,6 +569,11 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_temporal_anchor_v2_test tests/video_temporal_anchor_v2_test.cpp)
     target_link_libraries(msf_video_temporal_anchor_v2_test PRIVATE msf_core)
     add_test(NAME video_temporal_anchor_v2_test COMMAND msf_video_temporal_anchor_v2_test)
+    # User-specified duration-band + ending-first V3: band gate, tolerant
+    # 3-of-4 run, offset refinement, ending-first DUP, dark UNCERTAIN (synthetic only).
+    add_executable(msf_video_temporal_anchor_v3_test tests/video_temporal_anchor_v3_test.cpp)
+    target_link_libraries(msf_video_temporal_anchor_v3_test PRIVATE msf_core)
+    add_test(NAME video_temporal_anchor_v3_test COMMAND msf_video_temporal_anchor_v3_test)
     # 0.9.4.173: anchor file-based test (real FFmpeg decode; union-vs-separate
     # equivalence proves the product sweep matches the validation harness).
     add_executable(msf_video_anchor_file_test tests/video_anchor_file_test.cpp)

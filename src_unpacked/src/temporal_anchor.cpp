@@ -882,4 +882,247 @@ double temporalAnchorSimilarityV2(const TemporalAnchorIndex& a, const TemporalAn
   out.compareMs = std::chrono::duration<double, std::milli>(t2 - t1).count();
   return out.score;
 }
+
+// ---------------- TemporalAnchorV3 (user-specified, measured) ----------------
+// Mirrors the measured Python reference (adcap/imp analysis): tolerant
+// 3-of-4 ordered runs, ending-first ladders, fixed reps with 2-of-3,
+// offset refinement by rep support. V1/V2 above are untouched.
+
+bool anchorBandPass(double durA, double durB) {
+  if (durA <= 0 || durB <= 0) return false;
+  if (durA < 1200.0 || durB < 1200.0) return std::abs(durA - durB) <= 90.0;
+  return std::max(durA, durB) / std::min(durA, durB) <= 1.2;
+}
+
+TolRun orderedSearchTol(const TemporalAnchorIndex& ref, const TemporalAnchorIndex& cand,
+                        const std::vector<std::size_t>& probe, double windowSec,
+                        double cadence, int need, int skip, double tLoSec) {
+  TolRun r;
+  if (!ref.built || !cand.built || probe.empty() || need < 1) return r;
+  for (std::size_t s = 0; s < cand.seq.size(); ++s) {
+    if (cand.seq[s].lowInfo) continue;
+    // Candidate-start window [tLoSec, windowSec] (measured W=300 start,
+    // last-1200 s ending).
+    if (cand.seq[s].timestamp < tLoSec - 1e-9) continue;
+    if (cand.seq[s].timestamp > windowSec + 1e-9) break;
+    std::size_t c = s;
+    int hits = 0, skips = 0;
+    double prevCt = -1, firstHitT = -1;
+    std::size_t firstPi = 0;
+    bool ok = true;
+    const std::size_t n = std::min(probe.size(), (std::size_t)(need + skip));
+    for (std::size_t pi = 0; pi < n; ++pi) {
+      bool hit = false;
+      for (std::size_t k = c; k < cand.seq.size(); ++k) {
+        if (cand.seq[k].lowInfo) continue;
+        const double gap = cand.seq[k].timestamp - (prevCt < 0 ? cand.seq[s].timestamp - 1.0 : prevCt);
+        if (gap > cadence) break;
+        if (gap < 0.25 && k != c) continue;
+        ++r.comps;
+        if (framePass(ref.seq[probe[pi]], cand.seq[k])) {
+          hit = true;
+          c = k + 1;
+          prevCt = cand.seq[k].timestamp;
+          if (firstHitT < 0) {
+            firstHitT = cand.seq[k].timestamp;
+            firstPi = pi;
+          }
+          ++hits;
+          break;
+        }
+      }
+      if (!hit) {
+        if (++skips > skip) {
+          ok = false;
+          break;
+        }
+      }
+    }
+    if (ok && hits >= need) {
+      r.found = true;
+      r.offset = firstHitT - ref.seq[probe[firstPi]].timestamp;
+      r.hits = hits;
+      return r;
+    }
+  }
+  return r;
+}
+
+namespace {
+// Frame-pass at an exact reference time against the candidate at +off.
+bool repPassAt(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
+               double tRef, double off) {
+  const std::size_t ri = nearestAt(a.seq, tRef, 3.0);
+  const std::size_t ci = nearestAt(b.seq, tRef + off, 3.0);
+  if (ri >= a.seq.size() || ci >= b.seq.size()) return false;
+  const auto& rf = a.seq[ri];
+  const auto& cf = b.seq[ci];
+  if (rf.lowInfo || cf.lowInfo) return false;
+  return framePass(rf, cf);
+}
+// Count passing reps among explicit reference times (2-of-3 style).
+int countRepHits(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
+                 const std::vector<double>& tRefs, double off) {
+  int n = 0;
+  for (double t : tRefs)
+    if (repPassAt(a, b, t, off)) ++n;
+  return n;
+}
+}  // namespace
+
+double refineOffsetBySupport(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
+                             double off, double lo, double hi) {
+  auto scoreAt = [&](double o) {
+    int n = 0;
+    const double cA = a.duration / 2.0;
+    for (double t : {cA - 120.0, cA, cA + 120.0})
+      if (repPassAt(a, b, t, o)) ++n;
+    for (int i = 0; i < 3; ++i) {
+      // last-non-low tail triple is located by the caller convention:
+      // reuse the last content frames symmetrically.
+      const double t = a.duration - (2 - i) * 3.0;
+      if (repPassAt(a, b, t, o)) ++n;
+    }
+    return n;
+  };
+  double best = off;
+  int bestS = scoreAt(off);
+  for (double d = lo; d <= hi + 1e-9; d += 1.0) {
+    if (std::abs(d) < 1e-9) continue;
+    const int s = scoreAt(off + d);
+    if (s > bestS) {
+      bestS = s;
+      best = off + d;
+    }
+  }
+  return best;
+}
+
+double temporalAnchorSimilarityV3(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
+                                  TemporalAnchorV3Result& out) {
+  const auto t0 = std::chrono::steady_clock::now();
+  out = TemporalAnchorV3Result();
+  out.strategyId = TemporalAnchorV3Result::kV3StrategyId;
+  out.cacheIdentity = "anchor-v3";
+  out.bandPass = anchorBandPass(a.duration, b.duration);
+  if (!a.built || !b.built || a.seq.empty() || b.seq.empty()) {
+    out.verdict = AnchorVerdictKind::Uncertain;
+    return 0;
+  }
+  const double kWindow = 300.0;
+  out.leadingSearchWindow = kWindow;
+  // Tolerant start: first textured triple + 5 s non-low pool, 3-of-4, cadence 4.5.
+  std::vector<std::size_t> probe;
+  {
+    const std::size_t ps = probeStartIndex(a);
+    const std::size_t ps0 = (ps < a.seq.size()) ? ps : 0;
+    const double t0p = a.seq.empty() ? 0.0 : a.seq[ps0].timestamp;
+    for (std::size_t i = ps0; i < a.seq.size() && a.seq[i].timestamp <= t0p + 5.0 + 1e-9; ++i)
+      if (!a.seq[i].lowInfo) probe.push_back(i);
+  }
+  const TolRun start = orderedSearchTol(a, b, probe, kWindow, 4.5, 3, 1);
+  // Ending-first: last textured triple within the last 60 s as the probe,
+  // searched inside B's last 1200 s.
+  std::vector<std::size_t> tail;
+  for (std::size_t i = 0; i < a.seq.size(); ++i)
+    if (!a.seq[i].lowInfo && a.seq[i].timestamp >= a.duration - 60.0) tail.push_back(i);
+  const std::vector<std::size_t> epool =
+      (tail.size() > 6) ? std::vector<std::size_t>(tail.end() - 6, tail.end()) : tail;
+  TolRun end;
+  if (epool.size() >= 3) {
+    // Search B's last 1200 s: restrict candidate starts to that range.
+    std::vector<std::size_t> eprobe(epool.end() - std::min<std::size_t>(3, epool.size()), epool.end());
+    const double tLoB = (b.duration > 1200.0) ? b.duration - 1200.0 : 0.0;
+    end = orderedSearchTol(a, b, eprobe, b.duration, 4.5, 3, 1, tLoB);
+    if (end.found) {
+      // Window check: the ending hit must lie in B's last 1200 s.
+      const double hitT = end.offset + a.seq[eprobe.front()].timestamp;
+      if (hitT < tLoB - 1e-9) end.found = false;
+    }
+  }
+  out.endFound = end.found;
+  double off = end.found ? end.offset : (start.found ? start.offset : 0.0);
+  if (end.found) off = refineOffsetBySupport(a, b, off, -10.0, 10.0);
+  out.endOffset = off;
+  out.alignmentOffset = off;
+  const auto t1 = std::chrono::steady_clock::now();
+  // Backward ladder from the ending anchor (anchor, -60, -180, -600).
+  int laddHits = 0;
+  double anchorT = a.duration;
+  if (end.found) {
+    // Re-derive the ending anchor time: last tail frame.
+    anchorT = a.seq[tail.back()].timestamp;
+    for (double dt : {0.0, 60.0, 180.0, 600.0}) {
+      const double t = anchorT - dt;
+      if (t < 0) continue;
+      int h = 0;
+      for (double ddt : {0.0, 3.0, 6.0}) {
+        const std::size_t ri = nearestAt(a.seq, t + ddt, 3.0);
+        const std::size_t ci = nearestAt(b.seq, t + ddt + off, 3.0);
+        if (ri < a.seq.size() && ci < b.seq.size() && !a.seq[ri].lowInfo &&
+            !b.seq[ci].lowInfo && framePass(a.seq[ri], b.seq[ci]))
+          ++h;
+      }
+      if (h >= 2) ++laddHits;
+    }
+  }
+  out.endLadderHits = laddHits;  // raw 0..4 backward spots
+  // Center ladder + fixed reps (2-of-3 each).
+  const double cA = a.duration / 2.0;
+  const int cRep = countRepHits(a, b, {cA - 120.0, cA, cA + 120.0}, off);
+  std::vector<double> tailTs;
+  for (int i = (int)tail.size() - 1; i >= 0 && (int)tailTs.size() < 3; --i)
+    tailTs.push_back(a.seq[tail[(std::size_t)i]].timestamp);
+  std::reverse(tailTs.begin(), tailTs.end());
+  const int eRep = countRepHits(a, b, tailTs, off);
+  out.centerLadderHits = cRep;  // raw 0..3
+  out.validAnchorCount = (laddHits >= 2 ? 1 : 0) + (cRep >= 2 ? 1 : 0) + (eRep >= 2 ? 1 : 0);
+  const bool laddOk = (laddHits >= 2) && (cRep >= 2);
+  const bool repsOk = (cRep >= 2) && (eRep >= 2);
+  // Offset consistency with the start run when both exist.
+  bool consistent = true;
+  if (start.found && end.found) consistent = std::abs(start.offset - off) <= 4.0;
+  const bool endingSupport = end.found;
+  out.endingMode = EndingMode::Uncertain;
+  out.score = anchorVerdictScore(std::min(out.validAnchorCount, 6), consistent, endingSupport);
+  // Measured mapping: DUP needs ending + ladders + reps + band; ending-only
+  // is UNCERTAIN; otherwise miss (never forced, never harsh DIFF on thin).
+  // Thin/dark inputs (either side flat-majority, dark-majority, or too few
+  // textured frames) cap the verdict at UNCERTAIN: darkness without
+  // counter-evidence is never DIFF (user directive §6.7, same as V2).
+  std::size_t flatN = 0, darkN = 0, textN = 0;
+  for (const auto& f : a.seq) {
+    if (f.lowInfo)
+      ++flatN;
+    else
+      ++textN;
+    if (f.mean < 25.0) ++darkN;
+  }
+  std::size_t flatB = 0, darkB = 0, textB = 0;
+  for (const auto& f : b.seq) {
+    if (f.lowInfo)
+      ++flatB;
+    else
+      ++textB;
+    if (f.mean < 25.0) ++darkB;
+  }
+  const bool flatMajor = (flatN * 2 > a.seq.size()) || (flatB * 2 > b.seq.size());
+  const bool darkMajor = (darkN * 2 > a.seq.size()) || (darkB * 2 > b.seq.size());
+  const bool thin = (textN < 12 || textB < 12 || flatMajor || darkMajor);
+  if (!end.found) {
+    out.verdict = AnchorVerdictKind::Uncertain;  // hold: no ending evidence
+    if (!start.found && !thin) out.verdict = AnchorVerdictKind::Diff;
+  } else if (laddOk && repsOk && consistent && out.bandPass && !thin && out.score >= 87.5) {
+    out.verdict = AnchorVerdictKind::Dup;
+  } else {
+    out.verdict = AnchorVerdictKind::Uncertain;
+  }
+  if (!out.bandPass && out.verdict == AnchorVerdictKind::Dup)
+    out.verdict = AnchorVerdictKind::Uncertain;
+  out.anchorFrames = a.seq.size() + b.seq.size();
+  const auto t2 = std::chrono::steady_clock::now();
+  out.alignmentMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+  out.compareMs = std::chrono::duration<double, std::milli>(t2 - t1).count();
+  return out.score;
+}
 }  // namespace msf

@@ -697,6 +697,7 @@ int VideoFingerprintEngine::anchorStrategyId() const{
   if(!temporalAnchorEnabled()) return 0;
   if(videoPolicy_.readStrategy==VideoReadStrategy::TemporalAnchorV1) return 1;
   if(videoPolicy_.readStrategy==VideoReadStrategy::TemporalAnchorV2) return 2;
+  if(videoPolicy_.readStrategy==VideoReadStrategy::TemporalAnchorV3) return 3;
   return 0;
 }
 bool VideoFingerprintEngine::peekAnchorIndex(const std::string& p,std::uint64_t sz,std::uint64_t mt,TemporalAnchorIndex& o) const{

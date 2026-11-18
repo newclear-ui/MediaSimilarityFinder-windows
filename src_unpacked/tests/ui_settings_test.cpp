@@ -757,7 +757,7 @@ int main(int argc, char** argv) {
       // 0.9.4.172: strategy selector defaults to LegacyV3.
       auto* strategy = vt->findChild<QComboBox*>("videoStrategyBox");
       if (!strategy || strategy->currentIndex() != 0) { failWith("strategy default"); return; }
-      if (strategy->count() != 3) { failWith("strategy options"); return; }
+      if (strategy->count() != 4) { failWith("strategy options"); return; }
       // Invalid inputs clamp in-widget; the clamped values are what persist.
       shortSpin->setValue(999);
       if (shortSpin->value() != 60) { failWith("short interval not clamped"); return; }
@@ -793,7 +793,12 @@ int main(int argc, char** argv) {
       st.setValue(QStringLiteral("video/readStrategy"), 2); st.sync();
       msf::VideoPolicy vp2 = videoPolicyFromSettings();
       st.setValue(QStringLiteral("video/readStrategy"), 1); st.sync();
-      if (vp2.readStrategy != msf::VideoReadStrategy::TemporalAnchorV2) { std::cerr << "video strategy V2 not mapped\n"; return 1; } }
+      if (vp2.readStrategy != msf::VideoReadStrategy::TemporalAnchorV2) { std::cerr << "video strategy V2 not mapped\n"; return 1; }
+      // V3 mapping through the same QSettings path.
+      st.setValue(QStringLiteral("video/readStrategy"), 3); st.sync();
+      msf::VideoPolicy vp3 = videoPolicyFromSettings();
+      st.setValue(QStringLiteral("video/readStrategy"), 1); st.sync();
+      if (vp3.readStrategy != msf::VideoReadStrategy::TemporalAnchorV3) { std::cerr << "video strategy V3 not mapped\n"; return 1; } }
     std::cout << "video_tab_write=ok\n"; return 0;
   }
   if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "--tr-keys") {
@@ -876,8 +881,8 @@ int main(int argc, char** argv) {
       "videoBoost", "videoBoostCount", "videoBoostPendingNote",
       "videoPartial", "videoPartialNote", "videoHonestNote",
       // 0.9.4.172 (TemporalAnchorV1): reading-strategy selector keys.
-      // 0.9.4.173: TemporalAnchorV2 key added.
-      "videoStrategyLabel", "videoStrategyLegacy", "videoStrategyAnchor", "videoStrategyAnchorV2", "videoStrategyNote",
+      // 0.9.4.173: TemporalAnchorV2 key added; V3 key added with it.
+      "videoStrategyLabel", "videoStrategyLegacy", "videoStrategyAnchor", "videoStrategyAnchorV2", "videoStrategyAnchorV3", "videoStrategyNote",
       // 0.9.4.170 (F-2): hardware decode status + setting keys.
       "hwOn", "hwOff", "hwLive", "hwDecode", "hwDecodeTip",
     };

@@ -165,6 +165,47 @@ AnchorVerdictKind anchorVerdictFor(int validMain, bool consistent, bool coveredF
 // length-policy anchors (§5), unified verdict (§6). Pure function.
 double temporalAnchorSimilarityV2(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
                                   TemporalAnchorV2Result& out);
+// ---- TemporalAnchorV3 (user-specified duration-band + ending-first, measured) ----
+// V1/V2 entry points above are behavior-frozen. V3 is a separate orchestration
+// implementing the user-specified algorithm: duration-band candidate gate,
+// tolerant 3-of-4 start run, ending-first similarity with backward ladders,
+// fixed center/ending reps with 2-of-3 confirmation, offset refinement.
+// Measured on long-form ad captures (20 same pairs + 216 cross pairs):
+// DUP 15 / UNCERTAIN 0 / miss 5, FP 0. Report-only like V2 (no default change).
+struct TemporalAnchorV3Result : TemporalAnchorResult {
+  static constexpr const char* kV3StrategyId = "TemporalAnchorV3";
+  bool bandPass = true;       // duration band gate (candidate-level)
+  bool endFound = false;      // ending similarity located
+  double endOffset = 0;       // refined ending-side offset
+  int endLadderHits = 0;      // backward ladder spots hit (of 3)
+  int centerLadderHits = 0;    // center ladder spots hit (of 3)
+};
+// Duration-band gate: shorts (either side < 20 min) pass iff abs diff <= 90 s;
+// long-form passes iff max/min <= 1.2. Pure function (no index needed).
+bool anchorBandPass(double durA, double durB);
+// Tolerant ordered run: first `need` probe frames (indices into ref.seq)
+// must hit in order inside cand[within tWin], allowing <= `skip` misses
+// within the first need+skip frames, with `cadence` gap bound.
+// Returns offset (candidate time minus first-hit probe time) on success.
+struct TolRun {
+  bool found = false;
+  double offset = 0;
+  int hits = 0;
+  int comps = 0;
+};
+TolRun orderedSearchTol(const TemporalAnchorIndex& ref, const TemporalAnchorIndex& cand,
+                        const std::vector<std::size_t>& probe, double windowSec,
+                        double cadence, int need, int skip, double tLoSec = 0.0);
+// Offset refinement: argmax over [off-lo, off+hi] by center+tail rep
+// frame support; ties keep the closest. Fixes near-miss locks (measured).
+double refineOffsetBySupport(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
+                             double off, double lo, double hi);
+// Full V3 comparison: band gate, tolerant start, ending-first ladders,
+// fixed center/ending reps with 2-of-3 confirmation, refined offset.
+// DUP requires bandPass + ending found + both ladders >= 2/3 with a
+// consistent offset; ending-found-only is UNCERTAIN; else miss (never forced).
+double temporalAnchorSimilarityV3(const TemporalAnchorIndex& a, const TemporalAnchorIndex& b,
+                                   TemporalAnchorV3Result& out);
 // Test-visible thresholds.
 constexpr double kAnchorMinVariance = 6.0;   // low-info floor (same as V3)
 constexpr double kAnchorFramePass = 87.5;    // per-frame pass mark
