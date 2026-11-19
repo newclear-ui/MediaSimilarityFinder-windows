@@ -46,16 +46,18 @@
 7. **0.9.4 개발선 작업 규칙**
 
 - **OpenCode 및 ChatGPT 에이전트는 새로운 세션을 시작할 때 아래 문서를 반드시 읽고 기억한다.**
+  `docs/state/current.ko.md` / `.en.md`는 가장 먼저 읽는 80줄 현재 상태 요약이고,
   `docs/node-status-gate-matrix.ko.md` / `.en.md`는 전체 Node/Gate를 복원하는 1페이지 인덱스이며,
   `docs/development-progress.ko.md` / `.en.md`는 현재 실행 큐와 실제 진행 상태를 복원하는 **필수 실행 기준 문서**다.
   **소스를 변경하기 전에 아래 순서를 반드시 읽고, 현재 Gate가 허용하지 않는 Node를 먼저 시작하지 않는다.**
-  1. `docs/node-status-gate-matrix.ko.md` (통합 상태판)
-  2. `docs/development-progress.ko.md` (현재 작업 우선순위 · 현재 위치 · blocker · 완료 주요 이정표)
-  3. `docs/development-roadmap.ko.md` (방향 · 선행조건)
-  4. 활성 Node의 `docs/implementation-briefs/<Node>-*.ko.md` (실행 계약)
-  5. 필요한 `docs/architecture/*.ko.md`
-  6. 관련 `docs/build-history/<version>.ko.md` + `docs/worklog/0.9.4.ko.md`
-  7. source / test
+  1. `docs/state/current.ko.md` (80줄 현재 상태 요약; 판정·수치는 링크된 원본을 따른다)
+  2. `docs/node-status-gate-matrix.ko.md` (통합 상태판)
+  3. `docs/development-progress.ko.md` (현재 작업 우선순위 · 현재 위치 · blocker · 완료 주요 이정표)
+  4. `docs/development-roadmap.ko.md` (방향 · 선행조건)
+  5. 활성 Node의 `docs/implementation-briefs/<Node>-*.ko.md` (실행 계약)
+  6. 필요한 `docs/architecture/*.ko.md`
+  7. 관련 `docs/build-history/<version>.ko.md` + `docs/worklog/0.9.4.ko.md`
+  8. source / test
   `development-progress`의 Active Build Queue가 현재 작업의 우선순위를 결정하며,
   완료된 상세 기록은 Work Log / Build History에 보존하고 Progress에는 압축된 주요 이정표만 남긴다.
   **Node 또는 Build의 진척·판정·Gate·우선순위가 바뀌면 `development-progress.ko.md` / `.en.md`를 즉시 갱신한다.** 구현/검증의 시작·완료, 판정 변경, 다음 Build 확정은 발생한 세션에서 반영하며, 완료된 항목은 Active Build Queue에서 제거하고 완료 주요 이정표로 이동한다.
