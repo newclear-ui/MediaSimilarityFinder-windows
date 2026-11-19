@@ -28,7 +28,13 @@ jobs:
           $nvcc = Get-Command nvcc.exe -ErrorAction SilentlyContinue
           if (-not $nvcc) { throw 'nvcc.exe was not found on the hosted runner.' }
           & $nvcc.Source --version
-          & "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { $vswhere = Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe' }
+          if (Test-Path $vswhere) {
+            & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          } else {
+            Write-Host 'vswhere.exe not found; relying on CMake generator detection'
+          }
 
       - name: Build and test
         working-directory: src_unpacked
