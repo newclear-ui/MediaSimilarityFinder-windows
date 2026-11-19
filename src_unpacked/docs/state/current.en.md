@@ -6,7 +6,7 @@
 - Updated: 2026-11-19
 - Version: **0.9.4.174**
 - engine **1.5.2** / cache format **11** (source: `BUILD_STATUS.md`)
-- DB **1.0.6** / benchmark schema **9** (source: `docs/llms.txt` line 5, as of 0.9.4.148 — needs re-verification)
+- DB **1.0.6** / benchmark schema **9** (source: `src/database.h`, `docs/llms.txt`)
 - CPU CTest **145/145**, GPU CTest **146/146** (source: `docs/node-status-gate-matrix.en.md`)
 
 ## In progress
@@ -59,3 +59,4 @@ Sources: `BUILD_STATUS.md`, `docs/worklog/0.9.4.en.md`
 4. `docs/development-roadmap.en.md` — direction and prerequisites
 5. Active Node brief (`docs/implementation-briefs/`)
 6. As needed: `docs/build-history/`, `docs/worklog/`, `docs/version-index.md`
+7. Only when completed per-version detail is needed: `docs/development-progress-detail.en.md` (not current state)

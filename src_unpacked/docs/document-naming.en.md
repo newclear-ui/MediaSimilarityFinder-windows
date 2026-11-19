@@ -17,6 +17,7 @@
 |---|---|---|
 | Roadmap | `docs/development-roadmap.ko.md` / `.en.md` | Overall direction, node order, boundaries, dependencies |
 | Progress | `docs/development-progress.ko.md` / `.en.md` | Actual current node/version/substep/blocker/validation state |
+| Progress Detail | `docs/development-progress-detail.ko.md` / `.en.md` | Completed per-version history moved out of Progress. Not current state; the main Progress links to it |
 | Document Naming | `docs/document-naming.ko.md` / `.en.md` | Naming, location, and update rules |
 | Implementation Brief | `docs/implementation-briefs/<Node>-<topic>.ko.md` / `.en.md` | Focused engineering contract for a Node |
 | Build History | `docs/build-history/<version>.ko.md` / `.en.md` | Version-specific implementation and validation evidence |

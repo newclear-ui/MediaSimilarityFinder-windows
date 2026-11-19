@@ -31,6 +31,8 @@
 7. 관련 `docs/build-history/` + `docs/worklog/`
 8. source / test
 
+> 완료된 버전별 상세는 필요할 때 `docs/development-progress-detail.{ko,en}.md` 를 참조한다.
+
 > **`src_unpacked/AGENTS.md` 작업 규칙**: 소스를 변경하기 전에 위 1~4를 반드시 읽고,
 > 현재 Gate가 허용하지 않는 Node를 먼저 시작하지 않는다.
 > 특히 `development-progress`의 Active Build Queue가 현재 작업의 실행 우선순위를 결정한다.

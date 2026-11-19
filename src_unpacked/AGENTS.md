@@ -58,6 +58,7 @@
   6. 필요한 `docs/architecture/*.ko.md`
   7. 관련 `docs/build-history/<version>.ko.md` + `docs/worklog/0.9.4.ko.md`
   8. source / test
+  완료된 버전별 상세는 필요할 때만 `docs/development-progress-detail.ko.md` / `.en.md` 를 참조한다. 현재 상태의 원본이 아니다.
   `development-progress`의 Active Build Queue가 현재 작업의 우선순위를 결정하며,
   완료된 상세 기록은 Work Log / Build History에 보존하고 Progress에는 압축된 주요 이정표만 남긴다.
   **Node 또는 Build의 진척·판정·Gate·우선순위가 바뀌면 `development-progress.ko.md` / `.en.md`를 즉시 갱신한다.** 구현/검증의 시작·완료, 판정 변경, 다음 Build 확정은 발생한 세션에서 반영하며, 완료된 항목은 Active Build Queue에서 제거하고 완료 주요 이정표로 이동한다.

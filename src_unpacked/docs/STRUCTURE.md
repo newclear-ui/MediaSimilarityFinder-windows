@@ -16,9 +16,10 @@
   video_decoder.h/.cpp.
 - src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
 - tests/ — CTest 테스트(msf_*_test 컨벤션).
-- docs/ — development-roadmap.ko/.en.md(전체 개발 방향), development-progress.ko/.en.md(현재 진척도), implementation-briefs/(활성 Node 세부 구현 계약), build-history/<버전>.ko/.en.md(실제 버전 증거), architecture/*.ko/.en.md, legacy/(교체 구현 스냅샷), worklog/<개발선>.ko/.en.md(개발선 누적 작업 내역), field-reports/<주제>.ko/.en.md(저장소 밖 실측·현장 조사 기록), document-naming.ko/.en.md(문서 네이밍 기준), STRUCTURE.md(이 파일), llms.txt(LLM용 텍스트 인덱스).
+- docs/ — development-roadmap.ko/.en.md(전체 개발 방향), development-progress.ko/.en.md(현재 진척도), development-progress-detail.ko/.en.md(완료 버전별 상세 이관), implementation-briefs/(활성 Node 세부 구현 계약), build-history/<버전>.ko/.en.md(실제 버전 증거), architecture/*.ko/.en.md, legacy/(교체 구현 스냅샷), worklog/<개발선>.ko/.en.md(개발선 누적 작업 내역), field-reports/<주제>.ko/.en.md(저장소 밖 실측·현장 조사 기록), document-naming.ko/.en.md(문서 네이밍 기준), STRUCTURE.md(이 파일), llms.txt(LLM용 텍스트 인덱스).
 - docs/development-roadmap.ko/.en.md — A→B→C 개발 순서도와 recovery branch 규칙.
 - docs/development-progress.ko/.en.md — 현재 node/version/substep/blocker/validation 상태.
+- docs/development-progress-detail.ko/.en.md — Progress에서 이관한 완료 버전별 상세 이력(원문 보존). 현재 상태가 아니며, Progress가 링크로 연결한다.
 - docs/document-naming.ko/.en.md — 문서 명명, 정식 위치, 역할 분리, rename 절차의 기준.
 - docs/worklog/0.9.4.ko/.en.md — 0.9.4 개발선의 누적 작업 내역(측정 근거, 기각된 가설, 보류 판단, 학습한 방식). **Performance / Tuning Experiment Index** 를 포함하며, 실험 계보와 살아 있는/기각된 후보를 상태와 재검토 조건으로 연결한다. 기각된 후보는 삭제하지 않는다.
 - docs/recent-work-report.ko/.en.md — 최근 중요 작업 3건의 결과 요약 보고(무엇을 했고 현재 상태가 어떤지). 상세 증거는 build-history/worklog에 있고, 이 문서는 한 곳에서 확인하기 위한 요약본이다.

@@ -31,6 +31,8 @@ below is surprising, **follow the link to its origin.**
 7. Relevant `docs/build-history/` + `docs/worklog/`
 8. Source / test
 
+> Completed per-version detail is in `docs/development-progress-detail.{ko,en}.md` when needed.
+
 > **`src_unpacked/AGENTS.md` working rule**: read steps 1-4 before changing source,
 > and do not start a node the current gate does not permit.
 > In particular, the Active Build Queue in `development-progress` determines the current execution priority.

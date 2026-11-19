@@ -19,6 +19,7 @@
 |---|---|---|
 | Roadmap | `docs/development-roadmap.ko.md` / `.en.md` | 전체 개발 방향, Node 순서, 경계와 의존관계 |
 | Progress | `docs/development-progress.ko.md` / `.en.md` | 현재 실제 Node/version/substep/blocker/검증 상태 |
+| Progress Detail | `docs/development-progress-detail.ko.md` / `.en.md` | Progress에서 이관한 완료 버전별 상세 이력. 현재 상태가 아니며 원본 Progress가 링크로 연결한다 |
 | Document Naming | `docs/document-naming.ko.md` / `.en.md` | 문서 명명·위치·갱신 규칙의 기준 |
 | Implementation Brief | `docs/implementation-briefs/<Node>-<topic>.ko.md` / `.en.md` | 특정 Node의 구현 계약, 범위, 단계, telemetry, 완료 조건 |
 | Build History | `docs/build-history/<version>.ko.md` / `.en.md` | 특정 버전의 실제 변경·검증 증거 |

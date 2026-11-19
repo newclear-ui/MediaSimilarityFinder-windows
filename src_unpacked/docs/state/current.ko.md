@@ -6,7 +6,7 @@
 - 갱신: 2026-11-19
 - 버전: **0.9.4.174**
 - engine **1.5.2** / cache format **11** (출처: `BUILD_STATUS.md`)
-- DB **1.0.6** / benchmark schema **9** (출처: `docs/llms.txt` 5행, 0.9.4.148 기준 — 최신 확인 필요)
+- DB **1.0.6** / benchmark schema **9** (출처: `src/database.h`, `docs/llms.txt`)
 - CPU CTest **145/145**, GPU CTest **146/146** (출처: `docs/node-status-gate-matrix.ko.md`)
 
 ## 지금 하는 일
@@ -58,3 +58,4 @@
 4. `docs/development-roadmap.ko.md` — 방향·선행조건
 5. 활성 Node brief (`docs/implementation-briefs/`)
 6. 필요 시 `docs/build-history/`, `docs/worklog/`, `docs/version-index.md`
+7. 완료된 버전별 상세가 필요할 때만 `docs/development-progress-detail.ko.md` (현재 상태 아님)
