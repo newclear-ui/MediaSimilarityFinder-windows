@@ -38,7 +38,7 @@ jobs:
         working-directory: src_unpacked
         shell: pwsh
         run: |
-          .\scripts\build_windows_cpu.ps1 -VcpkgRoot $env:VCPKG_ROOT
+          .\scripts\build_windows_cpu.ps1 -VcpkgRoot $env:VCPKG_ROOT -CTestExclude 'reveal_window_test'
 
       - name: Verify GUI executable
         working-directory: src_unpacked

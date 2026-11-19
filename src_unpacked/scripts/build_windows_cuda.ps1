@@ -1,7 +1,8 @@
 param(
   [string]$VcpkgRoot = $env:VCPKG_ROOT,
   [string]$BuildDir = "build-windows-cuda",
-  [int]$BuildParallelism = 1
+  [int]$BuildParallelism = 1,
+  [string]$CTestExclude = ''
 )
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -42,6 +43,10 @@ cmake -S $projectRoot -B $BuildDir -G "Visual Studio 18 2026" -A x64 `
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
 cmake --build $BuildDir --config Release --parallel $BuildParallelism
 if ($LASTEXITCODE -ne 0) { throw "Release build failed: $LASTEXITCODE" }
-ctest --test-dir $BuildDir -C Release --output-on-failure
+$ffmpegTools = Join-Path $tripletRoot "tools\ffmpeg"
+if (Test-Path $ffmpegTools) { $env:PATH = "$ffmpegTools;$env:PATH" }
+$ctestArgs = @('--test-dir', $BuildDir, '-C', 'Release', '--output-on-failure')
+if ($CTestExclude) { $ctestArgs += @('-E', $CTestExclude) }
+ctest @ctestArgs
 if ($LASTEXITCODE -ne 0) { throw "CTest failed: $LASTEXITCODE" }
 Write-Host "CUDA build/test complete. Use $BuildDir\Release\MediaSimilarityFinder.exe --version to verify the executable."

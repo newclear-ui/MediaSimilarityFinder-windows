@@ -1,7 +1,8 @@
 param(
     [string]$VcpkgRoot = $(if ($env:VCPKG_ROOT) { $env:VCPKG_ROOT } else { 'C:\src\vcpkg' }),
     [string]$BuildDir = 'build-windows-cpu',
-    [int]$BuildParallelism = 1
+    [int]$BuildParallelism = 1,
+    [string]$CTestExclude = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -38,7 +39,16 @@ if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 & cmake --build $BuildDir --config Release --parallel $BuildParallelism
 if ($LASTEXITCODE -ne 0) { throw 'Windows Release build failed.' }
 
-& ctest --test-dir $BuildDir -C Release --output-on-failure
+# Tests generate media fixtures by calling the ffmpeg CLI. vcpkg installs the
+# ffmpeg/ffprobe tools under tools\ffmpeg but does not add them to PATH.
+$ffmpegTools = Join-Path $tripletRoot 'tools\ffmpeg'
+if (Test-Path $ffmpegTools) {
+    $env:PATH = "$ffmpegTools;$env:PATH"
+    Write-Host "ffmpeg tools: $ffmpegTools"
+}
+$ctestArgs = @('--test-dir', $BuildDir, '-C', 'Release', '--output-on-failure')
+if ($CTestExclude) { $ctestArgs += @('-E', $CTestExclude) }
+& ctest @ctestArgs
 if ($LASTEXITCODE -ne 0) { throw 'CTest failed.' }
 
 Write-Host 'CPU Windows build completed successfully.'
