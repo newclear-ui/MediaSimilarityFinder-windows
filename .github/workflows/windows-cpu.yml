@@ -12,6 +12,9 @@ jobs:
       BUILD_TYPE: Release
       VCPKG_DEFAULT_TRIPLET: x64-windows
       VCPKG_FEATURE_FLAGS: manifests,binarycaching
+      # The product only builds Release. Skipping Debug halves vcpkg work and avoids
+      # Debug-only port failures (e.g. dav1d on the floating runner registry).
+      VCPKG_BUILD_TYPE: release
       # vcpkg binary cache: compiled dependency archives are reused across runs.
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-cache,readwrite"
 
@@ -23,9 +26,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg-cache
-          key: vcpkg-${{ runner.os }}-x64-windows-${{ hashFiles('src_unpacked/vcpkg.json') }}
+          key: vcpkg-v2-${{ runner.os }}-x64-windows-${{ hashFiles('src_unpacked/vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-x64-windows-
+            vcpkg-v2-${{ runner.os }}-x64-windows-
 
       - name: Show toolchain
         shell: pwsh
