@@ -22,18 +22,18 @@ below is surprising, **follow the link to its origin.**
 
 ## Reading order (at OpenCode / ChatGPT agent session start)
 
-1. **`docs/state/current.{ko,en}.md`** — 80-line current-state summary (read first)
-2. **This document** — the overall Node/Gate entry point
-3. **`development-progress.{ko,en}.md`** — active execution queue, current position, blockers, and completed major milestones
-4. `development-roadmap.{ko,en}.md` — direction and prerequisites
-5. The active node's `docs/implementation-briefs/<Node>-*.md`
+1. **`docs/state/current.{ko,en}.md`** — 80-line current-state summary (required)
+2. **The Active Build Queue section of `development-progress.{ko,en}.md`** (required)
+3. **This document** — when node/Gate detail is needed
+4. `development-roadmap.{ko,en}.md` — when direction changes
+5. The active node's `docs/implementation-briefs/<Node>-*.md` — when starting work
 6. The required `docs/architecture/*.md`
-7. Relevant `docs/build-history/` + `docs/worklog/`
+7. Relevant `docs/build-history/` + `docs/worklog/` + `docs/version-index.md` — for the task at hand
 8. Source / test
 
 > Completed per-version detail is in `docs/development-progress-detail.{ko,en}.md` when needed.
 
-> **`src_unpacked/AGENTS.md` working rule**: read steps 1-4 before changing source,
+> **`src_unpacked/AGENTS.md` working rule**: read steps 1-2 before changing source,
 > and do not start a node the current gate does not permit.
 > In particular, the Active Build Queue in `development-progress` determines the current execution priority.
 > **Progress synchronization rule**: whenever Node/Build implementation, verification, verdict, gate, or next work changes, update `development-progress.ko.md` / `.en.md` immediately. This document must remain the latest entry point for current execution state, not the store of detailed completed evidence.

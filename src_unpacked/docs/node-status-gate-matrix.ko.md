@@ -22,18 +22,18 @@
 
 ## 읽기 순서 (OpenCode / ChatGPT 에이전트 세션 시작 시)
 
-1. **`docs/state/current.{ko,en}.md`** — 80줄 현재 상태 요약 (가장 먼저)
-2. **이 문서** — 전체 Node/Gate의 현재 진입점
-3. **`development-progress.{ko,en}.md`** — 현재 실행 큐 · 현재 위치 · blocker · 완료 주요 이정표
-4. `development-roadmap.{ko,en}.md` — 방향과 선행조건
-5. 활성 Node의 `docs/implementation-briefs/<Node>-*.md`
+1. **`docs/state/current.{ko,en}.md`** — 80줄 현재 상태 요약 (필수)
+2. **`development-progress.{ko,en}.md` 의 Active Build Queue 절** (필수)
+3. **이 문서** — 노드/Gate 상세가 필요할 때
+4. `development-roadmap.{ko,en}.md` — 방향 변경 시
+5. 활성 Node의 `docs/implementation-briefs/<Node>-*.md` — 작업 착수 시
 6. 필요한 `docs/architecture/*.md`
-7. 관련 `docs/build-history/` + `docs/worklog/`
+7. 관련 `docs/build-history/` + `docs/worklog/` + `docs/version-index.md` — 해당 작업 시
 8. source / test
 
 > 완료된 버전별 상세는 필요할 때 `docs/development-progress-detail.{ko,en}.md` 를 참조한다.
 
-> **`src_unpacked/AGENTS.md` 작업 규칙**: 소스를 변경하기 전에 위 1~4를 반드시 읽고,
+> **`src_unpacked/AGENTS.md` 작업 규칙**: 소스를 변경하기 전에 위 1~2를 반드시 읽고,
 > 현재 Gate가 허용하지 않는 Node를 먼저 시작하지 않는다.
 > 특히 `development-progress`의 Active Build Queue가 현재 작업의 실행 우선순위를 결정한다.
 > **진척 동기화 규칙**: Node/Build의 구현·검증·판정·Gate·다음 작업이 변경되면 `development-progress.ko.md` / `.en.md`를 즉시 갱신한다. 이 문서는 완료된 상세 증거의 저장소가 아니라 현재 실행 상태의 최신 진입점이어야 한다.

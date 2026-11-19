@@ -3,119 +3,56 @@
 실제 소스는 `src_unpacked/`에 있음. 모든 작업은 `src_unpacked/` 기준으로 수행.
 
 ## 중요 기억 사항
-0. **사용자에게 리포트하는 언어는 한글과 영어만 사용한다**
-   - 내부 추론(thinking, 코드 주성, 변수명)은 어떤 언어로 해도 무방하다.
-   - 그러나 사용자에게 제시하는 최종 리포트·설명·요약·질답에는 **한글(KO) 또는 영어(EN)만 쓴다.**
-   - **중국어로 표기하지 않는다.** 다른 언어가 섞여 들어가는 것도 금지한다.
-   - 같은 내용을 두 언어로 함께 제시할 때도 KO/EN 쌍으로만 쓴다. (기존 1번 항목과 동일 원칙)
-   - 코드의 식별자·라이브러리 이름·파일명 등 실제 코드에 있는 문자열은 원문을 유지한다.
-   - 이 규칙은 `지시/` 폴더 및 모든 사용자 대면에 동일하게 적용한다.
 
-1. **각 빌드의 내용을 한글과 영문으로 DOCS에 저장할 것**
-   - 경로: `src_unpacked/docs/build-history/<버전>.ko.md` + `<버전>.en.md`
-   - ko/en 쌍으로 저장, 한쪽만 작성 금지
-   - 중요 변경은 `변경 필요성 → 기존 구조 → 변경 구조 → 해결된 상황 → 검증 → 향후 영향` 형식
-   - `README.ko.md` / `README.en.md` 버전 목록도 양쪽 갱신
-   - 상세 규칙은 `src_unpacked/AGENTS.md` 참조
+0. **사용자 리포트 언어는 한글/영어만**
+   - 최종 리포트·설명·요약·질답은 **KO 또는 EN만** 쓴다. 중국어·기타 언어 혼입 금지.
+   - 같은 내용을 두 언어로 제시할 때도 KO/EN 쌍으로만. 코드 식별자·파일명은 원문 유지.
+   - `지시/` 폴더와 모든 사용자 대면에 동일 적용.
 
-2. **소스/컴파일 백업 zip — 세션/에이전트가 바뀌어도 항상 유지 (예외 없음)**
-   - 버전 변경 시점에 **두 종류**의 zip 백업을 남긴다. 둘 다 저장소 루트 `backup/` 에 모은다.
-     1. **소스 백업** — `powershell -ExecutionPolicy Bypass -File scripts/backup_src.ps1` (cwd = `src_unpacked`)
-        - 파일명 `MediaSimilarityFinder-v<버전>-src.zip`
-     2. **컴파일(포터블) 백업** — `powershell -ExecutionPolicy Bypass -File scripts/package_portable.ps1` (cwd = `src_unpacked`)
-        - 파일명 `MediaSimilarityFinder-v<버전>-Portable-Windows-x64.zip`
-        - 스크립트가 exe/DLL/ffmpeg를 모아 smoke 테스트를 통과시킨 뒤 zip 으로 만든다.
-   - **소스 zip은 GitHub과 동일해야 한다.** `git archive`로만 만든다(워킹트리 복사 금지). 코드와 문서를 모두 포함한다.
-     - 실행 전 `HEAD == origin/main`, 미커밋 tracked 변경 없음을 스크립트가 검증하고 위반 시 중단한다.
-   - **포터블 zip은 빌드 산출물이다.** Git 대상이 아니며, smoke 테스트를 통과한 exe 를 담는다.
-    - **회전: 종류별로 최대 5개 보존.** `-src` 와 `-Portable` 는 서로 독립적으로 회전한다.
-     신규 zip 생성 시 초과분을 **휴지통으로 보낸다**(삭제 금지).
-   - 생성 후 소스 zip은 `git ls-tree` + `git hash-object`로 파일 목록과 내용의 byte 단위 일치를 검증해 보고한다.
-   - 포터블 zip은 `Expand` 후 엔트리 수와 exe 존재를 확인한다.
-   - **포터블 zip을 `src_unpacked/` 에 만들지 않는다.** 항상 `backup/` 으로 바로 쓴다(임시 파일 경유).
-   - 상세 규칙과 근거는 `src_unpacked/AGENTS.md` 4번 항목 참조.
+1. **빌드 내용은 한글+영문으로 DOCS에 저장**
+   - `src_unpacked/docs/build-history/<버전>.ko.md` + `.en.md` 쌍. 한쪽만 작성 금지.
+   - 중요 변경은 `변경 필요성 → 기존 구조 → 변경 구조 → 해결된 상황 → 검증 → 향후 영향`.
+   - `build-history/README.ko/en.md` 버전 목록도 양쪽 갱신. 상세: `src_unpacked/AGENTS.md`.
 
-3. **사용자 지시 폴더 `지시/` — 사용자가 직접 관리 (커밋 금지)**
-   - 저장소 루트 `지시/` 폴더의 `.md` 문서는 **사용자가 나에게 남기는 지시문**이다. 사용자가 직접 보관·삭제한다.
-   - **절대 규칙**
-     1. 이 폴더는 **git에 커밋하지 않는다** (`.gitignore`에 등록됨).
-     2. **내가 내용을 수정하거나 삭제하지 않는다.** 읽기만 한다.
-     3. 임시파일 정리/휴지통 처리/리셋 시 이 폴더를 **대상으로 삼지 않는다.**
-   - 사용자가 지시하면 내부 문서를 백업하거나 휴지통으로 보낼 수 있다. 명시가 없으면 손대지 않는다.
-   - 이 폴더의 지시는 `AGENTS.md` 및 지시문 자체보다 우선하는 사용자 지시로 취급한다. 지시문마다 작업 순서/금지 항목이 적혀 있으면 그대로 따른다.
-   - 새 지시문이 오면 먼저 이 폴더를 읽고, 기존 문서와 충돌하면 사용자에게 확인한다.
-   - **실수 주의 (실제로 발생한 사례)**: 임시파일 정리를 위해 저장소 루트의 `*.md` 를 대상으로 삼았다가
-     `D9b 방향 결정 지시.md` 를 삭제했다(휴지통에서 복구함). 정리·회전·리셋 작업의 대상 경로는
-      **반드시 `지시/` 와 저장소 루트 `*.md` 를 제외**한 뒤 확정한다. 애매하면 삭제보다 먼저 사용자에게 확인한다.
+2. **소스/컴파일 백업 zip — 항상 유지 (예외 없음)**
+   - 버전 변경 시 저장소 루트 `backup/` 에 두 종류를 남긴다(cwd = `src_unpacked`).
+     1. `scripts/backup_src.ps1` → `MediaSimilarityFinder-v<버전>-src.zip`
+     2. `scripts/package_portable.ps1` → `MediaSimilarityFinder-v<버전>-Portable-Windows-x64.zip`
+   - 소스 zip은 GitHub과 동일해야 한다. `git archive`만 사용(워킹트리 복사 금지). 스크립트가 `HEAD == origin/main`·미커밋 tracked 변경 없음을 검증하고 위반 시 중단.
+   - 포터블은 빌드 산출물(Git 대상 아님). exe/DLL/ffmpeg + smoke 통과 후 생성하며 `src_unpacked/`에 만들지 않는다.
+   - 회전: 종류별 최대 5개, `-src`·`-Portable` 독립. 초과분은 **휴지통**.
+   - 검증 보고: 소스는 `git ls-tree` + `git hash-object` byte 일치, 포터블은 엔트리 수 + exe 존재.
+   - 상세·근거: `src_unpacked/AGENTS.md` 4항.
 
-4. **반복 실행은 창 1개 유지 — 콘솔창 개방/폐쇄 반복 금지 (예외 없음)**
-   - 반복해서 콘솔창을 열어야 하는 작업이라면 **그 예상 호출 횟수를 실행 전에 미리 점검**하고,
-     열었다 닫히는 프로세스가 반복되지 않도록 반드시 설계한다.
-   - 반복 작업은 **최대한 단 하나의 프로세스를 한 번만 띄운 뒤, 그 프로세스 안에서 시작과 종료를 이어서 수행**한다.
-     단계마다 새 프로세스/새 창을 띄우지 않는다. 오케스트레이터 스크립트 1개가 전체 순서를 수행하게 만든다.
-   - 그 반복 프로세스가 만드는 콘솔창은 **윈도우 화면에서 보이지 않게 처리**한다.
-     `Start-Process -WindowStyle Hidden` 은 창만 숨기고 콘솔 할당을 막지 않으므로, 자식 프로세스가
-     새 콘솔을 만들면 다시 보이는 창이 생긴다. 필요한 경우 `CREATE_NO_WINDOW` /
-     `System.Diagnostics.ProcessStartInfo.CreateNoWindow = $true` 를 쓴다.
-   - **실제 원인 4가지 (2026-10-01 확인됨)**
-     1. 도구 호출 1회당 powershell + conhost 창이 1개씩 생성된다 → 호출 횟수를 줄여야 한다.
-     2. 제품 실행 파일이 자체적으로 `cmd.exe` 를 자식으로 띄운다.
-        정확한 위치: `src/monitor.cpp:47` — `SystemLoadMonitor::sample()` 이 GPU 사용률을
-        읽으려고 `_popen("nvidia-smi ...")` 를 호출한다. 3초에 최대 1회로 throttle 되지만
-        benchmark 실행 중 파일마다 `sample()` 이 호출되므로, 2.7시간 run이면 약 3000개 창이
-        열렸다 닫힌다. 부모에게 콘솔이 없으면(`CreateNoWindow` 실행) 자식 `cmd.exe` 가
-        매번 **새로 보이는 콘솔**을 할당한다. 이것이 "1-2초마다 반복" 창 폭풍의 정체다.
-     3. `-WindowStyle Hidden` 를 써도 자식이 새 콘솔을 할당하면 보이는 창이 생긴다.
-        `CreateNoWindow` 로 부모 콘솔을 없애면 손자 프로세스의 보이는 창은 **오히려**
-        보장된다. 손자까지 안 보이게 하려면 부모에게 **숨김 실제 콘솔을 물려주거나**,
-        제품 코드가 `CREATE_NO_WINDOW` 로 자식을 띄우게 해야 한다.
-     4. 제품에는 이미 무창 실행 헬퍼가 있다: `src/proc_capture.h::captureSilent`
-        (`CREATE_NO_WINDOW`, 주석에 명시). `monitor.cpp` 만 raw `_popen` 을 쓴다.
-        이 1줄 교체가 창 폭풍의 근본 수정이다. 단 제품 코드 변경이므로 지시 30항에 따라
-        **사용자 승인 없이 적용하지 않는다.** (2026-10-01 승인됨, `6cc19ba`.)
-     5. **미수정 구 바이너리는 어떤 숨김 실행으로도 팝업을 막을 수 없다 (2026-10-01 증명됨).**
-        `MediaSimilarityFinder.exe` 는 PE subsystem 2 (`WINDOWS_GUI`)라서 부모 콘솔을
-        **상속하지 않으므로**, 그 `_popen` 자식(`cmd.exe`)은 매번 새로 보이는 콘솔을
-        할당한다. 숨김 콘솔 호스트(`console2\`) 안에서 실행해도 동일하다.
-        실측: 미수정 Build A 40파일 실행 중 보이는 콘솔창 11건 / idle 75초 0건.
-        따라서 순수 `5e2b5c1` 바이너리 실행 = 팝업 필연. A 측정이 필요하면 소스에
-        수정을 포함한 새 Known commit 정의가 필요하고, 이는 사용자 승인 사항이다.
-        (지시 4항이 금지하는 혼합 바이너리 위장과 혼동하지 말 것: 새 commit은 정직한
-        provenance이며 지시 2항의 목적 기반 선택에 해당한다.)
-   - **폴링/감시도 창을 만들지 않는 방식으로만 하며, 간격을 충분히 길게 잡는다**(45분 이상 권장).
-   - 상태 확인이 필요하면 짧은 확인 창 하나만 쓰고, 곧바로 닫히게 하는 것보다
-     기존 오케스트레이터가 `.done` 마커와 로그를 남기게 하여 무창으로 확인한다.
-   - **작업 분해 기준**: 반복 횟수가 2회 이상이면 오케스트레이터 1개로 통합한다.
-     통합하지 않고 매번 도구 호출로 실행하면 규칙 위반이다.
+3. **`지시/` 폴더 — 사용자 관리 (커밋 금지)**
+   - 이 폴더의 `.md` 는 사용자 지시문이다. **읽기만 하고 수정·삭제하지 않는다.** git 커밋 금지.
+   - 정리·휴지통·리셋 작업에서 `지시/` 와 저장소 루트 `*.md` 는 **대상에서 제외**한다.
+   - 지시문이 `AGENTS.md` 와 충돌하면 지시문이 우선이며, 모호하면 사용자에게 확인한다.
+   - 실수 사례: 루트 `*.md` 정리 중 `D9b 방향 결정 지시.md` 를 삭제했다(휴지통 복구). 애매하면 삭제보다 확인.
 
-5. **파일 삭제 — 직접 삭제 절대 금지, 항상 휴지통으로 (예외 없음)**
-   - **어떤 파일·폴더도 직접 삭제하지 않는다.** `Remove-Item`, `rm`, `del`, `rd`, `git clean`,
-     `git rm`, 파일시스템 API 하드 삭제 등 우회 경로도 금지한다.
-   - 삭제해야 하는 상황이면 **반드시 휴지통(Recycle Bin)으로 보낸다.** 사용자가 직접 비운다.
-   - 준삭제로 끝내지 않는다. 휴지통 이동 후 **경로·건수를 보고**하고, 무엇을 버렸는지 사용자에게 알린다.
-   - **적용 범위**: 소스·문서·dataset·테스트 픽스처·빌드 산출물·백업 zip·임시파일을 **전부 포함**한다.
-     "재생성 가능", "파일이므로 하드 삭제해도 된다" 는 이유로 예외를 만들지 않는다.
-     단, 빌드 디렉터리 전체 재생성(`prepare_dataset.ps1 -Root`)처럼 **대상 경로 자체가 재생성되는 작업**은
-     그 전에 대상·파일 수를 보고하고 **사용자 승인을 받아** 진행한다.
-   - **도구**: `src_unpacked/scripts/safe_remove.ps1` 를 사용한다. 하드 삭제 기능이 없고 휴지통으로만 보낸다.
-   - **실수 사례 (2026-09-28)**: dataset fingerprint 갱신 목적으로 `prepare_dataset.ps1` 를 실행하면서
-     `-FingerprintOnly` 스위치를 쓰지 않아 dataset을 통째로 재생성하면서
-     `test_sample_img_vid/images/format` 의 수백 개 픽스처가 하드 삭제되었다.
-     원본 풀(`G:\Downloads\ss_twit`)에서 재선택하여 복구했으나, **지문만 갱신할 때는 반드시 `-FingerprintOnly`.**
+4. **반복 실행은 창 1개 유지 — 콘솔 개방/폐쇄 반복 금지 (예외 없음)**
+   - 반복 작업은 **오케스트레이터 1개를 한 번만 띄우고** 그 안에서 시작~종료를 수행한다. 단계마다 새 프로세스/창 금지.
+   - 반복 횟수가 2회 이상이면 도구 호출을 반복하지 말고 오케스트레이터로 통합한다.
+   - 콘솔은 보이지 않게 한다. `-WindowStyle Hidden` 은 콘솔 할당을 막지 못하므로 `CREATE_NO_WINDOW` / `ProcessStartInfo.CreateNoWindow = $true` 를 쓴다.
+   - 원인 4가지(2026-10-01 확인): ① 도구 호출당 powershell+conhost 1개 ② 제품의 `src/monitor.cpp` `_popen("nvidia-smi")` 가 run 중 약 3000개 창 생성 ③ 부모 콘솔이 없으면 자식이 새 보이는 콘솔 할당 ④ 해결은 이미 있는 `src/proc_capture.h::captureSilent`(CREATE_NO_WINDOW) 사용.
+   - 제품 코드 변경은 사용자 승인 사항(2026-10-01 승인, `6cc19ba`). 미수정 `WINDOWS_GUI` 바이너리는 어떤 숨김 실행으로도 팝업을 막을 수 없다.
+   - 폴링/감시는 무창 방식 + 긴 간격(45분 이상). 상태 확인은 `.done` 마커와 로그로 한다.
+   - 상세: `src_unpacked/AGENTS.md` 11항.
+
+5. **파일 삭제 — 직접 삭제 절대 금지, 항상 휴지통 (예외 없음)**
+   - `Remove-Item`, `rm`, `del`, `rd`, `git clean`, `git rm`, API 하드 삭제 등 어떤 우회도 금지.
+   - 삭제 대상은 `src_unpacked/scripts/safe_remove.ps1` 로만 휴지통 이동하고, **경로·건수를 보고**한다.
+   - 적용 범위: 소스·문서·dataset·픽스처·빌드 산출물·백업 zip·임시파일 전부. "재생성 가능"은 예외가 아니다.
+   - 빌드 디렉터리 전체 재생성처럼 대상 경로 자체를 다시 만드는 작업은 사전 보고 + **사용자 승인**.
+   - 실수 사례: `-FingerprintOnly` 없이 `prepare_dataset.ps1` 를 실행해 픽스처가 하드 삭제됐다(복구). **지문만 갱신할 때는 반드시 `-FingerprintOnly`.**
 
 6. **외부 프로세스 안전 — hot-path 반복 생성 금지 (예외 없음)**
-   - Benchmark hot path/monitor/frame loop에서 `_popen`, `system`, `CreateProcess`,
-     `ShellExecute` 등의 외부 프로세스 반복 생성을 금지한다.
-   - Run-level isolation(측정 run마다 제품 exe 1개)은 허용한다. 금지 대상은
-     run 내부의 반복 child spawn이다.
-   - 외부 프로세스가 필요하면 `in-process API > persistent helper > 단발성 프로세스` 순으로 검토한다.
-   - Windows child는 `CREATE_NO_WINDOW` 또는 검증된 동등 방식. `src/proc_capture.h::captureSilent` 가 유일한 wrapper다.
-   - Wrapper는 `INFINITE` 대기를 기본 계약으로 갖지 않는다. timeout은 호출별 등급으로 명시한다
-     (telemetry 10000ms / metadata 30000ms / decode 120000ms).
-   - Timeout 시 종료 요청 → 강제 종료 → handle 정리 → 명시적 실패. 필요시 Job Object 또는 동등 수단으로 tree 정리.
-   - Runaway(프로세스/콘솔/orphan/반복 재시도 폭증) 시 자동 체인을 중단한다 (circuit breaker).
-   - Release Gate에서 raw 반복 생성·콘솔 팝업·무한 대기·orphan·FFmpeg 폴백 경로를 검사한다.
-   - **실측 사례 (2026-10-01)**: `src/monitor.cpp` 의 3초 throttle `_popen(nvidia-smi)` 가
-     2.7시간 run에서 약 3000개 콘솔창을 반복 생성 → `captureSilent` 교체로 해결 (`6cc19ba`).
-     미수정 구 바이너리(`WINDOWS_GUI`)는 어떤 숨김 실행으로도 팝업을 막을 수 없음이 증명됨 → Build A를
-     `5e2b5c1`+수정 branch commit (`55578d1`)으로 재정의. 상세는 `src_unpacked/AGENTS.md` 11항.
+   - Benchmark hot path/monitor/frame loop의 `_popen`·`system`·`CreateProcess`·`ShellExecute` 반복 금지.
+     Run-level isolation(측정 run마다 exe 1개)은 허용한다.
+   - 필요 시 `in-process API > persistent helper > 단발성 프로세스` 순으로 검토한다.
+   - Windows child는 `src/proc_capture.h::captureSilent` 만 사용한다. timeout은 호출별 명시
+     (telemetry 10000ms / metadata 30000ms / decode 120000ms), `INFINITE` 대기 금지.
+   - Timeout은 실패다: 종료 요청 → 강제 종료 → handle 정리 → 명시적 실패. 필요 시 Job Object.
+   - Runaway(프로세스/콘솔/orphan/재시도 폭증) 시 자동 체인 중단(circuit breaker).
+   - Release Gate: raw 반복 생성 0 / 콘솔 팝업 0 / 무한 대기 0 / orphan 0 / FFmpeg 폴백 경로 확인.
+   - 실측: `monitor.cpp` `_popen` 3000창 → `captureSilent` 교체(`6cc19ba`). 상세는 `src_unpacked/AGENTS.md` 11항.

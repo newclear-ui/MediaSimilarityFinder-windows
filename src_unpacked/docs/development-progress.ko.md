@@ -10,18 +10,18 @@
 - [문서 목적](#문서-목적) — L29
 - [세션 시작 필수 진입점](#세션-시작-필수-진입점) — L35
 - [현재 작업 우선순위 / Active Build Queue](#현재-작업-우선순위--active-build-queue) — L45
-- [완료된 주요 이정표](#완료된-주요-이정표) — L89
-- [현재 상태](#현재-상태) — L106
-- [개발 순서 상태](#개발-순서-상태) — L114
-- [Node B/C/D 상세 설계 상태](#node-bcd-상세-설계-상태) — L144
-- [Node A — Foundation / Terminology / Instrumentation](#node-a--foundation--terminology--instrumentation) — L157
-- [Recovery branch 기록](#recovery-branch-기록) — L189
-- [버전 진행 규칙](#버전-진행-규칙) — L288
-- [Roadmap / Progress / Build History](#roadmap--progress--build-history) — L300
-- [OpenCode 작업 원칙](#opencode-작업-원칙) — L316
-- [다음 상태 갱신](#다음-상태-갱신) — L332
-- [성능 실험 장기 기록 체계 (0.9.4.27 D1 이후)](#성능-실험-장기-기록-체계-09427-d1-이후) — L347
-- [상세 기록 (이관)](#상세-기록-이관) — L393
+- [완료된 주요 이정표](#완료된-주요-이정표) — L75
+- [현재 상태](#현재-상태) — L92
+- [개발 순서 상태](#개발-순서-상태) — L100
+- [Node B/C/D 상세 설계 상태](#node-bcd-상세-설계-상태) — L130
+- [Node A — Foundation / Terminology / Instrumentation](#node-a--foundation--terminology--instrumentation) — L143
+- [Recovery branch 기록](#recovery-branch-기록) — L175
+- [버전 진행 규칙](#버전-진행-규칙) — L274
+- [Roadmap / Progress / Build History](#roadmap--progress--build-history) — L286
+- [OpenCode 작업 원칙](#opencode-작업-원칙) — L302
+- [다음 상태 갱신](#다음-상태-갱신) — L318
+- [성능 실험 장기 기록 체계 (0.9.4.27 D1 이후)](#성능-실험-장기-기록-체계-09427-d1-이후) — L333
+- [상세 기록 (이관)](#상세-기록-이관) — L379
 
 <!-- END TOC -->
 
@@ -36,7 +36,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 이 문서는 **OpenCode 및 ChatGPT 에이전트가 새로운 세션을 시작할 때 반드시 읽어야 하는 핵심 진행 문서**다.
 `docs/node-status-gate-matrix.ko.md`가 전체 Node/Gate의 1페이지 인덱스라면, 이 문서는 **현재 실행 큐·실제 현재 상태·완료된 주요 이정표·현재 blocker**를 복원하는 실행 기준 문서다.
-세션 재시작 시 **`docs/state/current.ko.md`** 요약을 가장 먼저 읽고, 그다음 Matrix → 이 문서 순으로 읽는다. 현재 작업 우선순위는 이 문서를 따른다.
+세션 재시작 시 **`docs/state/current.ko.md`** → **이 문서의 Active Build Queue 절** 순으로 읽는다. Matrix/Roadmap은 노드 단위 상세가 필요할 때만 본다.
 완료된 상세 실험·측정·판단은 `docs/worklog/`에, 버전별 실제 변경과 증거는 `docs/build-history/`에 유지한다.
 별도의 `workprogress` 문서는 만들지 않는다. 80줄 요약 진입점은 `docs/state/current.ko.md` 이고, **실행 상태의 원본은 이 문서**다.
 **Node 또는 Build의 진척·판정·Gate·우선순위가 변경되는 즉시 이 문서를 갱신한다.** 구현 착수, 구현 완료, 검증 결과, PASS/CONDITIONAL/DEFERRED/NOT ACCEPTED/CLOSED 변경, 다음 빌드 확정 등 현재 실행 상태에 영향을 주는 변화는 그 사실이 발생한 세션에서 바로 Active Build Queue와 현재 상태/완료 이정표에 반영한다. 상세 근거는 Work Log / Build History에 함께 보존한다.
@@ -44,47 +44,33 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 ## 현재 작업 우선순위 / Active Build Queue
 
-> **2026-10-25 검토분 + 0.9.4.174까지 반영:** 기준 버전은 0.9.4.174이다. 아래 큐는 `docs/worklog/0.9.4.{ko,en}.md`의 중간검토를 실행 항목으로 요약한다. 0.9.4.174는 TemporalAnchorV3 사용자 지정 알고리즘 제품 구현(실험 opt-in, 기본값 불변, V1/V2 동결, CPU 145/145·GPU 146/146, 측정 기반: 시작 300초 포화·관용런·엔딩-우선·고정대표)을 완료했다. 0.9.4.173은 TemporalAnchorV2 양방향 판독 경로 본구현(실험 opt-in, 기본값 불변, V1 동결, CPU 144/144·GPU 145/145, 리드 검증: L 동일 DUP 12/15·f verdict DUP 5/50·교차 오탐 유효 0·미니 중간삽입 정정)을 완료했다. 0.9.4.172는 TemporalAnchorV1 독립 판독 경로 본구현(실험 opt-in, 기본값 불변, CPU 141/141·GPU 142/142, 리드 검증: L 2/5 DUP·f 44 UNCERTAIN·교차 오탐 0)을 완료했다. 0.9.4.171은 V 코호트 샘플링 본구현(진단 opt-in, 기본 동작 불변, CPU 140/140·GPU 141/141)을 완료했다. 0.9.4.170은 D3D11VA 하드웨어 디코드(F-2 부분 재개, SW 기본 + HW 적극 사용, 하단 표시, 설정 기록, NVDEC 실리콘 구동 확인)를 완료했다. 0.9.4.169는 V4 post-SSIM 커버리지 + clip05 확정진단 + 문서 정합화(점수 불변·rawCov 분리·생산 임계값 87.5 보정)를 완료했다. 0.9.4.168은 V3 구간기반 선택 production 기본값 전환 + V2 차선 보존(선택방식 캐시 식별 +seg/+var, 엔진/포맷 불변)을 완료했다. 0.9.4.167은 start_time 기준 정규화 + V2/V3/V4 진단 본구현(기본 동작 불변, 엔진 1.5.2/캐시 11)을 완료했다. 0.9.4.166은 타임스탬프 신뢰 조사 + NOPTS 계수(P1, start_time 매트릭스 측정 + `videos.noptsFrames`)을 완료했다. 0.9.4.165는 중단 비디오 영구 실패 방지(P1 회귀 수정, 취소 중단 pending 유지 + 결정적 시나리오 D)를 완료했다. 0.9.4.164는 MSSIM 타이밍 귀속 정밀화 + 디코드 오류 집계(P2, small/failed 분리 + decodeErrors 텔레메트리)를 완료했다. 0.9.4.163은 GPU 배치/CPU 전환 비용 실측(P2, sweep 핀 + 게이트·청크 유지 NOT ACCEPTED)을 완료했다. 0.9.4.162는 매칭 경로 MSSIM 시간 분리 집계(P1, cpuMs+videoMatch* 합산)를 완료했다. 0.9.4.161은 디코드 단계별 비용 분리 측정(P1, decodeMs/phashCpuMs additive 텔레메트리)을 완료했다. 0.9.4.160은 quickIdentity 캐시 식별 신뢰성 핀(P2, video_cache_identity_test, tail-only 잔류 위험 문서화)을 완료했다. 0.9.4.159는 비교 엔진 행 버퍼 재사용(P2, video_sim_perf_test, 속도 가설 NOT ACCEPTED·구조 PASS)을 완료했다. 0.9.4.158은 부분 지문 캐시 저장 금지+샘플 완전성 계약(P0/P1, video_complete_test, 캐시 10)을 완료했다. 0.9.4.157은 동영상 썸네일 복구(TJSAMP_GRAY)+AV1 dav1d를 완료했다. 0.9.4.156는 V 동영상 탭 1차(설정 UI+전파+간격/예산+캐시 분리)를 완료했다. 0.9.4.155는 decodedFrames 정직화(실제 디코드 수 계측, video_real_test 회귀 단언)를 완료했다. 0.9.4.154는 킬 내구성 D1 crash marker 구현(스캔 중 meta.scan_dirty 식재+settled-exit RAII 가드 삭제+잔류 시 다음 A/AB 1회 강제 전체 검증, crash §7 15 checks 실측)을 완료했다. 0.9.4.153은 지시 재검토 결함(P1-A 유효 baseline 부분 채택 무효화·P1-B 취소/예외/엔진 실패 경로)을 수정한다. 0.9.4.152는 지시 재검토 결함(P0 content_hash 키·P1 meta·저장 실패·체크포인트)을 수정한다. 0.9.4.151은 감사 지적 결함(P0 채택 범위·P1 취소/실패 일치·P1 저장 실패·P2 체크포인트)을 수정한다. 0.9.4.150은 날짜 정렬(생성 날짜, 내림차순 기본)을 콤보 마지막에 추가한다(표시 전용). 0.9.4.149는 불러오기/재검증을 한 칸짜리 분할 버튼(아래 화살표 메뉴: 상단 불러오기/하단 재검증, 재검증 🔄 아이콘)으로 통합한다(표시 전용). 0.9.4.148은 재검증 버튼 툴바 배치 누락을 수정한다(표시 전용). 0.9.4.147은 "없음" 정렬이 불러오기/검색 순서를 기억하게 한다. 0.9.4.146은 정렬 콤보와 목록 순서를 일치시키고 백엔드/GUI 단일 인스턴스를 보호한다. 0.9.4.145는 검색 요약 합계 줄에 실패 파일 수를 표시한다. 0.9.4.144는 상세 로그에 실패 파일의 이름과 사유를 추가한다. 0.9.4.143은 재분석된 파일의 이전 쌍을 저장에서 제거하고, 변경 스캔 완료 후 저장 인덱스를 조용히 재적용하며, 최근 폴더 표시 개수를 설정(1~20, 기본 3)할 수 있게 한다. 0.9.4.142는 결과 세트가 보이는 상태에서 검색을 시작하면 완료까지 화면을 동결하고 결과를 한 번에 반영한다(썸네일 재구성 churn 제거, 표시 전용). 0.9.4.141은 검색 시작 시 불러온 목록·선택·미리보기를 그대로 유지하고 결과를 완료 시 적용한다(변경 없으면 유지, 표시 전용). 0.9.4.140은 스캔 시작 시 미리보기(썸네일)를 유지하고 실제 재분석(analyzed>0)이 있을 때만 종료 후 보이는 화면을 갱신한다(표시 전용). 0.9.4.139는 GUI/Backend EXE에 아이콘(후보 E2/G)을 삽입하고 그룹 정렬을 타입+방향으로 분리해 그룹 크기 정렬과 Load 후 변경을 허용한다(표시·패키징 전용). 0.9.4.138은 미리보기 셀 폭이 텍스트가 아닌 미리보기 크기를 따르도록 텍스트를 동적으로 축약한다(표시 전용). 0.9.4.137은 미리보기 게이지의 이동 단위를 0.05(6.4px)로 스냅하고 비율 버블을 소수 둘째 자리로 표시했다(표시 전용). 0.9.4.136은 미리보기 크기 게이지에 1.0 기준선·드래그 비율 표시를 추가하고 리스트 보기에서 비활성(회색)으로 만들었다. 0.9.4.135는 Test Mode 완료 시 본 인덱스와의 차이를 리포트하고 Yes/No로 테스트 결과를 본 인덱스에 채택(단일 트랜잭션)했다. 0.9.4.134는 빠른 재스캔 모드 설정(기본 엄격)과 중복 파일만 강제 재검증하는 툴바 기능을 추가했다. 0.9.4.133은 시스템 CPU 지표 공식(GetSystemTimes idle 이중 가산)을 교정했다(과거 로그 값 정정 기록 포함). 0.9.4.132는 불러오기(Load) 후 좌측 검색 요약을 적재 세트 기준으로 채운다. 0.9.4.131은 요약 패널과 상세 로그의 매치 카운터를 표시 결과 세트 기준으로 통일했다(무변경 재스캔의 0 표기 해소, CLI 저널은 스캔 범위 기준 유지). 0.9.4.130은 매치 세트 완전성 베이스라인(A/AB 자가치유)으로, 0.9.4.81~128이 남긴 빈 매치 저장소를 첫 자동(AB) 스캔 1회의 전체 패스로 자동 회복한다(판정 불변, engine/DB 불변). 0.9.4.129는 자동(AB) 모드의 라이브 매치 유실(유사그룹 0)을 수정하고 상세 로그·검색 요약 CPU 표시를 정정했다. 0.9.4.128은 이미지 디코드 공유 소스 통합으로 파일당 WIC open 3회를 1회로 줄였다(판정 불변).
-> G4/G6는 **0.9.4.111에서 검증 완료**, S4 저장/종료 acceptance는 **0.9.4.112**, 독립 감사 B1~B3·B7은 **0.9.4.113**, 크래시 핫픽스(불러오기/검색 시작)는 **0.9.4.114/.115**, 유령 그룹 자동 정리는 **0.9.4.116**, GUI 대량 결과 적용 정지(다음 빌드 후보 1)는 **0.9.4.117**, 스캔 흐름의 동일 목록 반복 재구축(churn) 제거는 **0.9.4.118**, 처리량 표기 의미 명확화(후보 3)는 **0.9.4.119**, GUI-less 구성 복구·배지 비용 판정(LOW PRIORITY)·제품 acceptance 런북(남은 후보 전부)은 **0.9.4.120**, 상세 정보창 폭주 수정(그룹 280 실기 3건)은 **0.9.4.121**, 우클릭 경로 외부 I/O 제거는 **0.9.4.122**, 뷰모드 플레이크 근본 수정+PDB 동봉+덤프 원클릭+acceptance 재확인(판정 유지)은 **0.9.4.123**, 거짓 미구현 주석 정정은 **0.9.4.124**, QuickLook 파이프 유실 방지+color_thumb 현행 유지 확정은 **0.9.4.125**, recover CLI는 **0.9.4.126**, Test Mode XMP 회귀는 **0.9.4.127**, 이미지 디코드 공유 소스 통합(3 open → 1 open)은 **0.9.4.128**, 자동(AB) 라이브 매치 유실(그룹 0·중복 0) 수정과 상세 로그·CPU 표시 정정은 **0.9.4.129**, 매치 세트 완전성 베이스라인(A/AB 자가치유)은 **0.9.4.130**, 표시 결과 세트 기준 카운터 통일은 **0.9.4.131**, 불러오기(Load) 검색 요약 채움은 **0.9.4.132**, 시스템 CPU 지표 공식 교정은 **0.9.4.133**, 빠른 재스캔 모드 설정+중복 강제 재검증은 **0.9.4.134**, Test Mode 차이 리포트+Yes/No 인덱스 채택은 **0.9.4.135**, 미리보기 게이지 개선(1.0 기준선·드래그 비율·리스트 비활성)은 **0.9.4.136**, 게이지 0.05 스냅+비율 버블 소수 둘째 자리는 **0.9.4.137**, 미리보기 셀 폭 동적 텍스트 축약은 **0.9.4.138**, EXE 아이콘 삽입+그룹 정렬 개편(그룹 크기·방향, Load 후 잠금 해제)은 **0.9.4.139**, 스캔 시작 시 미리보기 유지(변경 파일만 종료 후 갱신)는 **0.9.4.140**, 검색 중 목록·선택·미리보기 유지(결과는 완료 시 적용)는 **0.9.4.141**, 검색 중 화면 동결(완료 시 1회 반영)은 **0.9.4.142**, 변경 파일 이전 쌍 제거·변경 스캔 후 자동 재적용·최근 폴더 개수 설정은 **0.9.4.143**, 상세 로그 실패 파일 사유·목록은 **0.9.4.144**, 합계 줄 실패 수 표시는 **0.9.4.145**, 정렬 표시 일치·백엔드/GUI 단일 인스턴스 보호는 **0.9.4.146**, "없음" 정렬의 초기 순서 기억은 **0.9.4.147**로, 재검증 버튼 툴바 배치 누락 수정은 **0.9.4.148**로, 불러오기/재검증 단일 슬롯 통합은 **0.9.4.149**로, 날짜 정렬(생성 날짜) 추가는 **0.9.4.150**으로, 감사 지적 결함 수정은 **0.9.4.151**로, 지시 재검토 결함 수정은 **0.9.4.152**로, P1-A·P1-B 종료 경로 수정은 **0.9.4.153**으로, 킬 내구성 D1 crash marker 구현은 **0.9.4.154**로, decodedFrames 정직화는 **0.9.4.155**로, V 동영상 탭 1차는 **0.9.4.156**에서, 동영상 썸네일 복구+AV1 dav1d는 **0.9.4.157**에서, 부분 지문 캐시 저장 금지+샘플 완전성 계약은 **0.9.4.158**에서, 비교 엔진 행 버퍼 재사용은 **0.9.4.159**에서, quickIdentity 캐시 식별 신뢰성 핀은 **0.9.4.160**에서, 디코드 단계별 비용 분리 측정은 **0.9.4.161**에서, 매칭 경로 MSSIM 시간 분리 집계는 **0.9.4.162**에서, GPU 배치/CPU 전환 비용 실측은 **0.9.4.163**에서, MSSIM 타이밍 귀속 정밀화 + 디코드 오류 집계는 **0.9.4.164**에서, 중단 비디오 영구 실패 방지는 **0.9.4.165**, 타임스탬프 신뢰 조사 + NOPTS 계수는 **0.9.4.166**, 타임스탬프 기준 정규화 + V2/V3/V4는 **0.9.4.167**에서, V3 기본값 전환 + V2 차선 보존은 **0.9.4.168**에서, V4 post-SSIM 커버리지 + clip05 확정진단 + 문서 정합화는 **0.9.4.169**에서, D3D11VA 하드웨어 디코드는 **0.9.4.170**에서 완료되어 큐에서 제거됐다. 비디오 엔진 순서는 2026-10-25에 확정했다(CPU+CUDA 안정화 완료 → 1.0 라인 Vulkan roadmap → Vulkan 지원 완료 후 HW/라이브러리; Node G 1.0 이후 연기, F-2 본통합 Vulkan 이후 이동). S 단계 실기 확인(S-1~S-6)은 **2026-10-21 모두 PASS**. 제품 acceptance는 2026-10-18 실기 보고로 ACCEPTED가 확정되어 큐에서 제거됐다.
-> 과거 2026-10-07의 .62 crash-response / .63 GUI usability 분리는 당시 기록으로 유지하며, 현재 큐는 아래 표가 기준이다.
+> 기준 버전 **0.9.4.174**. 현재 큐는 이 표가 기준이며, 버전별 변경 이력은 `docs/version-index.md` · `docs/build-history/`에 있다.
+> 0.9.4.169–.174는 V/TemporalAnchor 계열이고 전부 실험 opt-in(기본값 LegacyV3)이다. Gate PASS 선언은 없다.
 
-| 우선순위 | 기준/대상 | 작업 | 목적 / 다음 Gate | 상태 |
-| --- | --- | --- | --- | --- |
-| 0 | **0.9.4.105/.106 + 0.9.4.64+** | **현장 GUI acceptance** | .105 대량 삭제/이동·진행창·preview/index·`delete/move/prune/forget` 로그; .106 파생본/동일 복사본 배지 + real Backend IPC `identical`; 설정/resize/filename selection/Tiles·ListMode/traversal/Test Mode scratch 격리/crash recovery | **ACCEPTED (user decision 2026-11-02)** |
-| 1 | 제품 acceptance | **Search / Index / Comparison 최종 acceptance** | 2026-10-18 실기 보고로 18/18 항목 증거 확보 → **ACCEPTED**. S4 최종 CLOSED와 S5 GATE OPEN 연동 완료 | **ACCEPTED** |
-| 2 | I-XMP | **XMP Orientation real-dataset/full-scan coverage** | fixture + 18건/79건 + 134건 real-file evidence 확보. full-corpus census 완료(2026-10-25): 178,293개 중 XMP orientation 106개 전부 값 1, 격리 headless 실엔진 105+1건 analyzed·failed=0. CONDITIONAL 해제 사용자 확인 완료 (2026-11-02 사용자 결정).  | **CLOSED** |
-| 3 | S5 | **실제 dataset product benchmark** | GATE OPEN. XMP-REAL-001 부분 측정(7 cases 21 SUCCESS) + `.126` recover CLI 확보. 정상 완료 cohort·임계값 대기 | **IN PROGRESS / GATE OPEN** |
-| 4 | S6 | **measurement / data-mining gate** | S5 실측 표본을 이용해 build/case 비교 후보와 gate 판정. 진단 기계는 실저널에서 계약대로 동작 확인 | **DEFERRED / 임계값·비교 표본 대기** |
-
-### 측정 사이드 트랙 (제품 acceptance Gate와 별도)
-
-- Fast(A)/Stable(B)/Auto(AB): .106의 사용자 데이터셋 풀 리프래쉬 측정 3회(A 2026-10-15, B/AB 2026-10-16)가 Work Log/DBV §7.3에 기록됨. 같은 빌드 대조: analyze 기준 A 185.8 s / AB 170.2 s(verify 0~1회) vs B 605.7 s(전 쌍 19,160회 재검증). walk 306.5~399.7 s 변동이 wall 비교의 교란으로 남아 있어 성능 일반화는 잠정적이다.
-- Auto(AB): 2026-10-16 측정 완료(변경 64, verify 1회/0.25 s) — 최종 패스는 한쪽만 변경된 쌍만 검증하고 양쪽 변경 쌍은 live 패스가 담당한다. 반복 수 증가와 리포트 집계 의미(제품 결정)는 후속.
-- CUDA 가용성: `cudaAvailable=False` 과거 실행의 빌드/런타임 조건을 확인한다. 이를 곧바로 “GPU 하드웨어 미가용”으로 해석하지 않는다.
-- 사용자 G: DBV 재측정은 같은 빌드·인덱스/데이터 상태·자원 조건을 가능한 한 맞추고, 반복 수와 parity 확인 기준을 사전 정의한다.
-
-### 조건부 crash-response 백로그
-
-원래 .72 dump의 정확한 caller는 PDB 부재로 미확정이다. 현재 .74의 telemetry sampler abort 경로는 별도로 재현·수정되었다. 새로운 crash가 발생하면 우선 `docs/architecture/crash-response-runbook.{ko,en}.md` 절차로 dump/PDB/로그를 보존하고, 재현이 없을 때 추측성 수정은 하지 않는다.
-
-### 후순위 대기 백로그
-
-| 분류 | 작업 | 현재 상태 / 원칙 |
+| 우선순위 | 작업 | 상태 |
 | --- | --- | --- |
-| 개발 기능 | **GUI Test Mode** | 0.9.4.75에서 별도 버전으로 재도입 완료. 기존 GUI Benchmark를 부활하지 않고 같은 검색 경로를 scratch app dir에서 실행한다. `ui/testMode` 저장·복원·하이라이트, 스캔 중 잠금, saved config 자동 재개 유지. **IMPLEMENTED / MANUAL ACCEPTANCE PENDING**. |
-| GUI 성능 | **thumbnail catch-up visible-range traversal** | 실제 decode는 visible item에 한정되지만 매 tick 전체 list를 훑음. 기능 blocker가 아니므로 안전한 visible-range 접근법이 있을 때만 개선. **DEFERRED / risk-contained** |
-| GUI 표시 | **검색 중 새 페이지 썸네일 우선순위/프리페치** | 0.9.4.142 실기 확인: Load 후 검색 중 캐시된 페이지의 미리보기는 유지되지만, 검색 시작 후 처음 스크롤한 페이지는 썸네일이 채워지지 않고 그룹 선택 시 대표 이미지만 표시됨. 썸네일 생성(디스크 디코드)이 진행 중인 스캔 I/O와 경합하고 백엔드가 요청을 순차 처리하는 것이 원인 후보. 후보: 스캔 중 썸네일 우선순위/양보, 유휴 시 프리페치(대표+멤버), 영속 썸네일 사전 생성. **DEFERRED (완성도 후순위, 사용자 지시 2026-10-20)** |
-| 제품 기능 | **Video comparison semantics / GUI video acceptance** | 콘텐츠 판정 아키텍처와 V 예정서에 설정 창 **동영상 탭** 설계를 추가했다. 자동(권장)이 기본이고, 사용자 지정에서 숏폼 전체 구간 5초 권장 간격과 롱폼의 구조 경계/본편 국소 정밀 탐색 5초 권장 간격(예: 3초로 변경), 길이별 대표 프레임 예산을 조절한다. V0~V4 정확도·비용 Gate 이후 V5 GUI 설정 탭, V6 Partial-clip, V7 Production 순서. UI/알고리즘 구현·실측은 아직 없으며 V는 A-H 본선 밖, Active Build Queue 밖이다. XMP acceptance·S5 실측 우선순위를 대체하지 않는다. 설계: architecture/video-similarity-search.ko.md, 예정서: implementation-briefs/V-video-content-matching.ko.md. **DEFERRED** |
-| 1.0 이후 | **Burst-shot similarity refinement** | burst shot을 일반 near-duplicate와 구분하고 Settings에서 알고리즘 선택 가능하게 하는 방향. 상세 권위는 `docs/architecture/image-burst-shot-similarity.{ko,en}.md`. **POST-1.0** |
-| 1.0 이후 | **CPU/I/O/decode/GPU pipeline throughput 개선** | 낮은 GPU duty 자체를 목표로 하지 않고 end-to-end throughput, backpressure, overlap, queue starvation 개선을 목표로 함. **POST-1.0** |
-| 1.0 이후 | **Scheduler bottleneck awareness 고도화** | 전체 CPU/GPU 사용률이 아니라 단계별 bottleneck / 자기 사용량 / I/O 대기를 구분하는 방향. **POST-1.0** |
+| 0 | 현장 GUI acceptance (.105/.106 + .64+) | **ACCEPTED** (2026-11-02) |
+| 1 | Search / Index / Comparison 최종 acceptance | **ACCEPTED** (18/18, S4 CLOSED) |
+| 2 | I-XMP real-dataset / full-scan coverage | **CLOSED** (2026-11-02) |
+| 3 | S5 실제 dataset product benchmark | **IN PROGRESS / GATE OPEN** |
+| 4 | S6 measurement / data-mining gate | **DEFERRED** (임계값·표본 대기) |
 
-> **범위 경계:** Sparse production restart, NVDEC production 재도입, GPU utilization 수치만을 높이기 위한
-> 튜닝은 현재 대기열로 되돌리지 않는다. 기존 rejection/deferred 근거를 유지한다.
->
-> **작업 순서 요약:** 0.9.4.70 P4 완료 → 0.9.4.71 백엔드 결함 수정 + ThumbnailStore → 0.9.4.72 스캔 walk/analyze 병렬화 + 표시/ETR → 0.9.4.73 크래시 방어/PDB/자동 재개 → 0.9.4.74 telemetry 종료 경로 + read progress/자동 재개 검증 → 0.9.4.75 Test Mode 재도입 + 스크롤/썸네일 후속 → 0.9.4.76 크래시 프론티어 확정 → 0.9.4.77 ANSI 밖 파일명 수정 → 0.9.4.78 추적·워치독·비디오취소·supervisor 확정 → 0.9.4.79 인덱스 생명주기 관리 → 0.9.4.80 analyze 병렬 개선 → 0.9.4.81 매칭 검증 모드 선택 + B 1000 슬라이스(안정형/고속형/자동) → 0.9.4.82 EXIF 회전 WIC FlipRotator 폭주 제거 → 0.9.4.83 인덱스 우선 표시 → 0.9.4.84 라이브 인덱스 완료 카운터 수정 → 0.9.4.85 엔진버전 재검증 진행률 표시 + count 우선 복원 → 0.9.4.86 dataset fingerprint 캐시 + 결정성 진단 → 0.9.4.87 백엔드 셸 썸네일 경로 제거(크래시) → 0.9.4.88 통합 CPU 표기(GUI+백엔드+자식) → 0.9.4.89 증분 dataset fingerprint → 0.9.4.90 그룹 정렬 없음 + 스캔 중 정렬 잠금 → 0.9.4.91 그룹 정렬 없음 최상단/기본값 + append-only 목록 → 0.9.4.92 쌍검증 DBV-1/DBV-2 → 0.9.4.93 불러오기(인덱스 로드 전용) + 팝업 분리 → 0.9.4.94 완료 경로 중복 제거 + 스크롤 점프 수정 → 0.9.4.95 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 → 0.9.4.96 자원 정책 UI 개편 → 0.9.4.97 설정 GPU 개명 + 불러오기 썸네일 수정 → 0.9.4.98 테스트 버튼 표시 설정 → 0.9.4.99 종류 드롭다운 + 대표 제외 마크 + 상세정보 소실 수정 → 0.9.4.100 상세정보 원격 진단 + 파일명 견고화 → 0.9.4.101 열기 경로 상세 동기화 → 0.9.4.102 상세 폼 동기 활성화 → 0.9.4.103 체크 우선 파일 액션 + 파일바 구분선 → 0.9.4.104 휴지통 일괄 처리 + 캐시 일괄 삭제 + 단계 계측 → 0.9.4.105 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화 → 0.9.4.106 100.0% 의미 표시 (동일 내용 / 지각 동일 배지) → 0.9.4.107 A/AB 타깃 열거 (변경 파일 한정 후보 탐색) → 0.9.4.108 상세 로그 요약 헤더 (검색 방법 + 검색 폴더) → 0.9.4.109 보기 모드 전환 겹침 재발 수정 (웜 캐시 아이콘 재적용) → 0.9.4.110 보기 전환 후 휠 속도 복원 (List 단위 잠금 수정) → 0.9.4.111 G4 IPC backpressure + G6 Job Object/GUI 종료 검증 (프로세스 분리 release gate) → 0.9.4.112 S4 상세 로그 저장/종료 acceptance (저장 단위 분리 + 실버튼 E2E) → 0.9.4.113 독립 감사 B1~B3·B7 반영 (동일 내용 배지 전체 확인 + 분석 모드 round-trip + no-FFmpeg SKIP) → 0.9.4.114 핫픽스 (불러오기/검색 시작 백엔드 크래시 — loadMatches 참조 무효화 UAF) → 0.9.4.115 핫픽스 2 (62097 킬 루프 — 이벤트 스레드 차단 + 잔존 킬 타이머) → 0.9.4.116 삭제 파일 유령 그룹 수정 + GUI 자동 정리 (잔존 인덱스 행) → 0.9.4.117 GUI 대량 결과 적용 정지 제거 (지연·청크 채우기 + 메타 요청 폭풍 수정) → manual GUI acceptance → 제품 acceptance 재확인
-> → XMP coverage / color_thumb 현행 유지 확정(사용자 확인) → S5 product benchmark → S6 measurement gate.
-> Test Mode와 traversal은 이 주 흐름을 막지 않는 후순위 작업으로 유지한다.
+- **TemporalAnchor 미검증**: L01형 약한 증거 규칙(4장 연속 81.2), 실제 방송 광고, 60–90분/120분 초과, 임계값 교정, 고정 대표 경계 취약성, 프로브 위치 민감성.
+- **측정 사이드 트랙**: A/B/AB 3회(.106)는 Work Log/DBV §7.3 기록. walk 306.5–399.7 s 변동이 교란이라 성능 일반화는 잠정적. `cudaAvailable=False`를 GPU 미가용으로 단정하지 않는다.
+- **crash**: 새 crash는 `docs/architecture/crash-response-runbook.{ko,en}.md` 절차로 dump/PDB/로그 보존. 재현 없는 추측성 수정 금지.
+
+### 후순위 / 대기
+
+| 작업 | 상태 |
+| --- | --- |
+| GUI Test Mode 수동 acceptance | IMPLEMENTED / PENDING |
+| 썸네일 visible-range traversal | DEFERRED (risk-contained) |
+| 스캔 중 새 페이지 썸네일 우선순위/프리페치 | DEFERRED (2026-10-20) |
+| Video semantics / V5 동영상 탭 | DEFERRED (V0–V4 이후) |
+| burst-shot refinement / pipeline throughput / scheduler bottleneck | POST-1.0 |
+
+> **범위 경계:** Sparse production 재개, NVDEC production 재도입, GPU 사용률 수치만 올리는 튜닝은 큐로 되돌리지 않는다. 기존 기각·보류 근거가 우선한다.
+> **상세 이력:** `docs/development-progress-detail.ko.md`(완료 이정표·버전별 기록)와 `docs/worklog/0.9.4.ko.md`(실험 인덱스).
 
 ## 완료된 주요 이정표
 
