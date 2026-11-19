@@ -11,10 +11,20 @@ jobs:
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
       VCPKG_FEATURE_FLAGS: manifests,binarycaching
+      # vcpkg binary cache: compiled dependency archives are reused across runs.
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-cache,readwrite"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-cache
+          key: vcpkg-${{ runner.os }}-x64-windows-${{ hashFiles('src_unpacked/vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-x64-windows-
 
       - name: Show toolchain and CUDA
         shell: pwsh
