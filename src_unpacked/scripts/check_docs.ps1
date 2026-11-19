@@ -217,6 +217,21 @@ if (Test-Path $genToc) {
   $tocOut | Select-String 'STALE' | ForEach-Object { Write-Output "        $($_.Line)" }
 }
 
+# ---------------------------------------------------------------- 11) README 버전 표기
+#  README가 오래된 버전을 "현재"로 표시하면 새 세션이 잘못된 맥락을 얻는다.
+if ($cmakeVer) {
+  $readmeTargets = @(
+    (Join-Path $root 'README.md'),
+    (Join-Path $root 'README.en.md'),
+    (Join-Path $root 'README.ko.md')
+  )
+  foreach ($p in $readmeTargets) {
+    if (-not (Test-Path $p)) { continue }
+    $t = [System.IO.File]::ReadAllText($p)
+    Check ("README " + (Split-Path $p -Leaf) + " 현재 버전") ($t.Contains($cmakeVer)) "want=$cmakeVer"
+  }
+}
+
 Write-Output ''
 if ($fail -gt 0) { Write-Output "RESULT: FAILED ($fail)"; exit 1 }
 Write-Output 'RESULT: OK'
