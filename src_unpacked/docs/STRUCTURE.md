@@ -23,6 +23,8 @@
 - docs/worklog/0.9.4.ko/.en.md — 0.9.4 개발선의 누적 작업 내역(측정 근거, 기각된 가설, 보류 판단, 학습한 방식). **Performance / Tuning Experiment Index** 를 포함하며, 실험 계보와 살아 있는/기각된 후보를 상태와 재검토 조건으로 연결한다. 기각된 후보는 삭제하지 않는다.
 - docs/recent-work-report.ko/.en.md — 최근 중요 작업 3건의 결과 요약 보고(무엇을 했고 현재 상태가 어떤지). 상세 증거는 build-history/worklog에 있고, 이 문서는 한 곳에서 확인하기 위한 요약본이다.
 - docs/node-status-gate-matrix.ko/.en.md — **Node별 현재 상태/선행조건/정체 원인/판정/다음 Gate를 한 장에 모은 통합 상태판(인덱스)**. 세션 시작 시 가장 먼저 읽는 진입점이며, 사실의 원본이 아니라 roadmap/progress/brief/architecture/build-history/worklog로 연결하는 색인이다. 진행률 %를 쓰지 않고 CLOSED/CONDITIONAL/DEFERRED/NOT ACCEPTED 같은 상태값과 Gate로 기록한다. 본선 A~H와 병렬 S 트랙(S0~S8)을 분리 표기한다.
+- docs/state/current.ko/.en.md — 새 세션이 가장 먼저 읽는 현재 상태 요약(80줄 이내). 판정·수치는 원본 문서로 연결하는 인덱스다.
+- docs/version-index.md — 0.9.4 버전 이력(구 `docs/llms.txt` 5행·72행). 원문을 보존하고 `; 0.9.4.` 경계로 행만 나눴다.
 - docs/architecture/resource-scheduling.ko/.en.md — CPU 정책 + Adaptive GPU AUTO + INI calibration + 실시간 부하 기반 자원관리 목표 아키텍처.
 - docs/implementation-briefs/A-foundation-terminology-instrumentation.ko/.en.md — 종료된 Node A 의 참조 계약(GPU 추상화/ON-OFF/build 명칭/MeasureState/deprecatedFrames 분리). 원본 근거는 `docs/build-history/0.9.4.0.*`.
 - docs/implementation-briefs/S-validation-benchmark-track.ko/.en.md — S0~S8 검증/벤치마크 트랙의 통합 계약. 단계별 상세(S4/S5/S6)는 기존 brief 를 유지하고 이 문서는 대체하지 않는다.
@@ -127,7 +129,6 @@
 - docs/implementation-briefs/S6-measurement-gate.ko.md / .en.md - S6 measurement gate (design only, no product code). Measured environment (Win11 Pro 26300 / Ryzen 7 5800X3D / RTX 3080 Ti present), measured dataset (3347 files / 102,475,315 bytes / zero video files), and the finding that the current 31-run store is a 10-file S5 e2e fixture. Reuses the already-measured 0.9.4.32 run-to-run variation (3.7-7.5% full run, 19.4-45.9% short probe) instead of inventing a new baseline. Fixes the A/B procedure (crossed A B B A order, ModeElapsed as primary metric, RunWallDuration excluded from primary because of its one-second resolution), the explicit warm-cache policy that does not claim OS cache control, and the exact entry/exit conditions for the S6 verdict layer.
 
 Roadmap remains the high-level direction document; implementation briefs contain node-level engineering detail.
-
 
 
 

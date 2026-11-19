@@ -1,6 +1,9 @@
 # AGENTS.md - MediaSimilarityFinder 작업 기억사항
 
 ## 중요 기억 사항
+
+> **세션 시작 시 `docs/state/current.ko.md` 를 먼저 읽는다.** (80줄 이내 요약. 원본은 아래 규칙과 `docs/` 원본 문서들)
+
 1. **각 빌드의 내용을 한글과 영문으로 DOCS에 저장할 것**
    - 모든 버전 변경은 `docs/build-history/<버전>.ko.md` + `<버전>.en.md` 2개 파일로 저장
    - 한쪽만 작성 금지. ko/en 내용 동일하게 유지
