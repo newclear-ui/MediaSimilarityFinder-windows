@@ -166,6 +166,44 @@ if (Test-Path $vindex) {
   }
 }
 
+# ---------------------------------------------------------------- 9) 본문에 적힌 경로 참조 존재
+#  STRUCTURE.md / llms.txt 처럼 링크가 아닌 백틱 경로로 안내하는 문서를 검사한다.
+#  `x.ko/.en.md` 축약 표기는 두 파일로 펼쳐서 확인한다.
+$refTargets = @(
+  (Join-Path $root 'AGENTS.md'),
+  (Join-Path $docs 'STRUCTURE.md'),
+  (Join-Path $docs 'llms.txt'),
+  (Join-Path $docs 'state\current.ko.md'),
+  (Join-Path $docs 'state\current.en.md'),
+  (Join-Path $docs 'node-status-gate-matrix.ko.md'),
+  (Join-Path $docs 'node-status-gate-matrix.en.md')
+)
+$refChecked = 0
+$refMissing = New-Object System.Collections.Generic.List[string]
+foreach ($t in $refTargets) {
+  if (-not (Test-Path $t)) { continue }
+  $text = [System.IO.File]::ReadAllText($t)
+  foreach ($m in [regex]::Matches($text, '((?:docs|scripts|src|gui|tests)/[A-Za-z0-9_./\-]+\.(?:md|txt|ps1|h|cpp))')) {
+    $rel = $m.Groups[1].Value
+    if ($rel -match '[<>*]') { continue }
+    $paths = @()
+    if ($rel -match '^(.*)\.ko/\.en\.(md|txt)$') {
+      $paths += ($Matches[1] + '.ko.' + $Matches[2])
+      $paths += ($Matches[1] + '.en.' + $Matches[2])
+    } else {
+      $paths += $rel
+    }
+    foreach ($r in $paths) {
+      $refChecked++
+      if (-not (Test-Path (Join-Path $root ($r -replace '/', '\')))) {
+        $refMissing.Add("$(Split-Path $t -Leaf) -> $r")
+      }
+    }
+  }
+}
+Check '본문 경로 참조' ($refMissing.Count -eq 0) "checked=$refChecked missing=$($refMissing.Count)"
+$refMissing | Select-Object -First 8 | ForEach-Object { Write-Output "        $_" }
+
 Write-Output ''
 if ($fail -gt 0) { Write-Output "RESULT: FAILED ($fail)"; exit 1 }
 Write-Output 'RESULT: OK'
