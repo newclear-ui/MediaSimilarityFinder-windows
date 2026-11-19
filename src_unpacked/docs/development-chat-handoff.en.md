@@ -1,5 +1,9 @@
 # Development Session Handoff — 2026-09-26
 
+> ⚠️ **Outdated handoff (2026-09-26, around 0.9.4.74).**
+> Read [`docs/state/current.en.md`](state/current.en.md) first for current state.
+> This document is kept only as a record of the constraints at that time (vcpkg, Windows CPU build).
+
 This document is the continuation handoff for a new chat or OpenCode session.
 
 ## 1. Two rules to verify first

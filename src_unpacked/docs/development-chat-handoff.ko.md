@@ -1,5 +1,9 @@
 # Development Session Handoff — 2026-09-26
 
+> ⚠️ **구버전 인계 문서입니다 (2026-09-26, 0.9.4.74 무렵).**
+> 최신 상태는 [`docs/state/current.ko.md`](state/current.ko.md) 를 먼저 읽으십시오.
+> 이 문서는 당시의 배경·제약(vcpkg, Windows CPU 빌드) 기록으로만 유지합니다.
+
 > 새 채팅/새 OpenCode 세션에서 MediaSimilarityFinder 개발을 이어가기 위한 인계 문서.
 > 이 문서는 소스 코드를 변경하지 않으며, 현재 개발 방향과 상태를 복구하기 위한 기준이다.
 

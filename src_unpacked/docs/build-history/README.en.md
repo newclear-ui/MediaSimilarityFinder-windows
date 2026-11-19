@@ -9,6 +9,8 @@ This directory records MediaSimilarityFinder release history and important archi
 
 ## Version list
 
+> Detailed 0.9.4.x version history (formerly line 5 of `docs/llms.txt`) lives in [`docs/version-index.md`](../version-index.md).
+
 | Version | Summary |
 |---|---|
 | 0.9.1.0 | CPU baseline |

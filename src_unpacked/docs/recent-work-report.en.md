@@ -1,5 +1,9 @@
 # Recent Significant Work and Audit Report (2026-10-08)
 
+> ⚠️ **Report as of 0.9.4.74 (2026-10-08).**
+> Read [`docs/state/current.en.md`](state/current.en.md) first for current state.
+> This document is kept as evidence of the audit results at that time.
+
 Baseline commit: `578a89d` (0.9.4.74 code; docs/backup records are also synchronized to origin/main)
 Version: `0.9.4.74` / CPU CTest 116/116 / GPU CTest 117/117
 

@@ -22,13 +22,14 @@ below is surprising, **follow the link to its origin.**
 
 ## Reading order (at OpenCode / ChatGPT agent session start)
 
-1. **This document** — the overall Node/Gate entry point
-2. **`development-progress.{ko,en}.md`** — active execution queue, current position, blockers, and completed major milestones
-3. `development-roadmap.{ko,en}.md` — direction and prerequisites
-4. The active node's `docs/implementation-briefs/<Node>-*.md`
-5. The required `docs/architecture/*.md`
-6. Relevant `docs/build-history/` + `docs/worklog/`
-7. Source / test
+1. **`docs/state/current.{ko,en}.md`** — 80-line current-state summary (read first)
+2. **This document** — the overall Node/Gate entry point
+3. **`development-progress.{ko,en}.md`** — active execution queue, current position, blockers, and completed major milestones
+4. `development-roadmap.{ko,en}.md` — direction and prerequisites
+5. The active node's `docs/implementation-briefs/<Node>-*.md`
+6. The required `docs/architecture/*.md`
+7. Relevant `docs/build-history/` + `docs/worklog/`
+8. Source / test
 
 > **`src_unpacked/AGENTS.md` working rule**: read steps 1-4 before changing source,
 > and do not start a node the current gate does not permit.

@@ -22,13 +22,14 @@
 
 ## 읽기 순서 (OpenCode / ChatGPT 에이전트 세션 시작 시)
 
-1. **이 문서** — 전체 Node/Gate의 현재 진입점
-2. **`development-progress.{ko,en}.md`** — 현재 실행 큐 · 현재 위치 · blocker · 완료 주요 이정표
-3. `development-roadmap.{ko,en}.md` — 방향과 선행조건
-4. 활성 Node의 `docs/implementation-briefs/<Node>-*.md`
-5. 필요한 `docs/architecture/*.md`
-6. 관련 `docs/build-history/` + `docs/worklog/`
-7. source / test
+1. **`docs/state/current.{ko,en}.md`** — 80줄 현재 상태 요약 (가장 먼저)
+2. **이 문서** — 전체 Node/Gate의 현재 진입점
+3. **`development-progress.{ko,en}.md`** — 현재 실행 큐 · 현재 위치 · blocker · 완료 주요 이정표
+4. `development-roadmap.{ko,en}.md` — 방향과 선행조건
+5. 활성 Node의 `docs/implementation-briefs/<Node>-*.md`
+6. 필요한 `docs/architecture/*.md`
+7. 관련 `docs/build-history/` + `docs/worklog/`
+8. source / test
 
 > **`src_unpacked/AGENTS.md` 작업 규칙**: 소스를 변경하기 전에 위 1~4를 반드시 읽고,
 > 현재 Gate가 허용하지 않는 Node를 먼저 시작하지 않는다.

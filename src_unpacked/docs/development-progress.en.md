@@ -14,9 +14,9 @@ The Roadmap is the structural direction. Progress records the actual position, p
 
 This document is a **mandatory read for OpenCode and ChatGPT agents when starting a new session**.
 If `docs/node-status-gate-matrix.en.md` is the one-page Node/Gate index, this document restores the **active execution queue, actual current state, completed major milestones, and current blockers**.
-At session restart, read this document immediately after the Matrix and follow its current execution priority first.
+At session restart, read the **`docs/state/current.en.md`** summary first, then the Matrix, then this document. Follow this document for current execution priority.
 Detailed experiments, measurements, and decision lineage remain in `docs/worklog/`; version-specific changes and evidence remain in `docs/build-history/`.
-A separate `workprogress` document is intentionally not created; this document is the single entry point for current work progress.
+A separate `workprogress` document is intentionally not created. The 80-line summary entry point is `docs/state/current.en.md`; **this document is the source of execution state**.
 **Update this document immediately whenever Node or Build progress, verdict, gate, or priority changes.** Starting or completing implementation, verification results, PASS/CONDITIONAL/DEFERRED/NOT ACCEPTED/CLOSED changes, and confirmation of the next build must be reflected in the Active Build Queue and current-state sections in the same session in which the change occurs. Preserve the detailed evidence in Work Log / Build History.
 
 ## Active Build Queue / Current Work Priority

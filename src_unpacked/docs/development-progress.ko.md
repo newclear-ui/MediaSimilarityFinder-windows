@@ -14,9 +14,9 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 
 이 문서는 **OpenCode 및 ChatGPT 에이전트가 새로운 세션을 시작할 때 반드시 읽어야 하는 핵심 진행 문서**다.
 `docs/node-status-gate-matrix.ko.md`가 전체 Node/Gate의 1페이지 인덱스라면, 이 문서는 **현재 실행 큐·실제 현재 상태·완료된 주요 이정표·현재 blocker**를 복원하는 실행 기준 문서다.
-세션 재시작 시 Matrix를 읽은 직후 이 문서를 읽고, 이 문서의 현재 작업 우선순위를 먼저 따른다.
+세션 재시작 시 **`docs/state/current.ko.md`** 요약을 가장 먼저 읽고, 그다음 Matrix → 이 문서 순으로 읽는다. 현재 작업 우선순위는 이 문서를 따른다.
 완료된 상세 실험·측정·판단은 `docs/worklog/`에, 버전별 실제 변경과 증거는 `docs/build-history/`에 유지한다.
-별도의 `workprogress` 문서는 만들지 않으며, 이 문서를 현재 작업 진행의 단일 진입점으로 사용한다.
+별도의 `workprogress` 문서는 만들지 않는다. 80줄 요약 진입점은 `docs/state/current.ko.md` 이고, **실행 상태의 원본은 이 문서**다.
 **Node 또는 Build의 진척·판정·Gate·우선순위가 변경되는 즉시 이 문서를 갱신한다.** 구현 착수, 구현 완료, 검증 결과, PASS/CONDITIONAL/DEFERRED/NOT ACCEPTED/CLOSED 변경, 다음 빌드 확정 등 현재 실행 상태에 영향을 주는 변화는 그 사실이 발생한 세션에서 바로 Active Build Queue와 현재 상태/완료 이정표에 반영한다. 상세 근거는 Work Log / Build History에 함께 보존한다.
 
 ## 현재 작업 우선순위 / Active Build Queue

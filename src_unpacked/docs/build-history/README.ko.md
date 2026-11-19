@@ -9,6 +9,8 @@ MediaSimilarityFinder의 버전별 개발 이력과 중요한 설계 결정을 �
 
 ## 버전 목록
 
+> 0.9.4.x 상세 버전 이력(구 `docs/llms.txt` 5행)은 [`docs/version-index.md`](../version-index.md) 참조.
+
 | 버전 | 요약 |
 |---|---|
 | 0.9.1.0 | CPU baseline |
