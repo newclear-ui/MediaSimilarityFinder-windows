@@ -151,12 +151,19 @@ if ($consts.Count -eq 3) {
   ) "db=$($consts['db']) engine=$($consts['engine']) cache=$($consts['cache'])"
 }
 
-# ---------------------------------------------------------------- 8) version-index 존재
+# ---------------------------------------------------------------- 8) version-index 존재·드리프트
 $vindex = Join-Path $docs 'version-index.md'
 if (Test-Path $vindex) {
   $vi = [System.IO.File]::ReadAllText($vindex)
   $rows = ([regex]::Matches($vi, '(?m)^\| 0\.9\.4\.\d+ \|')).Count
-  Check 'version-index 표 40행 이상' ($rows -ge 40) "rows=$rows"
+  Check 'version-index llms 원문 표 40행 이상' ($rows -ge 40) "rows=$rows"
+
+  $genRows = ([regex]::Matches($vi, '(?m)^\| \[0\.9\.4\.\d+\]\(build-history/')).Count
+  $histCount = (Get-ChildItem (Join-Path $docs 'build-history') -Filter '0.9.4.*.ko.md').Count
+  Check 'version-index 전체 인덱스 = build-history 파일 수' ($genRows -eq $histCount) "rows=$genRows files=$histCount"
+  if ($cmakeVer) {
+    Check 'version-index 에 현재 버전' ($vi.Contains("build-history/$cmakeVer.ko.md")) "want=$cmakeVer"
+  }
 }
 
 Write-Output ''

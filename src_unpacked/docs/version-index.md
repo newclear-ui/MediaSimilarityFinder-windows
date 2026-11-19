@@ -4,6 +4,194 @@
 > 원문은 그대로 보존했고, `; 0.9.4.` 경계로 행만 나눴습니다. 요약·의역 없음.
 > 기준선 전문과 메타는 아래 절에 원문 그대로 둡니다.
 
+<!-- BEGIN GENERATED VERSION INDEX -->
+
+## 전체 버전 인덱스 (0.9.4.0 – 0.9.4.174)
+
+> `docs/build-history/` 의 각 버전 파일 제목에서 자동 생성한다. 직접 편집하지 않는다.
+> 재생성: `pwsh -NoProfile -File scripts/gen_version_index.ps1` (검사만: `-Check`).
+> 영문판 제목이 필요하면 같은 경로의 `.en.md` 를 연다.
+
+| 버전 | 제목 |
+|---|---|
+| [0.9.4.0](build-history/0.9.4.0.ko.md) | Node A: Foundation / Terminology / Instrumentation |
+| [0.9.4.1](build-history/0.9.4.1.ko.md) | MainWindow 스캔 workflow 회귀 테스트 |
+| [0.9.4.2](build-history/0.9.4.2.ko.md) | Node B1: Minimal Adaptive Allocation |
+| [0.9.4.3](build-history/0.9.4.3.ko.md) | Node B2: Runtime Throughput Feedback |
+| [0.9.4.4](build-history/0.9.4.4.ko.md) | Node B3: Live Load Awareness |
+| [0.9.4.5](build-history/0.9.4.5.ko.md) | Node B4: Stability Control |
+| [0.9.4.6](build-history/0.9.4.6.ko.md) | Node B5: Transfer / Workload Cost |
+| [0.9.4.7](build-history/0.9.4.7.ko.md) | Node B6: Resource Mode Integration |
+| [0.9.4.8](build-history/0.9.4.8.ko.md) | Execution Binding + Node B7 Gate |
+| [0.9.4.9](build-history/0.9.4.9.ko.md) | Node C1: Profile Foundation |
+| [0.9.4.10](build-history/0.9.4.10.ko.md) | Node C2: Initial Calibration |
+| [0.9.4.11](build-history/0.9.4.11.ko.md) | Node C3: Opportunistic Recalibration |
+| [0.9.4.12](build-history/0.9.4.12.ko.md) | Node C4: Calibration Gate |
+| [0.9.4.13](build-history/0.9.4.13.ko.md) | Node C4.1: Calibration Lifecycle Fix |
+| [0.9.4.14](build-history/0.9.4.14.ko.md) | C4.1 빌드 복구 |
+| [0.9.4.15](build-history/0.9.4.15.ko.md) | Node D1a Image-Path Observability |
+| [0.9.4.16](build-history/0.9.4.16.ko.md) | D1a 게이트 (schema v3) |
+| [0.9.4.17](build-history/0.9.4.17.ko.md) | D1b 게이트 (walker·video 관측) |
+| [0.9.4.18](build-history/0.9.4.18.ko.md) | D2 Barrier Review (video completion order) |
+| [0.9.4.19](build-history/0.9.4.19.ko.md) | D3-Minimal Walker Queue Safety |
+| [0.9.4.20](build-history/0.9.4.20.ko.md) | D4a Backend Internal Timing |
+| [0.9.4.21](build-history/0.9.4.21.ko.md) | D8a Reproducible Dataset Foundation / Dataset Fingerprint |
+| [0.9.4.22](build-history/0.9.4.22.ko.md) | D8b Scaled Dataset / Walker Queue Evidence |
+| [0.9.4.23](build-history/0.9.4.23.ko.md) | D9a Analyze Internal Observability |
+| [0.9.4.24](build-history/0.9.4.24.ko.md) | QSettings Organization 이름 변경 |
+| [0.9.4.25](build-history/0.9.4.25.ko.md) | D9b Expensive Verification Cost Reduction |
+| [0.9.4.26](build-history/0.9.4.26.ko.md) | D9c Expensive Verify 내부 비용 계측 |
+| [0.9.4.27](build-history/0.9.4.27.ko.md) | D1 File Open / WIC Factory 원인 계측 |
+| [0.9.4.28](build-history/0.9.4.28.ko.md) | D2 CreateDecoderFromFilename 내부 비용 / WIC Decoder 진입경로 비교 |
+| [0.9.4.29](build-history/0.9.4.29.ko.md) | D3 `decode` / `decodePreserveAspect` 중복 비용 계측 |
+| [0.9.4.30](build-history/0.9.4.30.ko.md) | CPU 사용량 10~90% 자동 정규화 |
+| [0.9.4.31](build-history/0.9.4.31.ko.md) | D3 후속 공유 decode 후보 측정 |
+| [0.9.4.32](build-history/0.9.4.32.ko.md) | D3 후속 후보 안정성·리샘플 차이 원인 조사 |
+| [0.9.4.33](build-history/0.9.4.33.ko.md) | 공유 WIC source + 독립 2개 scaler 후보 측정 (I-2) |
+| [0.9.4.34](build-history/0.9.4.34.ko.md) | I-2 검증 보완: 전체 corpus exactness · EXIF 정정 · full-scan groups |
+| [0.9.4.35](build-history/0.9.4.35.ko.md) | EXIF Orientation query path 결함 수정과 post-fix 회귀 |
+| [0.9.4.36](build-history/0.9.4.36.ko.md) | I-2 Shared WIC Source의 production 통합 |
+| [0.9.4.37](build-history/0.9.4.37.ko.md) | I-3 Production Full-Scan End-to-End Validation |
+| [0.9.4.38](build-history/0.9.4.38.ko.md) | E-1 Adaptive Video Decode Planner 사전 조사 / 측정 / 설계 |
+| [0.9.4.39](build-history/0.9.4.39.ko.md) | E-2A Adaptive Sampling Strategy 실측 |
+| [0.9.4.40](build-history/0.9.4.40.ko.md) | E-2B Exact Sparse Seek + Adaptive Sampling Planner |
+| [0.9.4.41](build-history/0.9.4.41.ko.md) | E-3A HEVC Seek Landing Characterization |
+| [0.9.4.42](build-history/0.9.4.42.ko.md) | E-3B Adaptive Sampling Planner Calibration 및 End-to-End Validation |
+| [0.9.4.43](build-history/0.9.4.43.ko.md) | F-1 Random-Access Safety Contract + NVDEC Exactness Preflight |
+| [0.9.4.44](build-history/0.9.4.44.ko.md) | S4 후속 GUI 정리 통합 회귀 기준선 |
+| [0.9.4.45](build-history/0.9.4.45.ko.md) | XMP Orientation Fallback production 경로 |
+| [0.9.4.46](build-history/0.9.4.46.ko.md) | DEFECT-A / DEFECT-B 수정 |
+| [0.9.4.47](build-history/0.9.4.47.ko.md) | 비ASCII 경로 스캔 실패 수정 |
+| [0.9.4.48](build-history/0.9.4.48.ko.md) | GUI Stop 무응답 수정 |
+| [0.9.4.49](build-history/0.9.4.49.ko.md) | Detailed Logs 사용자 요약 추가 |
+| [0.9.4.50](build-history/0.9.4.50.ko.md) | S4 telemetry Phase-A 보강 |
+| [0.9.4.51](build-history/0.9.4.51.ko.md) | fingerprint 진행 보고 + telemetry OFF 스킵 |
+| [0.9.4.52](build-history/0.9.4.52.ko.md) | 이미지 처리 구간 내제 문제 2건 수정 |
+| [0.9.4.53](build-history/0.9.4.53.ko.md) | 좌측 요약 패널 3행 분리 |
+| [0.9.4.54](build-history/0.9.4.54.ko.md) | 읽기 카운터 실시간화 + 리포트 팝업 hang hardening |
+| [0.9.4.55](build-history/0.9.4.55.ko.md) | 패널 카운터 monotonic + 취소 후 보존 |
+| [0.9.4.56](build-history/0.9.4.56.ko.md) | scanFinished hang diagnostics |
+| [0.9.4.57](build-history/0.9.4.57.ko.md) | fingerprint scope 인식 |
+| [0.9.4.58](build-history/0.9.4.58.ko.md) | Stop 시 드레인 + 지문 실행 시점 재배치 |
+| [0.9.4.59](build-history/0.9.4.59.ko.md) | Video Cancelled/Failed 분리 |
+| [0.9.4.60](build-history/0.9.4.60.ko.md) | Generation scope 분리 + 명시적 terminal state |
+| [0.9.4.61](build-history/0.9.4.61.ko.md) | 유사그룹 Scroll 회귀 수정 |
+| [0.9.4.62](build-history/0.9.4.62.ko.md) | 크래시 대응 3종 (덤프 안내·방어·관측) |
+| [0.9.4.63](build-history/0.9.4.63.ko.md) | GUI usability 3종 + 후속 설계 검토 |
+| [0.9.4.64](build-history/0.9.4.64.ko.md) | 표시 옵션을 설정 대화상자 일반 탭으로 통합 |
+| [0.9.4.65](build-history/0.9.4.65.ko.md) | 스캔 실패 핸들러 무throw 확정 |
+| [0.9.4.66](build-history/0.9.4.66.ko.md) | 보기 모드 전환 후 이미지 겹침 수정 |
+| [0.9.4.67](build-history/0.9.4.67.ko.md) | P1 BackendCore 경계 + Backend 진입점 |
+| [0.9.4.68](build-history/0.9.4.68.ko.md) | P2 BackendClient + Loopback |
+| [0.9.4.69](build-history/0.9.4.69.ko.md) | P3 실 spawn + Supervisor + IPC |
+| [0.9.4.70](build-history/0.9.4.70.ko.md) | P4 hardening + final acceptance |
+| [0.9.4.71](build-history/0.9.4.71.ko.md) | 백엔드 결함 수정 + ThumbnailStore |
+| [0.9.4.72](build-history/0.9.4.72.ko.md) | 스캔 정체 수정(walk/analyze 병렬화) + 표시/ETR 결함 |
+| [0.9.4.73](build-history/0.9.4.73.ko.md) | 백엔드 크래시 방어 + PDB 활성화 + 스캔 자동 재개 |
+| [0.9.4.74](build-history/0.9.4.74.ko.md) | 감사 통합, telemetry 종료 크래시 수정, 진행률·재개 |
+| [0.9.4.75](build-history/0.9.4.75.ko.md) | Test Mode 재도입, 스크롤/썸네일 후속 수정 |
+| [0.9.4.76](build-history/0.9.4.76.ko.md) | 크래시 프론티어 확정 (batch 진입 checkpoint) |
+| [0.9.4.77](build-history/0.9.4.77.ko.md) | ANSI 코드페이지 밖 파일명 크래시 수정 |
+| [0.9.4.78](build-history/0.9.4.78.ko.md) | 스캔 추적·워치독·비디오 취소·supervisor 확정 |
+| [0.9.4.79](build-history/0.9.4.79.ko.md) | 인덱스 생명주기 관리 (janitor) |
+| [0.9.4.80](build-history/0.9.4.80.ko.md) | analyze 병렬 구조 개선 (UNVERIFIED) |
+| [0.9.4.81](build-history/0.9.4.81.ko.md) | 매칭 검증 모드 선택 + B 1000 슬라이스 |
+| [0.9.4.82](build-history/0.9.4.82.ko.md) | EXIF 회전 이미지 WIC FlipRotator 폭주 제거 |
+| [0.9.4.83](build-history/0.9.4.83.ko.md) | 인덱스 우선 표시 (스캔 시작 시 기존 결과 먼저) |
+| [0.9.4.84](build-history/0.9.4.84.ko.md) | 라이브 "인덱스 완료" 카운터 수정 (match 비의존) |
+| [0.9.4.85](build-history/0.9.4.85.ko.md) | 엔진버전 재검증 진행률 표시 + count 우선 복원 |
+| [0.9.4.86](build-history/0.9.4.86.ko.md) | dataset fingerprint 캐시 + 후보 결정성 진단 |
+| [0.9.4.87](build-history/0.9.4.87.ko.md) | 백엔드 셸 썸네일 경로 제거 (IThumbnailCache 크래시 수정) |
+| [0.9.4.88](build-history/0.9.4.88.ko.md) | 통합 CPU 표기 (GUI + 백엔드 + 백엔드 자식) |
+| [0.9.4.89](build-history/0.9.4.89.ko.md) | 증분 dataset fingerprint (파일별 전체 해시 캐시) |
+| [0.9.4.90](build-history/0.9.4.90.ko.md) | 그룹 정렬에 "없음" 추가 + 스캔 중 정렬 잠금 |
+| [0.9.4.91](build-history/0.9.4.91.ko.md) | 그룹 정렬 "없음" 최상단/기본값 + 스캔 중 append-only 목록 |
+| [0.9.4.92](build-history/0.9.4.92.ko.md) | 쌍검증 DBV-1/DBV-2 (캐시키 읽기 제거 + 캐시 확대) |
+| [0.9.4.93](build-history/0.9.4.93.ko.md) | "불러오기" (인덱스 로드 전용) + 팝업 분리 |
+| [0.9.4.94](build-history/0.9.4.94.ko.md) | 완료 경로 중복 제거 + 스크롤 점프 수정 |
+| [0.9.4.95](build-history/0.9.4.95.ko.md) | 요약 패널 쌍검증 표기 + 안정형 재스캔 측정 기록 |
+| [0.9.4.96](build-history/0.9.4.96.ko.md) | 자원 정책 UI 개편 (Minimum 개명 + Custom 삭제 + 설정 이전) |
+| [0.9.4.97](build-history/0.9.4.97.ko.md) | 설정 GPU 개명 + 불러오기 썸네일 수정 |
+| [0.9.4.98](build-history/0.9.4.98.ko.md) | 테스트 버튼 표시 설정 |
+| [0.9.4.99](build-history/0.9.4.99.ko.md) | 종류 드롭다운 + 대표 제외 마크 + 상세정보 소실 수정 |
+| [0.9.4.100](build-history/0.9.4.100.ko.md) | 상세정보 원격 진단 + 파일명 견고화 |
+| [0.9.4.101](build-history/0.9.4.101.ko.md) | 열기 경로 상세 동기화 |
+| [0.9.4.102](build-history/0.9.4.102.ko.md) | 상세 폼 동기 활성화 |
+| [0.9.4.103](build-history/0.9.4.103.ko.md) | 체크 우선 파일 액션 + 파일바 구분선 |
+| [0.9.4.104](build-history/0.9.4.104.ko.md) | 휴지통 일괄 처리 + 썸네일 캐시 일괄 삭제 + 단계 계측 |
+| [0.9.4.105](build-history/0.9.4.105.ko.md) | 미리보기 소실 근본 수정 + 상세정보 핑퐁 수정 + 인덱스 즉시 반영 + 파일 I/O 백그라운드화 |
+| [0.9.4.106](build-history/0.9.4.106.ko.md) | 100.0% 의미 표시 (동일 내용 / 지각 동일 배지) |
+| [0.9.4.107](build-history/0.9.4.107.ko.md) | A/AB 타깃 열거 (변경 파일 한정 후보 탐색) |
+| [0.9.4.108](build-history/0.9.4.108.ko.md) | 상세 로그 요약 헤더 (검색 방법 + 검색 폴더) |
+| [0.9.4.109](build-history/0.9.4.109.ko.md) | 보기 모드 전환 겹침 재발 수정 (웜 캐시 아이콘 재적용) |
+| [0.9.4.110](build-history/0.9.4.110.ko.md) | 보기 전환 후 휠 스크롤 속도 복원 (List 단위 잠금 수정) |
+| [0.9.4.111](build-history/0.9.4.111.ko.md) | G4 IPC backpressure + G6 Job Object/GUI 종료 검증 (프로세스 분리 release gate) |
+| [0.9.4.112](build-history/0.9.4.112.ko.md) | S4 GUI 상세 로그 저장/종료 acceptance (저장 단위 분리 + 실버튼 E2E) |
+| [0.9.4.113](build-history/0.9.4.113.ko.md) | 독립 감사 B1~B3·B7 반영 (동일 내용 배지 전체 확인 + 분석 모드 round-trip + no-FFmpeg SKIP) |
+| [0.9.4.114](build-history/0.9.4.114.ko.md) | 핫픽스: 불러오기/검색 시작 백엔드 크래시 (loadMatches 참조 무효화 UAF) |
+| [0.9.4.115](build-history/0.9.4.115.ko.md) | 핫픽스 2: 불러오기/검색 시작 62097 크래시 루프 (이벤트 스레드 차단 + 잔존 킬 타이머) |
+| [0.9.4.116](build-history/0.9.4.116.ko.md) | 삭제 파일 유령 그룹 수정 + GUI 자동 정리 (잔존 인덱스 행) |
+| [0.9.4.117](build-history/0.9.4.117.ko.md) | GUI 대량 결과 적용 정지 제거 (지연·청크 채우기 + 메타 요청 폭풍 수정) |
+| [0.9.4.118](build-history/0.9.4.118.ko.md) | 스캔 목록 churn 제거 (append 우선 재사용 + 대형 append 지연) |
+| [0.9.4.119](build-history/0.9.4.119.ko.md) | 처리량 표기 의미 명확화 (분석 단계 라벨 + 전체/신규 요율) |
+| [0.9.4.120](build-history/0.9.4.120.ko.md) | GUI-less 구성 복구 + 배지 비용 판정 기록 + 제품 acceptance 런북 |
+| [0.9.4.121](build-history/0.9.4.121.ko.md) | 상세 정보창 폭주 수정 (유사도 라벨 래핑 + 값 행 규율 + 파일 썸네일 재시도) |
+| [0.9.4.122](build-history/0.9.4.122.ko.md) | 우클릭 경로 외부 I/O 제거 (QuickLook 탐색 negative 캐시) |
+| [0.9.4.123](build-history/0.9.4.123.ko.md) | 뷰모드 플레이크 근본 수정 + PDB 동봉 + 덤프 수집 원클릭 + 제품 acceptance 재확인 |
+| [0.9.4.124](build-history/0.9.4.124.ko.md) | 거짓 미구현 주석 정정 (CLI 추적 후속) |
+| [0.9.4.125](build-history/0.9.4.125.ko.md) | QuickLook 파이프 유실 방지 (overlapped+타임아웃) + color_thumb 현행 유지 판정 |
+| [0.9.4.126](build-history/0.9.4.126.ko.md) | Benchmark journal recovery CLI (`--benchmark-recover`) |
+| [0.9.4.127](build-history/0.9.4.127.ko.md) | Test Mode XMP 회귀 테스트 (실파이프라인 판정 검증) |
+| [0.9.4.128](build-history/0.9.4.128.ko.md) | 이미지 디코드 공유 소스 통합 (파일당 3 open → 1 open) |
+| [0.9.4.129](build-history/0.9.4.129.ko.md) | Hybrid(AB) 라이브 매치 유실 수정 (라이브 인덱스 off-by-one) |
+| [0.9.4.130](build-history/0.9.4.130.ko.md) | 매치 세트 완전성 베이스라인 (A/AB 자가치유) |
+| [0.9.4.131](build-history/0.9.4.131.ko.md) | 표시 결과 세트 기준 카운터 통일 (요약 패널 + 상세 로그) |
+| [0.9.4.132](build-history/0.9.4.132.ko.md) | 불러오기(Load) 후 검색 요약 채움 |
+| [0.9.4.133](build-history/0.9.4.133.ko.md) | 시스템 CPU 지표 공식 교정 (GetSystemTimes idle-in-denominator) |
+| [0.9.4.134](build-history/0.9.4.134.ko.md) | 빠른 재스캔 모드(설정) + 강제 재검증(중복 파일만) |
+| [0.9.4.135](build-history/0.9.4.135.ko.md) | Test Mode 차이 리포트 + Yes/No 인덱스 채택 |
+| [0.9.4.136](build-history/0.9.4.136.ko.md) | 미리보기 크기 게이지: 1.0 기준선 + 드래그 비율 + 리스트 보기 비활성 |
+| [0.9.4.137](build-history/0.9.4.137.ko.md) | 미리보기 게이지: 0.05 단위 스냅 + 비율 버블 소수 둘째 자리 |
+| [0.9.4.138](build-history/0.9.4.138.ko.md) | 미리보기 셀 폭이 텍스트가 아닌 미리보기 크기를 따르도록 (동적 텍스트 축약) |
+| [0.9.4.139](build-history/0.9.4.139.ko.md) | EXE 아이콘 삽입 + 그룹 정렬 개편(그룹 크기·방향 선택, Load 후 잠금 해제) |
+| [0.9.4.140](build-history/0.9.4.140.ko.md) | 스캔 시작 시 미리보기(썸네일) 유지 (변경된 파일만 종료 후 갱신) |
+| [0.9.4.141](build-history/0.9.4.141.ko.md) | 검색 중 불러온 목록·선택·미리보기 유지 (결과는 완료 시 적용) |
+| [0.9.4.142](build-history/0.9.4.142.ko.md) | 검색 중 화면 동결 (완료 시 한 번만 반영, 썸네일 재구성 churn 제거) |
+| [0.9.4.143](build-history/0.9.4.143.ko.md) | 변경된 파일의 이전 쌍 제거 + 변경 스캔 후 인덱스 자동 재적용 + 최근 폴더 개수 설정 |
+| [0.9.4.144](build-history/0.9.4.144.ko.md) | 상세 로그에 실패 파일 목록과 사유 추가 |
+| [0.9.4.145](build-history/0.9.4.145.ko.md) | 검색 요약 "합계" 줄에 실패 파일 수 표시 |
+| [0.9.4.146](build-history/0.9.4.146.ko.md) | 정렬 표시 일치 + 백엔드/GUI 단독·중복 실행 방지 |
+| [0.9.4.147](build-history/0.9.4.147.ko.md) | "없음" 정렬이 불러오기/검색 시의 순서를 기억 |
+| [0.9.4.148](build-history/0.9.4.148.ko.md) | 재검증 버튼 툴바 배치 누락 수정 |
+| [0.9.4.149](build-history/0.9.4.149.ko.md) | 불러오기/재검증 단일 슬롯 통합 |
+| [0.9.4.150](build-history/0.9.4.150.ko.md) | 날짜 정렬(생성 날짜) 추가 |
+| [0.9.4.151](build-history/0.9.4.151.ko.md) | 감사 지적 결함 수정 (채택 범위·취소/실패 일치·저장 실패) |
+| [0.9.4.152](build-history/0.9.4.152.ko.md) | 지시 재검토 결함 수정 (P0 content_hash 키·P1 meta·저장 실패· 체크포인트) |
+| [0.9.4.153](build-history/0.9.4.153.ko.md) | 지시 재검토 P1-A·P1-B 종료 경로 수정 |
+| [0.9.4.154](build-history/0.9.4.154.ko.md) | 킬 내구성 D1 crash marker 구현 |
+| [0.9.4.155](build-history/0.9.4.155.ko.md) | decodedFrames 정직화 (실제 디코드 수 계측) |
+| [0.9.4.156](build-history/0.9.4.156.ko.md) | V 동영상 탭 1차: 설정·전파·간격/예산+캐시 분리 |
+| [0.9.4.157](build-history/0.9.4.157.ko.md) | 비디오 썸네일 복구 + AV1 소프트웨어 디코드 |
+| [0.9.4.158](build-history/0.9.4.158.ko.md) | 부분 지문 캐시 저장 금지 + 샘플 완전성 계약 |
+| [0.9.4.159](build-history/0.9.4.159.ko.md) | 비교 엔진 행 버퍼 재사용 (P2) |
+| [0.9.4.160](build-history/0.9.4.160.ko.md) | quickIdentity 캐시 식별 신뢰성 핀 (P2) |
+| [0.9.4.161](build-history/0.9.4.161.ko.md) | 디코드 단계별 비용 분리 측정 (P1) |
+| [0.9.4.162](build-history/0.9.4.162.ko.md) | 매칭 경로 MSSIM 시간 분리 집계 (P1) |
+| [0.9.4.163](build-history/0.9.4.163.ko.md) | GPU 배치/CPU 전환 비용 실측 (P2) |
+| [0.9.4.164](build-history/0.9.4.164.ko.md) | MSSIM 타이밍 귀속 정밀화 + 디코드 오류 집계 (P2) |
+| [0.9.4.165](build-history/0.9.4.165.ko.md) | 중단된 비디오 분석의 영구 실패 방지 (P1 회귀 수정) |
+| [0.9.4.166](build-history/0.9.4.166.ko.md) | 타임스탬프 신뢰 조사 + NOPTS 계수 (P1) |
+| [0.9.4.167](build-history/0.9.4.167.ko.md) | start_time 기준 정규화 + V2/V3/V4 진단 본구현 |
+| [0.9.4.168](build-history/0.9.4.168.ko.md) | V3 구간기반 개수 선택 production 기본값 + V2 차선 보존 |
+| [0.9.4.169](build-history/0.9.4.169.ko.md) | V4 post-SSIM 커버리지 + clip05 진단 + 문서 정합화 |
+| [0.9.4.170](build-history/0.9.4.170.ko.md) | D3D11VA 하드웨어 디코드 (F-2 부분 재개) |
+| [0.9.4.171](build-history/0.9.4.171.ko.md) | V 코호트 샘플링 본구현 (진단 opt-in, 기본 동작 불변) |
+| [0.9.4.172](build-history/0.9.4.172.ko.md) | TemporalAnchorV1 독립 판독 경로 (실험 opt-in, 기본값 불변) |
+| [0.9.4.173](build-history/0.9.4.173.ko.md) | TemporalAnchorV2 양방향 시간 앵커 판독 경로 (실험 opt-in, LegacyV3 기본값 유지) |
+| [0.9.4.174](build-history/0.9.4.174.ko.md) | TemporalAnchorV3 사용자 지정 알고리즘 제품 구현 (실험 opt-in, 기본값 불변) |
+
+<!-- END GENERATED VERSION INDEX -->
+
 ## 0.9.4.x 이력
 
 | 버전 | 내용 |

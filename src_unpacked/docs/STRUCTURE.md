@@ -11,7 +11,7 @@
 - scripts/ — build_windows_cpu.ps1(CPU 빌드), build_windows_gpu.ps1(GPU 빌드, 0.9.4.x 목표),
   package_portable.ps1(포터블 패키징 → 저장소 루트 backup/MediaSimilarityFinder-v<버전>-Portable-Windows-x64.zip,
    exe/DLL/ffmpeg 수집 후 smoke 통과 확인, 개수 5개 회전),
-  backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 5개 회전), check_docs.ps1(문서 일관성 검사: ko/en 쌍·상대 링크·state/CMake/BUILD_STATUS 버전 일치·matrix 기준선·engine/DB/cache 상수 일치·llms.txt 크기·state 줄 수·version-index 행 수).
+  backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 5개 회전), gen_version_index.ps1(docs/version-index.md 의 전체 버전 인덱스를 build-history 제목에서 재생성, `-Check` 로 드리프트 검사), check_docs.ps1(문서 일관성 검사: ko/en 쌍·상대 링크·state/CMake/BUILD_STATUS 버전 일치·matrix 기준선·engine/DB/cache 상수 일치·llms.txt 크기·state 줄 수·version-index 행 수/현재 버전).
 - gui/ — Qt 위젯 앱. main.cpp(kVersion 포함), mainwindow.h/.cpp(한글 포함),
   video_decoder.h/.cpp.
 - src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
@@ -24,7 +24,7 @@
 - docs/recent-work-report.ko/.en.md — 최근 중요 작업 3건의 결과 요약 보고(무엇을 했고 현재 상태가 어떤지). 상세 증거는 build-history/worklog에 있고, 이 문서는 한 곳에서 확인하기 위한 요약본이다.
 - docs/node-status-gate-matrix.ko/.en.md — **Node별 현재 상태/선행조건/정체 원인/판정/다음 Gate를 한 장에 모은 통합 상태판(인덱스)**. 세션 시작 시 가장 먼저 읽는 진입점이며, 사실의 원본이 아니라 roadmap/progress/brief/architecture/build-history/worklog로 연결하는 색인이다. 진행률 %를 쓰지 않고 CLOSED/CONDITIONAL/DEFERRED/NOT ACCEPTED 같은 상태값과 Gate로 기록한다. 본선 A~H와 병렬 S 트랙(S0~S8)을 분리 표기한다.
 - docs/state/current.ko/.en.md — 새 세션이 가장 먼저 읽는 현재 상태 요약(80줄 이내). 판정·수치는 원본 문서로 연결하는 인덱스다.
-- docs/version-index.md — 0.9.4 버전 이력(구 `docs/llms.txt` 5행·72행). 원문을 보존하고 `; 0.9.4.` 경계로 행만 나눴다.
+- docs/version-index.md — 0.9.4 버전 이력(구 `docs/llms.txt` 5행·72행). 원문을 보존하고 `; 0.9.4.` 경계로 행만 나눴다. 전체 버전 파일 목록은 "전체 버전 인덱스" 절에 `scripts/gen_version_index.ps1` 로 자동 생성한다.
 - docs/field-reports/<주제>.ko/.en.md — **제품 기능이 아닌 저장소 밖 일회성 실측·현장 조사 기록**. 원본 영상·캡처·도구는 저장소에 넣지 않고, 결론·측정값·한계·재검토 조건만 남긴다. 현재 `longform-ad-capture-efficiency`(0.9.4.173, 장편 광고 삽입 판독 캡처·추출 지점 실험).
 - docs/architecture/resource-scheduling.ko/.en.md — CPU 정책 + Adaptive GPU AUTO + INI calibration + 실시간 부하 기반 자원관리 목표 아키텍처.
 - docs/implementation-briefs/A-foundation-terminology-instrumentation.ko/.en.md — 종료된 Node A 의 참조 계약(GPU 추상화/ON-OFF/build 명칭/MeasureState/deprecatedFrames 분리). 원본 근거는 `docs/build-history/0.9.4.0.*`.

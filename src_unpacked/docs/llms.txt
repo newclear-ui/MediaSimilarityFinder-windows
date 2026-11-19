@@ -9,7 +9,7 @@ Duplicate photo/video finder. Perceptual 64-bit pHash fingerprints (mirror + 4:3
 ## Development control documents
 
 - docs/state/current.ko.md / .en.md — READ THIS FIRST (before the matrix). 80-line current-state summary; verdicts and numbers point to their sources.
-- docs/version-index.md — 0.9.4 version history split out of this file (full text preserved, rows split on "; 0.9.4.").
+- docs/version-index.md — 0.9.4 version history split out of this file (full text preserved, rows split on "; 0.9.4."). Also holds a generated index of every 0.9.4 build-history file (regenerate with scripts/gen_version_index.ps1).
 - docs/node-status-gate-matrix.ko.md / .en.md — read second, right after `docs/state/current.*`. One-page integrated status board indexing every node: purpose, design status, prerequisite, implementation, build/verify, current verdict, blocker cause, resolution, next gate, and detail links. It is an INDEX, not the source of truth: it links to roadmap, progress, briefs, architecture, build-history, and worklog rather than copying their figures. Uses state values (CLOSED / CONDITIONAL / DEFERRED / NOT ACCEPTED / NOT STARTED) and gates, never progress percentages. Main track A-H and the parallel S track (S0-S8) are separate tables.
 - docs/development-roadmap.ko.md / .en.md — authoritative A→B→C development flow; roadmap nodes are not version numbers.
 - docs/development-progress.ko.md / .en.md — current node, substep, blocker, validation, and next gate.
