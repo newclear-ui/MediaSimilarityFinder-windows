@@ -60,7 +60,10 @@ jobs:
         run: |
           $exe = Join-Path $PWD 'build-windows-cpu\Release\MediaSimilarityFinder.exe'
           if (-not (Test-Path $exe)) { throw "GUI executable not found: $exe" }
-          & $exe --version
-          if ($LASTEXITCODE -ne 0) { throw "MediaSimilarityFinder --version failed: $LASTEXITCODE" }
-          & $exe --smoke
-          if ($LASTEXITCODE -ne 0) { throw "MediaSimilarityFinder --smoke failed: $LASTEXITCODE" }
+          # GUI-subsystem exe: PowerShell does not set $LASTEXITCODE, so use Start-Process.
+          # --smoke is the headless hook and expects the offscreen Qt platform.
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $v = Start-Process -FilePath $exe -ArgumentList '--version' -Wait -PassThru
+          if ($v.ExitCode -ne 0) { throw "MediaSimilarityFinder --version failed: $($v.ExitCode)" }
+          $s = Start-Process -FilePath $exe -ArgumentList '--smoke' -Wait -PassThru
+          if ($s.ExitCode -ne 0) { throw "MediaSimilarityFinder --smoke failed: $($s.ExitCode)" }
