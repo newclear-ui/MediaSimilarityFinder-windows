@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 개발선 통합 상태판
 
 기준: `0.9.4.174` (TemporalAnchorV3 사용자 지정 알고리즘 제품 구현, 실험 opt-in, 기본값 불변) · CPU CTest 145/145 · GPU CTest 146/146
-최종 갱신: 2026-10-25
+최종 갱신: 2026-11-19
 
 ## 이 문서의 역할
 

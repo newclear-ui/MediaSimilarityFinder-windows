@@ -1,7 +1,7 @@
 # Node Status / Gate Matrix — 0.9.4 Development Line Integrated Status Board
 
 Baseline: `0.9.4.174` (TemporalAnchorV3 user-specified algorithm, product implementation, experimental opt-in, default unchanged) - CPU CTest 145/145 - GPU CTest 146/146
-Last updated: 2026-10-25
+Last updated: 2026-11-19
 
 ## Role of this document
 
