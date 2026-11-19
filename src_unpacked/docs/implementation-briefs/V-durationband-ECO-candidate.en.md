@@ -2,7 +2,7 @@
 
 Status: **PROPOSED (measured on captures, product code untouched)**
 Baseline: **0.9.4.173** · Date: **2026-11-06**
-Related: `docs/field-reports/longform-ad-capture-efficiency.ko.md` (§5.3, §6)
+Related: `docs/field-reports/longform-ad-capture-efficiency.ko.md` / `.en.md` (§5.3, §6)
 
 ## 1. Purpose
 
