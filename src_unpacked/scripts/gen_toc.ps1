@@ -165,8 +165,9 @@ foreach ($p in $Path) {
   }
 
   $leaf = Split-Path $p -Leaf
+  $entryCount = @($block | Where-Object { $_ -match '^- \[' }).Count
   if ($Check) {
-    if ($same) { Write-Output "OK    toc up to date  $leaf  entries=$($block.Count - 4)" }
+    if ($same) { Write-Output "OK    toc up to date  $leaf  entries=$entryCount" }
     else { Write-Output "STALE toc differs    $leaf"; $script:fail++ }
   } else {
     if ($same) {
@@ -175,7 +176,7 @@ foreach ($p in $Path) {
       $out = ($updated -join $nl)
       if ($endsNl) { $out += $nl }
       [System.IO.File]::WriteAllText($p, $out, (New-Object System.Text.UTF8Encoding($false)))
-      Write-Output "WROTE $leaf  entries=$($block.Count - 4)"
+      Write-Output "WROTE $leaf  entries=$entryCount"
     }
   }
 }
