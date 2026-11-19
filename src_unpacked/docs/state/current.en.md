@@ -17,7 +17,7 @@
 
 ## Continuation (next 3)
 
-1. Run and record the real-Windows acceptance items (LocalDumps+PDB, full user-dataset rescan, Test Mode toggle/scratch isolation, preview/selection, Tiles/ListMode, large-dataset traversal)
+1. Run and record the real-Windows acceptance items (LocalDumps+PDB, full user-dataset rescan, Test Mode toggle/scratch isolation, preview/selection, Tiles/ListMode, large-dataset traversal) — procedure: `docs/architecture/product-acceptance-runbook.en.md`
 2. Re-confirm the final Search/Index/Comparison acceptance
 3. Close the GPU MAX share boost gap (documentation basis)
 
@@ -59,6 +59,14 @@ Evidence: the experiment index in `docs/worklog/0.9.4.en.md`.
 3. Active node brief — when starting work
 4. matrix / roadmap — only when node-level detail is needed
 5. build-history / architecture / worklog / version-index — for the task at hand
+
+## References by task
+
+- Running acceptance: `docs/architecture/product-acceptance-runbook.en.md`
+- Crash handling: `docs/architecture/crash-response-runbook.en.md`
+- Writing/moving documents: `docs/document-naming.en.md`
+- Changing source structure: `docs/STRUCTURE.md`
+- Experiment records / refuted candidates: the experiment index in `docs/worklog/0.9.4.en.md`
 
 ## Do not read at startup (on demand)
 

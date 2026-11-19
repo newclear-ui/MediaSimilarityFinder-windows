@@ -2,6 +2,8 @@
 
 실제 소스는 `src_unpacked/`에 있음. 모든 작업은 `src_unpacked/` 기준으로 수행.
 
+> 세션 시작: `src_unpacked/docs/state/current.ko.md` → `src_unpacked/docs/development-progress.ko.md` 의 **Active Build Queue 절**. 규칙 상세: `src_unpacked/AGENTS.md`.
+
 ## 중요 기억 사항
 
 0. **사용자 리포트 언어는 한글/영어만**

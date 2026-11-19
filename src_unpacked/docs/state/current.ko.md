@@ -17,7 +17,7 @@
 
 ## 이어갈 작업 (다음 3개)
 
-1. 실제 Windows acceptance 항목 실행·기록 (LocalDumps+PDB, 전체 사용자 데이터셋 재스캔, Test Mode 토글/스크래치 격리, 미리보기/선택, Tiles/ListMode, 대형 데이터셋 순회)
+1. 실제 Windows acceptance 항목 실행·기록 (LocalDumps+PDB, 전체 사용자 데이터셋 재스캔, Test Mode 토글/스크래치 격리, 미리보기/선택, Tiles/ListMode, 대형 데이터셋 순회) — 절차: `docs/architecture/product-acceptance-runbook.ko.md`
 2. 최종 Search/Index/Comparison acceptance 재확인
 3. GPU MAX share boost gap 정리(문서 기준)
 
@@ -59,6 +59,14 @@ D9b · 캐시 용량 32 · scoring-path duplication · `WICBitmapInterpolationMo
 3. 활성 Node brief — 작업 착수 시
 4. matrix / roadmap — 노드 단위 상세가 필요할 때만
 5. build-history / architecture / worklog / version-index — 해당 작업 시
+
+## 작업별 필수 참조
+
+- acceptance 실행: `docs/architecture/product-acceptance-runbook.ko.md`
+- crash 대응: `docs/architecture/crash-response-runbook.ko.md`
+- 문서 작성·이동: `docs/document-naming.ko.md`
+- 소스 구조 변경: `docs/STRUCTURE.md`
+- 실험 기록·기각 후보: `docs/worklog/0.9.4.ko.md` 실험 인덱스
 
 ## 시작 시 읽지 않는 문서 (온디맨드)
 

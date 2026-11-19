@@ -4,6 +4,9 @@ Windows x64 미디어 중복/시각적 유사도 검색 프로그램입니다.
 
 MediaSimilarityFinder는 **CPU + GPU 공동 실행**을 기본 아키텍처로 사용합니다. CPU는 항상 안정적인 기준/폴백 경로로 유지하며, GPU는 사용 가능한 작업을 자동으로 가속합니다.
 
+> 세션 시작 문서: [`src_unpacked/docs/llms.txt`](src_unpacked/docs/llms.txt) → [`src_unpacked/docs/state/current.ko.md`](src_unpacked/docs/state/current.ko.md)
+> 에이전트 규칙: [`AGENTS.md`](AGENTS.md) · [`src_unpacked/AGENTS.md`](src_unpacked/AGENTS.md)
+
 ## UI Mockup
 
 현재 개발 중인 Windows UI의 설계 방향은 **Windows 탐색기와 유사한 파일 탐색 중심의 화면**을 기본으로 합니다.

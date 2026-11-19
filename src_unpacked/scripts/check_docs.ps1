@@ -72,10 +72,13 @@ if ((Test-Path $buildStatus) -and (Test-Path $stateKo)) {
 }
 
 # ---------------------------------------------------------------- 4) llms.txt 크기
+#  상한은 "LLM이 한 번에 훑을 수 있는 인덱스"를 유지하기 위한 가독성 목표다.
+#  24KB -> 28KB (2026-11-19): ChatGPT 경로에 운영 제약(휴지통/임시경로/승인/문서규칙)을
+#  포함시키면서 초과했다. 중복 서사를 늘리지 않는 선에서만 상향한다.
 $llms = Join-Path $docs 'llms.txt'
 if (Test-Path $llms) {
   $len = (Get-Item $llms).Length
-  Check 'llms.txt <= 24KB' ($len -le 24576) "bytes=$len"
+  Check 'llms.txt <= 28KB' ($len -le 28672) "bytes=$len"
 }
 
 # ---------------------------------------------------------------- 5) state 줄 수
