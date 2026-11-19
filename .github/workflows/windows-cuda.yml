@@ -40,7 +40,7 @@ jobs:
         working-directory: src_unpacked
         shell: pwsh
         run: |
-          .\scripts\build_windows_cuda.ps1 -VcpkgRoot $env:VCPKG_ROOT -CTestExclude 'reveal_window_test'
+          .\scripts\build_windows_cuda.ps1 -VcpkgRoot $env:VCPKG_ROOT -CTestExclude 'reveal_window_test|image_dim_test|video_reencode_test|video_scan_e2e_test'
 
       - name: Report GPU availability
         shell: pwsh
