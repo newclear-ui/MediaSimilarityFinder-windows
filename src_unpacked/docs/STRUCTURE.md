@@ -11,7 +11,7 @@
 - scripts/ — build_windows_cpu.ps1(CPU 빌드), build_windows_gpu.ps1(GPU 빌드, 0.9.4.x 목표),
   package_portable.ps1(포터블 패키징 → 저장소 루트 backup/MediaSimilarityFinder-v<버전>-Portable-Windows-x64.zip,
    exe/DLL/ffmpeg 수집 후 smoke 통과 확인, 개수 5개 회전),
-  backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 5개 회전), check_docs.ps1(문서 일관성 검사: ko/en 쌍·상대 링크·state 버전 일치·llms.txt 크기·state 줄 수).
+  backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 5개 회전), check_docs.ps1(문서 일관성 검사: ko/en 쌍·상대 링크·state/CMake/BUILD_STATUS 버전 일치·matrix 기준선·engine/DB/cache 상수 일치·llms.txt 크기·state 줄 수·version-index 행 수).
 - gui/ — Qt 위젯 앱. main.cpp(kVersion 포함), mainwindow.h/.cpp(한글 포함),
   video_decoder.h/.cpp.
 - src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
