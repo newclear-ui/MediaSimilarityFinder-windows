@@ -11,7 +11,7 @@
 - scripts/ — build_windows_cpu.ps1(CPU 빌드), build_windows_gpu.ps1(GPU 빌드, 0.9.4.x 목표),
   package_portable.ps1(포터블 패키징 → 저장소 루트 backup/MediaSimilarityFinder-v<버전>-Portable-Windows-x64.zip,
    exe/DLL/ffmpeg 수집 후 smoke 통과 확인, 개수 5개 회전),
-  backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 5개 회전), gen_version_index.ps1(docs/version-index.md 의 전체 버전 인덱스를 build-history 제목에서 재생성, `-Check` 로 드리프트 검사), check_docs.ps1(문서 일관성 검사: ko/en 쌍·상대 링크·state/CMake/BUILD_STATUS 버전 일치·matrix 기준선·engine/DB/cache 상수 일치·llms.txt 크기·state 줄 수·version-index 행 수/현재 버전).
+  backup_src.ps1(GitHub 동일 소스+문서 zip 백업, 최대 5개 회전), gen_version_index.ps1(docs/version-index.md 의 전체 버전 인덱스를 build-history 제목에서 재생성, `-Check` 로 드리프트 검사), gen_toc.ps1(h2 목차를 GitHub 앵커+줄번호로 생성, `-All -Check` 로 드리프트 검사), check_docs.ps1(문서 일관성 검사: ko/en 쌍·상대 링크·state/CMake/BUILD_STATUS 버전 일치·matrix 기준선·engine/DB/cache 상수 일치·llms.txt 크기·state 줄 수·version-index 행 수/현재 버전·TOC 최신).
 - gui/ — Qt 위젯 앱. main.cpp(kVersion 포함), mainwindow.h/.cpp(한글 포함),
   video_decoder.h/.cpp.
 - src/ — 엔진(순수 C++ 공통 계층). GPU는 공통 abstraction 아래 선택적 backend로 연결하며 현재 NVIDIA CUDA가 기준 구현.
@@ -21,7 +21,7 @@
 - docs/development-progress.ko/.en.md — 현재 node/version/substep/blocker/validation 상태.
 - docs/development-progress-detail.ko/.en.md — Progress에서 이관한 완료 버전별 상세 이력(원문 보존). 현재 상태가 아니며, Progress가 링크로 연결한다.
 - docs/document-naming.ko/.en.md — 문서 명명, 정식 위치, 역할 분리, rename 절차의 기준.
-- docs/worklog/0.9.4.ko/.en.md — 0.9.4 개발선의 누적 작업 내역(측정 근거, 기각된 가설, 보류 판단, 학습한 방식). **Performance / Tuning Experiment Index** 를 포함하며, 실험 계보와 살아 있는/기각된 후보를 상태와 재검토 조건으로 연결한다. 기각된 후보는 삭제하지 않는다.
+- docs/worklog/0.9.4.ko/.en.md — 0.9.4 개발선의 누적 작업 내역(측정 근거, 기각된 가설, 보류 판단, 학습한 방식). **Performance / Tuning Experiment Index** 를 포함하며, 실험 계보와 살아 있는/기각된 후보를 상태와 재검토 조건으로 연결한다. 기각된 후보는 삭제하지 않는다. 크기 때문에 **4개 파트(0.9.4-part1~4)** 로 분할되어 있고, `0.9.4.ko/.en.md` 는 개요·실험 인덱스·계보·파트 링크를 유지한다.
 - docs/recent-work-report.ko/.en.md — 최근 중요 작업 3건의 결과 요약 보고(무엇을 했고 현재 상태가 어떤지). 상세 증거는 build-history/worklog에 있고, 이 문서는 한 곳에서 확인하기 위한 요약본이다.
 - docs/node-status-gate-matrix.ko/.en.md — **Node별 현재 상태/선행조건/정체 원인/판정/다음 Gate를 한 장에 모은 통합 상태판(인덱스)**. 세션 시작 시 가장 먼저 읽는 진입점이며, 사실의 원본이 아니라 roadmap/progress/brief/architecture/build-history/worklog로 연결하는 색인이다. 진행률 %를 쓰지 않고 CLOSED/CONDITIONAL/DEFERRED/NOT ACCEPTED 같은 상태값과 Gate로 기록한다. 본선 A~H와 병렬 S 트랙(S0~S8)을 분리 표기한다.
 - docs/state/current.ko/.en.md — 새 세션이 가장 먼저 읽는 현재 상태 요약(80줄 이내). 판정·수치는 원본 문서로 연결하는 인덱스다.

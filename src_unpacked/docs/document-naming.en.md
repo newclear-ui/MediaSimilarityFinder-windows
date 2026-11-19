@@ -91,6 +91,7 @@ Example: `docs/worklog/0.9.4.ko.md`, `docs/worklog/0.9.4.en.md`
 Do **not** put a version range such as `0.9.4.19-0.9.4.24` into the Work Log filename.
 Keep one cumulative Work Log for the development line and separate versions inside it with headings/tables.
 When a new development line starts, create a new line-level file such as `docs/worklog/0.9.5.ko.md` / `.en.md`.
+When the document exceeds GitHub's rendering limit, split it into `<development-line>-partN.ko.md` / `.en.md`. The `<development-line>.ko.md` file then keeps the **index (overview, experiment index, lineage, part links)**. Measured: 167 KB/2,130 lines renders; 382 KB/4,466 lines does not.
 
 ### 3.5 Architecture
 Normal architecture documents use the topic only. A `<topic>-<version>` name is allowed only when the document is explicitly a historical audit/snapshot.

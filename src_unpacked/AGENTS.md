@@ -159,7 +159,7 @@
 ## 문서 네이밍 및 구조
 
 - 정식 명명/위치 규칙은 `docs/document-naming.ko.md` + `.en.md`를 따른다.
-- Work Log는 `docs/worklog/<development-line>.ko.md` + `.en.md`로 개발선 단위 누적 관리하며, 버전 범위를 파일명에 넣지 않는다.
+- Work Log는 `docs/worklog/<development-line>.ko.md` + `.en.md`로 개발선 단위 누적 관리하며, 버전 범위를 파일명에 넣지 않는다. GitHub 렌더링 한계를 넘으면 `<development-line>-partN.ko/.en.md`로 분할하고, 인덱스 파일은 개요·실험 인덱스·계보·파트 링크를 유지한다.
 - Build History는 `docs/build-history/<version>.ko.md` + `.en.md`를 유지하고 파일명을 바꾸지 않는다.
 - Implementation Brief는 `docs/implementation-briefs/<Node>-<topic>.ko.md` + `.en.md` 규칙을 따른다.
 - 문서를 이동/이름 변경할 때는 내부 링크, `STRUCTURE.md`, `llms.txt`를 같은 변경에서 갱신한다.

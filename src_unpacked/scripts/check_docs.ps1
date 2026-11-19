@@ -204,6 +204,16 @@ foreach ($t in $refTargets) {
 Check '본문 경로 참조' ($refMissing.Count -eq 0) "checked=$refChecked missing=$($refMissing.Count)"
 $refMissing | Select-Object -First 8 | ForEach-Object { Write-Output "        $_" }
 
+# ---------------------------------------------------------------- 10) 목차 최신
+$genToc = Join-Path $scriptDir 'gen_toc.ps1'
+if (Test-Path $genToc) {
+  $tocOut = & pwsh -NoProfile -File $genToc -All -Check 2>&1
+  $tocExit = $LASTEXITCODE
+  $tocCount = @($tocOut | Select-String 'toc up to date').Count
+  Check 'TOC 최신' ($tocExit -eq 0) "files=$tocCount"
+  $tocOut | Select-String 'STALE' | ForEach-Object { Write-Output "        $($_.Line)" }
+}
+
 Write-Output ''
 if ($fail -gt 0) { Write-Output "RESULT: FAILED ($fail)"; exit 1 }
 Write-Output 'RESULT: OK'

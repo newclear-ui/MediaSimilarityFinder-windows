@@ -95,6 +95,7 @@ docs/worklog/0.9.4.en.md
 Work Log 파일명에 `0.9.4.19-0.9.4.24`와 같은 **버전 범위를 넣지 않는다.**
 개발이 계속되는 동안 같은 `0.9.4` 문서를 누적하고 내부에서 버전별 heading/table로 구분한다.
 다음 개발선이 시작되면 `docs/worklog/0.9.5.ko.md` / `.en.md`처럼 새 개발선 파일을 만든다.
+문서가 GitHub 렌더링 한계를 넘으면 `<development-line>-partN.ko.md` / `.en.md`로 분할할 수 있다. 이때 `<development-line>.ko.md`는 **인덱스(개요·실험 인덱스·계보·파트 링크)** 를 유지한다. 실측 근거: 167 KB/2,130줄은 GitHub가 렌더링하고 382 KB/4,466줄은 렌더링하지 않는다.
 
 ### 3.5 Architecture
 일반 구조 문서는 주제만 사용한다.
