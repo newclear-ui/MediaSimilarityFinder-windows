@@ -1,6 +1,6 @@
 {
   "name": "media-similarity-finder",
-  "version-string": "0.9.4.35",
+  "version-string": "0.9.4.174",
   "dependencies": [
     "sqlite3",
     {
@@ -12,5 +12,6 @@
       ]
     },
     "qtbase"
-  ]
+  ],
+  "builtin-baseline": "afa249f12f52ed8a3b919f195495ba8b330288d1"
 }

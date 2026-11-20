@@ -5,7 +5,7 @@
 
 ## 최상위
 
-- vcpkg.json — 의존성 선언의 유일 기준(project-local vcpkg_installed).
+- vcpkg.json — 의존성 선언의 유일 기준(project-local vcpkg_installed). CI 재현성을 위해 `builtin-baseline`(afa249f1, 2026-11-03)을 고정한다.
 - CMakeLists.txt — 빌드/테스트 정의, 버전(project(... VERSION ...))은 여기서 시작.
 - CMakePresets.json — x64 MSVC 프리셋.
 - scripts/ — build_windows_cpu.ps1(CPU 빌드), build_windows_gpu.ps1(GPU 빌드, 0.9.4.x 목표),
