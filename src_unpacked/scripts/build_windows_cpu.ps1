@@ -16,7 +16,7 @@ $env:VCPKG_INSTALLED_DIR = $localVcpkgInstalled
 $env:VCPKG_TARGET_TRIPLET = 'x64-windows'
 
 # Manifest mode: vcpkg.json is the single dependency source for CPU and CUDA builds.
-& "$VcpkgRoot\vcpkg.exe" install --triplet x64-windows
+& "$VcpkgRoot\vcpkg.exe" install --triplet x64-windows --overlay-triplets="$projectRoot\triplets"
 if ($LASTEXITCODE -ne 0) { throw 'vcpkg dependency installation failed.' }
 
 $args = @(

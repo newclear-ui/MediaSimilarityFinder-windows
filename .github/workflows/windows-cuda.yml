@@ -11,9 +11,8 @@ jobs:
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
       VCPKG_FEATURE_FLAGS: manifests,binarycaching
-      # The product only builds Release. Skipping Debug halves vcpkg work and avoids
-      # Debug-only port failures (e.g. dav1d on the floating runner registry).
-      VCPKG_BUILD_TYPE: release
+      # Release-only dependency builds are enforced by src_unpacked/triplets/x64-windows.cmake.
+      # (The VCPKG_BUILD_TYPE environment variable is ignored in manifest mode.)
       # vcpkg binary cache: compiled dependency archives are reused across runs.
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-cache,readwrite"
 
@@ -25,9 +24,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg-cache
-          key: vcpkg-v2-${{ runner.os }}-x64-windows-${{ hashFiles('src_unpacked/vcpkg.json') }}
+          key: vcpkg-v3-${{ runner.os }}-x64-windows-${{ hashFiles('src_unpacked/vcpkg.json') }}
           restore-keys: |
-            vcpkg-v2-${{ runner.os }}-x64-windows-
+            vcpkg-v3-${{ runner.os }}-x64-windows-
 
       # Hosted windows-2025-vs2026 ships without CUDA. Install the toolkit once and
       # cache the install directory; later runs restore it instead of reinstalling.
