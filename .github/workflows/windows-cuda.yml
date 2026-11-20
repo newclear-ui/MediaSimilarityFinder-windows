@@ -7,6 +7,7 @@ jobs:
   windows-cuda:
     name: Windows x64 CUDA / VS2026
     runs-on: windows-2025-vs2026
+    timeout-minutes: 240
 
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
@@ -86,7 +87,7 @@ jobs:
         working-directory: src_unpacked
         shell: pwsh
         run: |
-          .\scripts\build_windows_cuda.ps1 -VcpkgRoot $env:VCPKG_ROOT -CTestExclude 'reveal_window_test|image_dim_test|video_reencode_test|video_scan_e2e_test'
+          .\scripts\build_windows_cuda.ps1 -VcpkgRoot $env:VCPKG_ROOT -BuildParallelism 4 -CTestExclude 'reveal_window_test|image_dim_test|video_reencode_test|video_scan_e2e_test'
 
       - name: Report GPU availability
         shell: pwsh

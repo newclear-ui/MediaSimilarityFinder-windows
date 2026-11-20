@@ -7,6 +7,7 @@ jobs:
   windows-cpu:
     name: Windows x64 CPU / VS2026 / Qt6
     runs-on: windows-2025-vs2026
+    timeout-minutes: 240
 
     env:
       BUILD_TYPE: Release
@@ -54,7 +55,7 @@ jobs:
           # generate H.264 (libx264) or PNG fixtures cannot run here. reveal_window_test
           # needs an interactive Explorer desktop. All four pass locally where a full
           # ffmpeg is on PATH; making them capability-aware is a follow-up test-hardening task.
-          .\scripts\build_windows_cpu.ps1 -VcpkgRoot $env:VCPKG_ROOT -CTestExclude 'reveal_window_test|image_dim_test|video_reencode_test|video_scan_e2e_test'
+          .\scripts\build_windows_cpu.ps1 -VcpkgRoot $env:VCPKG_ROOT -BuildParallelism 4 -CTestExclude 'reveal_window_test|image_dim_test|video_reencode_test|video_scan_e2e_test'
 
       - name: Verify GUI executable
         working-directory: src_unpacked
