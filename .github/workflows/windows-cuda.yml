@@ -29,6 +29,33 @@ jobs:
           restore-keys: |
             vcpkg-v2-${{ runner.os }}-x64-windows-
 
+      # Hosted windows-2025-vs2026 ships without CUDA. Install the toolkit once and
+      # cache the install directory; later runs restore it instead of reinstalling.
+      - name: Cache CUDA toolkit
+        id: cuda-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2
+          key: cuda-13.2-windows
+
+      - name: Install CUDA toolkit
+        if: steps.cuda-cache.outputs.cache-hit != 'true'
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '13.2.0'
+          method: 'network'
+          sub-packages: '["nvcc", "visual_studio_integration"]'
+
+      - name: Restore CUDA environment from cache
+        if: steps.cuda-cache.outputs.cache-hit == 'true'
+        shell: pwsh
+        run: |
+          $cuda = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
+          if (-not (Test-Path (Join-Path $cuda 'bin\nvcc.exe'))) { throw "cached CUDA is incomplete: $cuda" }
+          "CUDA_PATH=$cuda" | Out-File -FilePath $env:GITHUB_ENV -Append
+          (Join-Path $cuda 'bin') | Out-File -FilePath $env:GITHUB_PATH -Append
+          & (Join-Path $cuda 'bin\nvcc.exe') --version
+
       - name: Show toolchain and CUDA
         shell: pwsh
         run: |
@@ -39,6 +66,13 @@ jobs:
           "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
           & $vcpkg.Source version
           $nvcc = Get-Command nvcc.exe -ErrorAction SilentlyContinue
+          if (-not $nvcc -and $env:CUDA_PATH) {
+            $candidate = Join-Path $env:CUDA_PATH 'bin\nvcc.exe'
+            if (Test-Path $candidate) {
+              $env:PATH = (Join-Path $env:CUDA_PATH 'bin') + ';' + $env:PATH
+              $nvcc = Get-Command nvcc.exe -ErrorAction SilentlyContinue
+            }
+          }
           if (-not $nvcc) { throw 'nvcc.exe was not found on the hosted runner.' }
           & $nvcc.Source --version
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
