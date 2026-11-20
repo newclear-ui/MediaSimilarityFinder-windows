@@ -31,7 +31,7 @@ if (-not (Test-Path $VcpkgRoot)) { throw "VCPKG_ROOT not found: $VcpkgRoot" }
 $localVcpkgInstalled = Join-Path $projectRoot "vcpkg_installed"
 $tripletRoot = Join-Path $localVcpkgInstalled "x64-windows"
 $env:VCPKG_INSTALLED_DIR = $localVcpkgInstalled
-& "$VcpkgRoot\vcpkg.exe" install --triplet x64-windows --overlay-triplets="$projectRoot\triplets"
+& "$VcpkgRoot\vcpkg.exe" install --triplet x64-windows --overlay-triplets="$projectRoot\triplets" --overlay-ports="$projectRoot\ports"
 if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed: $LASTEXITCODE" }
 # Node A: canonical GPU entry point (clean tree; the legacy build-windows-cuda
 # tree is preserved, never renamed in place). MSF_ENABLE_CUDA remains as a

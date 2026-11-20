@@ -30,7 +30,7 @@ if (-not $VcpkgRoot) { throw "VCPKG_ROOT is not set." }
 $localVcpkgInstalled = Join-Path $projectRoot "vcpkg_installed"
 $tripletRoot = Join-Path $localVcpkgInstalled "x64-windows"
 $env:VCPKG_INSTALLED_DIR = $localVcpkgInstalled
-& "$VcpkgRoot\vcpkg.exe" install --triplet x64-windows --overlay-triplets="$projectRoot\triplets"
+& "$VcpkgRoot\vcpkg.exe" install --triplet x64-windows --overlay-triplets="$projectRoot\triplets" --overlay-ports="$projectRoot\ports"
 if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed: $LASTEXITCODE" }
 cmake -S $projectRoot -B $BuildDir -G "Visual Studio 18 2026" -A x64 `
   -DCMAKE_TOOLCHAIN_FILE="$VcpkgRoot\scripts\buildsystems\vcpkg.cmake" `

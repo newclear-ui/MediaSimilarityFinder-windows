@@ -1,0 +1,14 @@
+diff --git a/include/compat/msvc/stdatomic.h b/include/compat/msvc/stdatomic.h
+--- a/include/compat/msvc/stdatomic.h
++++ b/include/compat/msvc/stdatomic.h
+@@ -26,6 +26,10 @@
+ #ifndef MSCVER_STDATOMIC_H_
+ #define MSCVER_STDATOMIC_H_
+ 
++#ifndef __has_include_next
++#define __has_include_next(x) 0
++#endif
++
+ #if !defined(__cplusplus) && defined(_MSC_VER)
+ 
+ #pragma warning(push)
