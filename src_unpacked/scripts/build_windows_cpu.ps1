@@ -8,6 +8,9 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
+# CMake's vcpkg toolchain re-runs the manifest install; it only sees overlays via env.
+$env:VCPKG_OVERLAY_PORTS = (Join-Path $projectRoot 'ports')
+$env:VCPKG_OVERLAY_TRIPLETS = (Join-Path $projectRoot 'triplets')
 
 if (-not (Test-Path $VcpkgRoot)) { throw "VCPKG_ROOT not found: $VcpkgRoot" }
 $localVcpkgInstalled = Join-Path $projectRoot 'vcpkg_installed'

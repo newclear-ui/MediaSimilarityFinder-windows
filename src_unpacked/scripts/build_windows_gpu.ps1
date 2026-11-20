@@ -8,6 +8,9 @@ param(
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
+# CMake's vcpkg toolchain re-runs the manifest install; it only sees overlays via env.
+$env:VCPKG_OVERLAY_PORTS = (Join-Path $projectRoot 'ports')
+$env:VCPKG_OVERLAY_TRIPLETS = (Join-Path $projectRoot 'triplets')
 if (-not (Get-Command nvcc -ErrorAction SilentlyContinue)) {
   # Shells started before the toolkit install lack CUDA on PATH even though
   # the machine-level CUDA_PATH exists. Fall back to it before giving up.
