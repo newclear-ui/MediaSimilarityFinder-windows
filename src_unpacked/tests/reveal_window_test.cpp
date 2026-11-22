@@ -220,6 +220,15 @@ int main(int argc, char** argv) {
         const QStringList seen = openFolders();
         std::cout << "  shell_windows=" << seen.size() << "\n";
         for (const QString& s : seen) std::cout << "    " << qPrintable(s) << "\n";
+        Found last = findExplorerWindow(dir.path());
+        if (last.ok) {
+            const QStringList sel = selectedFilesOf(last.view);
+            std::cout << "  selection_count=" << sel.size() << "\n";
+            for (const QString& s : sel) std::cout << "    sel: " << qPrintable(s) << "\n";
+            last.view->Release();
+        } else {
+            std::cout << "  window_for_folder=not_found\n";
+        }
         // The folder window opened (see the dump above) but the view reported no
         // selection. Separate "this session cannot report shell selections" from
         // "the product selected the wrong thing" with a control reveal that does
