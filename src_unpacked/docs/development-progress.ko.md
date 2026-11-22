@@ -11,17 +11,17 @@
 - [세션 시작 필수 진입점](#세션-시작-필수-진입점) — L35
 - [현재 작업 우선순위 / Active Build Queue](#현재-작업-우선순위--active-build-queue) — L45
 - [완료된 주요 이정표](#완료된-주요-이정표) — L75
-- [현재 상태](#현재-상태) — L92
-- [개발 순서 상태](#개발-순서-상태) — L100
-- [Node B/C/D 상세 설계 상태](#node-bcd-상세-설계-상태) — L130
-- [Node A — Foundation / Terminology / Instrumentation](#node-a--foundation--terminology--instrumentation) — L143
-- [Recovery branch 기록](#recovery-branch-기록) — L175
-- [버전 진행 규칙](#버전-진행-규칙) — L274
-- [Roadmap / Progress / Build History](#roadmap--progress--build-history) — L286
-- [OpenCode 작업 원칙](#opencode-작업-원칙) — L302
-- [다음 상태 갱신](#다음-상태-갱신) — L318
-- [성능 실험 장기 기록 체계 (0.9.4.27 D1 이후)](#성능-실험-장기-기록-체계-09427-d1-이후) — L333
-- [상세 기록 (이관)](#상세-기록-이관) — L379
+- [현재 상태](#현재-상태) — L93
+- [개발 순서 상태](#개발-순서-상태) — L101
+- [Node B/C/D 상세 설계 상태](#node-bcd-상세-설계-상태) — L131
+- [Node A — Foundation / Terminology / Instrumentation](#node-a--foundation--terminology--instrumentation) — L144
+- [Recovery branch 기록](#recovery-branch-기록) — L176
+- [버전 진행 규칙](#버전-진행-규칙) — L275
+- [Roadmap / Progress / Build History](#roadmap--progress--build-history) — L287
+- [OpenCode 작업 원칙](#opencode-작업-원칙) — L303
+- [다음 상태 갱신](#다음-상태-갱신) — L319
+- [성능 실험 장기 기록 체계 (0.9.4.27 D1 이후)](#성능-실험-장기-기록-체계-09427-d1-이후) — L334
+- [상세 기록 (이관)](#상세-기록-이관) — L380
 
 <!-- END TOC -->
 
@@ -88,6 +88,7 @@ Roadmap은 개발 방향의 뼈대이고, Progress는 실제 위치, 문제, 회
 | F-1 | **CONDITIONAL / PRODUCTION ADOPTION NO** | NVIDIA NVDEC 조사 완료; production integration 금지 |
 | S0–S3 | **CLOSED** | Validation / Benchmark track의 초기 인프라 완료 |
 | S4 | **CLOSED** | GUI Detailed Logs 구현 + 기능 acceptance PASS(0.9.4.112) + 제품 acceptance ACCEPTED (상태판 근거) |
+| CI | **GREEN** | GitHub Actions CPU/CUDA 전체 스위트(145) — vcpkg baseline 고정·dav1d 패치·캐시 hit 17.8~22분/18.4분, 환경 의존 4건 자체 판정(3건 Passed, `reveal_window_test`는 세션 한계로 Skipped) |
 
 ## 현재 상태
 

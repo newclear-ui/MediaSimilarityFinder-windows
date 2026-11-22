@@ -3,17 +3,19 @@
 > 새 세션이 **가장 먼저** 읽는 1페이지 요약이다. 80줄 이내를 유지한다.
 > 이 문서는 요약/인덱스이며, 판정과 수치의 **원본은 아래 링크된 문서**다.
 
-- 갱신: 2026-11-19
+- 갱신: 2026-11-22
 - 버전: **0.9.4.174**
 - engine **1.5.2** / cache format **11** (출처: `BUILD_STATUS.md`)
 - DB **1.0.6** / benchmark schema **9** (출처: `src/database.h`, `docs/llms.txt`)
 - CPU CTest **145/145**, GPU CTest **146/146**
+- CI(GitHub Actions) CPU/CUDA **green** — 전체 스위트 실행, 환경 미충족 1건은 `Skipped` (근거: `docs/build-history/0.9.4.174.ko.md` §7)
 
 ## 지금 하는 일
 
 - 프로세스 분리 **P1-P4 완료**, G4/G6 검증 완료(.111)
 - **0.9.4.174**: TemporalAnchorV3 사용자 지정 알고리즘 제품 구현 (실험 opt-in, 기본값 불변, V1/V2 동결)
 - V1(.172) / V2(.173) / V3(.174) 순차 구현 완료. 기본 채택은 없음
+- **CI 재현성 확보**: vcpkg baseline 고정·dav1d patch·캐시, 환경 의존 테스트 4건을 제외하지 않고 자체 판정(SKIP exit 77)
 
 ## 이어갈 작업 (다음 3개)
 

@@ -85,6 +85,7 @@
 - msf_dataset_report <root> — dataset fingerprint 출력 + <root>.fingerprint.json 기록(root 옆, root 안쪽 금지).
 - msf_dataset_baseline <root> <app-dir> [runs] — 동일 dataset 반복 스캔, walker queue / GPU 내부 타이밍 / stage 분해 리포트. CTest 아님(의사결정 입력). D9c: verify 내부 비용 분해(decode/key/crop/flip/frame_ssim/other, exclusive 합계 = verifyMs) 도 함께 출력.
 - 현재 CMakeLists.txt에는 145개 CTest 등록이 정의되어 있으며(+CUDA 조건부 1건), 현재 구성된 CPU/GPU Release 트리의 전체 CTest는 각각 145/145, 146/146이다 (0.9.4.174 빌드 기준 — 신규 video_temporal_anchor_v3_test 1건). `MSF_BUILD_GUI=OFF` + `MSF_BUILD_TESTS=ON` 헤드리스 구성도 지원되며 GUI 테스트를 제외한 코어 테스트만 등록한다(참조 장비 기준 98개, 0.9.4.120+).
+- 환경 의존 4건(`image_dim_test`, `video_reencode_test`, `video_scan_e2e_test`, `reveal_window_test`)은 **스스로 판정**한다: 픽스처를 만들 수 없거나 상호작용 Explorer 셸이 없으면 exit 77 → `SKIP_RETURN_CODE 77` 로 CTest `Skipped` 집계(실패도 조용한 통과도 아님). CI는 `-CTestExclude` 없이 전체를 실행한다.
 - MediaSimilarityFinder.exe --smoke(offscreen), --version — GUI 스모크/버전 확인.
 - MediaSimilarityFinderBackend.exe --help/--version (0.9.4.67+, P1 진입점. src/backend_main.cpp, msf_core + Qt6::Core only. --backend는 P3 실 IPC 서빙). portable에 GUI 옆 동봉.
 - P3 backend IPC: src/backend_ipc.* (JSONL 코덱) + src/backend_session.* (스레드/워커/모니터 공용 세션) + gui/backend_supervisor.* (QProcess/Job Object/bounded restart) + gui/backend_client.h (인터페이스) + gui/backend_loopback.* (thin forwarder). E2E: tests/backend_e2e_test.cpp (Windows 실프로세스).

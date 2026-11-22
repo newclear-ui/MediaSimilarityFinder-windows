@@ -11,17 +11,17 @@
 - [Mandatory Session-Start Entry Point](#mandatory-session-start-entry-point) — L35
 - [Active Build Queue / Current Work Priority](#active-build-queue--current-work-priority) — L45
 - [Completed Major Milestones](#completed-major-milestones) — L75
-- [Current Status](#current-status) — L92
-- [Development flow status](#development-flow-status) — L100
-- [Node B/C/D detailed-design state](#node-bcd-detailed-design-state) — L130
-- [Node A — Foundation / Terminology / Instrumentation](#node-a--foundation--terminology--instrumentation) — L146
-- [Recovery branch recording](#recovery-branch-recording) — L178
-- [Version progression policy](#version-progression-policy) — L279
-- [Roadmap / Progress / Build History](#roadmap--progress--build-history) — L291
-- [OpenCode working rule](#opencode-working-rule) — L307
-- [Updating the next state](#updating-the-next-state) — L323
-- [Long-term record system for performance experiments (after 0.9.4.27 D1)](#long-term-record-system-for-performance-experiments-after-09427-d1) — L338
-- [Detailed Record (moved)](#detailed-record-moved) — L390
+- [Current Status](#current-status) — L93
+- [Development flow status](#development-flow-status) — L101
+- [Node B/C/D detailed-design state](#node-bcd-detailed-design-state) — L131
+- [Node A — Foundation / Terminology / Instrumentation](#node-a--foundation--terminology--instrumentation) — L147
+- [Recovery branch recording](#recovery-branch-recording) — L179
+- [Version progression policy](#version-progression-policy) — L280
+- [Roadmap / Progress / Build History](#roadmap--progress--build-history) — L292
+- [OpenCode working rule](#opencode-working-rule) — L308
+- [Updating the next state](#updating-the-next-state) — L324
+- [Long-term record system for performance experiments (after 0.9.4.27 D1)](#long-term-record-system-for-performance-experiments-after-09427-d1) — L339
+- [Detailed Record (moved)](#detailed-record-moved) — L391
 
 <!-- END TOC -->
 
@@ -88,6 +88,7 @@ This section keeps **node-level completion state** only. The full per-version ta
 | F-1 | **CONDITIONAL / PRODUCTION ADOPTION NO** | NVIDIA NVDEC investigation completed; production integration prohibited |
 | S0–S3 | **CLOSED** | Initial Validation / Benchmark track infrastructure completed |
 | S4 | **CLOSED** | GUI Detailed Logs + functional acceptance PASS (0.9.4.112) + product acceptance ACCEPTED (per status board) |
+| CI | **GREEN** | GitHub Actions CPU/CUDA full suite (145) — pinned vcpkg baseline, dav1d patch, cache-hit 17.8–22 min / 18.4 min; the four environment-dependent tests decide for themselves (3 Passed, `reveal_window_test` Skipped on the session limit) |
 
 ## Current Status
 

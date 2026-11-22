@@ -3,17 +3,19 @@
 > The one-page summary a new session reads **first**. Keep it within 80 lines.
 > This document is a summary/index; the **originals of verdicts and figures are the linked documents**.
 
-- Updated: 2026-11-19
+- Updated: 2026-11-22
 - Version: **0.9.4.174**
 - engine **1.5.2** / cache format **11** (source: `BUILD_STATUS.md`)
 - DB **1.0.6** / benchmark schema **9** (source: `src/database.h`, `docs/llms.txt`)
 - CPU CTest **145/145**, GPU CTest **146/146**
+- CI (GitHub Actions) CPU/CUDA **green** — full suite runs, 1 environment-gated test reports `Skipped` (evidence: `docs/build-history/0.9.4.174.en.md` §7)
 
 ## Current work
 
 - Process split **P1-P4 complete**, G4/G6 verified (.111)
 - **0.9.4.174**: TemporalAnchorV3 user-specified algorithm, product implementation (experimental opt-in, default unchanged, V1/V2 frozen)
 - V1 (.172) / V2 (.173) / V3 (.174) implemented in order. None adopted as default
+- **CI reproducibility**: pinned vcpkg baseline, dav1d patch, binary caches; the four environment-dependent tests are no longer excluded and decide for themselves (SKIP exit 77)
 
 ## Continuation (next 3)
 
