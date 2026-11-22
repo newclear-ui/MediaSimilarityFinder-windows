@@ -163,6 +163,26 @@ static bool hasInteractiveShell() {
     return GetShellWindow() != nullptr;
 }
 
+// Select a file through the shell directly, bypassing the product. If even this
+// cannot surface a selection in the current session, the environment (hosted
+// runner: no activated input desktop) is the limit, not the product, and the
+// selection assertions are reported as SKIP instead of a failure.
+static bool shellCanReportSelection(const QString& folder, const QString& file) {
+    const QString arg = "/select,\"" + QDir::toNativeSeparators(file) + "\"";
+    ShellExecuteW(nullptr, L"open", L"explorer.exe",
+                  reinterpret_cast<LPCWSTR>(arg.utf16()), nullptr, SW_SHOWNORMAL);
+    for (int i = 0; i < 100; ++i) {
+        Found fd = findExplorerWindow(folder);
+        if (fd.ok) {
+            const bool sel = selectedIs(fd.view, file);
+            fd.view->Release();
+            if (sel) return true;
+        }
+        QThread::msleep(100);
+    }
+    return false;
+}
+
 int main(int argc, char** argv) {
     if (!hasInteractiveShell()) {
         std::cout << "reveal_window=skipped (no interactive Explorer shell)\n";
@@ -200,6 +220,19 @@ int main(int argc, char** argv) {
         const QStringList seen = openFolders();
         std::cout << "  shell_windows=" << seen.size() << "\n";
         for (const QString& s : seen) std::cout << "    " << qPrintable(s) << "\n";
+        // The folder window opened (see the dump above) but the view reported no
+        // selection. Separate "this session cannot report shell selections" from
+        // "the product selected the wrong thing" with a control reveal that does
+        // not touch product code.
+        const QString control = QDir::cleanPath(dir.path() + "/reveal_control.txt");
+        { QFile c(control); if (c.open(QIODevice::WriteOnly)) { c.write("control"); c.close(); } }
+        if (!shellCanReportSelection(dir.path(), control)) {
+            std::cout << "  control_selection=unavailable (shell cannot report a selection in this session)\n";
+            std::cout << "reveal_window=skipped (no interactive desktop selection)\n";
+            CoUninitialize();
+            return 77;
+        }
+        std::cout << "  control_selection=ok (product selection is the difference)\n";
     }
 
     bool okB = false;
