@@ -488,6 +488,10 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_image_dim_test tests/image_dim_test.cpp)
     target_link_libraries(msf_image_dim_test PRIVATE msf_core)
     add_test(NAME image_dim_test COMMAND msf_image_dim_test)
+    # Tests that can legitimately have no fixture environment (no ffmpeg on
+    # PATH, no interactive Explorer shell) exit 77 and CTest reports Skipped
+    # instead of a failure or a silent pass.
+    set_tests_properties(image_dim_test PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(msf_match_revalidate_test tests/match_revalidate_test.cpp)
     target_link_libraries(msf_match_revalidate_test PRIVATE msf_core)
     add_test(NAME match_revalidate_test COMMAND msf_match_revalidate_test)
@@ -505,6 +509,7 @@ if(MSF_BUILD_TESTS)
     add_executable(msf_video_reencode_test tests/video_reencode_test.cpp)
     target_link_libraries(msf_video_reencode_test PRIVATE msf_core)
     add_test(NAME video_reencode_test COMMAND msf_video_reencode_test)
+    set_tests_properties(video_reencode_test PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(msf_search_engine_test tests/search_engine_test.cpp)
     target_link_libraries(msf_search_engine_test PRIVATE msf_core)
     add_test(NAME search_engine_test COMMAND msf_search_engine_test)
@@ -908,12 +913,13 @@ if(MSF_BUILD_GUI)
       target_link_libraries(msf_scan_detailed_log_acceptance_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_scan_detailed_log_acceptance_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME scan_detailed_log_acceptance_test COMMAND msf_scan_detailed_log_acceptance_test)
-      # E2E video probe: copy + libx264 re-encode + trim + stranger through a
+      # E2E video probe: copy + MPEG-2 re-encode + trim + stranger through a
       # real scan (full XOR -> CandidateIndex incl. L1 anchors -> temporal).
       add_executable(msf_video_scan_e2e_test tests/video_scan_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)
       target_link_libraries(msf_video_scan_e2e_test PRIVATE msf_core Qt6::Widgets)
       target_include_directories(msf_video_scan_e2e_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
       add_test(NAME video_scan_e2e_test COMMAND msf_video_scan_e2e_test)
+      set_tests_properties(video_scan_e2e_test PROPERTIES SKIP_RETURN_CODE 77)
       # 0.9.4.173: anchor scan-path test (directive §8, real product path):
       # the same product scan runs with LegacyV3 and with TemporalAnchorV2
       # armed and must yield the IDENTICAL match set (report-only until gates).
@@ -965,7 +971,7 @@ if(MSF_BUILD_GUI)
         target_link_libraries(msf_reveal_window_test PRIVATE msf_core Qt6::Widgets)
         target_include_directories(msf_reveal_window_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gui)
         add_test(NAME reveal_window_test COMMAND msf_reveal_window_test)
-        set_tests_properties(reveal_window_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}")
+        set_tests_properties(reveal_window_test PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${MSF_QT_PLUGIN_PATH}" SKIP_RETURN_CODE 77)
         # P3 backend process E2E + crash injection (Windows-only: TerminateProcess).
         # Real MainWindow + real supervisor + real backend OS process.
         add_executable(msf_backend_e2e_test tests/backend_e2e_test.cpp gui/mainwindow.cpp gui/mainwindow.h gui/backend_loopback.cpp gui/backend_client.h gui/backend_supervisor.cpp gui/backend_supervisor.h)

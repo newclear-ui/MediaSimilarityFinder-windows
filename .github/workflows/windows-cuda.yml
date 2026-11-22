@@ -87,7 +87,10 @@ jobs:
         working-directory: src_unpacked
         shell: pwsh
         run: |
-          .\scripts\build_windows_cuda.ps1 -VcpkgRoot $env:VCPKG_ROOT -BuildParallelism 4 -CTestExclude 'reveal_window_test|image_dim_test|video_reencode_test|video_scan_e2e_test'
+          # Full suite: the four previously-excluded tests now degrade on their own
+          # (PNG header written in-process, MPEG-2 instead of libx264, Explorer-less
+          # reveal_window exit 77 -> CTest Skipped).
+          .\scripts\build_windows_cuda.ps1 -VcpkgRoot $env:VCPKG_ROOT -BuildParallelism 4
 
       - name: Report GPU availability
         shell: pwsh

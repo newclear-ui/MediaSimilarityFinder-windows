@@ -116,7 +116,25 @@ static bool selectedIs(IShellView* view, const QString& file) {
     return sel.size() == 1 && QString::compare(sel[0], file, Qt::CaseInsensitive) == 0;
 }
 
+// This test drives the real Explorer shell through IShellWindows. Service
+// sessions, RDP-disconnected sessions and CI runners have no shell window on a
+// visible window station, so there is nothing to drive: report SKIP (77) so the
+// suite stays green instead of asserting on an environment that cannot exist.
+static bool hasInteractiveShell() {
+    HWINSTA winsta = GetProcessWindowStation();
+    USEROBJECTFLAGS uof{};
+    DWORD needed = 0;
+    if (winsta && GetUserObjectInformationW(winsta, UOI_FLAGS, &uof, sizeof(uof), &needed) &&
+        !(uof.dwFlags & WSF_VISIBLE))
+        return false;
+    return GetShellWindow() != nullptr;
+}
+
 int main(int argc, char** argv) {
+    if (!hasInteractiveShell()) {
+        std::cout << "reveal_window=skipped (no interactive Explorer shell)\n";
+        return 77;
+    }
     qputenv("QT_QPA_PLATFORM", "offscreen");
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     QApplication app(argc, argv);

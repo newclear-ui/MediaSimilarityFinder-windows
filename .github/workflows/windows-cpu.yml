@@ -51,11 +51,11 @@ jobs:
         working-directory: src_unpacked
         shell: pwsh
         run: |
-          # vcpkg ffmpeg is built with --disable-libx264 and --disable-zlib, so tests that
-          # generate H.264 (libx264) or PNG fixtures cannot run here. reveal_window_test
-          # needs an interactive Explorer desktop. All four pass locally where a full
-          # ffmpeg is on PATH; making them capability-aware is a follow-up test-hardening task.
-          .\scripts\build_windows_cpu.ps1 -VcpkgRoot $env:VCPKG_ROOT -BuildParallelism 4 -CTestExclude 'reveal_window_test|image_dim_test|video_reencode_test|video_scan_e2e_test'
+          # Full suite: the four previously-excluded tests now degrade on their own.
+          # image_dim builds its PNG header in-process (no PNG encoder), the video
+          # tests re-encode with MPEG-2 (no libx264), and reveal_window exits 77
+          # (CTest "Skipped") when there is no interactive Explorer shell.
+          .\scripts\build_windows_cpu.ps1 -VcpkgRoot $env:VCPKG_ROOT -BuildParallelism 4
 
       - name: Verify GUI executable
         working-directory: src_unpacked

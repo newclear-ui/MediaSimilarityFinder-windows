@@ -1,6 +1,6 @@
-// End-to-end video duplicate regression: original + exact copy + libx264
+// End-to-end video duplicate regression: original + exact copy + MPEG-2
 // re-encode (+ a total-stranger control), all through MediaSearchEngine::scan()
-// ??i.e. through the full XOR -> CandidateIndex (incl. L1 anchors) ->
+// i.e. through the full XOR -> CandidateIndex (incl. L1 anchors) ->
 // temporal path, not the direct video_similarity() call. Asserts the copy and
 // the re-encode are found as matches of the original, and the stranger is not.
 // Also asserts the videoStats counters flow through the report.
@@ -28,19 +28,22 @@ int main(int argc, char** argv) {
   const std::string reen = (d / "media" / "reencoded.mp4").string();
   const std::string other = (d / "media" / "other.mp4").string();
   // 8s testsrc: long enough for >=7 sampled frames at the scan cadence.
+  // Fixtures use only encoders the vcpkg ffmpeg build actually provides
+  // (mpeg4 for the sources, mpeg2video for the re-encodes); libx264 is not
+  // compiled in, and a different codec is what the re-encode must exercise.
   std::string c1 = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc=size=160x90:rate=10:duration=8 -c:v mpeg4 -pix_fmt yuv420p \"" + orig + "\"";
-  if (std::system(c1.c_str()) != 0) return 1;
+  if (std::system(c1.c_str()) != 0) { std::cerr << "video_scan_e2e=skipped (ffmpeg fixture generation failed)\n"; return 77; }
   // Exact byte copy.
   { std::ifstream s(orig, std::ios::binary); std::ofstream t(copy, std::ios::binary); t << s.rdbuf(); }
   if (!fs::exists(copy)) return 1;
-  // Re-encode: different codec + scale + heavy crf (like the unit test, but
-  // this time verified through the whole scan stack incl. L1 anchors).
-  std::string c2 = "ffmpeg -hide_banner -loglevel error -y -i \"" + orig + "\" -vf scale=128:72 -c:v libx264 -crf 28 -preset veryfast -pix_fmt yuv420p \"" + reen + "\"";
+  // Re-encode: different codec + scale + heavy quantiser (like the unit test,
+  // but this time verified through the whole scan stack incl. L1 anchors).
+  std::string c2 = "ffmpeg -hide_banner -loglevel error -y -i \"" + orig + "\" -vf scale=128:72 -c:v mpeg2video -q:v 10 -pix_fmt yuv420p \"" + reen + "\"";
   if (std::system(c2.c_str()) != 0) return 2;
   // Trimmed re-encode: first 3 seconds only. Sequence-level evidence (anchors
   // seeded from a stable stride) must still enumerate it for temporal.
   const std::string trim = (d / "media" / "trim.mp4").string();
-  std::string c3 = "ffmpeg -hide_banner -loglevel error -y -i \"" + orig + "\" -t 3 -c:v libx264 -crf 28 -preset veryfast -pix_fmt yuv420p \"" + trim + "\"";
+  std::string c3 = "ffmpeg -hide_banner -loglevel error -y -i \"" + orig + "\" -t 3 -c:v mpeg2video -q:v 10 -pix_fmt yuv420p \"" + trim + "\"";
   if (std::system(c3.c_str()) != 0) return 2;
   // Total stranger: solid color, no shared content.
   std::string c4 = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i color=c=blue:size=160x90:rate=10:duration=8 -c:v mpeg4 -pix_fmt yuv420p \"" + other + "\"";
