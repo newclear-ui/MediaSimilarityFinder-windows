@@ -10,6 +10,7 @@
 #include <QThread>
 #include <QMetaObject>
 #include <QDir>
+#include <QFileInfo>
 #include <QUrl>
 #include <iostream>
 #ifdef _WIN32
@@ -36,6 +37,15 @@ static QString localFolderOf(IDispatch* disp) {
     return out;
 }
 
+// Compare canonical long paths: the runner's TEMP is the 8.3 short form
+// (C:\Users\RUNNER~1\AppData\Local\Temp) while Explorer reports the long form
+// (C:\Users\runneradmin\...), so a raw string compare never matches there.
+static QString canonicalPath(const QString& p) {
+    if (p.isEmpty()) return p;
+    const QString c = QFileInfo(p).canonicalFilePath();
+    return c.isEmpty() ? QDir::cleanPath(p) : c;
+}
+
 static Found findExplorerWindow(const QString& folder) {
     Found f;
     IShellWindows* wins = nullptr;
@@ -43,14 +53,14 @@ static Found findExplorerWindow(const QString& folder) {
                                 IID_PPV_ARGS(&wins))) || !wins) return f;
     long count = 0;
     wins->get_Count(&count);
-    const QString want = QDir::cleanPath(folder);
+    const QString want = canonicalPath(folder);
     for (long i = 0; i < count && !f.ok; ++i) {
         VARIANT index; VariantInit(&index); index.vt = VT_I4; index.lVal = i;
         IDispatch* disp = nullptr;
         const HRESULT hrItem = wins->Item(index, &disp);
         VariantClear(&index);
         if (FAILED(hrItem) || !disp) continue;
-        if (QString::compare(localFolderOf(disp), want, Qt::CaseInsensitive) == 0) {
+        if (QString::compare(canonicalPath(localFolderOf(disp)), want, Qt::CaseInsensitive) == 0) {
             IWebBrowser2* browser = nullptr;
             if (SUCCEEDED(disp->QueryInterface(IID_PPV_ARGS(&browser))) && browser) {
                 SHANDLE_PTR rawHwnd = 0;
@@ -113,7 +123,30 @@ static QStringList selectedFilesOf(IShellView* sv) {
 
 static bool selectedIs(IShellView* view, const QString& file) {
     const QStringList sel = selectedFilesOf(view);
-    return sel.size() == 1 && QString::compare(sel[0], file, Qt::CaseInsensitive) == 0;
+    return sel.size() == 1 &&
+           QString::compare(canonicalPath(sel[0]), canonicalPath(file), Qt::CaseInsensitive) == 0;
+}
+
+// Diagnostics only: every shell window URL currently open, so a mismatch shows
+// the exact form Explorer reported.
+static QStringList openFolders() {
+    QStringList out;
+    IShellWindows* wins = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(ShellWindows), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&wins))) || !wins) return out;
+    long count = 0;
+    wins->get_Count(&count);
+    for (long i = 0; i < count; ++i) {
+        VARIANT index; VariantInit(&index); index.vt = VT_I4; index.lVal = i;
+        IDispatch* disp = nullptr;
+        if (SUCCEEDED(wins->Item(index, &disp)) && disp) {
+            out << localFolderOf(disp);
+            disp->Release();
+        }
+        VariantClear(&index);
+    }
+    wins->Release();
+    return out;
 }
 
 // This test drives the real Explorer shell through IShellWindows. Service
@@ -162,6 +195,12 @@ int main(int argc, char** argv) {
         if (!okA) QThread::msleep(100);
     }
     std::cout << "fallback_open=" << (okA ? "ok" : "FAIL") << "\n";
+    if (!okA) {
+        std::cout << "  wanted=" << qPrintable(canonicalPath(dir.path())) << "\n";
+        const QStringList seen = openFolders();
+        std::cout << "  shell_windows=" << seen.size() << "\n";
+        for (const QString& s : seen) std::cout << "    " << qPrintable(s) << "\n";
+    }
 
     bool okB = false;
     const int countBefore = windowCount();
